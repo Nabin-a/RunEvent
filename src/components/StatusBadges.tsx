@@ -113,7 +113,7 @@ export const PaymentStatusBadge: React.FC<{ status: PaymentStatus }> = ({
     { label: string; tone: string; icon: React.ReactNode }
   > = {
     succeeded: {
-      label: 'รับเงินสำเร็จ (Webhook)',
+      label: 'ชำระเงินแล้ว',
       tone: 'badge-forest',
       icon: <IconCheckCircle size={14} />,
     },

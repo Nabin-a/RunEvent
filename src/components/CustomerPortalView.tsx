@@ -26,6 +26,7 @@ import {
   IconCalendar,
   IconCamera,
   IconCheckCircle,
+  IconClock,
   IconLock,
   IconMapPin,
   IconQr,
@@ -89,6 +90,7 @@ interface CustomerPortalViewProps {
     regId: string,
     newSize: 'XS' | 'S' | 'M' | 'L' | 'XL' | '2XL'
   ) => void;
+  onCompletePendingPayment: (regId: string) => void;
   onCreateClubProductionInquiry: (payload: {
     requesterName: string;
     requesterContact: string;
@@ -115,6 +117,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   onCreateRegistrationAndOptionalAddon,
   onCreateStandaloneMerchOrder,
   onUpdateRunnerShirtSize,
+  onCompletePendingPayment,
   onCreateClubProductionInquiry,
 }) => {
   // Directory filters
@@ -138,17 +141,19 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   const [addonSize, setAddonSize] = useState<string>('M');
   const [registerForSelf, setRegisterForSelf] = useState(true);
   const [buyerName, setBuyerName] = useState(
-    currentUser?.fullNameTh ?? 'กานต์พิชชา วัฒนากูล'
+    currentUser?.fullNameTh ?? ''
   );
   const [participantNameTh, setParticipantNameTh] = useState(
-    currentUser?.fullNameTh ?? 'กานต์พิชชา วัฒนากูล'
+    currentUser?.fullNameTh ?? ''
   );
   const [participantNameEn, setParticipantNameEn] = useState(
-    currentUser?.fullNameEn ?? 'Kanpitcha Wattanakul'
+    currentUser?.fullNameEn ?? ''
   );
   const [acceptedRules, setAcceptedRules] = useState(false);
   const [marketingConsent, setMarketingConsent] = useState(false);
-  const [simulateWebhookSuccess, setSimulateWebhookSuccess] = useState(true);
+  const [paymentChannel, setPaymentChannel] = useState<'promptpay' | 'card'>(
+    'promptpay'
+  );
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [createdResult, setCreatedResult] = useState<{
     reg: RegistrationRecord;
@@ -163,15 +168,15 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     'pickup_at_expo' | 'postal_shipping'
   >('pickup_at_expo');
   const [merchAddress, setMerchAddress] = useState(
-    '199 ถ.นิมมานเหมินท์ อ.เมือง จ.เชียงใหม่ 50200 (จำลอง)'
+    '199 ถ.นิมมานเหมินท์ อ.เมือง จ.เชียงใหม่ 50200'
   );
   const [linkedRegForMerch, setLinkedRegForMerch] = useState<string>('');
   const [createdMerchReceipt, setCreatedMerchReceipt] =
     useState<MerchOrderRecord | null>(null);
 
   // Club/Company custom production inquiry state (no race event needed)
-  const [clubName, setClubName] = useState('ชมรมวิ่งเช้าสวนลุมฯ (ตัวอย่าง)');
-  const [clubContact, setClubContact] = useState('club-contact@example.local');
+  const [clubName, setClubName] = useState('');
+  const [clubContact, setClubContact] = useState('');
   const [clubItemType, setClubItemType] = useState<
     ProductionInquiry['itemType']
   >('เสื้อแข่งขันและเสื้อที่ระลึก');
@@ -327,8 +332,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleRegistrationSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitRegistrationOrder = (payImmediately: boolean) => {
     if (!selectedEvent || !activeCategory) return;
 
     if (!currentUser) {
@@ -377,14 +381,19 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       categoryId: activeCategory.id,
       buyerName: finalBuyer,
       participantNameTh: finalParticipant,
-      participantNameEn: participantNameEn.trim() || 'Demo Participant',
+      participantNameEn: participantNameEn.trim() || finalParticipant,
       shirtSize,
       marketingConsent,
-      simulateImmediateWebhook: simulateWebhookSuccess,
+      simulateImmediateWebhook: payImmediately,
       addonProduct: selectedAddonProduct,
       addonSize,
     });
     setCreatedResult(res);
+  };
+
+  const handleRegistrationSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    submitRegistrationOrder(true);
   };
 
   const handleMerchSubmit = (e: React.FormEvent) => {
@@ -530,7 +539,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
             <div>
               <button type="submit" className="btn-primary">
-                ส่งคำขอใบเสนอราคาสั่งผลิต (จำลอง)
+                ส่งคำขอใบเสนอราคาสั่งผลิต
               </button>
             </div>
 
@@ -582,7 +591,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           </td>
                           <td>
                             <span className="status-pill badge-amber">
-                              รอทีมงานส่งใบเสนอราคา
+                              <IconClock size={13} />
+                              <span>รอทีมงานส่งใบเสนอราคา</span>
                             </span>
                           </td>
                         </tr>
@@ -623,7 +633,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           <div className="empty-state-box">
             <h2>กรุณาเข้าสู่ระบบเพื่อดูบัตรวิ่งและคำสั่งซื้อของคุณ</h2>
             <p>
-              รองรับการเข้าสู่ระบบด้วยอีเมล, Google, LINE หรือเลือกสลับบัญชีตัวอย่างเพื่อดูข้อมูลทันที
+              เข้าสู่ระบบด้วยอีเมล, Google หรือ LINE เพื่อตรวจสอบบัตร QR รับอุปกรณ์และประวัติคำสั่งซื้อสินค้าที่ระลึก
             </p>
             <button
               type="button"
@@ -645,7 +655,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               <div className="section-title-bar">
                 <div>
                   <h2>
-                    1. ใบสมัครวิ่งและบัตร QR รับอุปกรณ์แข่งขัน (
+                    ใบสมัครวิ่งและบัตร QR รับอุปกรณ์แข่งขัน (
                     <span className="mono-num">{myRegistrations.length}</span>)
                   </h2>
                   <p className="muted-inline">
@@ -656,7 +666,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
               {myRegistrations.length === 0 ? (
                 <div className="subtle-empty-note">
-                  บัญชีนี้ยังไม่มีใบสมัครวิ่ง (ลูกค้าทั่วไปสามารถดูคำสั่งซื้อสินค้าที่ระลึกได้ในหัวข้อที่ 2 ด้านล่าง)
+                  บัญชีนี้ยังไม่มีใบสมัครวิ่ง (ลูกค้าทั่วไปสามารถดูคำสั่งซื้อสินค้าที่ระลึกได้ในส่วนถัดไปด้านล่าง)
                 </div>
               ) : (
                 <div className="pass-list">
@@ -698,6 +708,24 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           </p>
 
                           <div className="cta-inline-row" style={{ marginTop: '0.55rem' }}>
+                            {reg.registrationStatus === 'pending_payment' && (
+                              <button
+                                type="button"
+                                className="btn-primary"
+                                onClick={() => onCompletePendingPayment(reg.id)}
+                              >
+                                <IconCheckCircle size={15} />
+                                <span>
+                                  ชำระเงินต่อให้เสร็จสิ้น (
+                                  {formatThb(
+                                    reg.snapshotTotalChargedSatang,
+                                    true
+                                  )}
+                                  )
+                                </span>
+                              </button>
+                            )}
+
                             {canEditShirt && (
                               <div className="inline-shirt-editor">
                                 <label htmlFor={`my-shirt-${reg.id}`}>
@@ -784,7 +812,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               <div className="section-title-bar">
                 <div>
                   <h2>
-                    2. คำสั่งซื้อสินค้าที่ระลึกและพรีออเดอร์ (
+                    คำสั่งซื้อสินค้าที่ระลึกและพรีออเดอร์ (
                     <span className="mono-num">{myMerchOrders.length}</span>)
                   </h2>
                   <p className="muted-inline">
@@ -1036,7 +1064,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 <h2>
                   {createdResult.reg.registrationStatus === 'confirmed'
                     ? 'ยืนยันการสมัครวิ่งเรียบร้อยแล้ว'
-                    : 'กันโควตาชั่วคราวแล้ว (รอชำระเงินภายใน 15 นาที)'}
+                    : 'กันโควตาชั่วคราวแล้ว (รอชำระเงินภายใน 30 นาที)'}
                 </h2>
                 <p className="muted-block">
                   ใบสมัคร <strong className="mono-code">{createdResult.reg.regCode}</strong>
@@ -1049,7 +1077,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       </strong>
                     </>
                   )}{' '}
-                  ถูกบันทึกเข้าสู่ระบบจำลองและอัปเดตไปยังหน้า Dashboard ผู้จัดงานทันที
+                  ได้รับการบันทึกในบัญชีของคุณแล้ว สามารถตรวจสอบสถานะและ QR รับอุปกรณ์ได้ในหน้าบัตรวิ่งของฉัน
                 </p>
 
                 <div className="receipt-summary-box">
@@ -1441,18 +1469,33 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       );
                     })()}
 
-                    <label className="checkbox-row">
-                      <input
-                        type="checkbox"
-                        checked={simulateWebhookSuccess}
-                        onChange={(e) =>
-                          setSimulateWebhookSuccess(e.target.checked)
-                        }
-                      />
-                      <span>
-                        จำลองผลชำระเงินสำเร็จทันทีผ่าน Webhook (หากเอาออกจะพักไว้เป็นรายการกันโควตารอชำระ)
-                      </span>
-                    </label>
+                    <div className="form-row">
+                      <label>ช่องทางชำระเงิน</label>
+                      <div className="pill-tabs-bar" role="radiogroup" aria-label="เลือกช่องทางชำระเงิน">
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={paymentChannel === 'promptpay'}
+                          className={`pill-tab ${
+                            paymentChannel === 'promptpay' ? 'active' : ''
+                          }`}
+                          onClick={() => setPaymentChannel('promptpay')}
+                        >
+                          QR PromptPay (สแกนจ่ายทันที)
+                        </button>
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={paymentChannel === 'card'}
+                          className={`pill-tab ${
+                            paymentChannel === 'card' ? 'active' : ''
+                          }`}
+                          onClick={() => setPaymentChannel('card')}
+                        >
+                          บัตรเครดิต / เดบิต
+                        </button>
+                      </div>
+                    </div>
 
                     {checkoutError && (
                       <div className="error-callout" role="alert">
@@ -1494,13 +1537,28 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           }
                         >
                           <IconLock size={15} />
-                          <span>เข้าสู่ระบบเพื่อยืนยันการสมัคร</span>
+                          <span>เข้าสู่ระบบเพื่อดำเนินการชำระเงิน</span>
                         </button>
                       ) : (
-                        <button type="submit" className="btn-cta-accent">
-                          <IconCheckCircle size={16} />
-                          <span>ยืนยันการสมัครและชำระเงินจำลอง</span>
-                        </button>
+                        <div className="cta-inline-row">
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => submitRegistrationOrder(false)}
+                          >
+                            <IconClock size={15} />
+                            <span>ชำระภายหลัง (กันโควตา 30 นาที)</span>
+                          </button>
+                          <button type="submit" className="btn-cta-accent">
+                            <IconCheckCircle size={16} />
+                            <span>
+                              ชำระเงินด้วย{' '}
+                              {paymentChannel === 'promptpay'
+                                ? 'PromptPay'
+                                : 'บัตร'}
+                            </span>
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1748,7 +1806,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     ) : (
                       <button type="submit" className="btn-primary btn-full">
                         <IconBag size={16} />
-                        <span>ชำระเงินจำลองและออกรหัสรับสินค้า</span>
+                        <span>ยืนยันคำสั่งซื้อและชำระเงิน</span>
                       </button>
                     )}
 
@@ -1878,9 +1936,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               onChange={(e) => setDistanceFilter(e.target.value)}
             >
               <option value="all">ทุกระยะทาง</option>
-              <option value="5k">Fun Run ~ 5K</option>
-              <option value="10k">Mini Marathon 10K</option>
-              <option value="21k">Half Marathon 21.1K</option>
+              <option value="5k">Fun Run ~ 5 km</option>
+              <option value="10k">Mini Marathon 10 km</option>
+              <option value="21k">Half Marathon 21.1 km</option>
               <option value="trail">Trail Running</option>
             </select>
           </div>
@@ -1978,7 +2036,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     {ev.products.length > 0 && (
                       <span className="shop-available-pill">
                         <IconBag size={13} />
-                        <span>ร้านเสื้อ/เหรียญ ({ev.products.length})</span>
+                        <span>ร้านเสื้อ/เหรียญ ({ev.products.length} รายการ)</span>
                       </span>
                     )}
                   </div>

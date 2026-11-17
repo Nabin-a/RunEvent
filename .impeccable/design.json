@@ -1,189 +1,162 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-17T09:07:30+07:00",
+  "generatedAt": "2026-11-17T09:59:30+07:00",
   "title": "Design System: RunEvent",
   "extensions": {
     "colorMeta": {
-      "vermilion-corral": {
+      "vermilion": {
         "role": "primary",
         "displayName": "Start-Corral Vermilion",
-        "canonical": "#bf3b19",
-        "tonalRamp": ["#4a1204", "#6b1c07", "#8a260d", "#a32f11", "#bf3b19", "#d95b38", "#f0a38c", "#fdede8"]
+        "canonical": "#c23b1a",
+        "tonalRamp": ["#4a1204", "#7f210a", "#a12e11", "#c23b1a", "#e56b38", "#f2bfb1", "#fef0ec"]
       },
-      "track-navy": {
+      "shell-navy": {
         "role": "secondary",
-        "displayName": "Track Navy",
-        "canonical": "#102538",
-        "tonalRamp": ["#0b1a28", "#102538", "#18344e", "#23496b", "#38658c", "#6b8fae", "#b7cde0", "#e6eef6"]
+        "displayName": "Deep Slate Navy",
+        "canonical": "#0f172a",
+        "tonalRamp": ["#0f172a", "#1e293b", "#334155", "#475569", "#94a3b8", "#cbd5e1", "#e2e8f0", "#f7f8fa"]
       },
-      "forest-verified": {
+      "forest": {
         "role": "tertiary",
         "displayName": "Verified Forest",
-        "canonical": "#166544",
-        "tonalRamp": ["#092e1e", "#0f4d33", "#166544", "#1f8259", "#37a175", "#6ec29e", "#b5dec8", "#e5f4ec"]
+        "canonical": "#157347",
+        "tonalRamp": ["#0d4f30", "#157347", "#23945f", "#b6e2ca", "#eaf7f0"]
       },
-      "amber-caution": {
+      "amber": {
         "role": "tertiary",
         "displayName": "Marshal Amber",
-        "canonical": "#8a5207",
-        "tonalRamp": ["#3b2102", "#543103", "#693d04", "#8a5207", "#b36e12", "#d6983e", "#ebd09e", "#fdf2de"]
+        "canonical": "#945606",
+        "tonalRamp": ["#6e3e03", "#945606", "#c47c18", "#edd09d", "#fef5e6"]
       },
-      "tyvek-limestone": {
+      "bg-canvas": {
         "role": "neutral",
-        "displayName": "Tyvek Limestone",
-        "canonical": "#f5f4ee",
-        "tonalRamp": ["#2c2b26", "#4a4941", "#6e6c61", "#969385", "#b8b5a6", "#d6d4c8", "#eceae0", "#f5f4ee"]
+        "displayName": "Cool Minimal Canvas",
+        "canonical": "#f7f8fa",
+        "tonalRamp": ["#cbd5e1", "#e2e8f0", "#f1f4f8", "#f7f8fa", "#ffffff"]
       },
       "ink-primary": {
         "role": "neutral",
-        "displayName": "Navy-Tinted Primary Ink",
-        "canonical": "#13202c",
-        "tonalRamp": ["#0c151d", "#13202c", "#233546", "#354a5e", "#475e73", "#6b7f91", "#a3b3c2", "#dfe6ec"]
+        "displayName": "Slate-Tinted Primary Ink",
+        "canonical": "#0f172a",
+        "tonalRamp": ["#0f172a", "#1e293b", "#475569", "#52637a", "#94a3b8"]
       }
     },
     "typographyMeta": {
+      "hero": {
+        "displayName": "Hero",
+        "purpose": "Public discovery title and event detail header."
+      },
       "display": {
         "displayName": "Display",
-        "purpose": "Page-level operational titles and public directory header."
+        "purpose": "Organizer page headers, modal titles, and primary payout figures."
       },
       "headline": {
         "displayName": "Headline",
-        "purpose": "Panel titles, event row titles, and drawer headings."
-      },
-      "title": {
-        "displayName": "Title",
-        "purpose": "Zone subheadings inside the BIB ledger strip and runner ticket rows."
+        "purpose": "Card titles, section titles, and step headers."
       },
       "body": {
         "displayName": "Body",
-        "purpose": "Operational copy, tables, and form controls (65–72ch max measure)."
+        "purpose": "Base document reading copy (65–72ch max measure)."
+      },
+      "bodyDense": {
+        "displayName": "Dense Body",
+        "purpose": "Form inputs, lead descriptions, and drawer items."
+      },
+      "uiCompact": {
+        "displayName": "Compact UI",
+        "purpose": "Buttons, navigation items, and dense table cells."
       },
       "label": {
         "displayName": "Label / Tabular Mono",
-        "purpose": "Codes, THB satang figures, quota ratios, and QR check-in tokens."
+        "purpose": "Status pills, filter labels, table headers, and tabular ratios."
+      },
+      "caption": {
+        "displayName": "Caption / Code",
+        "purpose": "Inline IDs, BIB prefixes, and micro-badges."
       }
     },
     "shadows": [
       {
-        "name": "shadow-panel",
-        "value": "0 6px 18px -6px rgba(16, 37, 56, 0.09)",
-        "purpose": "Soft offset lift on primary Crisp Stock panels and BIB strips."
+        "name": "shadow-card",
+        "value": "0 4px 14px -4px rgba(15, 23, 42, 0.06)",
+        "purpose": "Subtle offset lift on Modern Minimal event cards and Crisp Surface panels."
       },
       {
-        "name": "shadow-cta-hover",
-        "value": "0 4px 12px -2px rgba(191, 59, 25, 0.28)",
-        "purpose": "Tactile elevation on primary vermilion button hover."
+        "name": "shadow-popover",
+        "value": "0 12px 28px -6px rgba(15, 23, 42, 0.16)",
+        "purpose": "Popover and modal dialog separation."
       }
     ],
     "motion": [
       {
-        "name": "ease-out-expo",
+        "name": "ease-clean",
         "value": "cubic-bezier(0.16, 1, 0.3, 1)",
-        "purpose": "Authored BIB strip settle and crisp control transitions."
+        "purpose": "Crisp control transitions and drawer state changes."
       }
     ],
     "breakpoints": [
       { "name": "mobile", "value": "680px" },
-      { "name": "tablet-rail-collapse", "value": "1080px" }
+      { "name": "tablet-rail-collapse", "value": "1060px" }
     ]
   },
   "components": [
     {
-      "name": "Primary Vermilion Button",
+      "name": "Primary Vermilion CTA Button",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "Primary operational CTA for creating draft events, confirming kit pickup, and submitting registrations.",
-      "html": "<button class=\"ds-btn-primary\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 5v14M5 12h14\"/></svg><span>สร้างงานวิ่งแบบร่าง</span></button>",
-      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 0.42rem; background: #bf3b19; color: #ffffff; border: 1px solid #bf3b19; border-radius: 4px; padding: 0.5rem 0.95rem; font-family: 'Sarabun', sans-serif; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: background-color 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-primary:hover { background: #a32f11; border-color: #a32f11; box-shadow: 0 4px 12px -2px rgba(191, 59, 25, 0.28); } .ds-btn-primary:focus-visible { outline: 2px solid #bf3b19; outline-offset: 2px; }"
+      "description": "Primary conversion CTA for race registration, checkout, draft creation, and check-in confirmation.",
+      "html": "<button class=\"btn btn-primary\">สมัครวิ่ง / ดูราคาสุทธิ</button>",
+      "css": ".btn-primary { display: inline-flex; align-items: center; gap: 0.42rem; white-space: nowrap; background: #c23b1a; color: #ffffff; border: 1px solid #c23b1a; border-radius: 6px; padding: 0.52rem 0.95rem; font-family: 'Anuphan', sans-serif; font-size: 0.875rem; font-weight: 600; cursor: pointer; } .btn-primary:hover { background: #a12e11; border-color: #a12e11; }"
     },
     {
-      "name": "Secondary Stock Button",
+      "name": "Secondary Surface Button",
       "kind": "button",
       "refersTo": "button-secondary",
-      "description": "Secondary operational action for navigation, CSV export, and non-destructive workflow steps.",
-      "html": "<button class=\"ds-btn-secondary\">ดูหน้ารวมงานวิ่งสาธารณะ</button>",
-      "css": ".ds-btn-secondary { display: inline-flex; align-items: center; gap: 0.4rem; background: #ffffff; color: #13202c; border: 1px solid #b8b5a6; border-radius: 4px; padding: 0.48rem 0.85rem; font-family: 'Sarabun', sans-serif; font-size: 0.88rem; font-weight: 600; cursor: pointer; } .ds-btn-secondary:hover { background: #eceae0; border-color: #354a5e; } .ds-btn-secondary:focus-visible { outline: 2px solid #bf3b19; outline-offset: 2px; }"
-    },
-    {
-      "name": "Search Field with Icon",
-      "kind": "input",
-      "refersTo": "input-search",
-      "description": "Standard search and QR token scan input over Crisp Stock with navy-tinted placeholder.",
-      "html": "<div class=\"ds-input-wrap\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"m20 20-3.5-3.5\"/></svg><input class=\"ds-input\" type=\"search\" placeholder=\"ค้นหาชื่อ รหัสใบสมัคร หรือ BIB...\" /></div>",
-      "css": ".ds-input-wrap { position: relative; display: flex; align-items: center; max-width: 320px; } .ds-input-wrap svg { position: absolute; left: 0.65rem; color: #354a5e; pointer-events: none; } .ds-input { width: 100%; font-family: 'Sarabun', sans-serif; font-size: 0.92rem; color: #13202c; background: #ffffff; border: 1px solid #b8b5a6; border-radius: 4px; padding: 0.48rem 0.68rem 0.48rem 2.1rem; min-height: 38px; } .ds-input::placeholder { color: #475e73; opacity: 1; } .ds-input:focus-visible { outline: 2px solid #bf3b19; outline-offset: 2px; }"
-    },
-    {
-      "name": "Distance Corral & Status Chips",
-      "kind": "chip",
-      "refersTo": "status-chip",
-      "description": "Accessible icon+text status pill and distance-corral BIB category chip with tabular figures.",
-      "html": "<div class=\"ds-chip-row\"><span class=\"ds-pill-forest\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"m8.5 12.2 2.4 2.4 4.8-5\"/></svg><span>ยืนยันสิทธิ์แล้ว</span></span><span class=\"ds-corral-vermilion\"><strong>21.1K</strong> · ว่าง <span class=\"ds-mono\">47/50</span></span></div>",
-      "css": ".ds-chip-row { display: flex; gap: 0.5rem; align-items: center; font-family: 'Sarabun', sans-serif; } .ds-pill-forest { display: inline-flex; align-items: center; gap: 0.32rem; padding: 0.2rem 0.55rem; border-radius: 4px; font-size: 0.8rem; font-weight: 600; background: #e5f4ec; color: #0f4d33; border: 1px solid #b7dec9; } .ds-corral-vermilion { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.8rem; padding: 0.22rem 0.55rem; border-radius: 4px; background: #fdede8; border: 1px solid #e3a796; color: #7c2008; } .ds-mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }"
-    },
-    {
-      "name": "Track-Navy Context Navigation Item",
-      "kind": "nav",
-      "refersTo": "rail-nav",
-      "description": "Committed track-navy rail navigation item with limestone active inversion.",
-      "html": "<div class=\"ds-rail\"><button class=\"ds-rail-btn active\">ภาพรวมองค์กร</button><button class=\"ds-rail-btn\">งานวิ่งของฉัน (4)</button></div>",
-      "css": ".ds-rail { background: #102538; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem; width: 240px; border-radius: 4px; } .ds-rail-btn { text-align: left; background: transparent; color: #c4d5e6; border: 1px solid transparent; border-radius: 4px; padding: 0.5rem 0.65rem; font-family: 'Sarabun', sans-serif; font-size: 0.9rem; cursor: pointer; } .ds-rail-btn:hover { background: #18344e; color: #ffffff; } .ds-rail-btn.active { background: #f5f4ee; color: #13202c; font-weight: 700; }"
-    },
-    {
-      "name": "Tyvek BIB Ledger Strip",
-      "kind": "custom",
-      "refersTo": "bib-strip-container",
-      "description": "Signature square-cut Tyvek BIB header strip pairing atomic quota counts with satang-accurate THB payout drill-down.",
-      "html": "<div class=\"ds-bib-strip\"><div class=\"ds-bib-band\"><span class=\"ds-code\">ORG-CMI-01</span><span>สรุปรวมองค์กร</span></div><div class=\"ds-bib-body\"><div class=\"ds-term\"><span class=\"ds-val\">฿7,107.50</span><span class=\"ds-lbl\">ยอดชำระสำเร็จรวม</span></div><span class=\"ds-op\">−</span><div class=\"ds-term ds-payout\"><span class=\"ds-val ds-verm\">฿6,015.00</span><span class=\"ds-lbl\">ยอดนำส่งผู้จัดสุทธิ</span></div></div></div>",
-      "css": ".ds-bib-strip { background: #ffffff; border: 1px solid #b8b5a6; border-radius: 0; box-shadow: 0 6px 18px -6px rgba(16, 37, 56, 0.09); font-family: 'Sarabun', sans-serif; } .ds-bib-band { background: #102538; color: #f4f7fa; padding: 0.5rem 0.9rem; border-bottom: 2px solid #bf3b19; display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; } .ds-code { font-family: 'JetBrains Mono', monospace; background: #204260; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.78rem; } .ds-bib-body { padding: 0.85rem 1rem; display: flex; align-items: center; gap: 0.5rem; } .ds-term { background: #f5f4ee; border: 1px solid #d6d4c8; border-radius: 4px; padding: 0.45rem 0.65rem; display: flex; flex-direction: column; } .ds-payout { background: #fdede8; border-color: #e6b2a3; } .ds-val { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 1.05rem; color: #13202c; } .ds-verm { color: #bf3b19; } .ds-lbl { font-size: 0.76rem; color: #354a5e; } .ds-op { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #354a5e; }"
+      "description": "Secondary action for navigation, storefront jump, and CSV export.",
+      "html": "<button class=\"btn btn-secondary\">ร้านของที่ระลึก</button>",
+      "css": ".btn-secondary { display: inline-flex; align-items: center; gap: 0.4rem; white-space: nowrap; background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.5rem 0.88rem; font-family: 'Anuphan', sans-serif; font-size: 0.875rem; font-weight: 600; cursor: pointer; }"
     }
   ],
   "narrative": {
-    "northStar": "The Race-Day Tyvek BIB & Course Ledger",
-    "overview": "RunEvent's visual system translates the split-second legibility of Thai road-race Tyvek BIB headers and start-corral coding into an operational multi-tenant dashboard and public event directory. Built for organizers managing quotas and satang-accurate payouts under office light as well as kit-pickup staff working on phones under outdoor expo tents, the interface prioritizes active tenant/event context, urgent operational tasks, and traceable numerical equations over decorative SaaS charts.\n\nSurfaces pair a committed deep track-navy shell with a warm limestone Tyvek ground so long participant tables and financial ledgers remain glare-free during extended sessions. The system rejects generic neutral-grey SaaS card grids, thick side-stripe alerts, faux skeuomorphic holes, and eyebrow kickers above headings.",
+    "northStar": "Modern Minimal Course Atlas & Self-Explanatory Race Ledger",
+    "overview": "RunEvent unites a Modern Minimal public race discovery & merchandise storefront portal (#f7f8fa canvas, #ffffff surface cards, route illustrations, net-price clarity) with a self-explanatory multi-tenant Organizer Dashboard anchored by a #0f172a context rail, urgent action queue, 4-stage lifecycle guide, and satang-accurate BibLedgerStrip.",
     "keyCharacteristics": [
-      "Committed track-navy context shell framing a warm limestone operational canvas",
-      "Square-cut Tyvek BIB header strips uniting atomic quota progress with balanced THB payout equations",
-      "Distance-corral color coding (vermilion, navy, forest, amber) paired with explicit text and icon badges",
-      "Tabular monospace numerals across every quota ratio, BIB assignment, and satang-accurate financial figure"
+      "Modern minimal public discovery cards with vector route covers and instant net-price clarity",
+      "Self-explanatory Organizer Dashboard headers explaining what every screen is and what it controls",
+      "Unified Email/Password, Google, and LINE simulated account model separated from Demo Preset switching",
+      "Tabular JetBrains Mono numerals across race quotas, THB fee equations, and non-duplicated shirt RFQ calculations"
     ],
     "rules": [
       {
-        "name": "The Tinted-Ink Rule",
-        "body": "Secondary text, placeholders, and scrollbars are tinted from track navy or warm limestone, never pure neutral grey.",
+        "name": "The Slate-Tinted Ink Rule",
+        "body": "Muted text, borders, and placeholders derive from #0f172a slate rather than pure neutral grey.",
         "section": "colors"
       },
       {
         "name": "The Icon-Plus-Label Status Rule",
-        "body": "Signal colors never carry state alone; every status pill pairs a 1.75px stroke SVG icon with an explicit Thai status label.",
+        "body": "Every status pill pairs a 1.75px stroke SVG icon with an explicit Thai status phrase; color never carries meaning alone.",
         "section": "colors"
       },
       {
         "name": "The Self-Sufficient Heading Rule",
-        "body": "Headings never carry an eyebrow or uppercase kicker label above them; metadata codes sit inline beside or below the heading.",
+        "body": "Never stack uppercase kickers or eyebrow labels above h1, h2, or h3.",
         "section": "typography"
       },
       {
-        "name": "The Tabular Money & Quota Rule",
-        "body": "Every THB amount, quota count, date range, and BIB identifier uses tabular-nums so figures never jitter when filters change.",
+        "name": "The Single-Line Affordance Rule",
+        "body": "Buttons, nav pills, and filter chips enforce white-space: nowrap so Thai/English labels never wrap awkwardly mid-phrase.",
         "section": "typography"
-      },
-      {
-        "name": "The Single-Layer Container Rule",
-        "body": "Working panels never nest shadowed cards inside shadowed cards; interior collections use flat #f5f4ee cells or 1px hairline table rows.",
-        "section": "elevation"
       }
     ],
     "dos": [
-      "Do place the Urgent Action Queue and locked Organization/Event context above summary metrics on operational views.",
-      "Do keep square corners (0px) on BIB strips and event BIB sheets while using 4px–6px corners on standard controls and tables.",
-      "Do format every price, fee, refund, payout, and quota counter with font-variant-numeric: tabular-nums and satang-accurate arithmetic.",
-      "Do use minmax(0, 1fr) on responsive grid columns so 390px mobile check-in views never scroll horizontally."
+      "Do explain every Organizer section in plain Thai so first-time users immediately know what each screen controls.",
+      "Do keep race registration entitlements separate from standalone storefront merchandise orders and custom production quotes.",
+      "Do render every THB amount, fee breakdown, and quota counter in JetBrains Mono with tabular-nums and satang-accurate integer math."
     ],
     "donts": [
-      "Don't place kickers or eyebrow labels above h1, h2, or h3 headings.",
-      "Don't apply thick (>1px) colored border-left, border-right, or border-top accents onto rounded containers.",
-      "Don't use Unicode glyphs or emoji in place of the unified 1.75px stroke SVG icon set, or rely on color alone to communicate status.",
-      "Don't render faux physical holes, bevels, or unlabelled synthetic business claims."
+      "Don't place eyebrow kickers above headings or thick (>1px) side/top borders on rounded cards.",
+      "Don't auto-merge accounts on email collision or allow unlinking a user's last remaining login method.",
+      "Don't imply real server persistence, real Google/LINE OAuth, or live payment processing in demo copy."
     ]
   }
 }

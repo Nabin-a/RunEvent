@@ -340,7 +340,7 @@ export const INITIAL_EVENTS: RaceEvent[] = [
     categories: [
       {
         id: 'cat-ds-21k',
-        code: '21.1K',
+        code: '21.1 km',
         name: 'Half Marathon 21.1 กม.',
         distanceKm: 21.1,
         startTimeLocal: '04:30',
@@ -377,7 +377,7 @@ export const INITIAL_EVENTS: RaceEvent[] = [
       },
       {
         id: 'cat-ds-10k',
-        code: '10K',
+        code: '10 km',
         name: 'Mini Marathon 10.0 กม.',
         distanceKm: 10,
         startTimeLocal: '05:15',
@@ -406,7 +406,7 @@ export const INITIAL_EVENTS: RaceEvent[] = [
       },
       {
         id: 'cat-ds-5k',
-        code: '5K',
+        code: '5 km',
         name: 'City Fun Run 5.0 กม.',
         distanceKm: 5,
         startTimeLocal: '05:45',
@@ -536,7 +536,7 @@ export const INITIAL_EVENTS: RaceEvent[] = [
     categories: [
       {
         id: 'cat-pk-21k',
-        code: '21.1K',
+        code: '21.1 km',
         name: 'Sunset Half 21.1 กม.',
         distanceKm: 21.1,
         startTimeLocal: '15:30',
@@ -557,7 +557,7 @@ export const INITIAL_EVENTS: RaceEvent[] = [
       },
       {
         id: 'cat-pk-10k',
-        code: '10K',
+        code: '10 km',
         name: 'Coastline 10.0 กม.',
         distanceKm: 10,
         startTimeLocal: '16:15',
@@ -643,8 +643,8 @@ export const INITIAL_EVENTS: RaceEvent[] = [
     categories: [
       {
         id: 'cat-om-10k',
-        code: '10K',
-        name: 'Old Moat 10K',
+        code: '10 km',
+        name: 'Old Moat 10 km',
         distanceKm: 10,
         startTimeLocal: '05:30',
         cutoffHours: 2,
@@ -744,8 +744,8 @@ export const INITIAL_EVENTS: RaceEvent[] = [
     categories: [
       {
         id: 'cat-pn-10k',
-        code: '10K',
-        name: 'Night 10K Run',
+        code: '10 km',
+        name: 'Night 10 km Run',
         distanceKm: 10,
         startTimeLocal: '19:30',
         cutoffHours: 2,
@@ -765,8 +765,8 @@ export const INITIAL_EVENTS: RaceEvent[] = [
       },
       {
         id: 'cat-pn-5k',
-        code: '5K',
-        name: 'Riverside 5K Glow',
+        code: '5 km',
+        name: 'Riverside 5 km Glow',
         distanceKm: 5,
         startTimeLocal: '19:45',
         cutoffHours: 1.5,
@@ -844,7 +844,7 @@ export const INITIAL_EVENTS: RaceEvent[] = [
     categories: [
       {
         id: 'cat-mr-25k',
-        code: '25K Trail',
+        code: '25 km',
         name: 'Mountain Trail 25 กม.',
         distanceKm: 25,
         startTimeLocal: '05:30',
@@ -907,7 +907,7 @@ export const INITIAL_EVENTS: RaceEvent[] = [
     categories: [
       {
         id: 'cat-ot-5k',
-        code: '5K',
+        code: '5 km',
         name: 'Heritage Fun Run 5.0 กม.',
         distanceKm: 5,
         startTimeLocal: '06:00',

@@ -17,7 +17,7 @@
 - [x] จัดทำข้อเสนอ Dashboard — [organizer-dashboard-plan.md](docs/organizer-dashboard-plan.md)
 - [x] จัดทำกฎร่วม ภาพรวม และรายการงาน — AGENTS.md, README.md, TODO.md
 - [x] เพิ่มแผนร้านค้า โปรโมทเสื้อ/เหรียญ พรีออเดอร์ และบริการผลิตในเอกสารเดิมตามคำขอวันที่ 17 พฤศจิกายน 2026 — ยังไม่ได้ยืนยันรายละเอียดการค้าหรือพัฒนา
-- [x] สร้าง Interactive Local Mockup (`Vite + React + TypeScript`) สำหรับ Organizer Dashboard, ระบบ Login สลับบทบาท/องค์กร และหน้ารายการงานวิ่งสาธารณะ พร้อมตรวจ `tsc` / `vite build` และทดสอบบนเบราว์เซอร์จริง — `src/`, [PRODUCT.md](PRODUCT.md), [DESIGN.md](DESIGN.md)
+- [x] สร้างและปรับปรุง Interactive Local Mockup v2 (`Vite + React + TypeScript`) ครอบคลุมหน้าค้นหางานวิ่ง Modern Minimal + ร้านค้าของที่ระลึก/ขอราคาผลิตจำลอง (`CustomerPortalView`), ระบบจำลองบัญชีเดียว Email/Google/LINE + บัญชีและความปลอดภัย (`AuthViews`), และ Organizer Dashboard ที่อธิบายหน้าที่ชัดเจนทุกส่วน (`OrganizerDashboardView`) พร้อมตรวจ `tsc` / `vite build` และทดสอบบนเบราว์เซอร์จริง — `src/`, [PRODUCT.md](PRODUCT.md), [DESIGN.md](DESIGN.md) (หมายเหตุ: เป็นต้นแบบฝั่งหน้าบ้านใน `localStorage` ยังไม่เชื่อม Backend/OAuth/Payment จริง)
 - [x] สร้าง Workspace Skill สำหรับรันและตรวจสอบโปรเจกต์บน Local — [.agents/skills/run-local/SKILL.md](.agents/skills/run-local/SKILL.md)
 
 ## ฟีเจอร์บัญชีที่เพิ่ม — 17 พฤศจิกายน 2026

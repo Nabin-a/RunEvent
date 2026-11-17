@@ -18,15 +18,18 @@ import {
   IconLineMark,
   IconLock,
   IconMail,
-  IconShield,
-  IconUsers,
 } from './Icons';
 
 interface AuthScreenProps {
   users: UserAccount[];
-  organizations: Organization[];
   currentUser: UserAccount | null;
   returnIntent: ReturnIntent | null;
+  initialTab?: 'signin' | 'signup' | 'forgot';
+  externalSocialScenario?: {
+    seq: number;
+    provider: 'google' | 'line';
+    scenario: 'new_no_email' | 'collision' | 'cancelled';
+  } | null;
   onAuthenticated: (user: UserAccount, preferredOrgId?: string) => void;
   onRegisterEmailUser: (payload: {
     fullNameTh: string;
@@ -44,19 +47,20 @@ interface AuthScreenProps {
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({
   users,
-  organizations,
   currentUser,
   returnIntent,
+  initialTab = 'signin',
+  externalSocialScenario,
   onAuthenticated,
   onRegisterEmailUser,
   onRegisterSocialUser,
   onLogout,
 }) => {
   const [authTab, setAuthTab] = useState<'signin' | 'signup' | 'forgot'>(
-    'signin'
+    initialTab
   );
-  const [email, setEmail] = useState('kanpitcha.runner@demo.runevent.local');
-  const [password, setPassword] = useState('demo1234');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   // Sign up fields
@@ -187,6 +191,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     }
   };
 
+  React.useEffect(() => {
+    setAuthTab(initialTab);
+  }, [initialTab]);
+
+  React.useEffect(() => {
+    if (externalSocialScenario) {
+      setAuthTab('signin');
+      handleSocialButton(
+        externalSocialScenario.provider,
+        externalSocialScenario.scenario
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalSocialScenario?.seq]);
+
   const handleForgotSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setResetRequestedEmail(email.trim());
@@ -194,28 +213,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   };
 
   return (
-    <main className="auth-page-shell">
+    <main className="auth-page-shell auth-single-shell">
       {returnIntent && (
         <div className="intent-return-banner" role="status">
           <IconArrowRight size={16} />
           <span>
-            เข้าสู่ระบบเพื่อดำเนินการต่อ: <strong>{returnIntent.label}</strong>{' '}
-            (ตรวจสอบปลายทางภายในระบบแล้ว)
+            กรุณาเข้าสู่ระบบเพื่อดำเนินการต่อ: <strong>{returnIntent.label}</strong>
           </span>
         </div>
       )}
 
-      <div className="auth-two-col">
-        {/* LEFT: REALISTIC AUTHENTICATION FLOW (Email/Password + Google + LINE) */}
+      <div className="auth-centered-wrap">
         <section
           className="clean-panel auth-primary-card"
           aria-label="เข้าสู่ระบบหรือสมัครสมาชิก RunEvent"
         >
           <div className="auth-card-head">
-            <h1>บัญชีเดียวใช้งานได้ทั้งสมัครวิ่ง ซื้อสินค้า และดูแลงานจัดแข่ง</h1>
+            <h1>เข้าสู่ระบบ RunEvent</h1>
             <p className="muted-block">
-              รองรับอีเมล + รหัสผ่าน, Google และ LINE (โหมดจำลองการยืนยันตัวตนในเบราว์เซอร์
-              ไม่ได้เชื่อมต่อผู้ให้บริการภายนอกจริง)
+              บัญชีเดียวใช้งานได้ครบทั้งสมัครงานวิ่ง ซื้อสินค้าที่ระลึก และจัดการงานสำหรับทีมผู้จัดที่ได้รับสิทธิ์
             </p>
           </div>
 
@@ -303,7 +319,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   onClick={() => handleSocialButton('google', 'existing')}
                 >
                   <IconGoogleMark size={18} />
-                  <span>ดำเนินการต่อด้วย Google (จำลองบัญชีเดิม)</span>
+                  <span>ดำเนินการต่อด้วย Google</span>
                 </button>
 
                 <button
@@ -312,37 +328,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   onClick={() => handleSocialButton('line', 'existing')}
                 >
                   <IconLineMark size={18} />
-                  <span>ดำเนินการต่อด้วย LINE (จำลองบัญชีเดิม)</span>
+                  <span>ดำเนินการต่อด้วย LINE</span>
                 </button>
-              </div>
-
-              <div className="social-edgecase-bar">
-                <span className="muted-inline">
-                  ทดสอบกรณีพิเศษของ Social Login (ตามแผนข้อ 16):
-                </span>
-                <div className="cta-inline-row">
-                  <button
-                    type="button"
-                    className="btn-ghost-sm"
-                    onClick={() => handleSocialButton('line', 'new_no_email')}
-                  >
-                    LINE ผู้ใช้ใหม่ไม่มีอีเมล
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-ghost-sm"
-                    onClick={() => handleSocialButton('google', 'collision')}
-                  >
-                    Google อีเมลตรงบัญชีเดิม
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-ghost-sm"
-                    onClick={() => handleSocialButton('line', 'cancelled')}
-                  >
-                    ผู้ใช้กดยกเลิกที่ Provider
-                  </button>
-                </div>
               </div>
 
               {socialPendingStep?.mode === 'provider_cancelled' && (
@@ -472,6 +459,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@example.com"
                     autoComplete="username"
                     required
                   />
@@ -485,6 +473,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
+                      placeholder="กรอกรหัสผ่านของคุณ"
                       autoComplete="current-password"
                       required
                     />
@@ -599,7 +588,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               </div>
               <button type="submit" className="btn-primary btn-full">
                 <IconMail size={16} />
-                <span>ส่งลิงก์รีเซ็ตรหัสผ่านจำลอง</span>
+                <span>ส่งลิงก์รีเซ็ตรหัสผ่าน</span>
               </button>
 
               {resetRequestedEmail && !resetDoneBanner && (
@@ -615,7 +604,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         className="btn-secondary"
                         onClick={() => setResetDoneBanner(true)}
                       >
-                        จำลองการกดลิงก์รีเซ็ตรหัสผ่านสำเร็จ
+                        เปิดลิงก์ยืนยันตั้งรหัสผ่านใหม่จากอีเมล
                       </button>
                     </div>
                   </div>
@@ -633,102 +622,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               )}
             </form>
           )}
-        </section>
-
-        {/* RIGHT: CLEARLY SEPARATED DEMO PERSONA SWITCHER FOR PROTOTYPE TESTING */}
-        <section
-          className="clean-panel demo-switcher-card"
-          aria-label="บัญชีสาธิตสำหรับสลับทดสอบทุกบทบาททันที"
-        >
-          <div className="demo-zone-header">
-            <span className="status-pill badge-amber">
-              โซนบัญชีสาธิตแยกจากระบบจริง
-            </span>
-            <h2>คลิกสลับบทบาทเพื่อสำรวจ Flow ทันที (6 บัญชีจำลอง)</h2>
-            <p className="muted-block">
-              ในระบบจริง การเข้าสู่ระบบเป็นเพียงการยืนยันตัวตน ส่วนสิทธิ์ผู้จัดงานจะมาจากสมาชิกองค์กร
-              (<code>OrganizationMembership</code>) ที่ตรวจสอบฝั่งเซิร์ฟเวอร์เท่านั้น
-            </p>
-          </div>
-
-          <div className="persona-list">
-            {users
-              .filter((u) => u.isDemoPreset)
-              .map((u) => {
-                const isCurrent = currentUser?.id === u.id;
-                const isOrganizer = u.memberships.length > 0;
-                return (
-                  <div
-                    key={u.id}
-                    className={`persona-row ${
-                      isCurrent ? 'persona-active' : ''
-                    }`}
-                  >
-                    <div className="persona-row-head">
-                      <div className="persona-identity">
-                        {isOrganizer ? (
-                          <IconShield size={17} />
-                        ) : (
-                          <IconUsers size={17} />
-                        )}
-                        <strong>{u.fullNameTh}</strong>
-                        <span className="mono-code">{u.code}</span>
-                      </div>
-                      <div className="persona-provider-tags">
-                        {u.identities.map((id) => (
-                          <span key={id.id} className="provider-mini-tag">
-                            {id.provider === 'password'
-                              ? 'Email'
-                              : id.provider.toUpperCase()}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    <p className="persona-desc">{u.demoRoleSummary}</p>
-
-                    {u.memberships.length > 0 ? (
-                      <div className="membership-action-list">
-                        {u.memberships.map((m) => {
-                          const org = organizations.find(
-                            (o) => o.id === m.organizationId
-                          );
-                          return (
-                            <button
-                              key={`${u.id}-${m.organizationId}`}
-                              type="button"
-                              className="btn-org-enter"
-                              onClick={() =>
-                                onAuthenticated(u, m.organizationId)
-                              }
-                            >
-                              <IconBuilding size={15} />
-                              <span>
-                                เข้าดูแล <strong>{org?.nameTh}</strong>
-                              </span>
-                              <IconArrowRight size={14} />
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        className="btn-org-enter"
-                        onClick={() => onAuthenticated(u)}
-                      >
-                        <IconUsers size={15} />
-                        <span>
-                          เข้าใช้งานฝั่งลูกค้า/นักวิ่งในชื่อ{' '}
-                          <strong>{u.fullNameTh}</strong>
-                        </span>
-                        <IconArrowRight size={14} />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-          </div>
         </section>
       </div>
     </main>
@@ -815,9 +708,9 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
       )}
 
       <div className="security-grid">
-        {/* 1. Contact Email & Password */}
+        {/* Contact Email & Password */}
         <section className="clean-panel">
-          <h2>1. อีเมลติดต่อและรหัสผ่าน</h2>
+          <h2>อีเมลติดต่อและรหัสผ่าน</h2>
           <p className="muted-inline">
             สถานะปัจจุบัน:{' '}
             {user.contactEmail ? (
@@ -855,11 +748,11 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                   onVerifyContactEmail(emailDraft.trim());
                   setFeedback({
                     tone: 'ok',
-                    text: `บันทึกและจำลองการยืนยันอีเมล ${emailDraft.trim()} สำเร็จ`,
+                    text: `บันทึกและยืนยันอีเมล ${emailDraft.trim()} สำเร็จ`,
                   });
                 }}
               >
-                บันทึกและยืนยันอีเมลจำลอง
+                บันทึกและยืนยันอีเมล
               </button>
             </div>
           </div>
@@ -881,19 +774,19 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                 setFeedback({
                   tone: 'ok',
                   text: user.hasPassword
-                    ? 'จำลองการเปลี่ยนรหัสผ่านและแจ้งเตือนความปลอดภัยเรียบร้อยแล้ว'
+                    ? 'เปลี่ยนรหัสผ่านและส่งแจ้งเตือนความปลอดภัยเรียบร้อยแล้ว'
                     : 'เพิ่มรหัสผ่านให้บัญชีสำเร็จ ตอนนี้เข้าสู่ระบบด้วยอีเมล+รหัสผ่านได้แล้ว',
                 });
               }}
             >
-              {user.hasPassword ? 'เปลี่ยนรหัสผ่านจำลอง' : 'ตั้งรหัสผ่านเพิ่มเติม'}
+              {user.hasPassword ? 'เปลี่ยนรหัสผ่าน' : 'ตั้งรหัสผ่านเพิ่มเติม'}
             </button>
           </div>
         </section>
 
-        {/* 2. Linked Login Methods */}
+        {/* Linked Login Methods */}
         <section className="clean-panel">
-          <h2>2. วิธีเข้าสู่ระบบที่เชื่อมอยู่กับบัญชีนี้</h2>
+          <h2>วิธีเข้าสู่ระบบที่เชื่อมอยู่กับบัญชีนี้</h2>
           <p className="muted-block">
             ระบบไม่อนุญาตให้ถอดช่องทางสุดท้ายที่ใช้เข้าสู่ระบบได้ เพื่อป้องกันบัญชีถูกล็อกถาวร
           </p>
@@ -987,10 +880,10 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
           </div>
         </section>
 
-        {/* 3. Active Device Sessions */}
+        {/* Active Device Sessions */}
         <section className="clean-panel">
           <div className="section-title-bar">
-            <h2>3. อุปกรณ์ที่เข้าสู่ระบบอยู่ ({user.sessions.length})</h2>
+            <h2>อุปกรณ์ที่เข้าสู่ระบบอยู่ ({user.sessions.length})</h2>
             {otherSessionsCount > 0 && (
               <button
                 type="button"
@@ -1021,16 +914,19 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                   </div>
                 </div>
                 {ses.isCurrentDevice && (
-                  <span className="status-pill badge-forest">เครื่องนี้</span>
+                  <span className="status-pill badge-forest">
+                    <IconCheckCircle size={13} />
+                    <span>เครื่องนี้</span>
+                  </span>
                 )}
               </div>
             ))}
           </div>
         </section>
 
-        {/* 4. Organizer Memberships, Single-Use Team Invites & New Organizer Onboarding */}
+        {/* Organizer Memberships, Single-Use Team Invites & New Organizer Onboarding */}
         <section className="clean-panel">
-          <h2>4. สิทธิ์ทีมผู้จัดงานและคำเชิญเข้าร่วมองค์กร</h2>
+          <h2>สิทธิ์ทีมผู้จัดงานและคำเชิญเข้าร่วมองค์กร</h2>
           <p className="muted-block">
             บัญชีนักวิ่งเดิมสามารถรับคำเชิญเข้าทีมงานวิ่ง หรือขอเปิดองค์กรผู้จัดใหม่ได้โดยไม่ต้องสมัครบัญชีแยก
           </p>
@@ -1051,7 +947,16 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                     <IconBuilding size={15} />
                     <span>
                       เปิดจัดการ <strong>{org?.nameTh}</strong> (สิทธิ์:{' '}
-                      <code>{m.role}</code>)
+                      <strong>
+                        {m.role === 'owner'
+                          ? 'เจ้าขององค์กร'
+                          : m.role === 'event_manager'
+                          ? 'ผู้จัดการงานวิ่ง'
+                          : m.role === 'finance'
+                          ? 'ฝ่ายการเงิน'
+                          : 'เจ้าหน้าที่หน้างาน'}
+                      </strong>
+                      )
                     </span>
                     <IconArrowRight size={14} />
                   </button>

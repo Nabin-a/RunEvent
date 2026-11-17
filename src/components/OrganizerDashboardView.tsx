@@ -35,6 +35,7 @@ import {
   IconBib,
   IconBuilding,
   IconCheckCircle,
+  IconClock,
   IconCopy,
   IconDownload,
   IconFlag,
@@ -125,7 +126,6 @@ interface OrganizerDashboardViewProps {
     merchOrderId: string,
     handoverMode: 'partial_one' | 'complete_all'
   ) => { ok: boolean; message: string };
-  onSimulateWebhookConfirm: (regId: string) => void;
   onResolveRefundRequest: (
     regId: string,
     decision: 'approve_succeed' | 'reject',
@@ -169,7 +169,6 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
   onAssignBibNumber,
   onConfirmKitPickup,
   onConfirmMerchHandover,
-  onSimulateWebhookConfirm,
   onResolveRefundRequest,
   onCreateSingleUseInvite,
   onOpenPublicPreview,
@@ -1000,7 +999,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       <div className="section-title-bar">
                         <div>
                           <h2>
-                            1. สิ่งที่ต้องจัดการก่อน (
+                            สิ่งที่ต้องจัดการก่อน (
                             <span className="mono-num">
                               {urgentActionItems.length}
                             </span>{' '}
@@ -1142,7 +1141,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     <section className="clean-panel">
                       <div className="section-title-bar">
                         <div>
-                          <h2>2. งานวิ่งในความดูแลของคุณ</h2>
+                          <h2>งานวิ่งในความดูแลของคุณ</h2>
                           <span className="muted-inline">
                             กดปุ่ม &ldquo;จัดการงานนี้&rdquo; เพื่อเข้าดูระยะราคา รายชื่อผู้สมัคร ร้านค้า หรือจุดเช็กอิน BIB
                           </span>
@@ -1237,7 +1236,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
 
                     {/* Zone 4: Audit Log */}
                     <section className="clean-panel">
-                      <h2>3. ประวัติการทำรายการล่าสุดในองค์กร</h2>
+                      <h2>ประวัติการทำรายการล่าสุดในองค์กร</h2>
                       <div className="audit-list">
                         {auditLogs
                           .filter((l) => l.organizationId === activeOrg.id)
@@ -1472,7 +1471,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                 </div>
 
                 <section className="clean-panel">
-                  <h2>1. คำขอใบเสนอราคาและงานสั่งผลิตเสื้อ/เหรียญ (Production Inquiries)</h2>
+                  <h2>คำขอใบเสนอราคาและงานสั่งผลิตเสื้อ/เหรียญ (Production Inquiries)</h2>
                   <p className="muted-block">
                     แยกสถานะใบเสนอราคา การอนุมัติแบบ และสถานะการผลิตออกจากกัน
                     (คำขอราคายังไม่ใช่คำสั่งเริ่มผลิตจนกว่าจะยืนยันแบบ จำนวน และเงื่อนไขชำระ)
@@ -1511,10 +1510,28 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                               </td>
                               <td>
                                 <span className="status-pill badge-navy">
-                                  ใบเสนอราคา: {rfq.quoteStatus}
+                                  <IconClock size={13} />
+                                  <span>
+                                    {rfq.quoteStatus === 'quoted_demo'
+                                      ? 'ส่งใบเสนอราคาแล้ว'
+                                      : rfq.quoteStatus === 'accepted'
+                                      ? 'อนุมัติราคาแล้ว'
+                                      : rfq.quoteStatus === 'submitted'
+                                      ? 'ส่งคำขอราคาแล้ว'
+                                      : 'ร่างคำขอราคา'}
+                                  </span>
                                 </span>{' '}
                                 <span className="status-pill badge-amber">
-                                  ผลิต: {rfq.productionStatus}
+                                  <IconClock size={13} />
+                                  <span>
+                                    {rfq.productionStatus === 'awaiting_approval'
+                                      ? 'รออนุมัติแบบก่อนผลิต'
+                                      : rfq.productionStatus === 'ready_to_produce'
+                                      ? 'พร้อมเริ่มผลิต'
+                                      : rfq.productionStatus === 'in_production'
+                                      ? 'กำลังผลิต'
+                                      : 'ตรวจ QC ผ่านแล้ว'}
+                                  </span>
                                 </span>
                               </td>
                             </tr>
@@ -1526,7 +1543,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
 
                 <section className="clean-panel">
                   <h2>
-                    2. คำสั่งซื้อสินค้าที่ระลึกข้ามทุกงานในองค์กร (
+                    คำสั่งซื้อสินค้าที่ระลึกข้ามทุกงานในองค์กร (
                     <span className="mono-num">{orgMerchOrders.length}</span>{' '}
                     รายการ)
                   </h2>
@@ -1694,12 +1711,12 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         className="btn-secondary"
                         onClick={() =>
                           setExportBannerText(
-                            `จำลองการส่งออกรายงานการเงินของ ${activeOrg.code} สำเร็จ`
+                            `สร้างไฟล์รายงานการเงิน CSV ของ ${activeOrg.code} เรียบร้อยแล้ว`
                           )
                         }
                       >
                         <IconDownload size={15} />
-                        <span>ส่งออก CSV จำลอง</span>
+                        <span>ส่งออกรายงาน CSV</span>
                       </button>
                     </div>
                   </div>
@@ -1811,7 +1828,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                 </div>
 
                 <section className="clean-panel">
-                  <h2>1. ข้อมูลองค์กรผู้จัดและบัญชีรับเงิน</h2>
+                  <h2>ข้อมูลองค์กรผู้จัดและบัญชีรับเงิน</h2>
                   <div className="org-settings-summary">
                     <div>
                       <p>
@@ -1849,7 +1866,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
 
                 <section className="clean-panel">
                   <div className="section-title-bar">
-                    <h2>2. รหัสคำเชิญเข้าร่วมทีม (ใช้ได้ครั้งเดียวและมีวันหมดอายุ)</h2>
+                    <h2>รหัสคำเชิญเข้าร่วมทีม (ใช้ได้ครั้งเดียวและมีวันหมดอายุ)</h2>
                     {canManageOrgBank && (
                       <div className="cta-inline-row">
                         <select
@@ -1900,11 +1917,13 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                               <td>
                                 {inv.usedByUserId ? (
                                   <span className="status-pill badge-neutral">
-                                    ถูกใช้งานแล้ว ({inv.usedByUserId})
+                                    <IconLock size={13} />
+                                    <span>ถูกใช้งานแล้ว ({inv.usedByUserId})</span>
                                   </span>
                                 ) : (
                                   <span className="status-pill badge-forest">
-                                    พร้อมส่งให้สมาชิกกดรับสิทธิ์
+                                    <IconCheckCircle size={13} />
+                                    <span>พร้อมส่งให้สมาชิกกดรับสิทธิ์</span>
                                   </span>
                                 )}
                               </td>
@@ -2021,7 +2040,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                 )
                               }
                             >
-                              เติมข้อมูลที่ขาดจำลอง + ส่งให้ผู้ดูแลแพลตฟอร์มตรวจเปิดขาย
+                              บันทึกข้อมูลที่ขาดและส่งตรวจอนุมัติเผยแพร่
                             </button>
                           </div>
                         )}
@@ -2091,7 +2110,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                 </div>
 
                 <section className="clean-panel">
-                  <h2>1. ระยะการแข่งขันและช่วงราคา</h2>
+                  <h2>ระยะการแข่งขันและช่วงราคา</h2>
                   <div className="table-scroll">
                     <table className="ops-table">
                       <thead>
@@ -2164,7 +2183,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                 </section>
 
                 <section className="clean-panel">
-                  <h2>2. สต็อกเสื้อตามสิทธิ์สมัครและเครื่องมือขอราคาผลิตจากยอดจริง</h2>
+                  <h2>สต็อกเสื้อตามสิทธิ์สมัครและเครื่องมือขอราคาผลิตจากยอดจริง</h2>
                   <div className="shirt-stock-strip">
                     {selectedEvent.shirtStocks.map((st) => {
                       const left = Math.max(
@@ -2320,7 +2339,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     className="btn-secondary"
                     onClick={() =>
                       setExportBannerText(
-                        `จำลองการส่งออกรายชื่อผู้สมัคร ${eventParticipants.length} คน ตามตัวกรองสำเร็จ`
+                        `สร้างไฟล์รายชื่อผู้สมัคร CSV จำนวน ${eventParticipants.length} คน ตามตัวกรองเรียบร้อยแล้ว`
                       )
                     }
                   >
@@ -2514,15 +2533,9 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         </dl>
                         {inspectedReg.registrationStatus ===
                           'pending_payment' && (
-                          <button
-                            type="button"
-                            className="btn-primary btn-full"
-                            onClick={() =>
-                              onSimulateWebhookConfirm(inspectedReg.id)
-                            }
-                          >
-                            จำลองการรับผล Webhook ชำระสำเร็จ
-                          </button>
+                          <div className="subtle-empty-note">
+                            รายการอยู่ระหว่างกันโควตารอผู้สมัครชำระเงิน ระบบจะเปลี่ยนเป็นยืนยันสิทธิ์อัตโนมัติเมื่อผู้ให้บริการรับชำระยืนยันยอด
+                          </div>
                         )}
                       </aside>
                     )}
@@ -2955,11 +2968,14 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                             {ord.merchOrderCode}
                           </span>
                           <span className="status-pill badge-navy">
-                            ส่งมอบแล้ว{' '}
-                            <span className="mono-num">
-                              {ord.deliveredQty}/{ord.quantity}
-                            </span>{' '}
-                            ชิ้น
+                            <IconBag size={13} />
+                            <span>
+                              ส่งมอบแล้ว{' '}
+                              <span className="mono-num">
+                                {ord.deliveredQty}/{ord.quantity}
+                              </span>{' '}
+                              ชิ้น
+                            </span>
                           </span>
                         </div>
                         <div className="checkin-row-body">

@@ -1,90 +1,485 @@
 import React, { useEffect, useState } from 'react';
 import {
   DEMO_ORGANIZATIONS,
-  DEMO_USERS,
   INITIAL_AUDIT_LOGS,
   INITIAL_EVENTS,
+  INITIAL_INVITATIONS,
+  INITIAL_MERCH_ORDERS,
   INITIAL_PAYOUTS,
+  INITIAL_PRODUCTION_INQUIRIES,
   INITIAL_REGISTRATIONS,
+  INITIAL_USERS,
 } from './data/mockData';
 import {
   AuditLogEntry,
-  DemoUser,
+  AuthProviderType,
+  EventProduct,
   FeeBearerPolicy,
+  MerchOrderRecord,
+  Organization,
+  OrgRole,
+  ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
+  ReturnIntent,
+  SellerServiceModel,
   SimulatedUiState,
+  TeamInvitation,
+  UserAccount,
 } from './types';
 import { calculateFeeQuote, getCurrentTier } from './utils/pricing';
+import { AccountSecurityView, AuthScreen } from './components/AuthViews';
 import {
+  CustomerPortalView,
+  CustomerSubView,
+} from './components/CustomerPortalView';
+import {
+  IconAlert,
+  IconArrowRight,
+  IconBag,
   IconBib,
   IconBuilding,
+  IconCheckCircle,
   IconFlag,
   IconLock,
+  IconShield,
+  IconShirt,
+  IconSliders,
   IconSwitch,
+  IconUsers,
 } from './components/Icons';
-import { LoginView } from './components/LoginView';
 import {
   OrganizerDashboardView,
   OrgSection,
 } from './components/OrganizerDashboardView';
-import { PublicEventsView } from './components/PublicEventsView';
 
-type AppSurface = 'dashboard' | 'public_events' | 'login';
+type RootSurface = 'customer' | 'organizer' | 'auth' | 'account_security';
 
-const STORAGE_KEY = 'runevent_demo_mockup_v1';
+const STORAGE_KEY = 'runevent_v2_mock_system';
+const SESSION_USER_KEY = 'runevent_v2_session_user_id';
 
-interface PersistedMockState {
+interface PersistedSystemState {
+  users: UserAccount[];
+  organizations: Organization[];
+  invitations: TeamInvitation[];
   events: RaceEvent[];
   registrations: RegistrationRecord[];
+  merchOrders: MerchOrderRecord[];
+  productionInquiries: ProductionInquiry[];
   auditLogs: AuditLogEntry[];
 }
 
-function loadInitialMockState(): PersistedMockState {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as PersistedMockState;
-      if (
-        Array.isArray(parsed.events) &&
-        Array.isArray(parsed.registrations) &&
-        Array.isArray(parsed.auditLogs)
-      ) {
-        return parsed;
-      }
-    }
-  } catch {
-    // Ignore storage read issues in restricted browsers
-  }
+function createDefaultState(): PersistedSystemState {
   return {
+    users: INITIAL_USERS,
+    organizations: DEMO_ORGANIZATIONS,
+    invitations: INITIAL_INVITATIONS,
     events: INITIAL_EVENTS,
     registrations: INITIAL_REGISTRATIONS,
+    merchOrders: INITIAL_MERCH_ORDERS,
+    productionInquiries: INITIAL_PRODUCTION_INQUIRIES,
     auditLogs: INITIAL_AUDIT_LOGS,
   };
 }
 
+function normalizeCategoryDistanceCode(code: string, distanceKm: number): string {
+  if (/km/i.test(code)) return code;
+  const replaced = code.replace(/(\d+(?:\.\d+)?)K\b/i, '$1 km').replace(/\s+Trail$/i, '').trim();
+  if (/km/i.test(replaced)) return replaced;
+  return `${distanceKm} km`;
+}
+
+function loadSystemState(): PersistedSystemState {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as PersistedSystemState;
+      if (
+        Array.isArray(parsed.users) &&
+        Array.isArray(parsed.events) &&
+        Array.isArray(parsed.registrations)
+      ) {
+        return {
+          ...parsed,
+          events: parsed.events.map((ev) => ({
+            ...ev,
+            categories: ev.categories.map((cat) => ({
+              ...cat,
+              code: normalizeCategoryDistanceCode(cat.code, cat.distanceKm),
+            })),
+          })),
+        };
+      }
+    }
+  } catch {
+    // Fallback to initial state if storage unavailable
+  }
+  return createDefaultState();
+}
+
+function loadInitialSessionUserId(): string | null {
+  try {
+    const saved = window.localStorage.getItem(SESSION_USER_KEY);
+    return saved ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+interface ParsedUrlRoute {
+  surface: RootSurface;
+  customerSubView: CustomerSubView;
+  eventSlug: string | null;
+  eventTab: 'register' | 'storefront' | 'info_results';
+  authTab: 'signin' | 'signup' | 'forgot';
+}
+
+function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
+  const cleanPath = pathname.replace(/\/+$/, '') || '/';
+  const params = new URLSearchParams(search);
+  const modeParam = params.get('mode');
+  const authTab: 'signin' | 'signup' | 'forgot' =
+    modeParam === 'signup'
+      ? 'signup'
+      : modeParam === 'forgot'
+      ? 'forgot'
+      : 'signin';
+
+  if (cleanPath === '/login') {
+    return {
+      surface: 'auth',
+      customerSubView: 'directory',
+      eventSlug: null,
+      eventTab: 'register',
+      authTab,
+    };
+  }
+  if (cleanPath === '/account/security') {
+    return {
+      surface: 'account_security',
+      customerSubView: 'directory',
+      eventSlug: null,
+      eventTab: 'register',
+      authTab: 'signin',
+    };
+  }
+  if (cleanPath === '/organizer' || cleanPath.startsWith('/organizer/')) {
+    return {
+      surface: 'organizer',
+      customerSubView: 'directory',
+      eventSlug: null,
+      eventTab: 'register',
+      authTab: 'signin',
+    };
+  }
+  if (cleanPath === '/my-orders') {
+    return {
+      surface: 'customer',
+      customerSubView: 'my_orders',
+      eventSlug: null,
+      eventTab: 'register',
+      authTab: 'signin',
+    };
+  }
+  if (cleanPath === '/custom-production') {
+    return {
+      surface: 'customer',
+      customerSubView: 'custom_production',
+      eventSlug: null,
+      eventTab: 'register',
+      authTab: 'signin',
+    };
+  }
+  if (cleanPath.startsWith('/events/')) {
+    const parts = cleanPath.split('/').filter(Boolean);
+    const slug = parts[1] ?? null;
+    const sub = parts[2] ?? '';
+    const tab: 'register' | 'storefront' | 'info_results' =
+      sub === 'shop'
+        ? 'storefront'
+        : sub === 'results'
+        ? 'info_results'
+        : 'register';
+    return {
+      surface: 'customer',
+      customerSubView: slug ? 'event_detail' : 'directory',
+      eventSlug: slug,
+      eventTab: tab,
+      authTab: 'signin',
+    };
+  }
+
+  return {
+    surface: 'customer',
+    customerSubView: 'directory',
+    eventSlug: null,
+    eventTab: 'register',
+    authTab: 'signin',
+  };
+}
+
+function findEventBySlug(events: RaceEvent[], slug: string | null): RaceEvent | null {
+  if (!slug) return null;
+  const lower = slug.toLowerCase();
+  return (
+    events.find(
+      (e) => e.code.toLowerCase() === lower || e.id.toLowerCase() === lower
+    ) ?? null
+  );
+}
+
 export const App: React.FC = () => {
-  const [mockState, setMockState] = useState<PersistedMockState>(
-    loadInitialMockState
+  const [sys, setSys] = useState<PersistedSystemState>(loadSystemState);
+
+  const initialParsed = parseUrlRoute(
+    window.location.pathname,
+    window.location.search
   );
-  const [surface, setSurface] = useState<AppSurface>('dashboard');
-  const [currentUser, setCurrentUser] = useState<DemoUser | null>(
-    DEMO_USERS[0]
+  const initialMatchedEvent = findEventBySlug(
+    sys.events,
+    initialParsed.eventSlug
   );
+
+  const [surface, setSurface] = useState<RootSurface>(initialParsed.surface);
+  const [customerSubView, setCustomerSubView] = useState<CustomerSubView>(
+    initialParsed.eventSlug && !initialMatchedEvent
+      ? 'directory'
+      : initialParsed.customerSubView
+  );
+  const [selectedPublicEventId, setSelectedPublicEventId] = useState<
+    string | null
+  >(initialMatchedEvent?.id ?? null);
+  const [initialEventTab, setInitialEventTab] = useState<
+    'register' | 'storefront' | 'info_results'
+  >(initialParsed.eventTab);
+  const [authInitialTab, setAuthInitialTab] = useState<
+    'signin' | 'signup' | 'forgot'
+  >(initialParsed.authTab);
+
+  // Default first-time visitor is Guest (null), persisted across refreshes
+  const [currentUserId, setCurrentUserId] = useState<string | null>(
+    loadInitialSessionUserId
+  );
+  const [returnIntent, setReturnIntent] = useState<ReturnIntent | null>(null);
+
   const [activeOrgId, setActiveOrgId] = useState<string>('org-lanna');
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const [activeOrgSection, setActiveOrgSection] =
     useState<OrgSection>('org_overview');
   const [simulatedState, setSimulatedState] =
     useState<SimulatedUiState>('normal');
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showDemoTools, setShowDemoTools] = useState(false);
+  const [externalSocialScenario, setExternalSocialScenario] = useState<{
+    seq: number;
+    provider: 'google' | 'line';
+    scenario: 'new_no_email' | 'collision' | 'cancelled';
+  } | null>(null);
+
+  const pushUrl = (url: string, replace = false) => {
+    const currentFull = `${window.location.pathname}${window.location.search}`;
+    if (currentFull === url) return;
+    if (replace) {
+      window.history.replaceState({}, '', url);
+    } else {
+      window.history.pushState({}, '', url);
+    }
+  };
+
+  const applyRouteStateFromUrl = (pathname: string, search: string) => {
+    const parsed = parseUrlRoute(pathname, search);
+    const matchedEv = findEventBySlug(sys.events, parsed.eventSlug);
+    setSurface(parsed.surface);
+    setCustomerSubView(
+      parsed.eventSlug && !matchedEv ? 'directory' : parsed.customerSubView
+    );
+    setSelectedPublicEventId(matchedEv?.id ?? null);
+    setInitialEventTab(parsed.eventTab);
+    setAuthInitialTab(parsed.authTab);
+  };
+
+  useEffect(() => {
+    const onPopState = () => {
+      applyRouteStateFromUrl(window.location.pathname, window.location.search);
+      setShowProfileMenu(false);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sys.events]);
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(mockState));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sys));
     } catch {
-      // Ignore quota errors
+      // Ignore storage quota limits
     }
-  }, [mockState]);
+  }, [sys]);
+
+  useEffect(() => {
+    try {
+      if (currentUserId) {
+        window.localStorage.setItem(SESSION_USER_KEY, currentUserId);
+      } else {
+        window.localStorage.removeItem(SESSION_USER_KEY);
+      }
+    } catch {
+      // Ignore storage quota limits
+    }
+  }, [currentUserId]);
+
+  const currentUser =
+    sys.users.find((u) => u.id === currentUserId) ?? null;
+
+  // Sync activeOrgId when switching to an organizer user whose memberships don't include activeOrgId
+  useEffect(() => {
+    if (currentUser && currentUser.memberships.length > 0) {
+      const hasCurrent = currentUser.memberships.some(
+        (m) => m.organizationId === activeOrgId
+      );
+      if (!hasCurrent) {
+        const firstMem = currentUser.memberships[0];
+        setActiveOrgId(firstMem.organizationId);
+        if (firstMem.role === 'staff') {
+          const evId = firstMem.assignedEventIds?.[0] ?? null;
+          setActiveEventId(evId);
+          setActiveOrgSection(evId ? 'evt_checkin_bib' : 'org_overview');
+        } else {
+          setActiveEventId(null);
+          setActiveOrgSection('org_overview');
+        }
+      }
+    }
+  }, [currentUser, activeOrgId]);
+
+  // Production Route Guard: redirect unauthenticated visitors from protected routes to /login with ReturnIntent
+  useEffect(() => {
+    if (!currentUser) {
+      if (surface === 'organizer') {
+        setReturnIntent({
+          surface: 'organizer',
+          label: 'เข้าใช้งานระบบผู้จัดงาน (Organizer Dashboard)',
+        });
+        setAuthInitialTab('signin');
+        setSurface('auth');
+        pushUrl('/login', true);
+      } else if (surface === 'account_security') {
+        setReturnIntent({
+          surface: 'account_security',
+          label: 'จัดการบัญชีและความปลอดภัย',
+        });
+        setAuthInitialTab('signin');
+        setSurface('auth');
+        pushUrl('/login', true);
+      } else if (surface === 'customer' && customerSubView === 'my_orders') {
+        setReturnIntent({
+          surface: 'my_orders',
+          label: 'ดูบัตรวิ่งและคำสั่งซื้อของฉัน',
+        });
+        setAuthInitialTab('signin');
+        setSurface('auth');
+        pushUrl('/login', true);
+      }
+    }
+  }, [currentUser, surface, customerSubView]);
+
+  const navigateCustomer = (
+    view: CustomerSubView,
+    evId?: string | null,
+    tab?: 'register' | 'storefront' | 'info_results'
+  ) => {
+    setShowProfileMenu(false);
+    if (view === 'my_orders' && !currentUser) {
+      setReturnIntent({
+        surface: 'my_orders',
+        label: 'ดูบัตรวิ่งและคำสั่งซื้อของฉัน',
+      });
+      setAuthInitialTab('signin');
+      setSurface('auth');
+      pushUrl('/login');
+      return;
+    }
+
+    setSurface('customer');
+    setCustomerSubView(view);
+    const resolvedId = evId !== undefined ? evId : selectedPublicEventId;
+    if (evId !== undefined) setSelectedPublicEventId(evId);
+    const resolvedTab = tab ?? 'register';
+    if (tab) setInitialEventTab(tab);
+
+    if (view === 'directory') {
+      pushUrl('/');
+    } else if (view === 'custom_production') {
+      pushUrl('/custom-production');
+    } else if (view === 'my_orders') {
+      pushUrl('/my-orders');
+    } else if (view === 'event_detail' && resolvedId) {
+      const ev = sys.events.find((e) => e.id === resolvedId);
+      const codeSlug = (ev?.code ?? resolvedId).toLowerCase();
+      const suffix =
+        resolvedTab === 'storefront'
+          ? '/shop'
+          : resolvedTab === 'info_results'
+          ? '/results'
+          : '';
+      pushUrl(`/events/${codeSlug}${suffix}`);
+    }
+  };
+
+  const navigateLogin = (mode: 'signin' | 'signup' | 'forgot' = 'signin') => {
+    setShowProfileMenu(false);
+    setAuthInitialTab(mode);
+    setSurface('auth');
+    pushUrl(mode === 'signin' ? '/login' : `/login?mode=${mode}`);
+  };
+
+  const navigateAccountSecurity = () => {
+    setShowProfileMenu(false);
+    if (!currentUser) {
+      setReturnIntent({
+        surface: 'account_security',
+        label: 'จัดการบัญชีและความปลอดภัย / ขอเปิดองค์กรผู้จัดงาน',
+      });
+      navigateLogin('signin');
+      return;
+    }
+    setSurface('account_security');
+    pushUrl('/account/security');
+  };
+
+  const navigateOrganizer = (orgId?: string, evId?: string | null) => {
+    setShowProfileMenu(false);
+    if (orgId) {
+      setActiveOrgId(orgId);
+      setActiveEventId(evId ?? null);
+      setActiveOrgSection(evId ? 'evt_overview' : 'org_overview');
+    }
+    if (!currentUser) {
+      setReturnIntent({
+        surface: 'organizer',
+        label: 'เข้าใช้งานระบบผู้จัดงาน (Organizer Dashboard)',
+      });
+      navigateLogin('signin');
+      return;
+    }
+    setSurface('organizer');
+    pushUrl('/organizer');
+  };
+
+  const handleLogout = () => {
+    setCurrentUserId(null);
+    setShowProfileMenu(false);
+    setReturnIntent(null);
+    if (
+      surface === 'organizer' ||
+      surface === 'account_security' ||
+      (surface === 'customer' && customerSubView === 'my_orders')
+    ) {
+      setSurface('customer');
+      setCustomerSubView('directory');
+      pushUrl('/');
+    }
+  };
 
   const appendAudit = (
     orgId: string,
@@ -92,62 +487,408 @@ export const App: React.FC = () => {
     detailChange: string,
     eventId?: string
   ) => {
-    const actorName = currentUser?.fullNameTh ?? 'ผู้ใช้งานสาธิต';
-    const actorRole =
-      currentUser?.kind === 'organizer' ? 'ทีมผู้จัดงาน' : 'นักวิ่ง';
     const entry: AuditLogEntry = {
       id: `aud-${Date.now()}`,
       organizationId: orgId,
       eventId,
-      timestamp: '2026-11-17 08:35',
-      actorName,
-      actorRole,
+      timestamp: '2026-11-17 09:45',
+      actorName: currentUser?.fullNameTh ?? 'ผู้ใช้งานระบบจำลอง',
+      actorRole:
+        currentUser && currentUser.memberships.length > 0
+          ? 'ทีมผู้จัดงาน'
+          : 'ลูกค้า / นักวิ่ง',
       actionSummary,
       detailChange,
     };
-    setMockState((prev) => ({
+    setSys((prev) => ({
       ...prev,
       auditLogs: [entry, ...prev.auditLogs],
     }));
   };
 
-  const handleSelectDemoUser = (user: DemoUser, defaultOrgId?: string) => {
-    setCurrentUser(user);
+  const handleAuthenticated = (user: UserAccount, preferredOrgId?: string) => {
+    setCurrentUserId(user.id);
     setSimulatedState('normal');
-    if (user.kind === 'organizer') {
+    setShowProfileMenu(false);
+
+    // Honor validated internal ReturnIntent first (Section 16.1 & 16.2)
+    if (returnIntent) {
+      const intent = returnIntent;
+      setReturnIntent(null);
+      if (intent.surface === 'events' && intent.eventId) {
+        const ev = sys.events.find((e) => e.id === intent.eventId);
+        const slug = (ev?.code ?? intent.eventId).toLowerCase();
+        const tab = intent.eventTab ?? 'register';
+        const suffix =
+          tab === 'storefront'
+            ? '/shop'
+            : tab === 'info_results'
+            ? '/results'
+            : '';
+        setSelectedPublicEventId(intent.eventId);
+        setInitialEventTab(tab);
+        setCustomerSubView('event_detail');
+        setSurface('customer');
+        pushUrl(`/events/${slug}${suffix}`);
+        return;
+      }
+      if (intent.surface === 'my_orders') {
+        setCustomerSubView('my_orders');
+        setSurface('customer');
+        pushUrl('/my-orders');
+        return;
+      }
+      if (intent.surface === 'custom_production') {
+        setCustomerSubView('custom_production');
+        setSurface('customer');
+        pushUrl('/custom-production');
+        return;
+      }
+      if (intent.surface === 'account_security') {
+        setSurface('account_security');
+        pushUrl('/account/security');
+        return;
+      }
+      if (intent.surface === 'organizer') {
+        if (user.memberships.length > 0) {
+          const targetOrg =
+            preferredOrgId ?? user.memberships[0].organizationId;
+          setActiveOrgId(targetOrg);
+        }
+        setSurface('organizer');
+        pushUrl('/organizer');
+        return;
+      }
+    }
+
+    if (preferredOrgId || user.memberships.length > 0) {
       const targetOrg =
-        defaultOrgId ?? user.memberships[0]?.organizationId ?? 'org-lanna';
-      const membership = user.memberships.find(
-        (m) => m.organizationId === targetOrg
-      );
+        preferredOrgId ?? user.memberships[0]?.organizationId ?? 'org-lanna';
+      const mem = user.memberships.find((m) => m.organizationId === targetOrg);
       setActiveOrgId(targetOrg);
-      if (membership?.role === 'staff') {
-        const firstAssigned = membership.assignedEventIds?.[0] ?? null;
-        setActiveEventId(firstAssigned);
-        setActiveOrgSection(
-          firstAssigned ? 'evt_checkin_bib' : 'org_overview'
-        );
+      if (mem?.role === 'staff') {
+        const firstEv = mem.assignedEventIds?.[0] ?? null;
+        setActiveEventId(firstEv);
+        setActiveOrgSection(firstEv ? 'evt_checkin_bib' : 'org_overview');
       } else {
         setActiveEventId(null);
         setActiveOrgSection('org_overview');
       }
-      setSurface('dashboard');
+      setSurface('organizer');
+      pushUrl('/organizer');
     } else {
-      setSurface('public_events');
+      setSurface('customer');
+      setCustomerSubView('directory');
+      pushUrl('/');
     }
   };
 
-  const handleResetDemoData = () => {
+  const handleResetAllDemoData = () => {
     window.localStorage.removeItem(STORAGE_KEY);
-    setMockState({
-      events: INITIAL_EVENTS,
-      registrations: INITIAL_REGISTRATIONS,
-      auditLogs: INITIAL_AUDIT_LOGS,
-    });
+    window.localStorage.removeItem(SESSION_USER_KEY);
+    setSys(createDefaultState());
+    setCurrentUserId(null);
+    setActiveOrgId('org-lanna');
+    setActiveEventId(null);
     setSimulatedState('normal');
+    setShowDemoTools(false);
+    setShowProfileMenu(false);
+    setSurface('customer');
+    setCustomerSubView('directory');
+    pushUrl('/');
   };
 
-  const handleCreateDemoRegistration = (payload: {
+  /* ---- Auth & Account Security Handlers ---- */
+  const handleRegisterEmailUser = (payload: {
+    fullNameTh: string;
+    email: string;
+    marketingConsent: boolean;
+  }) => {
+    const exists = sys.users.some(
+      (u) =>
+        (u.contactEmail ?? '').toLowerCase() === payload.email.toLowerCase()
+    );
+    if (exists) {
+      return {
+        ok: false,
+        error:
+          'ไม่สามารถใช้ช่องทางนี้สร้างบัญชีซ้ำได้ กรุณาเข้าสู่ระบบด้วยบัญชีเดิมหรือกดลืมรหัสผ่าน',
+      };
+    }
+    const newUser: UserAccount = {
+      id: `usr-${Date.now()}`,
+      code: `USR-${sys.users.length + 910}`,
+      fullNameTh: payload.fullNameTh,
+      fullNameEn: payload.fullNameTh,
+      contactEmail: payload.email,
+      emailVerified: false, // Must verify email before race registration
+      hasPassword: true,
+      identities: [
+        {
+          id: `id-pw-${Date.now()}`,
+          provider: 'password',
+          providerSubject: payload.email.toLowerCase(),
+          providerEmail: payload.email.toLowerCase(),
+          linkedAt: '2026-11-17 09:45',
+        },
+      ],
+      sessions: [
+        {
+          id: `ses-${Date.now()}`,
+          deviceLabel: 'เบราว์เซอร์ปัจจุบัน (เพิ่งสมัครใหม่)',
+          locationHint: 'ไทย',
+          lastActiveAt: 'เมื่อสักครู่',
+          isCurrentDevice: true,
+        },
+      ],
+      memberships: [],
+      demoRoleSummary: 'สมาชิกใหม่สมัครด้วยอีเมล',
+      isDemoPreset: false,
+    };
+    setSys((prev) => ({ ...prev, users: [...prev.users, newUser] }));
+    return { ok: true, user: newUser };
+  };
+
+  const handleRegisterSocialUser = (payload: {
+    provider: 'google' | 'line';
+    fullNameTh: string;
+    email: string | null;
+    marketingConsent: boolean;
+  }): UserAccount => {
+    const newUser: UserAccount = {
+      id: `usr-soc-${Date.now()}`,
+      code: `USR-${sys.users.length + 920}`,
+      fullNameTh: payload.fullNameTh,
+      fullNameEn: payload.fullNameTh,
+      contactEmail: payload.email,
+      emailVerified: Boolean(payload.email),
+      hasPassword: false,
+      identities: [
+        {
+          id: `id-soc-${Date.now()}`,
+          provider: payload.provider,
+          providerSubject: `${payload.provider}-uid-${Date.now()}`,
+          providerEmail: payload.email ?? undefined,
+          linkedAt: '2026-11-17 09:45',
+        },
+      ],
+      sessions: [
+        {
+          id: `ses-soc-${Date.now()}`,
+          deviceLabel: `เข้าผ่าน ${payload.provider.toUpperCase()} (เครื่องปัจจุบัน)`,
+          locationHint: 'ไทย',
+          lastActiveAt: 'เมื่อสักครู่',
+          isCurrentDevice: true,
+        },
+      ],
+      memberships: [],
+      demoRoleSummary: `สมาชิกใหม่ผ่าน ${payload.provider.toUpperCase()}`,
+      isDemoPreset: false,
+    };
+    setSys((prev) => ({ ...prev, users: [...prev.users, newUser] }));
+    return newUser;
+  };
+
+  const handleVerifyContactEmail = (email: string) => {
+    if (!currentUser) return;
+    setSys((prev) => ({
+      ...prev,
+      users: prev.users.map((u) =>
+        u.id === currentUser.id
+          ? { ...u, contactEmail: email, emailVerified: true }
+          : u
+      ),
+    }));
+  };
+
+  const handleSetOrChangePassword = () => {
+    if (!currentUser) return;
+    setSys((prev) => ({
+      ...prev,
+      users: prev.users.map((u) => {
+        if (u.id !== currentUser.id) return u;
+        const hasPwIdentity = u.identities.some(
+          (i) => i.provider === 'password'
+        );
+        return {
+          ...u,
+          hasPassword: true,
+          identities: hasPwIdentity
+            ? u.identities
+            : [
+                ...u.identities,
+                {
+                  id: `id-pw-${Date.now()}`,
+                  provider: 'password',
+                  providerSubject: u.contactEmail ?? u.code,
+                  linkedAt: '2026-11-17 09:46',
+                },
+              ],
+        };
+      }),
+    }));
+  };
+
+  const handleLinkProvider = (provider: 'google' | 'line') => {
+    if (!currentUser) return;
+    setSys((prev) => ({
+      ...prev,
+      users: prev.users.map((u) =>
+        u.id === currentUser.id
+          ? {
+              ...u,
+              identities: [
+                ...u.identities,
+                {
+                  id: `id-${provider}-${Date.now()}`,
+                  provider,
+                  providerSubject: `${provider}-linked-${Date.now()}`,
+                  linkedAt: '2026-11-17 09:46',
+                },
+              ],
+            }
+          : u
+      ),
+    }));
+  };
+
+  const handleUnlinkProvider = (
+    provider: AuthProviderType
+  ): { ok: boolean; error?: string } => {
+    if (!currentUser) return { ok: false, error: 'ไม่พบบัญชีผู้ใช้' };
+    if (currentUser.identities.length <= 1) {
+      return {
+        ok: false,
+        error:
+          'ไม่อนุญาตให้ถอดช่องทางเข้าสู่ระบบช่องทางสุดท้าย กรุณาเพิ่มรหัสผ่านหรือเชื่อมช่องทางอื่นทดแทนก่อน',
+      };
+    }
+    setSys((prev) => ({
+      ...prev,
+      users: prev.users.map((u) =>
+        u.id === currentUser.id
+          ? {
+              ...u,
+              identities: u.identities.filter((i) => i.provider !== provider),
+            }
+          : u
+      ),
+    }));
+    return { ok: true };
+  };
+
+  const handleRevokeOtherSessions = () => {
+    if (!currentUser) return;
+    setSys((prev) => ({
+      ...prev,
+      users: prev.users.map((u) =>
+        u.id === currentUser.id
+          ? {
+              ...u,
+              sessions: u.sessions.filter((s) => s.isCurrentDevice),
+            }
+          : u
+      ),
+    }));
+  };
+
+  const handleAcceptTeamInvitation = (
+    code: string
+  ): { ok: boolean; message: string } => {
+    if (!currentUser) return { ok: false, message: 'กรุณาเข้าสู่ระบบก่อน' };
+    const inv = sys.invitations.find(
+      (i) => i.inviteCode.toUpperCase() === code.toUpperCase()
+    );
+    if (!inv) {
+      return { ok: false, message: 'ไม่พบรหัสคำเชิญนี้ในระบบ' };
+    }
+    if (inv.usedByUserId) {
+      return {
+        ok: false,
+        message: 'รหัสคำเชิญนี้ถูกใช้งานไปแล้ว (คำเชิญทีมจำกัดการใช้เพียงครั้งเดียว)',
+      };
+    }
+    const alreadyInOrg = currentUser.memberships.some(
+      (m) => m.organizationId === inv.organizationId
+    );
+    if (alreadyInOrg) {
+      return {
+        ok: false,
+        message: 'บัญชีของคุณเป็นสมาชิกขององค์กรนี้อยู่แล้ว',
+      };
+    }
+
+    const org = sys.organizations.find((o) => o.id === inv.organizationId);
+    setSys((prev) => ({
+      ...prev,
+      invitations: prev.invitations.map((i) =>
+        i.id === inv.id ? { ...i, usedByUserId: currentUser.code } : i
+      ),
+      users: prev.users.map((u) =>
+        u.id === currentUser.id
+          ? {
+              ...u,
+              memberships: [
+                ...u.memberships,
+                {
+                  organizationId: inv.organizationId,
+                  role: inv.role,
+                  assignedEventIds: inv.assignedEventIds,
+                },
+              ],
+            }
+          : u
+      ),
+    }));
+    const roleTh =
+      inv.role === 'owner'
+        ? 'เจ้าขององค์กร'
+        : inv.role === 'event_manager'
+        ? 'ผู้จัดการงานวิ่ง'
+        : inv.role === 'finance'
+        ? 'ฝ่ายการเงิน'
+        : 'เจ้าหน้าที่หน้างาน';
+    return {
+      ok: true,
+      message: `เข้าร่วมทีม ${org?.nameTh ?? inv.organizationId} ในบทบาท ${roleTh} สำเร็จ!`,
+    };
+  };
+
+  const handleApplyNewOrganizerOrg = (
+    orgNameTh: string,
+    province: string
+  ): Organization => {
+    const newOrg: Organization = {
+      id: `org-custom-${Date.now()}`,
+      code: `ORG-NEW-0${sys.organizations.length + 1}`,
+      nameTh: `${orgNameTh} (รอตรวจสอบผู้จัด)`,
+      nameEn: orgNameTh,
+      province,
+      verificationStatus: 'pending_review',
+      payoutBankSummary: 'รอยืนยันเอกสารผู้จัดและบัญชีธนาคารรับยอดนำส่ง',
+      payoutReady: false,
+      contactEmail: currentUser?.contactEmail ?? 'pending@demo.local',
+    };
+    setSys((prev) => ({
+      ...prev,
+      organizations: [...prev.organizations, newOrg],
+      users: prev.users.map((u) =>
+        u.id === currentUser?.id
+          ? {
+              ...u,
+              memberships: [
+                ...u.memberships,
+                { organizationId: newOrg.id, role: 'owner' },
+              ],
+            }
+          : u
+      ),
+    }));
+    return newOrg;
+  };
+
+  /* ---- Customer & Runner Operations ---- */
+  const handleCreateRegistrationAndAddon = (payload: {
     eventId: string;
     categoryId: string;
     buyerName: string;
@@ -156,45 +897,49 @@ export const App: React.FC = () => {
     shirtSize: 'XS' | 'S' | 'M' | 'L' | 'XL' | '2XL';
     marketingConsent: boolean;
     simulateImmediateWebhook: boolean;
-  }): RegistrationRecord => {
-    const ev = mockState.events.find((e) => e.id === payload.eventId)!;
+    addonProduct?: EventProduct | null;
+    addonSize?: string;
+  }) => {
+    const ev = sys.events.find((e) => e.id === payload.eventId)!;
     const cat = ev.categories.find((c) => c.id === payload.categoryId)!;
     const tier = getCurrentTier(cat);
     const quote = calculateFeeQuote(tier.priceSatang, ev.feeBearerPolicy);
 
-    const seq = mockState.registrations.length + 101;
+    const seq = sys.registrations.length + 101;
     const regCode = `REG-2611-${seq}`;
     const orderCode = `ORD-89${seq}`;
-    const tokenSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const tokenSuffix = Math.random()
+      .toString(36)
+      .substring(2, 8)
+      .toUpperCase();
 
-    const newRecord: RegistrationRecord = {
+    const newReg: RegistrationRecord = {
       id: `reg-dyn-${Date.now()}`,
       regCode,
       orderCode,
       eventId: ev.id,
       organizationId: ev.organizationId,
       categoryId: cat.id,
-      runnerUserId:
-        currentUser?.kind === 'runner' ? currentUser.id : 'usr-runner',
+      runnerUserId: currentUser?.id,
       buyerName: payload.buyerName,
       participantNameTh: payload.participantNameTh,
       participantNameEn: payload.participantNameEn,
-      email: currentUser?.email ?? 'runner.demo@runevent.local',
+      email: currentUser?.contactEmail ?? 'verified.runner@demo.local',
       phoneMasked: '081-•••-9900',
-      emergencyContact: 'ผู้ติดต่อฉุกเฉินสาธิต 089-•••-0011',
+      emergencyContact: 'ผู้ติดต่อฉุกเฉินจำลอง 089-•••-0011',
       shirtSize: payload.shirtSize,
       bibNumber: null,
       qrCheckInToken: `TKN-${cat.bibPrefix}${seq}-${tokenSuffix}`,
       acceptedRulesVersion: ev.rulesVersion,
       marketingConsent: payload.marketingConsent,
-      createdAt: '2026-11-17T08:35:00+07:00',
+      createdAt: '2026-11-17T09:45:00+07:00',
       paidAt: payload.simulateImmediateWebhook
-        ? '2026-11-17T08:35:05+07:00'
+        ? '2026-11-17T09:45:05+07:00'
         : null,
       refundedAt: null,
       reservationExpiresAt: payload.simulateImmediateWebhook
         ? null
-        : '2026-11-17T08:50:00+07:00',
+        : '2026-11-17T10:00:00+07:00',
       registrationStatus: payload.simulateImmediateWebhook
         ? 'confirmed'
         : 'pending_payment',
@@ -211,7 +956,39 @@ export const App: React.FC = () => {
       snapshotRefundedSatang: 0,
     };
 
-    setMockState((prev) => ({
+    let addonOrder: MerchOrderRecord | undefined;
+    if (payload.addonProduct) {
+      const mSeq = sys.merchOrders.length + 510;
+      addonOrder = {
+        id: `mord-dyn-${Date.now()}`,
+        merchOrderCode: `SHP-2611-${mSeq}`,
+        eventId: ev.id,
+        organizationId: ev.organizationId,
+        buyerUserId: currentUser?.id,
+        buyerName: payload.buyerName,
+        buyerEmail: currentUser?.contactEmail ?? 'ติดต่อผ่านบัญชีผู้ใช้',
+        productId: payload.addonProduct.id,
+        productNameTh: payload.addonProduct.nameTh,
+        sellerLabel: payload.addonProduct.sellerLabel,
+        variantSize: payload.addonSize ?? 'M',
+        quantity: 1,
+        deliveredQty: 0,
+        deliveryMethod: 'pickup_at_expo',
+        unitPriceSatang: payload.addonProduct.priceSatang,
+        shippingSatang: 0,
+        totalPaidSatang: payload.addonProduct.priceSatang,
+        paymentStatus: payload.simulateImmediateWebhook
+          ? 'succeeded'
+          : 'pending',
+        fulfillmentStatus: 'ready_or_shipped',
+        pickupToken: `PICK-SHP-${mSeq}`,
+        linkedRegistrationCode: regCode,
+        createdAt: '2026-11-17T09:45:05+07:00',
+      };
+    }
+
+    setSys((prev) => ({
+      ...prev,
       events: prev.events.map((item) =>
         item.id === ev.id
           ? {
@@ -221,41 +998,116 @@ export const App: React.FC = () => {
                   ? { ...st, reservedOrConfirmed: st.reservedOrConfirmed + 1 }
                   : st
               ),
+              products: payload.addonProduct
+                ? item.products.map((p) =>
+                    p.id === payload.addonProduct!.id
+                      ? { ...p, soldCount: p.soldCount + 1 }
+                      : p
+                  )
+                : item.products,
             }
           : item
       ),
-      registrations: [newRecord, ...prev.registrations],
-      auditLogs: [
-        {
-          id: `aud-${Date.now()}`,
-          organizationId: ev.organizationId,
-          eventId: ev.id,
-          timestamp: '2026-11-17 08:35',
-          actorName: payload.buyerName,
-          actorRole: 'นักวิ่ง (หน้ารับสมัครสาธารณะ)',
-          actionSummary: payload.simulateImmediateWebhook
-            ? `สมัครและรับผล Webhook ชำระเงินสำเร็จ (${regCode})`
-            : `สร้างรายการกันโควตารอชำระเงิน (${regCode})`,
-          detailChange: `${cat.code} · เสื้อ ${payload.shirtSize} · สุทธิ ฿${(
-            quote.runnerNetPaySatang / 100
-          ).toFixed(2)}`,
-        },
-        ...prev.auditLogs,
-      ],
+      registrations: [newReg, ...prev.registrations],
+      merchOrders: addonOrder
+        ? [addonOrder, ...prev.merchOrders]
+        : prev.merchOrders,
     }));
 
-    return newRecord;
+    appendAudit(
+      ev.organizationId,
+      `สมัครวิ่งรายการใหม่ (${regCode})${
+        addonOrder ? ` พร้อมซื้อสินค้าเพิ่ม (${addonOrder.merchOrderCode})` : ''
+      }`,
+      `${cat.code} · เสื้อ ${payload.shirtSize}`,
+      ev.id
+    );
+
+    return { reg: newReg, addonOrder };
+  };
+
+  const handleCreateStandaloneMerchOrder = (payload: {
+    eventId: string;
+    product: EventProduct;
+    variantSize: string;
+    quantity: number;
+    buyerName: string;
+    deliveryMethod: 'pickup_at_expo' | 'postal_shipping';
+    shippingAddress?: string;
+    linkedRegistrationCode?: string;
+  }): MerchOrderRecord => {
+    const ev = sys.events.find((e) => e.id === payload.eventId)!;
+    const mSeq = sys.merchOrders.length + 520;
+    const shipFee =
+      payload.deliveryMethod === 'postal_shipping'
+        ? payload.product.shippingFeeSatang
+        : 0;
+
+    const newOrder: MerchOrderRecord = {
+      id: `mord-${Date.now()}`,
+      merchOrderCode: `SHP-2611-${mSeq}`,
+      eventId: ev.id,
+      organizationId: ev.organizationId,
+      buyerUserId: currentUser?.id,
+      buyerName: payload.buyerName,
+      buyerEmail: currentUser?.contactEmail ?? 'บัญชี LINE (ไม่มีอีเมล)',
+      productId: payload.product.id,
+      productNameTh: payload.product.nameTh,
+      sellerLabel: payload.product.sellerLabel,
+      variantSize: payload.variantSize,
+      quantity: payload.quantity,
+      deliveredQty: 0,
+      deliveryMethod: payload.deliveryMethod,
+      shippingAddress: payload.shippingAddress,
+      unitPriceSatang: payload.product.priceSatang,
+      shippingSatang: shipFee,
+      totalPaidSatang: payload.product.priceSatang * payload.quantity + shipFee,
+      paymentStatus: 'succeeded',
+      fulfillmentStatus:
+        payload.deliveryMethod === 'pickup_at_expo'
+          ? 'ready_or_shipped'
+          : 'preparing',
+      pickupToken: `PICK-SHP-${mSeq}`,
+      linkedRegistrationCode: payload.linkedRegistrationCode,
+      createdAt: '2026-11-17T09:46:00+07:00',
+    };
+
+    setSys((prev) => ({
+      ...prev,
+      merchOrders: [newOrder, ...prev.merchOrders],
+      events: prev.events.map((e) =>
+        e.id === ev.id
+          ? {
+              ...e,
+              products: e.products.map((p) =>
+                p.id === payload.product.id
+                  ? { ...p, soldCount: p.soldCount + payload.quantity }
+                  : p
+              ),
+            }
+          : e
+      ),
+    }));
+
+    appendAudit(
+      ev.organizationId,
+      `คำสั่งซื้อสินค้าหน้าร้าน (${newOrder.merchOrderCode})`,
+      `${payload.product.nameTh} × ${payload.quantity} (ไม่เกิดใบสมัครวิ่ง)`,
+      ev.id
+    );
+
+    return newOrder;
   };
 
   const handleUpdateRunnerShirtSize = (
     regId: string,
     newSize: 'XS' | 'S' | 'M' | 'L' | 'XL' | '2XL'
   ) => {
-    const target = mockState.registrations.find((r) => r.id === regId);
+    const target = sys.registrations.find((r) => r.id === regId);
     if (!target || target.shirtSize === newSize) return;
     const oldSize = target.shirtSize;
 
-    setMockState((prev) => ({
+    setSys((prev) => ({
       ...prev,
       registrations: prev.registrations.map((r) =>
         r.id === regId ? { ...r, shirtSize: newSize } : r
@@ -289,43 +1141,82 @@ export const App: React.FC = () => {
 
     appendAudit(
       target.organizationId,
-      `ผู้สมัครแก้ไขขนาดเสื้อก่อนเส้นตาย (${target.regCode})`,
-      `ไซส์เสื้อ: ${oldSize} -> ${newSize}`,
+      `แก้ไขขนาดเสื้อตามสิทธิ์สมัคร (${target.regCode})`,
+      `${oldSize} -> ${newSize}`,
       target.eventId
     );
   };
 
-  const handleCreateDraftEvent = (
-    orgId: string,
-    titleTh: string,
-    province: string
-  ) => {
-    const num = mockState.events.length + 10;
+  const handleCreateClubProductionInquiry = (payload: {
+    requesterName: string;
+    requesterContact: string;
+    itemType: ProductionInquiry['itemType'];
+    estimatedQty: number;
+    targetDeliveryDate: string;
+  }): ProductionInquiry => {
+    const rfq: ProductionInquiry = {
+      id: `rfq-club-${Date.now()}`,
+      inquiryCode: `RFQ-CLB-${sys.productionInquiries.length + 11}`,
+      requesterName: payload.requesterName,
+      requesterContact: payload.requesterContact,
+      contextType: 'club_or_company',
+      itemType: payload.itemType,
+      serviceModel: 'produce_bulk',
+      packageEntitlementQty: 0,
+      addonStoreQty: 0,
+      organizerBufferQty: payload.estimatedQty,
+      existingStockDeductedQty: 0,
+      netQtyToProduce: payload.estimatedQty,
+      artworkVersion: 'รอส่งไฟล์แบบให้ทีมงานตรวจ',
+      targetDeliveryDate: payload.targetDeliveryDate,
+      quoteStatus: 'submitted',
+      productionStatus: 'awaiting_approval',
+      createdAt: '2026-11-17 09:47',
+    };
+    setSys((prev) => ({
+      ...prev,
+      productionInquiries: [rfq, ...prev.productionInquiries],
+    }));
+    return rfq;
+  };
+
+  /* ---- Organizer Operations ---- */
+  const handleCreateDraftEvent = (payload: {
+    orgId: string;
+    titleTh: string;
+    province: string;
+    eventDate: string;
+    requestProductionHelp: boolean;
+  }) => {
+    const num = sys.events.length + 10;
     const newEv: RaceEvent = {
-      id: `evt-draft-${Date.now()}`,
+      id: `evt-drf-${Date.now()}`,
       code: `EVT-DRF-27${num}`,
-      organizationId: orgId,
-      titleTh,
-      titleEn: 'New Draft Running Event',
-      province,
+      organizationId: payload.orgId,
+      titleTh: payload.titleTh,
+      titleEn: payload.titleTh,
+      tagline: 'งานวิ่งแบบร่างที่สร้างใหม่ รอกำหนดรายละเอียดและส่งตรวจเปิดขาย',
+      coverMotif: 'mountain',
+      province: payload.province,
       region: 'เหนือ',
-      venue: 'สถานที่จัดงานตัวอย่าง (รอกรอกรายละเอียด)',
-      eventDate: '2027-03-21',
+      venue: 'สถานที่จัดงาน (รอกำหนดรายละเอียด)',
+      eventDate: payload.eventDate,
       timezone: 'Asia/Bangkok',
       raceType: 'Road Race',
       status: 'draft',
-      statusNote: 'เพิ่งสร้างแบบร่างใหม่ — กรุณาตรวจ Checklist ความพร้อมก่อนส่งตรวจเผยแพร่',
+      statusNote:
+        'งานแบบร่างเพิ่งสร้างใหม่ — ตรวจ Checklist ความพร้อมด้านล่างก่อนส่งอนุมัติเปิดขาย',
       totalEventQuota: 100,
       feeBearerPolicy: 'runner_pays',
-      editDeadlineDate: '2027-03-05',
+      editDeadlineDate: payload.eventDate,
       rulesVersion: 'v0.1-draft',
-      kitPickupWindow: '20 มี.ค. 2027 เวลา 10:00–18:00 น.',
-      highlights: ['งานวิ่งแบบร่างที่สร้างจากเครื่องมือผู้จัดงานในต้นแบบ'],
+      kitPickupWindow: 'วันก่อนแข่งขัน เวลา 10:00–18:00 น.',
+      highlights: ['งานวิ่งที่สร้างใหม่ผ่านหน้าผู้จัดงาน'],
       categories: [
         {
           id: `cat-drf-${Date.now()}`,
-          code: '10K',
-          name: 'Standard 10.0 กม.',
+          code: '10 km',
+          name: 'Mini Marathon 10.0 กม.',
           distanceKm: 10,
           startTimeLocal: '05:30',
           cutoffHours: 2.5,
@@ -337,8 +1228,8 @@ export const App: React.FC = () => {
               id: `tier-drf-${Date.now()}`,
               label: 'Regular',
               priceSatang: 70000,
-              startsAt: '2027-01-01',
-              endsAt: '2027-03-10',
+              startsAt: '2026-12-01',
+              endsAt: payload.eventDate,
               isCurrent: true,
             },
           ],
@@ -352,30 +1243,61 @@ export const App: React.FC = () => {
         { size: 'XL', total: 10, reservedOrConfirmed: 0 },
         { size: '2XL', total: 0, reservedOrConfirmed: 0 },
       ],
+      products: [],
       readinessChecks: [
         {
-          id: 'chk-new-1',
-          label: 'กำหนดชื่อและจังหวัดเบื้องต้นแล้ว',
+          id: 'chk-n1',
+          label: 'ระบุชื่อจังหวัดและวันจัดงานเบื้องต้นแล้ว',
           passed: true,
-          fixTargetHint: 'ข้อมูลงาน',
+          fixTargetHint: 'ข้อมูลพื้นฐานครบแล้ว',
         },
         {
-          id: 'chk-new-2',
-          label: 'ยืนยันกติกาการแข่งขันและโควตาเสื้อ 2XL ก่อนเผยแพร่',
+          id: 'chk-n2',
+          label: 'ยืนยันโควตาเสื้อ 2XL และนโยบายการคืนเงินก่อนส่งตรวจ',
           passed: false,
-          fixTargetHint: 'กดปุ่มจำลองการเติมข้อมูลในหน้าภาพรวมงานเพื่อส่งตรวจ',
+          fixTargetHint: 'กดปุ่มเติมข้อมูลจำลองด้านล่างเพื่อส่งตรวจเปิดขาย',
         },
       ],
     };
 
-    setMockState((prev) => ({
+    const optRfq: ProductionInquiry | null = payload.requestProductionHelp
+      ? {
+          id: `rfq-ev-${Date.now()}`,
+          inquiryCode: `RFQ-2611-0${sys.productionInquiries.length + 2}`,
+          organizationId: payload.orgId,
+          requesterName: currentUser?.fullNameTh ?? 'ผู้จัดงาน',
+          requesterContact: 'ผ่านระบบผู้จัดงาน',
+          eventId: newEv.id,
+          contextType: 'event_organizer',
+          itemType: 'ชุดเสื้อพร้อมเหรียญครบวงจร',
+          serviceModel: 'produce_bulk',
+          packageEntitlementQty: 100,
+          addonStoreQty: 0,
+          organizerBufferQty: 10,
+          existingStockDeductedQty: 0,
+          netQtyToProduce: 110,
+          artworkVersion: 'ขอคำปรึกษาออกแบบจากทีม RunEvent',
+          targetDeliveryDate: payload.eventDate,
+          quoteStatus: 'submitted',
+          productionStatus: 'awaiting_approval',
+          createdAt: '2026-11-17 09:48',
+        }
+      : null;
+
+    setSys((prev) => ({
       ...prev,
       events: [newEv, ...prev.events],
+      productionInquiries: optRfq
+        ? [optRfq, ...prev.productionInquiries]
+        : prev.productionInquiries,
     }));
+
     appendAudit(
-      orgId,
-      `สร้างงานวิ่งแบบร่างใหม่ (${newEv.code})`,
-      `ชื่องาน: ${titleTh}`,
+      payload.orgId,
+      `สร้างงานแบบร่างใหม่ (${newEv.code})`,
+      payload.requestProductionHelp
+        ? `${payload.titleTh} + ส่งคำขอช่วยผลิตเสื้อ/เหรียญ`
+        : payload.titleTh,
       newEv.id
     );
     setActiveEventId(newEv.id);
@@ -383,42 +1305,44 @@ export const App: React.FC = () => {
   };
 
   const handleDuplicateEventWithoutPii = (sourceEventId: string) => {
-    const src = mockState.events.find((e) => e.id === sourceEventId);
+    const src = sys.events.find((e) => e.id === sourceEventId);
     if (!src) return;
-    const copyCode = `${src.code}-COPY`;
-    const duplicated: RaceEvent = {
+    const copyCode = `${src.code}-NEXT`;
+    const copyEv: RaceEvent = {
       ...src,
       id: `evt-copy-${Date.now()}`,
       code: copyCode,
-      titleTh: `${src.titleTh} (สำเนาตั้งต้นรอบปีถัดไป)`,
+      titleTh: `${src.titleTh} (สำเนาจัดครั้งถัดไป)`,
       status: 'draft',
       statusNote:
-        'คัดลอกเฉพาะโครงสร้างระยะ ราคา และสต็อกเสื้อตั้งต้น — ไม่คัดลอกรายชื่อหรือข้อมูลส่วนบุคคล (PII) ของผู้สมัครเดิม',
+        'ทำสำเนาเฉพาะโครงสร้างระยะ ราคา และตารางไซส์เสื้อตั้งต้น — ไม่คัดลอกข้อมูลส่วนบุคคลของผู้สมัครเดิม',
       shirtStocks: src.shirtStocks.map((s) => ({
         ...s,
         reservedOrConfirmed: 0,
       })),
+      products: src.products.map((p) => ({
+        ...p,
+        id: `prd-copy-${p.id}-${Date.now()}`,
+        soldCount: 0,
+      })),
       verifiedPhotoAlbums: undefined,
       officialResultsUrl: undefined,
     };
-    setMockState((prev) => ({
-      ...prev,
-      events: [duplicated, ...prev.events],
-    }));
+    setSys((prev) => ({ ...prev, events: [copyEv, ...prev.events] }));
     appendAudit(
       src.organizationId,
-      `ทำสำเนางานวิ่งโดยไม่คัดลอกข้อมูลผู้สมัครเดิม`,
-      `${src.code} -> ${copyCode} (0 ผู้สมัคร)`,
-      duplicated.id
+      `คัดลอกโครงสร้างงานโดยไม่คัดลอกข้อมูลผู้สมัครเดิม`,
+      `${src.code} -> ${copyCode}`,
+      copyEv.id
     );
-    setActiveEventId(duplicated.id);
+    setActiveEventId(copyEv.id);
     setActiveOrgSection('evt_overview');
   };
 
   const handleCompleteDraftReadinessAndSubmit = (eventId: string) => {
-    const target = mockState.events.find((e) => e.id === eventId);
+    const target = sys.events.find((e) => e.id === eventId);
     if (!target) return;
-    setMockState((prev) => ({
+    setSys((prev) => ({
       ...prev,
       events: prev.events.map((ev) =>
         ev.id === eventId
@@ -427,11 +1351,9 @@ export const App: React.FC = () => {
               status: 'in_review',
               rulesVersion: 'v1.0-submitted',
               statusNote:
-                'ผ่าน Checklist เบื้องต้นและส่งให้ผู้ดูแลแพลตฟอร์มตรวจอนุมัติเผยแพร่แล้ว',
-              shirtStocks: ev.shirtStocks.map((st) =>
-                st.size === '2XL' && st.total === 0
-                  ? { ...st, total: 10 }
-                  : st
+                'ส่งตรวจความพร้อมเรียบร้อยแล้ว รอผู้ดูแลแพลตฟอร์มอนุมัติเปิดรับสมัคร',
+              shirtStocks: ev.shirtStocks.map((s) =>
+                s.size === '2XL' && s.total === 0 ? { ...s, total: 10 } : s
               ),
               readinessChecks: ev.readinessChecks.map((c) => ({
                 ...c,
@@ -443,8 +1365,8 @@ export const App: React.FC = () => {
     }));
     appendAudit(
       target.organizationId,
-      `ส่งงาน ${target.code} เข้าสู่คิวตรวจอนุมัติเผยแพร่`,
-      'status: draft -> in_review',
+      `ส่งงาน ${target.code} เข้าคิวตรวจอนุมัติเผยแพร่`,
+      'draft -> in_review',
       target.id
     );
   };
@@ -453,10 +1375,9 @@ export const App: React.FC = () => {
     eventId: string,
     policy: FeeBearerPolicy
   ) => {
-    const target = mockState.events.find((e) => e.id === eventId);
+    const target = sys.events.find((e) => e.id === eventId);
     if (!target) return;
-    const prevPolicy = target.feeBearerPolicy;
-    setMockState((prev) => ({
+    setSys((prev) => ({
       ...prev,
       events: prev.events.map((ev) =>
         ev.id === eventId ? { ...ev, feeBearerPolicy: policy } : ev
@@ -464,9 +1385,120 @@ export const App: React.FC = () => {
     }));
     appendAudit(
       target.organizationId,
-      `เปลี่ยนนโยบายผู้รับภาระค่าบริการของงาน ${target.code}`,
-      `${prevPolicy} -> ${policy} (มีผลเฉพาะคำสั่งซื้อใหม่)`,
+      `เปลี่ยนนโยบายผู้รับภาระค่าบริการงาน ${target.code}`,
+      `เป็น ${policy} (เฉพาะใบสมัครใหม่)`,
       target.id
+    );
+  };
+
+  const handleAddEventProduct = (payload: {
+    eventId: string;
+    nameTh: string;
+    categoryLabel: 'เสื้อที่ระลึก' | 'เหรียญที่ระลึก' | 'อุปกรณ์เสริม';
+    saleMode: 'ready_stock' | 'preorder';
+    serviceModel: SellerServiceModel;
+    priceBaht: number;
+    stockOrCeiling: number;
+  }) => {
+    const target = sys.events.find((e) => e.id === payload.eventId);
+    if (!target) return;
+    const newPrd: EventProduct = {
+      id: `prd-${Date.now()}`,
+      sku: `SKU-${Date.now().toString().slice(-4)}`,
+      eventId: payload.eventId,
+      nameTh: payload.nameTh,
+      categoryLabel: payload.categoryLabel,
+      saleMode: payload.saleMode,
+      serviceModel: payload.serviceModel,
+      sellerLabel:
+        payload.serviceModel === 'runevent_full_service'
+          ? 'ดูแลพรีออเดอร์และจัดส่งโดย RunEvent (จำลอง)'
+          : 'ผู้ขาย: องค์กรผู้จัดงาน (จำลอง)',
+      fulfillmentOwnerLabel:
+        payload.serviceModel === 'runevent_full_service'
+          ? 'RunEvent ผลิตและจัดส่ง'
+          : 'ผู้จัดงานส่งมอบ',
+      priceSatang: payload.priceBaht * 100,
+      shippingFeeSatang: 5000,
+      stockOrCeiling: payload.stockOrCeiling,
+      soldCount: 0,
+      preorderMinQty: payload.saleMode === 'preorder' ? 20 : undefined,
+      preorderCloseDate:
+        payload.saleMode === 'preorder' ? target.editDeadlineDate : undefined,
+      estimatedDeliveryNote: 'ตามกำหนดนัดรับหน้างานหรือจัดส่งไปรษณีย์',
+      refundAndMinPolicyNote:
+        payload.saleMode === 'preorder'
+          ? 'หากยอดไม่ถึงขั้นต่ำจะยกเลิกและคืนเงินเต็มจำนวน'
+          : 'เปลี่ยนได้กรณีชำรุดจากการผลิต',
+      availableSizes:
+        payload.categoryLabel === 'เสื้อที่ระลึก'
+          ? ['S', 'M', 'L', 'XL']
+          : ['มาตรฐาน'],
+      description: 'รายการสินค้าที่ระลึกเฉพาะงาน ลูกค้าทั่วไปซื้อได้โดยไม่ต้องสมัครวิ่ง',
+    };
+    setSys((prev) => ({
+      ...prev,
+      events: prev.events.map((e) =>
+        e.id === payload.eventId
+          ? { ...e, products: [...e.products, newPrd] }
+          : e
+      ),
+    }));
+    appendAudit(
+      target.organizationId,
+      `เพิ่มสินค้าหน้าร้าน ${newPrd.nameTh}`,
+      `${newPrd.sku} · ฿${payload.priceBaht}`,
+      target.id
+    );
+  };
+
+  const handleCreateEventProductionQuote = (payload: {
+    orgId: string;
+    eventId?: string;
+    itemType: ProductionInquiry['itemType'];
+    packageQty: number;
+    addonQty: number;
+    bufferQty: number;
+    existingStockQty: number;
+    targetDeliveryDate: string;
+  }) => {
+    const net = Math.max(
+      0,
+      payload.packageQty +
+        payload.addonQty +
+        payload.bufferQty -
+        payload.existingStockQty
+    );
+    const rfq: ProductionInquiry = {
+      id: `rfq-${Date.now()}`,
+      inquiryCode: `RFQ-2611-0${sys.productionInquiries.length + 3}`,
+      organizationId: payload.orgId,
+      requesterName: currentUser?.fullNameTh ?? 'ผู้จัดงาน',
+      requesterContact: 'ผ่านระบบผู้จัดงาน',
+      eventId: payload.eventId,
+      contextType: 'event_organizer',
+      itemType: payload.itemType,
+      serviceModel: 'produce_bulk',
+      packageEntitlementQty: payload.packageQty,
+      addonStoreQty: payload.addonQty,
+      organizerBufferQty: payload.bufferQty,
+      existingStockDeductedQty: payload.existingStockQty,
+      netQtyToProduce: net,
+      artworkVersion: 'Artwork-v1.0 (รอสรุปใบเสนอราคา)',
+      targetDeliveryDate: payload.targetDeliveryDate,
+      quoteStatus: 'submitted',
+      productionStatus: 'awaiting_approval',
+      createdAt: '2026-11-17 09:50',
+    };
+    setSys((prev) => ({
+      ...prev,
+      productionInquiries: [rfq, ...prev.productionInquiries],
+    }));
+    appendAudit(
+      payload.orgId,
+      `ส่งคำขอใบเสนอราคาผลิต (${rfq.inquiryCode})`,
+      `ยอดสุทธิ ${net} ชิ้น`,
+      payload.eventId
     );
   };
 
@@ -475,27 +1507,24 @@ export const App: React.FC = () => {
     bibNumber: string
   ): { ok: boolean; error?: string } => {
     const trimmed = bibNumber.trim().toUpperCase();
-    if (!trimmed) {
-      return { ok: false, error: 'กรุณาระบุเลข BIB ก่อนบันทึก' };
-    }
-    const target = mockState.registrations.find((r) => r.id === regId);
-    if (!target) return { ok: false, error: 'ไม่พบใบสมัครที่ระบุ' };
+    if (!trimmed) return { ok: false, error: 'กรุณาระบุเลข BIB' };
+    const target = sys.registrations.find((r) => r.id === regId);
+    if (!target) return { ok: false, error: 'ไม่พบใบสมัคร' };
 
-    const duplicate = mockState.registrations.find(
+    const dup = sys.registrations.find(
       (r) =>
         r.eventId === target.eventId &&
         r.id !== regId &&
         (r.bibNumber ?? '').toUpperCase() === trimmed
     );
-    if (duplicate) {
+    if (dup) {
       return {
         ok: false,
-        error: `เลข BIB "${trimmed}" ซ้ำกับใบสมัคร ${duplicate.regCode} (${duplicate.participantNameTh}) ในงานเดียวกัน! ระบบไม่อนุญาตให้กำหนดเลขซ้ำ`,
+        error: `เลข BIB "${trimmed}" ซ้ำกับผู้สมัคร ${dup.participantNameTh} (${dup.regCode}) ในงานเดียวกัน!`,
       };
     }
 
-    const oldBib = target.bibNumber ?? 'ไม่มี';
-    setMockState((prev) => ({
+    setSys((prev) => ({
       ...prev,
       registrations: prev.registrations.map((r) =>
         r.id === regId ? { ...r, bibNumber: trimmed } : r
@@ -503,8 +1532,8 @@ export const App: React.FC = () => {
     }));
     appendAudit(
       target.organizationId,
-      `กำหนดเลข BIB ให้ใบสมัคร ${target.regCode}`,
-      `BIB: ${oldBib} -> ${trimmed}`,
+      `กำหนดเลข BIB ให้ ${target.regCode}`,
+      `BIB -> ${trimmed}`,
       target.eventId
     );
     return { ok: true };
@@ -513,21 +1542,19 @@ export const App: React.FC = () => {
   const handleConfirmKitPickup = (
     regId: string
   ): { ok: boolean; error?: string } => {
-    const target = mockState.registrations.find((r) => r.id === regId);
-    if (!target) return { ok: false, error: 'ไม่พบข้อมูลใบสมัคร' };
+    const target = sys.registrations.find((r) => r.id === regId);
+    if (!target) return { ok: false, error: 'ไม่พบใบสมัคร' };
     if (target.fulfillmentStatus === 'kit_picked_up') {
       return {
         ok: false,
-        error: `ป้องกันการรับอุปกรณ์ซ้ำ: ${target.participantNameTh} (BIB ${target.bibNumber}) รับอุปกรณ์ไปแล้วโดย ${target.fulfillmentUpdatedBy} เมื่อ ${target.fulfillmentUpdatedAt}`,
+        error: `ป้องกันการรับซ้ำ: ${target.participantNameTh} รับเสื้อและ BIB ไปแล้วโดย ${target.fulfillmentUpdatedBy} เมื่อ ${target.fulfillmentUpdatedAt}`,
       };
     }
     if (!target.bibNumber) {
-      return { ok: false, error: 'ต้องกำหนดเลข BIB ก่อนยืนยันส่งมอบอุปกรณ์' };
+      return { ok: false, error: 'กรุณากำหนดเลข BIB ก่อนส่งมอบอุปกรณ์' };
     }
-
     const actor = currentUser?.fullNameTh ?? 'เจ้าหน้าที่จุดรับอุปกรณ์';
-    const stamp = '2026-11-17 08:40';
-    setMockState((prev) => ({
+    setSys((prev) => ({
       ...prev,
       registrations: prev.registrations.map((r) =>
         r.id === regId
@@ -535,24 +1562,67 @@ export const App: React.FC = () => {
               ...r,
               fulfillmentStatus: 'kit_picked_up',
               fulfillmentUpdatedBy: actor,
-              fulfillmentUpdatedAt: stamp,
+              fulfillmentUpdatedAt: '2026-11-17 09:50',
             }
           : r
       ),
     }));
     appendAudit(
       target.organizationId,
-      `ยืนยันส่งมอบเสื้อ ${target.shirtSize} และ BIB ${target.bibNumber}`,
-      `${target.regCode}: ready -> kit_picked_up`,
+      `ส่งมอบเสื้อ ${target.shirtSize} และ BIB ${target.bibNumber}`,
+      `${target.regCode}: kit_picked_up`,
       target.eventId
     );
     return { ok: true };
   };
 
+  const handleConfirmMerchHandover = (
+    merchOrderId: string,
+    mode: 'partial_one' | 'complete_all'
+  ): { ok: boolean; message: string } => {
+    const ord = sys.merchOrders.find((m) => m.id === merchOrderId);
+    if (!ord) return { ok: false, message: 'ไม่พบคำสั่งซื้อสินค้า' };
+    if (ord.deliveredQty >= ord.quantity) {
+      return {
+        ok: false,
+        message: `ป้องกันการส่งมอบสินค้าซ้ำ: คำสั่งซื้อ ${ord.merchOrderCode} รับครบ ${ord.quantity} ชิ้นไปแล้ว`,
+      };
+    }
+    const nextDelivered =
+      mode === 'partial_one'
+        ? Math.min(ord.quantity, ord.deliveredQty + 1)
+        : ord.quantity;
+    const nextStatus =
+      nextDelivered >= ord.quantity ? 'completed' : 'partial_received';
+
+    setSys((prev) => ({
+      ...prev,
+      merchOrders: prev.merchOrders.map((m) =>
+        m.id === merchOrderId
+          ? {
+              ...m,
+              deliveredQty: nextDelivered,
+              fulfillmentStatus: nextStatus,
+            }
+          : m
+      ),
+    }));
+    appendAudit(
+      ord.organizationId,
+      `ส่งมอบสินค้าหน้าร้าน (${ord.merchOrderCode})`,
+      `รับแล้ว ${nextDelivered}/${ord.quantity} ชิ้น`,
+      ord.eventId
+    );
+    return {
+      ok: true,
+      message: `บันทึกส่งมอบสินค้า ${ord.merchOrderCode} สำเร็จ (${nextDelivered}/${ord.quantity} ชิ้น)`,
+    };
+  };
+
   const handleSimulateWebhookConfirm = (regId: string) => {
-    const target = mockState.registrations.find((r) => r.id === regId);
+    const target = sys.registrations.find((r) => r.id === regId);
     if (!target) return;
-    setMockState((prev) => ({
+    setSys((prev) => ({
       ...prev,
       registrations: prev.registrations.map((r) =>
         r.id === regId
@@ -561,7 +1631,7 @@ export const App: React.FC = () => {
               registrationStatus: 'confirmed',
               paymentStatus: 'succeeded',
               fulfillmentStatus: 'ready',
-              paidAt: '2026-11-17T08:42:00+07:00',
+              paidAt: '2026-11-17T09:50:00+07:00',
               reservationExpiresAt: null,
             }
           : r
@@ -569,8 +1639,8 @@ export const App: React.FC = () => {
     }));
     appendAudit(
       target.organizationId,
-      `รับผล Webhook ยืนยันการชำระเงินสำเร็จ (${target.orderCode})`,
-      `${target.regCode}: pending_payment -> confirmed`,
+      `ยืนยันผล Webhook รับเงินสำเร็จ (${target.orderCode})`,
+      `${target.regCode}: confirmed`,
       target.eventId
     );
   };
@@ -580,9 +1650,9 @@ export const App: React.FC = () => {
     decision: 'approve_succeed' | 'reject',
     note: string
   ) => {
-    const target = mockState.registrations.find((r) => r.id === regId);
+    const target = sys.registrations.find((r) => r.id === regId);
     if (!target) return;
-    setMockState((prev) => ({
+    setSys((prev) => ({
       ...prev,
       registrations: prev.registrations.map((r) =>
         r.id === regId
@@ -591,7 +1661,7 @@ export const App: React.FC = () => {
                 ...r,
                 registrationStatus: 'cancelled',
                 refundStatus: 'succeeded',
-                refundedAt: '2026-11-17T08:45:00+07:00',
+                refundedAt: '2026-11-17T09:52:00+07:00',
                 snapshotRefundedSatang: r.snapshotBaseSatang,
                 refundReason: `${r.refundReason ?? ''} (${note})`,
               }
@@ -606,179 +1676,601 @@ export const App: React.FC = () => {
     appendAudit(
       target.organizationId,
       decision === 'approve_succeed'
-        ? `อนุมัติและคืนเงินคำสั่งซื้อ ${target.orderCode} สำเร็จ`
-        : `ปฏิเสธคำขอคืนเงินคำสั่งซื้อ ${target.orderCode}`,
+        ? `อนุมัติคืนเงินคำสั่งซื้อ ${target.orderCode}`
+        : `ปฏิเสธคำขอคืนเงิน ${target.orderCode}`,
       note,
       target.eventId
     );
   };
 
+  const handleCreateSingleUseInvite = (
+    orgId: string,
+    role: OrgRole
+  ): TeamInvitation => {
+    const inv: TeamInvitation = {
+      id: `inv-${Date.now()}`,
+      inviteCode: `INV-${role.toUpperCase().slice(0, 4)}-${Math.floor(
+        100 + Math.random() * 899
+      )}`,
+      organizationId: orgId,
+      role,
+      expiresAt: '2026-12-15',
+    };
+    setSys((prev) => ({
+      ...prev,
+      invitations: [inv, ...prev.invitations],
+    }));
+    return inv;
+  };
+
+  const hasOrganizerAccess = Boolean(
+    currentUser && currentUser.memberships.length > 0
+  );
+  const pendingWebhookRegs = sys.registrations.filter(
+    (r) => r.registrationStatus === 'pending_payment'
+  );
+
   return (
     <div className="app-root">
-      {/* Global Top Navigation & Synthetic Provenance Strip */}
+      {/* PRODUCTION ROLE-BASED TOP HEADER */}
       <header className="global-topbar">
         <div className="brand-lockup">
-          <span className="brand-bib-mark" aria-hidden="true">
-            <IconBib size={18} />
-          </span>
-          <strong className="brand-name">RunEvent</strong>
-          <span className="synthetic-badge">
-            ต้นแบบจำลองฝั่งหน้าบ้าน · ข้อมูลสาธิตในเบราว์เซอร์ (ไม่ตัดเงินจริง)
-          </span>
+          <button
+            type="button"
+            className="brand-home-btn"
+            onClick={() => navigateCustomer('directory', null)}
+          >
+            <span className="brand-bib-mark" aria-hidden="true">
+              <IconBib size={17} />
+            </span>
+            <strong className="brand-name">RunEvent</strong>
+          </button>
         </div>
 
-        <nav className="global-surface-nav" aria-label="สลับส่วนหลักของระบบต้นแบบ">
+        <nav className="global-surface-nav" aria-label="เมนูหลักของแพลตฟอร์ม">
           <button
             type="button"
             className={`surface-switch-btn ${
-              surface === 'public_events' ? 'active' : ''
+              surface === 'customer' &&
+              (customerSubView === 'directory' ||
+                customerSubView === 'event_detail')
+                ? 'active'
+                : ''
             }`}
-            onClick={() => setSurface('public_events')}
+            onClick={() => navigateCustomer('directory', null)}
           >
             <IconFlag size={15} />
-            <span>หน้ารายการงานวิ่งสาธารณะ</span>
+            <span>ค้นหางานวิ่ง</span>
           </button>
 
           <button
             type="button"
             className={`surface-switch-btn ${
-              surface === 'dashboard' ? 'active' : ''
+              surface === 'customer' && customerSubView === 'custom_production'
+                ? 'active'
+                : ''
             }`}
-            onClick={() => {
-              if (!currentUser || currentUser.kind !== 'organizer') {
-                handleSelectDemoUser(DEMO_USERS[0], 'org-lanna');
-              } else {
-                setSurface('dashboard');
-              }
-            }}
+            onClick={() => navigateCustomer('custom_production')}
           >
-            <IconBuilding size={15} />
-            <span>Organizer Dashboard</span>
+            <IconShirt size={15} />
+            <span>สั่งผลิตเสื้อ/เหรียญ</span>
           </button>
 
           <button
             type="button"
             className={`surface-switch-btn ${
-              surface === 'login' ? 'active' : ''
+              surface === 'customer' && customerSubView === 'my_orders'
+                ? 'active'
+                : ''
             }`}
-            onClick={() => setSurface('login')}
+            onClick={() => navigateCustomer('my_orders')}
           >
-            <IconLock size={15} />
-            <span>
-              {currentUser
-                ? `สลับบัญชี (${currentUser.fullNameTh.split(' ')[0]})`
-                : 'เข้าสู่ระบบ / สลับบทบาท'}
-            </span>
+            <IconBag size={15} />
+            <span>บัตรวิ่ง & คำสั่งซื้อ</span>
           </button>
+
+          {/* VISIBLE ONLY WHEN LOGGED IN AS AN ORGANIZER MEMBER */}
+          {hasOrganizerAccess && (
+            <button
+              type="button"
+              className={`surface-switch-btn ${
+                surface === 'organizer' ? 'active' : ''
+              }`}
+              onClick={() => navigateOrganizer()}
+            >
+              <IconBuilding size={15} />
+              <span>ระบบผู้จัดงาน</span>
+            </button>
+          )}
         </nav>
 
-        <div className="prototype-inspector-controls">
-          {surface === 'dashboard' && (
+        <div className="topbar-user-actions">
+          {!currentUser ? (
             <>
-              <label htmlFor="sim-state-select" className="sr-only">
-                จำลองสถานะหน้าจอ UX
-              </label>
-              <select
-                id="sim-state-select"
-                className="inspector-select"
-                value={simulatedState}
-                onChange={(e) =>
-                  setSimulatedState(e.target.value as SimulatedUiState)
-                }
-                aria-label="ทดสอบสถานะหน้าจอพิเศษ"
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => navigateLogin('signup')}
               >
-                <option value="normal">สถานะหน้าจอ: ปกติ</option>
-                <option value="loading">ทดสอบ: กำลังโหลด (Skeleton)</option>
-                <option value="partial_error">
-                  ทดสอบ: โหลดผิดพลาดบางส่วน
-                </option>
-                <option value="permission_denied">
-                  ทดสอบ: ไม่มีสิทธิ์เข้าถึง
-                </option>
-              </select>
+                <span>สมัครสมาชิก</span>
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => navigateLogin('signin')}
+              >
+                <IconLock size={14} />
+                <span>เข้าสู่ระบบ</span>
+              </button>
             </>
+          ) : (
+            <div className="profile-menu-wrap">
+              <button
+                type="button"
+                className={`btn-account-pill ${
+                  showProfileMenu || surface === 'account_security'
+                    ? 'active'
+                    : ''
+                }`}
+                aria-expanded={showProfileMenu}
+                onClick={() => setShowProfileMenu((v) => !v)}
+              >
+                {hasOrganizerAccess ? (
+                  <IconShield size={15} />
+                ) : (
+                  <IconUsers size={15} />
+                )}
+                <span>{currentUser.fullNameTh}</span>
+              </button>
+
+              {showProfileMenu && (
+                <div
+                  className="profile-dropdown"
+                  role="menu"
+                  aria-label="เมนูบัญชีผู้ใช้งาน"
+                >
+                  <div className="profile-dropdown-head">
+                    <strong>{currentUser.fullNameTh}</strong>
+                    <div className="muted-inline">
+                      {currentUser.contactEmail ??
+                        'เข้าใช้งานผ่าน LINE (ยังไม่ได้ผูกอีเมล)'}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="profile-menu-item"
+                    onClick={() => navigateCustomer('my_orders')}
+                  >
+                    <IconBag size={15} />
+                    <span>บัตรวิ่ง & คำสั่งซื้อของฉัน</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="profile-menu-item"
+                    onClick={navigateAccountSecurity}
+                  >
+                    <IconShield size={15} />
+                    <span>บัญชีและความปลอดภัย</span>
+                  </button>
+
+                  {hasOrganizerAccess ? (
+                    <div className="profile-org-section">
+                      <span className="muted-inline">องค์กรผู้จัดที่คุณสังกัด:</span>
+                      {currentUser.memberships.map((m) => {
+                        const org = sys.organizations.find(
+                          (o) => o.id === m.organizationId
+                        );
+                        return (
+                          <button
+                            key={m.organizationId}
+                            type="button"
+                            className="profile-menu-item"
+                            onClick={() => navigateOrganizer(m.organizationId)}
+                          >
+                            <IconBuilding size={15} />
+                            <span>{org?.nameTh ?? m.organizationId}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="profile-menu-item"
+                      onClick={navigateAccountSecurity}
+                    >
+                      <IconBuilding size={15} />
+                      <span>ร่วมเป็นผู้จัดงาน / กรอกรหัสคำเชิญ</span>
+                    </button>
+                  )}
+
+                  <div className="profile-menu-divider" />
+
+                  <button
+                    type="button"
+                    className="profile-menu-item profile-logout-btn"
+                    onClick={handleLogout}
+                  >
+                    <IconLock size={15} />
+                    <span>ออกจากระบบ</span>
+                  </button>
+                </div>
+              )}
+            </div>
           )}
-          <button
-            type="button"
-            className="btn-reset-demo"
-            onClick={handleResetDemoData}
-            title="รีเซ็ตข้อมูลสาธิตใน localStorage กลับเป็นค่าเริ่มต้น"
-          >
-            <IconSwitch size={14} />
-            <span>รีเซ็ตข้อมูลสาธิต</span>
-          </button>
         </div>
       </header>
 
-      {/* Surface Router */}
-      {surface === 'public_events' && (
-        <PublicEventsView
-          events={mockState.events}
-          organizations={DEMO_ORGANIZATIONS}
-          registrations={mockState.registrations}
+      {/* ACTIVE SURFACE */}
+      {surface === 'customer' && (
+        <CustomerPortalView
+          subView={customerSubView}
+          selectedEventId={selectedPublicEventId}
+          initialEventTab={initialEventTab}
+          events={sys.events}
+          organizations={sys.organizations}
+          registrations={sys.registrations}
+          merchOrders={sys.merchOrders}
+          productionInquiries={sys.productionInquiries}
           currentUser={currentUser}
-          onRequireRunnerLogin={() => setSurface('login')}
-          onOpenOrganizerDashboard={(orgId, evId) => {
-            setActiveOrgId(orgId);
-            setActiveEventId(evId ?? null);
-            setActiveOrgSection(evId ? 'evt_overview' : 'org_overview');
-            setSurface('dashboard');
+          onNavigate={navigateCustomer}
+          onRequireLoginWithIntent={(intent) => {
+            setReturnIntent(intent);
+            navigateLogin('signin');
           }}
-          onCreateDemoRegistration={handleCreateDemoRegistration}
-          onUpdateRunnerShirtSize={handleUpdateRunnerShirtSize}
-        />
-      )}
-
-      {surface === 'login' && (
-        <LoginView
-          users={DEMO_USERS}
-          organizations={DEMO_ORGANIZATIONS}
-          currentUser={currentUser}
-          onSelectDemoUser={handleSelectDemoUser}
-          onLogout={() => setCurrentUser(null)}
-        />
-      )}
-
-      {surface === 'dashboard' && currentUser?.kind === 'organizer' && (
-        <OrganizerDashboardView
-          currentUser={currentUser}
-          organizations={DEMO_ORGANIZATIONS}
-          activeOrgId={activeOrgId}
-          activeEventId={activeEventId}
-          activeSection={activeOrgSection}
-          events={mockState.events}
-          registrations={mockState.registrations}
-          payouts={INITIAL_PAYOUTS}
-          auditLogs={mockState.auditLogs}
-          simulatedState={simulatedState}
-          onClearSimulatedState={() => setSimulatedState('normal')}
-          onSelectOrg={(orgId) => {
-            setActiveOrgId(orgId);
-            setActiveEventId(null);
-            setActiveOrgSection('org_overview');
-          }}
-          onSelectEvent={(evId, targetSec) => {
-            setActiveEventId(evId);
-            if (targetSec) {
-              setActiveOrgSection(targetSec);
-            } else if (!evId) {
-              setActiveOrgSection('org_overview');
-            }
-          }}
-          onSelectSection={setActiveOrgSection}
-          onCreateDraftEvent={handleCreateDraftEvent}
-          onDuplicateEventWithoutPii={handleDuplicateEventWithoutPii}
-          onCompleteDraftReadinessAndSubmit={
-            handleCompleteDraftReadinessAndSubmit
+          onOpenAccountSecurity={navigateAccountSecurity}
+          onOpenOrganizerDashboard={(orgId, evId) =>
+            navigateOrganizer(orgId, evId)
           }
-          onUpdateFeeBearerPolicy={handleUpdateFeeBearerPolicy}
-          onAssignBibNumber={handleAssignBibNumber}
-          onConfirmKitPickup={handleConfirmKitPickup}
-          onSimulateWebhookConfirm={handleSimulateWebhookConfirm}
-          onResolveRefundRequest={handleResolveRefundRequest}
-          onOpenPublicPreview={() => setSurface('public_events')}
+          onCreateRegistrationAndOptionalAddon={
+            handleCreateRegistrationAndAddon
+          }
+          onCreateStandaloneMerchOrder={handleCreateStandaloneMerchOrder}
+          onUpdateRunnerShirtSize={handleUpdateRunnerShirtSize}
+          onCompletePendingPayment={handleSimulateWebhookConfirm}
+          onCreateClubProductionInquiry={handleCreateClubProductionInquiry}
         />
       )}
+
+      {surface === 'auth' && (
+        <AuthScreen
+          users={sys.users}
+          currentUser={currentUser}
+          returnIntent={returnIntent}
+          initialTab={authInitialTab}
+          externalSocialScenario={externalSocialScenario}
+          onAuthenticated={handleAuthenticated}
+          onRegisterEmailUser={handleRegisterEmailUser}
+          onRegisterSocialUser={handleRegisterSocialUser}
+          onLogout={handleLogout}
+        />
+      )}
+
+      {surface === 'account_security' && currentUser && (
+        <AccountSecurityView
+          user={currentUser}
+          organizations={sys.organizations}
+          invitations={sys.invitations}
+          onVerifyContactEmail={handleVerifyContactEmail}
+          onSetOrChangePassword={handleSetOrChangePassword}
+          onLinkProvider={handleLinkProvider}
+          onUnlinkProvider={handleUnlinkProvider}
+          onRevokeOtherSessions={handleRevokeOtherSessions}
+          onAcceptTeamInvitation={handleAcceptTeamInvitation}
+          onApplyNewOrganizerOrg={handleApplyNewOrganizerOrg}
+          onEnterOrganizerOrg={(orgId) => navigateOrganizer(orgId, null)}
+        />
+      )}
+
+      {surface === 'organizer' &&
+        currentUser &&
+        (hasOrganizerAccess ? (
+          <OrganizerDashboardView
+            currentUser={currentUser}
+            organizations={sys.organizations}
+            invitations={sys.invitations}
+            activeOrgId={activeOrgId}
+            activeEventId={activeEventId}
+            activeSection={activeOrgSection}
+            events={sys.events}
+            registrations={sys.registrations}
+            merchOrders={sys.merchOrders}
+            productionInquiries={sys.productionInquiries}
+            payouts={INITIAL_PAYOUTS}
+            auditLogs={sys.auditLogs}
+            simulatedState={simulatedState}
+            onClearSimulatedState={() => setSimulatedState('normal')}
+            onSelectOrg={(orgId) => {
+              setActiveOrgId(orgId);
+              setActiveEventId(null);
+              setActiveOrgSection('org_overview');
+            }}
+            onSelectEvent={(evId, targetSec) => {
+              setActiveEventId(evId);
+              if (targetSec) {
+                setActiveOrgSection(targetSec);
+              } else if (!evId) {
+                setActiveOrgSection('org_overview');
+              }
+            }}
+            onSelectSection={setActiveOrgSection}
+            onCreateDraftEvent={handleCreateDraftEvent}
+            onDuplicateEventWithoutPii={handleDuplicateEventWithoutPii}
+            onCompleteDraftReadinessAndSubmit={
+              handleCompleteDraftReadinessAndSubmit
+            }
+            onUpdateFeeBearerPolicy={handleUpdateFeeBearerPolicy}
+            onAddEventProduct={handleAddEventProduct}
+            onCreateEventProductionQuote={handleCreateEventProductionQuote}
+            onAssignBibNumber={handleAssignBibNumber}
+            onConfirmKitPickup={handleConfirmKitPickup}
+            onConfirmMerchHandover={handleConfirmMerchHandover}
+            onResolveRefundRequest={handleResolveRefundRequest}
+            onCreateSingleUseInvite={handleCreateSingleUseInvite}
+            onOpenPublicPreview={(evId) => {
+              if (evId) {
+                navigateCustomer('event_detail', evId, 'register');
+              } else {
+                navigateCustomer('directory', null);
+              }
+            }}
+          />
+        ) : (
+          <main className="customer-container">
+            <div className="empty-state-box">
+              <div className="cta-inline-row" style={{ marginBottom: '0.45rem' }}>
+                <span className="status-pill badge-danger">
+                  <IconAlert size={14} />
+                  <span>ไม่มีสิทธิ์เข้าถึง (403 Forbidden)</span>
+                </span>
+              </div>
+              <h1>บัญชีนี้ยังไม่ได้สังกัดองค์กรผู้จัดงานวิ่ง</h1>
+              <p>
+                ระบบผู้จัดงานจำกัดเฉพาะสมาชิกที่ได้รับสิทธิ์ในองค์กรผู้จัด (
+                <code>OrganizationMembership</code>) เท่านั้น
+                หากคุณได้รับรหัสคำเชิญเข้าทีม หรือต้องการยื่นขอเปิดองค์กรผู้จัดงานใหม่
+                สามารถดำเนินการต่อได้ที่หน้าบัญชีและความปลอดภัย
+              </p>
+              <div className="cta-inline-row">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={navigateAccountSecurity}
+                >
+                  <IconBuilding size={15} />
+                  <span>ขอเปิดองค์กรผู้จัดใหม่ / กรอกรหัสคำเชิญ</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => navigateCustomer('directory', null)}
+                >
+                  <span>กลับหน้าค้นหางานวิ่ง</span>
+                </button>
+              </div>
+            </div>
+          </main>
+        ))}
+
+      {/* Production Minimal Footer with Organizer Onboarding Link + Honest Prototype Notice */}
+      <footer className="minimal-footer">
+        <div className="footer-links-group">
+          <span>
+            <strong>RunEvent</strong> · แพลตฟอร์มงานวิ่งและร้านค้าที่ระลึกประจำงาน
+          </span>
+          <button
+            type="button"
+            className="footer-text-link"
+            onClick={() => {
+              if (hasOrganizerAccess) {
+                navigateOrganizer();
+              } else {
+                navigateAccountSecurity();
+              }
+            }}
+          >
+            สำหรับผู้จัดงาน / เปิดรับสมัครงานวิ่งกับเรา
+          </button>
+        </div>
+        <span className="muted-inline">
+          โหมดต้นแบบฝั่งหน้าบ้าน (SPA + localStorage) · ข้อมูลสาธิต · ไม่มีการตัดเงินจริง
+        </span>
+      </footer>
+
+      {/* COLLAPSIBLE FLOATING DEV / DEMO SWITCHER BAR (SEPARATED FROM PRODUCTION UI) */}
+      <aside
+        className="dev-demo-dock"
+        aria-label="แถบเครื่องมือสำหรับผู้พัฒนาและสลับบัญชีสาธิต"
+      >
+        {showDemoTools && (
+          <div className="dev-demo-drawer">
+            <div className="dev-drawer-head">
+              <div>
+                <strong>Dev / Demo Tools</strong>
+                <div className="muted-inline">
+                  แยกออกจากเมนูเว็บจริงเพื่อทดสอบทุกบทบาทได้ทันที
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-ghost-sm"
+                onClick={() => setShowDemoTools(false)}
+              >
+                พับเก็บ
+              </button>
+            </div>
+
+            <div className="dev-drawer-section">
+              <div className="dev-section-label">
+                สลับสถานะผู้ใช้ทดสอบ (ตรวจการแสดง/ซ่อนเมนูผู้จัดงาน)
+              </div>
+              <button
+                type="button"
+                className={`dev-persona-btn ${!currentUser ? 'active' : ''}`}
+                onClick={() => {
+                  handleLogout();
+                  setShowDemoTools(false);
+                }}
+              >
+                <span>ผู้เยี่ยมชมทั่วไป (Guest · ยังไม่ Login)</span>
+                <span className="mono-code">Guest</span>
+              </button>
+
+              {sys.users
+                .filter((u) => u.isDemoPreset)
+                .map((u) => {
+                  const isCur = currentUser?.id === u.id;
+                  const isOrg = u.memberships.length > 0;
+                  return (
+                    <button
+                      key={u.id}
+                      type="button"
+                      className={`dev-persona-btn ${isCur ? 'active' : ''}`}
+                      onClick={() => {
+                        handleAuthenticated(
+                          u,
+                          u.memberships[0]?.organizationId
+                        );
+                        setShowDemoTools(false);
+                      }}
+                    >
+                      <div>
+                        <strong>{u.fullNameTh}</strong>
+                        <div className="muted-inline">
+                          {isOrg
+                            ? `ทีมผู้จัด (${u.memberships.length} องค์กร) · เห็นเมนูผู้จัด`
+                            : 'ลูกค้า/นักวิ่งทั่วไป · ไม่เห็นเมนูผู้จัด'}
+                        </div>
+                      </div>
+                      <IconArrowRight size={14} />
+                    </button>
+                  );
+                })}
+            </div>
+
+            <div className="dev-drawer-section">
+              <div className="dev-section-label">
+                จำลองเคสพิเศษหน้า Login (ตามแผนข้อ 16)
+              </div>
+              <div className="cta-inline-row">
+                <button
+                  type="button"
+                  className="btn-ghost-sm"
+                  onClick={() => {
+                    navigateLogin('signin');
+                    setExternalSocialScenario((prev) => ({
+                      seq: (prev?.seq ?? 0) + 1,
+                      provider: 'line',
+                      scenario: 'new_no_email',
+                    }));
+                    setShowDemoTools(false);
+                  }}
+                >
+                  LINE ไม่มีอีเมล
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost-sm"
+                  onClick={() => {
+                    navigateLogin('signin');
+                    setExternalSocialScenario((prev) => ({
+                      seq: (prev?.seq ?? 0) + 1,
+                      provider: 'google',
+                      scenario: 'collision',
+                    }));
+                    setShowDemoTools(false);
+                  }}
+                >
+                  อีเมลชนบัญชีเดิม
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost-sm"
+                  onClick={() => {
+                    navigateLogin('signin');
+                    setExternalSocialScenario((prev) => ({
+                      seq: (prev?.seq ?? 0) + 1,
+                      provider: 'line',
+                      scenario: 'cancelled',
+                    }));
+                    setShowDemoTools(false);
+                  }}
+                >
+                  ยกเลิกที่ Provider
+                </button>
+              </div>
+            </div>
+
+            {pendingWebhookRegs.length > 0 && (
+              <div className="dev-drawer-section">
+                <div className="dev-section-label">
+                  จำลองสัญญาณ Webhook ชำระเงิน ({pendingWebhookRegs.length})
+                </div>
+                {pendingWebhookRegs.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    className="dev-persona-btn"
+                    onClick={() => handleSimulateWebhookConfirm(r.id)}
+                  >
+                    <span>
+                      ยืนยันรับเงิน {r.regCode} ({r.participantNameTh})
+                    </span>
+                    <IconCheckCircle size={14} />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="dev-drawer-section">
+              <label htmlFor="dev-sim-ui" className="dev-section-label">
+                จำลองสถานะหน้าจอ Organizer UX:
+              </label>
+              <select
+                id="dev-sim-ui"
+                value={simulatedState}
+                onChange={(e) => {
+                  setSimulatedState(e.target.value as SimulatedUiState);
+                  if (hasOrganizerAccess) {
+                    navigateOrganizer();
+                  }
+                }}
+              >
+                <option value="normal">ปกติ (Normal)</option>
+                <option value="loading">กำลังโหลด (Skeleton)</option>
+                <option value="partial_error">โหลดผิดพลาดบางส่วน</option>
+                <option value="permission_denied">ไม่มีสิทธิ์เข้าถึง</option>
+              </select>
+            </div>
+
+            <button
+              type="button"
+              className="btn-secondary btn-full"
+              onClick={handleResetAllDemoData}
+            >
+              <IconSwitch size={14} />
+              <span>รีเซ็ตข้อมูลจำลองเริ่มต้นทั้งหมด</span>
+            </button>
+          </div>
+        )}
+
+        <button
+          type="button"
+          className="dev-dock-pill"
+          aria-expanded={showDemoTools}
+          onClick={() => setShowDemoTools((v) => !v)}
+        >
+          <IconSliders size={15} />
+          <span>
+            Dev / Demo ·{' '}
+            {currentUser
+              ? currentUser.fullNameTh.split(' ')[0]
+              : 'Guest'}
+          </span>
+        </button>
+      </aside>
     </div>
   );
 };

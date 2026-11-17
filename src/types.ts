@@ -98,7 +98,12 @@ export interface TeamInvitation {
 }
 
 export interface ReturnIntent {
-  surface: 'events' | 'my_orders' | 'custom_production' | 'organizer';
+  surface:
+    | 'events'
+    | 'my_orders'
+    | 'custom_production'
+    | 'organizer'
+    | 'account_security';
   eventId?: string | null;
   eventTab?: 'register' | 'storefront' | 'info_results';
   label: string;

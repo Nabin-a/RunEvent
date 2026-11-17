@@ -275,98 +275,157 @@ export const EventCoverArtwork: React.FC<{
       {motif === 'mountain' && (
         <>
           <rect width="400" height="165" fill="var(--cover-mountain-bg)" />
-          <circle cx="326" cy="44" r="20" fill="var(--cover-sun)" />
+          <circle cx="326" cy="46" r="17" fill="var(--cover-sun)" />
           <path
-            d="M0 140 L92 66 L172 120 L258 46 L354 114 L400 88 L400 165 L0 165 Z"
+            d="M0 132 L92 58 L172 108 L258 42 L354 104 L400 82 L400 165 L0 165 Z"
             fill="var(--cover-mountain-mid)"
           />
           <path
-            d="M0 165 Q140 124 250 146 T400 120 L400 165 Z"
+            d="M0 165 Q140 112 250 132 T400 108 L400 165 Z"
             fill="var(--cover-mountain-fg)"
           />
           <path
-            d="M48 160 Q168 128 336 138"
+            className="cover-route-line"
+            d="M44 134 Q172 104 348 118"
             stroke="var(--cover-route)"
-            strokeWidth="2.2"
+            strokeWidth="2.4"
             strokeDasharray="6 5"
             fill="none"
           />
+          <circle
+            cx="44"
+            cy="134"
+            r="4"
+            fill="var(--bg-surface)"
+            stroke="var(--cover-route)"
+            strokeWidth="2"
+          />
+          <circle cx="348" cy="118" r="4.2" fill="var(--cover-route)" />
         </>
       )}
       {motif === 'coast' && (
         <>
           <rect width="400" height="165" fill="var(--cover-coast-bg)" />
-          <circle cx="298" cy="58" r="25" fill="var(--cover-sun)" />
+          <circle cx="304" cy="52" r="20" fill="var(--cover-sun)" />
           <path
-            d="M0 110 Q100 96 200 110 T400 106 L400 165 L0 165 Z"
+            d="M0 102 Q100 88 200 102 T400 96 L400 165 L0 165 Z"
             fill="var(--cover-coast-mid)"
           />
           <path
-            d="M0 136 Q120 122 240 138 T400 130 L400 165 L0 165 Z"
+            d="M0 126 Q120 112 240 128 T400 118 L400 165 L0 165 Z"
             fill="var(--cover-coast-fg)"
           />
           <path
-            d="M32 150 Q170 126 362 142"
+            className="cover-route-line"
+            d="M38 134 Q178 110 356 124"
             stroke="var(--cover-route)"
-            strokeWidth="2.2"
+            strokeWidth="2.4"
             strokeDasharray="6 5"
             fill="none"
           />
+          <circle
+            cx="38"
+            cy="134"
+            r="4"
+            fill="var(--bg-surface)"
+            stroke="var(--cover-route)"
+            strokeWidth="2"
+          />
+          <circle cx="356" cy="124" r="4.2" fill="var(--cover-route)" />
         </>
       )}
       {motif === 'heritage' && (
         <>
           <rect width="400" height="165" fill="var(--cover-heritage-bg)" />
           <path
-            d="M38 136 V86 H96 V136 M124 136 V72 L162 50 L200 72 V136 M228 136 V82 H302 V136 M326 136 V92 H370 V136"
+            d="M38 122 V76 H96 V122 M124 122 V64 L162 42 L200 64 V122 M228 122 V72 H302 V122 M326 122 V82 H370 V122"
             stroke="var(--cover-heritage-line)"
             strokeWidth="1.8"
             fill="none"
           />
-          <rect y="136" width="400" height="29" fill="var(--cover-heritage-fg)" />
+          <rect y="122" width="400" height="43" fill="var(--cover-heritage-fg)" />
           <path
-            d="M24 150 H376"
+            className="cover-route-line"
+            d="M34 136 H366"
             stroke="var(--cover-route)"
-            strokeWidth="2.2"
+            strokeWidth="2.4"
             strokeDasharray="6 5"
+            fill="none"
           />
+          <circle
+            cx="34"
+            cy="136"
+            r="4"
+            fill="var(--bg-surface)"
+            stroke="var(--cover-route)"
+            strokeWidth="2"
+          />
+          <circle cx="366" cy="136" r="4.2" fill="var(--cover-route)" />
         </>
       )}
       {motif === 'river' && (
         <>
           <rect width="400" height="165" fill="var(--cover-river-bg)" />
-          <circle cx="84" cy="42" r="14" fill="var(--cover-sun)" />
+          <circle cx="88" cy="44" r="14" fill="var(--cover-sun)" />
           <path
-            d="M0 114 C110 90, 230 140, 400 102 L400 165 L0 165 Z"
+            d="M0 112 C110 88, 230 136, 400 98 L400 165 L0 165 Z"
             fill="var(--cover-river-mid)"
           />
           <path
-            d="M40 108 Q120 74 200 108 Q280 74 360 108"
+            className="cover-route-line"
+            d="M42 108 Q122 76 202 108 Q282 76 358 108"
             stroke="var(--cover-route)"
-            strokeWidth="2"
+            strokeWidth="2.4"
+            strokeDasharray="6 5"
             fill="none"
           />
+          <circle
+            cx="42"
+            cy="108"
+            r="4"
+            fill="var(--bg-surface)"
+            stroke="var(--cover-route)"
+            strokeWidth="2"
+          />
+          <circle cx="358" cy="108" r="4.2" fill="var(--cover-route)" />
         </>
       )}
       {motif === 'trail' && (
         <>
           <rect width="400" height="165" fill="var(--cover-trail-bg)" />
           <path
-            d="M0 92 Q95 52 190 85 T400 70"
+            d="M0 84 Q95 48 190 78 T400 64"
             stroke="var(--cover-trail-line)"
             strokeWidth="1.5"
             fill="none"
           />
           <path
-            d="M0 120 Q115 80 220 112 T400 96"
+            d="M0 110 Q115 72 220 104 T400 88"
             stroke="var(--cover-trail-line)"
             strokeWidth="1.5"
             fill="none"
           />
           <path
-            d="M0 144 Q130 110 255 136 T400 120 L400 165 L0 165 Z"
+            d="M0 136 Q130 104 255 128 T400 112 L400 165 L0 165 Z"
             fill="var(--cover-trail-fg)"
           />
+          <path
+            className="cover-route-line"
+            d="M40 132 Q156 96 262 122 T358 106"
+            stroke="var(--cover-route)"
+            strokeWidth="2.4"
+            strokeDasharray="6 5"
+            fill="none"
+          />
+          <circle
+            cx="40"
+            cy="132"
+            r="4"
+            fill="var(--bg-surface)"
+            stroke="var(--cover-route)"
+            strokeWidth="2"
+          />
+          <circle cx="358" cy="106" r="4.2" fill="var(--cover-route)" />
         </>
       )}
     </svg>
