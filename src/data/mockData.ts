@@ -47,7 +47,49 @@ export const DEMO_ORGANIZATIONS: Organization[] = [
   },
 ];
 
+export const PLATFORM_OWNER_USER: UserAccount = {
+  id: 'usr-platform-owner',
+  code: 'USR-001',
+  fullNameTh: 'อคิราห์ รัตนโชติ',
+  fullNameEn: 'Akira Rattanachot',
+  contactEmail: 'akira.admin@demo.runevent.local',
+  emailVerified: true,
+  hasPassword: true,
+  demoPasswordHint: 'platform2026',
+  identities: [
+    {
+      id: 'id-001-pw',
+      provider: 'password',
+      providerSubject: 'akira.admin@demo.runevent.local',
+      providerEmail: 'akira.admin@demo.runevent.local',
+      linkedAt: '2026-08-01 09:00',
+    },
+    {
+      id: 'id-001-gg',
+      provider: 'google',
+      providerSubject: 'google-sub-platform-001',
+      providerEmail: 'akira.admin@demo.runevent.local',
+      linkedAt: '2026-08-01 09:05',
+    },
+  ],
+  sessions: [
+    {
+      id: 'ses-001-1',
+      deviceLabel: 'Chrome บน Windows (อุปกรณ์ปัจจุบัน · Platform HQ)',
+      locationHint: 'กรุงเทพฯ, ไทย',
+      lastActiveAt: 'เมื่อสักครู่',
+      isCurrentDevice: true,
+    },
+  ],
+  memberships: [],
+  isPlatformAdmin: true,
+  demoRoleSummary:
+    'Platform Owner (ผู้ดูแลแพลตฟอร์มสูงสุด) — อนุมัติผู้จัด/บัญชีรับเงิน อนุมัติเผยแพร่งานวิ่ง จัดการรอบโอน เงินคืน ใบเสนอราคาผลิต และสิทธิ์ทั้งระบบ',
+  isDemoPreset: true,
+};
+
 export const INITIAL_USERS: UserAccount[] = [
+  PLATFORM_OWNER_USER,
   {
     id: 'usr-runner',
     code: 'USR-901',
@@ -309,6 +351,31 @@ export const INITIAL_INVITATIONS: TeamInvitation[] = [
   },
 ];
 
+export const DEMO_CUSTOM_FIELDS = [
+  {
+    id: 'cf_medical',
+    label: 'โรคประจำตัว / ประวัติแพ้ยา',
+    type: 'text' as const,
+    required: false,
+    isSensitive: true,
+  },
+  {
+    id: 'cf_club',
+    label: 'ชื่อชมรมวิ่ง (ถ้ามี)',
+    type: 'text' as const,
+    required: false,
+    isSensitive: false,
+  },
+  {
+    id: 'cf_blood',
+    label: 'กรุ๊ปเลือด',
+    type: 'select' as const,
+    required: true,
+    options: ['A', 'B', 'AB', 'O'],
+    isSensitive: true,
+  },
+];
+
 export const INITIAL_EVENTS: RaceEvent[] = [
   {
     id: 'evt-doisuthep-2026',
@@ -481,6 +548,7 @@ export const INITIAL_EVENTS: RaceEvent[] = [
           'เหรียญที่ระลึกสำหรับผู้ติดตามและนักสะสม แยกจากเหรียญ Finisher ซึ่งมอบเฉพาะผู้วิ่งเข้าเส้นชัยตามกติกา',
       },
     ],
+    customFields: DEMO_CUSTOM_FIELDS,
     readinessChecks: [
       {
         id: 'chk-1',
@@ -606,6 +674,7 @@ export const INITIAL_EVENTS: RaceEvent[] = [
         description: 'เสื้อกล้ามผ้าระบายอากาศแห้งไว สั่งซื้อแยกได้ไม่ต้องสมัครแข่ง',
       },
     ],
+    customFields: DEMO_CUSTOM_FIELDS,
     readinessChecks: [
       {
         id: 'chk-pk-1',
@@ -692,6 +761,7 @@ export const INITIAL_EVENTS: RaceEvent[] = [
         description: 'เสื้อคอตตอนที่ระลึกลายกำแพงเมืองเก่าเชียงใหม่ สต็อกสุดท้าย',
       },
     ],
+    customFields: DEMO_CUSTOM_FIELDS,
     readinessChecks: [
       {
         id: 'chk-om-1',
@@ -985,6 +1055,7 @@ function buildReg(params: {
   refundReason?: string;
   refundedSatangOverride?: number;
   marketingConsent?: boolean;
+  customAnswers?: Record<string, string | boolean>;
 }): RegistrationRecord {
   const quote = calculateFeeQuote(params.baseSatang, params.policy);
   return {
@@ -1025,6 +1096,7 @@ function buildReg(params: {
     snapshotRefundedSatang:
       params.refundedSatangOverride ??
       (params.refundStatus === 'succeeded' ? quote.baseSatang : 0),
+    customAnswers: params.customAnswers,
   };
 }
 
@@ -1055,6 +1127,11 @@ export const INITIAL_REGISTRATIONS: RegistrationRecord[] = [
     refundStatus: 'none',
     fulfillmentStatus: 'ready',
     marketingConsent: true,
+    customAnswers: {
+      cf_medical: 'แพ้ยาแอสไพริน',
+      cf_club: 'Chiang Mai Morning Miles',
+      cf_blood: 'O',
+    },
   }),
   buildReg({
     id: 'reg-02',
@@ -1082,6 +1159,11 @@ export const INITIAL_REGISTRATIONS: RegistrationRecord[] = [
     fulfillmentStatus: 'kit_picked_up',
     fulfillmentUpdatedBy: 'ณัฐพล ศรีวิชัย',
     fulfillmentUpdatedAt: '2026-11-16 15:10',
+    customAnswers: {
+      cf_medical: 'ไม่มี',
+      cf_club: 'Lanna Road Runners',
+      cf_blood: 'B',
+    },
   }),
   buildReg({
     id: 'reg-03',
@@ -1364,7 +1446,28 @@ export const INITIAL_PRODUCTION_INQUIRIES: ProductionInquiry[] = [
     targetDeliveryDate: '2026-12-08',
     quoteStatus: 'quoted_demo',
     productionStatus: 'awaiting_approval',
+    quotedTotalSatang: 5365000,
+    adminNote: 'เสนอราคาผ้าไมโครโพลีเอสเตอร์ระบายอากาศ ฿290/ตัว รอยืนยันตัวอย่างผ้าจริง',
     createdAt: '2026-11-14 11:00',
+  },
+  {
+    id: 'pinq-02',
+    inquiryCode: 'RFQ-CLB-11',
+    requesterName: 'ชมรมวิ่งเช้าสวนลุมฯ (ตัวอย่าง)',
+    requesterContact: 'club-contact@example.local',
+    contextType: 'club_or_company',
+    itemType: 'ชุดเสื้อพร้อมเหรียญครบวงจร',
+    serviceModel: 'full_preorder_fulfillment',
+    packageEntitlementQty: 0,
+    addonStoreQty: 150,
+    organizerBufferQty: 0,
+    existingStockDeductedQty: 0,
+    netQtyToProduce: 150,
+    artworkVersion: 'Club-Logo-v1.0 (รอทีมงานประเมินราคา)',
+    targetDeliveryDate: '2027-01-20',
+    quoteStatus: 'submitted',
+    productionStatus: 'awaiting_approval',
+    createdAt: '2026-11-16 14:20',
   },
 ];
 
@@ -1463,30 +1566,5 @@ export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
     actorRole: 'เจ้าขององค์กร',
     actionSummary: 'กำหนดนโยบายผู้จัดรับภาระค่าบริการ (Organizer Absorbs)',
     detailChange: 'นักวิ่งจ่ายตามราคาป้าย หักค่าบริการจากยอดนำส่งผู้จัด',
-  },
-];
-
-export const DEMO_CUSTOM_FIELDS = [
-  {
-    id: 'cf_medical',
-    label: 'โรคประจำตัว / ประวัติแพ้ยา',
-    type: 'text' as const,
-    required: false,
-    isSensitive: true, // ซ่อนจากเจ้าหน้าที่จุดรับอุปกรณ์
-  },
-  {
-    id: 'cf_club',
-    label: 'ชื่อชมรมวิ่ง (ถ้ามี)',
-    type: 'text' as const,
-    required: false,
-    isSensitive: false,
-  },
-  {
-    id: 'cf_blood',
-    label: 'กรุ๊ปเลือด',
-    type: 'select' as const,
-    required: true,
-    options: ['A', 'B', 'AB', 'O'],
-    isSensitive: true,
   },
 ];

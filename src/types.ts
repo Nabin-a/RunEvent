@@ -13,7 +13,7 @@ export type RegistrationStatus =
   | 'cancelled'
   | 'expired';
 
-export type CustomFieldType = 'text' | 'select' | 'checbox'
+export type CustomFieldType = 'text' | 'select' | 'checkbox'
 
 export type PaymentStatus = 'pending' | 'succeeded' | 'failed' | 'expired';
 
@@ -84,6 +84,7 @@ export interface UserAccount {
   identities: LinkedAuthIdentity[];
   sessions: DeviceSession[];
   memberships: OrganizationMembership[];
+  isPlatformAdmin?: boolean;
   demoRoleSummary: string;
   isDemoPreset: boolean;
 }
@@ -105,6 +106,7 @@ export interface ReturnIntent {
   | 'my_orders'
   | 'custom_production'
   | 'organizer'
+  | 'platform_admin'
   | 'account_security';
   eventId?: string | null;
   eventTab?: 'register' | 'storefront' | 'info_results';
@@ -117,7 +119,7 @@ export interface Organization {
   nameTh: string;
   nameEn: string;
   province: string;
-  verificationStatus: 'verified' | 'pending_review';
+  verificationStatus: 'verified' | 'pending_review' | 'suspended';
   payoutBankSummary: string;
   payoutReady: boolean;
   contactEmail: string;
@@ -266,6 +268,8 @@ export interface ProductionInquiry {
   | 'ready_to_produce'
   | 'in_production'
   | 'qc_passed';
+  quotedTotalSatang?: number;
+  adminNote?: string;
   createdAt: string;
 }
 
@@ -294,6 +298,7 @@ export interface RaceEvent {
   categories: RaceCategory[];
   shirtStocks: ShirtStock[];
   products: EventProduct[];
+  customFields?: CustomRegistrationField[];
   readinessChecks: ReadinessCheck[];
   officialResultsUrl?: string;
   verifiedPhotoAlbums?: {
@@ -341,6 +346,7 @@ export interface RegistrationRecord {
   snapshotOrganizerFeeSatang: number;
   snapshotTotalChargedSatang: number;
   snapshotRefundedSatang: number;
+  customAnswers?: Record<string, string | boolean>;
 }
 
 export interface PayoutBatch {

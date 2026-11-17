@@ -136,6 +136,9 @@ interface OrganizerDashboardViewProps {
   ) => void;
   onCreateSingleUseInvite: (orgId: string, role: OrgRole) => TeamInvitation;
   onOpenPublicPreview: (eventId?: string) => void;
+  onUpdateEventTotalQuota: (eventId: string, newTotalQuota: number) => void;
+  onUpdateCategoryQuota: (eventId: string, categoryId: string, newCategoryQuota: number) => void;
+  onUpdateCustomFields: (eventId: string, nextFields: CustomRegistrationField[]) => void;
 }
 
 const roleNameMap: Record<OrgRole, string> = {
@@ -151,47 +154,81 @@ export function QuotaEditorRow({
   registeredCount,
   reservedCount,
   canEdit,
+  compact = false,
   onSaveQuota,
 }: {
   categoryName: string;
   maxQuota: number;
   registeredCount: number;
   reservedCount: number;
-  canEdit: boolean; // true สำหรับ owner และ event_manager
+  canEdit: boolean;
+  compact?: boolean;
   onSaveQuota: (nextQuota: number) => void;
 }) {
   const [draftQuota, setDraftQuota] = useState<number>(maxQuota);
+  const [savedNotice, setSavedNotice] = useState(false);
+
+  React.useEffect(() => {
+    setDraftQuota(maxQuota);
+    setSavedNotice(false);
+  }, [maxQuota]);
+
   const check = validateQuotaUpdate(draftQuota, registeredCount, reservedCount);
 
   return (
-    <div className="quota-editor-row">
-      <div>
-        <strong>{categoryName}</strong>
-        <span> (ใช้โควตาแล้ว {registeredCount + reservedCount} / {maxQuota})</span>
-      </div>
-      {canEdit && (
+    <div className={`quota-editor-row ${compact ? 'quota-editor-compact' : ''}`}>
+      {!compact && (
         <div>
-          <input
-            type="number"
-            min={check.minAllowed}
-            value={draftQuota}
-            onChange={(e) => setDraftQuota(Number(e.target.value))}
-          />
-          <button
-            type="button"
-            disabled={!check.valid || draftQuota === maxQuota}
-            onClick={() => onSaveQuota(draftQuota)}
-          >
-            บันทึกโควตา
-          </button>
+          <strong>{categoryName}</strong>{' '}
+          <span className="muted-inline mono-num">
+            (ใช้โควตาแล้ว {registeredCount + reservedCount} / {maxQuota} คน)
+          </span>
+        </div>
+      )}
+      {canEdit ? (
+        <div className="quota-editor-controls">
+          <div className="cta-inline-row">
+            <input
+              type="number"
+              className="mono-num quota-number-input"
+              aria-label={`จำนวนรับสมัครของ ${categoryName}`}
+              min={check.minAllowed}
+              value={draftQuota}
+              onChange={(e) => {
+                setSavedNotice(false);
+                setDraftQuota(Number(e.target.value));
+              }}
+            />
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={!check.valid || draftQuota === maxQuota}
+              onClick={() => {
+                onSaveQuota(draftQuota);
+                setSavedNotice(true);
+              }}
+            >
+              บันทึกโควตา
+            </button>
+          </div>
+          <div className="muted-inline mono-num">
+            ใช้แล้ว {registeredCount + reservedCount} / {maxQuota} คน
+            {savedNotice && (
+              <span className="text-forest"> · บันทึกแล้ว</span>
+            )}
+          </div>
           {!check.valid && <p className="field-error">{check.message}</p>}
         </div>
+      ) : (
+        <span className="mono-num">
+          {registeredCount + reservedCount} / <strong>{maxQuota}</strong> คน
+        </span>
       )}
     </div>
   );
 }
 
-// 2) ส่วนเพิ่ม/ลบ Field กรอกข้อมูลเพิ่มเติมสำหรับผู้จัด
+// ส่วนเพิ่ม/ลบ Field กรอกข้อมูลเพิ่มเติมสำหรับผู้จัด
 export function CustomFieldsManager({
   fields = [],
   canEdit,
@@ -209,6 +246,15 @@ export function CustomFieldsManager({
 
   const handleAddField = () => {
     if (!label.trim()) return;
+    if (
+      type === 'select' &&
+      optionsText
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean).length === 0
+    ) {
+      return;
+    }
     const newField: CustomRegistrationField = {
       id: `cf_${Date.now()}`,
       label: label.trim(),
@@ -217,7 +263,10 @@ export function CustomFieldsManager({
       isSensitive,
       options:
         type === 'select'
-          ? optionsText.split(',').map((s) => s.trim()).filter(Boolean)
+          ? optionsText
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean)
           : undefined,
     };
     onChange([...fields, newField]);
@@ -227,68 +276,149 @@ export function CustomFieldsManager({
     setIsSensitive(false);
   };
 
+  const fieldTypeLabel: Record<CustomFieldType, string> = {
+    text: 'ข้อความสั้น',
+    select: 'ตัวเลือก Dropdown',
+    checkbox: 'ช่องติ๊กยืนยัน',
+  };
+
   return (
-    <section className="custom-fields-panel">
-      <h4>คำถามเพิ่มเติมในใบสมัคร</h4>
-      <ul>
-        {fields.map((f) => (
-          <li key={f.id}>
-            <span>
-              {f.label} ({f.type}) {f.required ? '*จำเป็น' : ''}{' '}
-              {f.isSensitive ? '[ข้อมูลอ่อนไหว/PII]' : ''}
-            </span>
-            {canEdit && (
-              <button
-                type="button"
-                onClick={() => onChange(fields.filter((item) => item.id !== f.id))}
-              >
-                ลบ
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
+    <section className="clean-panel">
+      <div className="section-title-bar">
+        <div>
+          <h2>คำถามเพิ่มเติมในใบสมัคร (Custom Fields · {fields.length} ข้อ)</h2>
+          <p className="muted-block">
+            เพิ่มช่องกรอกข้อมูลเฉพาะของงานนี้ (เช่น กรุ๊ปเลือด โรคประจำตัว ชมรมวิ่ง)
+            ระบบจะนำไปแสดงในขั้นตอนที่ 2 ของหน้าสมัครวิ่งทันที และซ่อนฟิลด์อ่อนไหวจากจุดเช็กอินหน้างานได้
+          </p>
+        </div>
+      </div>
+
+      {fields.length === 0 ? (
+        <div className="subtle-empty-note">
+          งานนี้ยังไม่มีคำถามเพิ่มเติม (ใช้เฉพาะข้อมูลผู้สมัครมาตรฐาน)
+        </div>
+      ) : (
+        <div className="custom-fields-list">
+          {fields.map((f) => (
+            <div key={f.id} className="custom-field-item">
+              <div className="custom-field-meta">
+                <strong>{f.label}</strong>
+                <span className="mono-code">{fieldTypeLabel[f.type]}</span>
+                {f.options && f.options.length > 0 && (
+                  <span className="muted-inline">
+                    ตัวเลือก: {f.options.join(', ')}
+                  </span>
+                )}
+                {f.required && (
+                  <span className="status-pill badge-amber">
+                    <IconAlert size={13} />
+                    <span>บังคับกรอก</span>
+                  </span>
+                )}
+                {f.isSensitive && (
+                  <span className="status-pill badge-navy">
+                    <IconLock size={13} />
+                    <span>ซ่อนจากจุดรับอุปกรณ์ (PII)</span>
+                  </span>
+                )}
+              </div>
+              {canEdit && (
+                <button
+                  type="button"
+                  className="btn-ghost-sm"
+                  onClick={() =>
+                    onChange(fields.filter((item) => item.id !== f.id))
+                  }
+                >
+                  ลบคำถามนี้
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {canEdit && (
         <div className="custom-field-creator">
-          <input
-            type="text"
-            placeholder="ชื่อคำถาม เช่น โรคประจำตัว หรือ ชื่อชมรม"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-          />
-          <select value={type} onChange={(e) => setType(e.target.value as CustomFieldType)}>
-            <option value="text">ข้อความสั้น</option>
-            <option value="select">ตัวเลือก (Dropdown)</option>
-            <option value="checkbox">ช่องติ๊กยืนยัน</option>
-          </select>
+          <h3>เพิ่มคำถามใหม่ในใบสมัครงานนี้</h3>
+          <div className="form-grid-2">
+            <div className="form-row">
+              <label htmlFor="cf-new-label">หัวข้อคำถามที่ต้องการให้ผู้สมัครกรอก</label>
+              <input
+                id="cf-new-label"
+                type="text"
+                placeholder="เช่น โรคประจำตัว / ประวัติแพ้ยา หรือ ชื่อชมรมวิ่ง"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+              />
+            </div>
+
+            <div className="form-row">
+              <label htmlFor="cf-new-type">รูปแบบช่องกรอก</label>
+              <select
+                id="cf-new-type"
+                value={type}
+                onChange={(e) => setType(e.target.value as CustomFieldType)}
+              >
+                <option value="text">ข้อความสั้น (Text)</option>
+                <option value="select">ตัวเลือก (Dropdown)</option>
+                <option value="checkbox">ช่องติ๊กยืนยัน (Checkbox)</option>
+              </select>
+            </div>
+          </div>
+
           {type === 'select' && (
-            <input
-              type="text"
-              placeholder="ตัวเลือกคั่นด้วยลูกน้ำ เช่น A, B, AB, O"
-              value={optionsText}
-              onChange={(e) => setOptionsText(e.target.value)}
-            />
+            <div className="form-row" style={{ marginTop: '0.6rem' }}>
+              <label htmlFor="cf-new-opts">
+                รายการตัวเลือก (คั่นแต่ละตัวเลือกด้วยเครื่องหมายจุลภาค ,)
+              </label>
+              <input
+                id="cf-new-opts"
+                type="text"
+                placeholder="เช่น A, B, AB, O หรือ รถรับส่งรอบ 03:30, เดินทางเอง"
+                value={optionsText}
+                onChange={(e) => setOptionsText(e.target.value)}
+              />
+            </div>
           )}
-          <label>
-            <input
-              type="checkbox"
-              checked={required}
-              onChange={(e) => setRequired(e.target.checked)}
-            />
-            บังคับกรอก
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={isSensitive}
-              onChange={(e) => setIsSensitive(e.target.checked)}
-            />
-            ซ่อนจากจุดรับอุปกรณ์หน้างาน (PII)
-          </label>
-          <button type="button" onClick={handleAddField}>
-            + เพิ่มฟิลด์คำถาม
-          </button>
+
+          <div className="cta-inline-row" style={{ marginTop: '0.7rem' }}>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={required}
+                onChange={(e) => setRequired(e.target.checked)}
+              />
+              <span>บังคับกรอกก่อนส่งใบสมัคร</span>
+            </label>
+
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={isSensitive}
+                onChange={(e) => setIsSensitive(e.target.checked)}
+              />
+              <span>เป็นข้อมูลอ่อนไหว (ซ่อนจากเจ้าหน้าที่เช็กอินหน้างาน)</span>
+            </label>
+
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={
+                !label.trim() ||
+                (type === 'select' &&
+                  optionsText
+                    .split(',')
+                    .map((s) => s.trim())
+                    .filter(Boolean).length === 0)
+              }
+              onClick={handleAddField}
+            >
+              <IconPlus size={15} />
+              <span>เพิ่มฟิลด์คำถาม</span>
+            </button>
+          </div>
         </div>
       )}
     </section>
@@ -325,6 +455,9 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
   onResolveRefundRequest,
   onCreateSingleUseInvite,
   onOpenPublicPreview,
+  onUpdateEventTotalQuota,
+  onUpdateCategoryQuota,
+  onUpdateCustomFields,
 }) => {
   const [timeWindow, setTimeWindow] = useState<TimeWindowFilter>('all_time');
   const [eventSearch, setEventSearch] = useState('');
@@ -397,12 +530,17 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
 
   const activeOrg = useMemo(
     () =>
-      organizations.find((o) => o.id === activeMembership?.organizationId) ??
-      organizations[0],
-    [organizations, activeMembership]
+      (currentUser.isPlatformAdmin
+        ? organizations.find((o) => o.id === activeOrgId)
+        : organizations.find(
+            (o) => o.id === activeMembership?.organizationId
+          )) ?? organizations[0],
+    [organizations, activeMembership, activeOrgId, currentUser.isPlatformAdmin]
   );
 
-  const role: OrgRole = activeMembership?.role ?? 'staff';
+  const role: OrgRole = currentUser.isPlatformAdmin
+    ? 'owner'
+    : activeMembership?.role ?? 'staff';
   const canViewFinance = role === 'owner' || role === 'finance';
   const canManageEventConfig = role === 'owner' || role === 'event_manager';
   const canCheckIn =
@@ -752,20 +890,30 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             value={activeOrg.id}
             onChange={(e) => onSelectOrg(e.target.value)}
           >
-            {currentUser.memberships.map((m) => {
-              const o = organizations.find(
-                (org) => org.id === m.organizationId
-              );
-              return (
-                <option key={m.organizationId} value={m.organizationId}>
-                  {o?.nameTh}
-                </option>
-              );
-            })}
+            {currentUser.isPlatformAdmin
+              ? organizations.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.nameTh}
+                  </option>
+                ))
+              : currentUser.memberships.map((m) => {
+                  const o = organizations.find(
+                    (org) => org.id === m.organizationId
+                  );
+                  return (
+                    <option key={m.organizationId} value={m.organizationId}>
+                      {o?.nameTh}
+                    </option>
+                  );
+                })}
           </select>
           <div className="rail-role-chip">
             <IconShield size={14} />
-            <span>{roleNameMap[role]}</span>
+            <span>
+              {currentUser.isPlatformAdmin
+                ? 'Platform Owner (ดูและจัดการแทนผู้จัด)'
+                : roleNameMap[role]}
+            </span>
           </div>
         </div>
 
@@ -867,46 +1015,80 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
           </select>
         </div>
 
-        {selectedEvent && (
+        {accessibleOrgEvents.length > 0 && (
           <nav
             className="rail-nav-group rail-event-subnav"
             aria-label="เมนูจัดการภายในงานวิ่งที่เลือก"
           >
             <div className="rail-group-heading">
-              เมนูของงาน: {selectedEvent.code}
+              {selectedEvent
+                ? `เมนูของงาน: ${selectedEvent.code}`
+                : `เมนูรายงานวิ่ง (คลิกเพื่อเปิด ${accessibleOrgEvents[0].code})`}
             </div>
             <button
               type="button"
-              className={`rail-nav-btn ${activeSection === 'evt_overview' ? 'active' : ''
-                }`}
-              onClick={() => onSelectSection('evt_overview')}
+              className={`rail-nav-btn ${
+                selectedEvent && activeSection === 'evt_overview'
+                  ? 'active'
+                  : ''
+              }`}
+              onClick={() =>
+                onSelectEvent(
+                  selectedEvent?.id ?? accessibleOrgEvents[0].id,
+                  'evt_overview'
+                )
+              }
             >
               <IconFlag size={16} />
               <span>ภาพรวม & ความพร้อมงาน</span>
             </button>
             <button
               type="button"
-              className={`rail-nav-btn ${activeSection === 'evt_pricing_quota' ? 'active' : ''
-                }`}
-              onClick={() => onSelectSection('evt_pricing_quota')}
+              className={`rail-nav-btn ${
+                selectedEvent && activeSection === 'evt_pricing_quota'
+                  ? 'active'
+                  : ''
+              }`}
+              onClick={() =>
+                onSelectEvent(
+                  selectedEvent?.id ?? accessibleOrgEvents[0].id,
+                  'evt_pricing_quota'
+                )
+              }
             >
               <IconBib size={16} />
-              <span>ระยะ ราคา & ยอดไซส์เสื้อ</span>
+              <span>ระยะ โควตา & คำถามสมัคร</span>
             </button>
             <button
               type="button"
-              className={`rail-nav-btn ${activeSection === 'evt_participants' ? 'active' : ''
-                }`}
-              onClick={() => onSelectSection('evt_participants')}
+              className={`rail-nav-btn ${
+                selectedEvent && activeSection === 'evt_participants'
+                  ? 'active'
+                  : ''
+              }`}
+              onClick={() =>
+                onSelectEvent(
+                  selectedEvent?.id ?? accessibleOrgEvents[0].id,
+                  'evt_participants'
+                )
+              }
             >
               <IconUsers size={16} />
               <span>รายชื่อผู้สมัครวิ่ง</span>
             </button>
             <button
               type="button"
-              className={`rail-nav-btn ${activeSection === 'evt_storefront' ? 'active' : ''
-                }`}
-              onClick={() => onSelectSection('evt_storefront')}
+              className={`rail-nav-btn ${
+                selectedEvent && activeSection === 'evt_storefront'
+                  ? 'active'
+                  : ''
+              }`}
+              onClick={() =>
+                onSelectEvent(
+                  selectedEvent?.id ?? accessibleOrgEvents[0].id,
+                  'evt_storefront'
+                )
+              }
             >
               <IconBag size={16} />
               <span>ร้านค้า & สินค้าของงานนี้</span>
@@ -914,9 +1096,17 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             {canCheckIn && (
               <button
                 type="button"
-                className={`rail-nav-btn ${activeSection === 'evt_checkin_bib' ? 'active' : ''
-                  }`}
-                onClick={() => onSelectSection('evt_checkin_bib')}
+                className={`rail-nav-btn ${
+                  selectedEvent && activeSection === 'evt_checkin_bib'
+                    ? 'active'
+                    : ''
+                }`}
+                onClick={() =>
+                  onSelectEvent(
+                    selectedEvent?.id ?? accessibleOrgEvents[0].id,
+                    'evt_checkin_bib'
+                  )
+                }
               >
                 <IconQr size={16} />
                 <span>เช็กอิน BIB & จ่ายสินค้า</span>
@@ -925,9 +1115,17 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             {canViewFinance && (
               <button
                 type="button"
-                className={`rail-nav-btn ${activeSection === 'evt_finance' ? 'active' : ''
-                  }`}
-                onClick={() => onSelectSection('evt_finance')}
+                className={`rail-nav-btn ${
+                  selectedEvent && activeSection === 'evt_finance'
+                    ? 'active'
+                    : ''
+                }`}
+                onClick={() =>
+                  onSelectEvent(
+                    selectedEvent?.id ?? accessibleOrgEvents[0].id,
+                    'evt_finance'
+                  )
+                }
               >
                 <IconLedger size={16} />
                 <span>รายรับ & คืนเงินงานนี้</span>
@@ -1351,6 +1549,20 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                       >
                                         จัดการงานนี้
                                       </button>
+                                      {canManageEventConfig && (
+                                        <button
+                                          type="button"
+                                          className="btn-secondary"
+                                          onClick={() =>
+                                            onSelectEvent(
+                                              ev.id,
+                                              'evt_pricing_quota'
+                                            )
+                                          }
+                                        >
+                                          โควตา & คำถามสมัคร
+                                        </button>
+                                      )}
                                       {canCheckIn &&
                                         ev.status === 'published' && (
                                           <button
@@ -1578,6 +1790,17 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                 >
                                   เปิดจัดการ
                                 </button>
+                                {canManageEventConfig && (
+                                  <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    onClick={() =>
+                                      onSelectEvent(ev.id, 'evt_pricing_quota')
+                                    }
+                                  >
+                                    โควตา & คำถามสมัคร
+                                  </button>
+                                )}
                                 {canManageEventConfig && (
                                   <button
                                     type="button"
@@ -2242,14 +2465,33 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             {selectedEvent && activeSection === 'evt_pricing_quota' && (
               <div className="canvas-stack">
                 <div className="page-guide-header">
-                  <h1>ระยะแข่งขัน ราคาตามช่วงเวลา และสรุปยอดไซส์เสื้อสั่งผลิต</h1>
+                  <h1>ระยะแข่งขัน โควตาผู้สมัคร คำถามใบสมัคร และยอดไซส์เสื้อ</h1>
                   <p className="page-purpose-desc">
-                    ใช้ตรวจช่วงราคาแต่ละระยะ สต็อกเสื้อคงเหลือ และคำนวณยอดเสื้อสุทธิเพื่อส่งขอใบเสนอราคาผลิตกับทีมงานโดยไม่รวมซ้ำ
+                    ปรับจำนวนรับสมัครรายระยะและเพดานรวม (ห้ามต่ำกว่ายอดที่สมัครและกันโควตาแล้ว)
+                    เพิ่มคำถามเพิ่มเติมในใบสมัคร และคำนวณยอดเสื้อสุทธิเพื่อขอราคาผลิตโดยไม่นับซ้ำ
                   </p>
                 </div>
 
                 <section className="clean-panel">
-                  <h2>ระยะการแข่งขันและช่วงราคา</h2>
+                  <div className="section-title-bar">
+                    <h2>ระยะการแข่งขัน ช่วงราคา และการปรับโควตาผู้สมัคร</h2>
+                  </div>
+
+                  <div className="total-quota-banner">
+                    <QuotaEditorRow
+                      categoryName="เพดานรับผู้สมัครรวมทั้งงาน (Total Event Quota)"
+                      maxQuota={selectedEvent.totalEventQuota}
+                      registeredCount={eventMetrics?.confirmedParticipants ?? 0}
+                      reservedCount={
+                        eventMetrics?.pendingPaymentReservations ?? 0
+                      }
+                      canEdit={canManageEventConfig}
+                      onSaveQuota={(nextTotal) =>
+                        onUpdateEventTotalQuota(selectedEvent.id, nextTotal)
+                      }
+                    />
+                  </div>
+
                   <div className="table-scroll">
                     <table className="ops-table">
                       <thead>
@@ -2259,7 +2501,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                           <th>รหัสหน้า BIB</th>
                           <th>ช่วงราคา</th>
                           <th className="num-col">ราคาสุทธินักวิ่ง</th>
-                          <th className="num-col">โควตา</th>
+                          <th>โควตารายระยะ (ปรับเพิ่ม/ลดได้)</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2269,6 +2511,18 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                             curTier.priceSatang,
                             selectedEvent.feeBearerPolicy
                           );
+                          const catConfirmed = orgRegistrations.filter(
+                            (r) =>
+                              r.eventId === selectedEvent.id &&
+                              r.categoryId === cat.id &&
+                              r.registrationStatus === 'confirmed'
+                          ).length;
+                          const catReserved = orgRegistrations.filter(
+                            (r) =>
+                              r.eventId === selectedEvent.id &&
+                              r.categoryId === cat.id &&
+                              r.registrationStatus === 'pending_payment'
+                          ).length;
                           return (
                             <tr key={cat.id}>
                               <td>
@@ -2310,8 +2564,22 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                   {formatThb(quote.runnerNetPaySatang, true)}
                                 </strong>
                               </td>
-                              <td className="num-col mono-num">
-                                {cat.categoryQuota} คน
+                              <td>
+                                <QuotaEditorRow
+                                  categoryName={cat.name}
+                                  maxQuota={cat.categoryQuota}
+                                  registeredCount={catConfirmed}
+                                  reservedCount={catReserved}
+                                  canEdit={canManageEventConfig}
+                                  compact
+                                  onSaveQuota={(nextQuota) =>
+                                    onUpdateCategoryQuota(
+                                      selectedEvent.id,
+                                      cat.id,
+                                      nextQuota
+                                    )
+                                  }
+                                />
                               </td>
                             </tr>
                           );
@@ -2320,6 +2588,14 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     </table>
                   </div>
                 </section>
+
+                <CustomFieldsManager
+                  fields={selectedEvent.customFields}
+                  canEdit={canManageEventConfig}
+                  onChange={(nextFields) =>
+                    onUpdateCustomFields(selectedEvent.id, nextFields)
+                  }
+                />
 
                 <section className="clean-panel">
                   <h2>สต็อกเสื้อตามสิทธิ์สมัครและเครื่องมือขอราคาผลิตจากยอดจริง</h2>
@@ -2669,6 +2945,46 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                               ? 'ยินยอม'
                               : 'ไม่ยินยอม'}
                           </dd>
+                          {(selectedEvent.customFields ?? []).length > 0 && (
+                            <>
+                              <dt>คำตอบเพิ่มเติม (Custom Fields)</dt>
+                              <dd>
+                                <div className="custom-answers-stack">
+                                  {(selectedEvent.customFields ?? []).map(
+                                    (cf) => {
+                                      const rawVal =
+                                        inspectedReg.customAnswers?.[cf.id];
+                                      const formatted =
+                                        rawVal === undefined || rawVal === ''
+                                          ? 'ไม่ได้ระบุ'
+                                          : typeof rawVal === 'boolean'
+                                          ? rawVal
+                                            ? 'ใช่'
+                                            : 'ไม่ใช่'
+                                          : String(rawVal);
+                                      return (
+                                        <div
+                                          key={cf.id}
+                                          className="custom-answer-line"
+                                        >
+                                          <span className="muted-inline">
+                                            {cf.label}:
+                                          </span>{' '}
+                                          {role === 'staff' && cf.isSensitive ? (
+                                            <span className="muted-inline">
+                                              [ซ่อนข้อมูลอ่อนไหวตามสิทธิ์เจ้าหน้าที่หน้างาน]
+                                            </span>
+                                          ) : (
+                                            <strong>{formatted}</strong>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+                                  )}
+                                </div>
+                              </dd>
+                            </>
+                          )}
                         </dl>
                         {inspectedReg.registrationStatus ===
                           'pending_payment' && (

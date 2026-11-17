@@ -326,58 +326,137 @@ flowchart TD
 
 ตัวชี้วัดที่เสนอ: ผู้จัดที่เปิดร้านและขอราคา อัตรายอมรับใบเสนอราคา ยอดสั่งผลิต มูลค่าขายสินค้า กำไรหลังต้นทุนผันแปร การส่งตรงเวลา และอัตราปัญหาสินค้า ทุกตัวต้องนิยามฐานเวลาและแยกยอดขายออกจากรายได้แพลตฟอร์ม
 
-## 16. บัญชีและการเข้าสู่ระบบ
+## 16. บัญชีและการเข้าสู่ระบบ (Complete Registration & Authentication System)
 
-เพิ่มวันที่ 17 พฤศจิกายน 2026: ผู้ใช้ยืนยันให้เพิ่มฟีเจอร์อีเมล/รหัสผ่าน, Google และ LINE ลงในแผน รายละเอียดด้าน implementation ยังต้องออกแบบก่อนพัฒนา ระบบปัจจุบันเป็น Login จำลองเท่านั้น
+เพิ่มและขยายความวันที่ 17 พฤศจิกายน 2026 (ยืนยันโดยคำสั่งผู้ใช้ — บันทึกข้อกำหนดลงแผน ยังไม่ลงโค้ดส่วนขยายนี้): รองรับระบบลงทะเบียนและเข้าสู่ระบบแบบครบวงจรสำหรับ **Runner (นักวิ่ง/ผู้ใช้ทั่วไป)** และ **Organizer (ผู้จัดงาน)** ภายใต้ Design System เดียวกัน แต่แยกฟอร์ม กฎตรวจสอบ ขั้นตอน Onboarding สิทธิ์การใช้งาน และ Dashboard ออกจากกันอย่างชัดเจน ทั้งนี้ระบบในต้นแบบปัจจุบันยังเป็น Login จำลองฝั่งหน้าบ้านเท่านั้น
 
-### 16.1 ขอบเขตและ flow
+### 16.1 เป้าหมายและหน้าเลือกประเภทบัญชี (Account Type Selection)
 
-- หน้าเข้าสู่ระบบมีอีเมล/รหัสผ่าน แสดงหรือซ่อนรหัสผ่าน ลืมรหัสผ่าน สมัครใหม่ และปุ่ม Google/LINE
-- สมัครเอง: กรอกชื่อ อีเมล รหัสผ่าน ยอมรับข้อกำหนด แล้วใช้ลิงก์ยืนยันอีเมลก่อนเปิดใช้งานบัญชีตามนโยบาย
-- Google/LINE: ยืนยันกับ provider แล้วตรวจผลที่ backend หากเป็นผู้ใช้เดิมเปิด session หากเป็นผู้ใช้ใหม่ให้ตรวจชื่อ ช่องทางติดต่อ และยอมรับข้อกำหนดก่อนสร้างบัญชี
-- LINE ไม่มีอีเมลยังสร้างบัญชีจากตัวตน provider ได้ ให้เพิ่มและยืนยันอีเมลก่อนใช้ฟังก์ชันที่ต้องใช้อีเมล ไม่สร้างอีเมลสมมติแทน
-- แยกอีเมลจาก provider ออกจากช่องทางติดต่อที่ผู้ใช้เพิ่ม/แก้ สถานะการยืนยันต้องมีหลักฐานตาม flow นั้น
-- เก็บข้อมูลสมัครเริ่มต้นเท่าที่จำเป็น ชื่อใน social profile ไม่ใช่ชื่อแข่งขันที่ยืนยันแล้ว ข้อมูลเสื้อ วันเกิด และฉุกเฉินขอตามงานที่ใช้
-- อ่านงานและดูสินค้าได้ก่อน Login กลับไปทำรายการเดิมหลังยืนยันตัวตน โดยรับเฉพาะปลายทางกลับที่ระบบอนุญาต ป้องกัน open redirect
-- แยกความยินยอมการตลาดออกจากการยอมรับข้อกำหนดและบันทึกเวอร์ชัน
+- รองรับ 2 ประเภทบัญชีหลักในสถาปัตยกรรม SaaS ที่ขยายตัวได้:
+  1. **Runner:** ผู้ใช้ทั่วไปที่ค้นหางานวิ่ง สมัครแข่งขัน และจัดการกิจกรรมวิ่งของตนเอง
+  2. **Organizer:** องค์กรหรือบุคคลที่สร้าง เผยแพร่ และบริหารงานวิ่ง
+- **หน้าทางเข้าเลือกประเภทบัญชี (Entry Point):**
+  - หัวข้อหลัก: `"Join the Running Community"`
+  - คำอธิบาย: `"Choose how you want to use the platform."` (รองรับการแสดงผลภาษาไทยควบคู่ตามบริบทแพลตฟอร์ม)
+  - แสดงการ์ดเลือกขนาดใหญ่ 2 ใบ:
+    - **Runner Card:** ไอคอน Runner/User · ชื่อ `Runner` · คำอธิบาย `Discover running events, register for races, and manage your running activities.` · ปุ่ม CTA `Register as Runner`
+    - **Organizer Card:** ไอคอน Building/Event · ชื่อ `Organizer` · คำอธิบาย `Create running events, manage registrations, and monitor event performance.` · ปุ่ม CTA `Register as Organizer`
+- ผู้ใช้สลับประเภทการลงทะเบียนหรือเพิ่มบทบาทภายหลังได้โดยไม่สูญเสียข้อมูลบัญชีเดิมที่มีอยู่แล้ว
 
-### 16.2 บัญชีเดียวและสิทธิ์องค์กร
+### 16.2 ระบบยืนยันตัวตนร่วมและบัญชีเดียวหลายบทบาท (Shared Authentication & Account Linking)
 
-- User หนึ่งรายการเชื่อมวิธีเข้าสู่ระบบได้หลายวิธี ใช้ข้อมูลใบสมัคร คำสั่งซื้อ และสมาชิกองค์กรชุดเดียวกัน
-- ใช้ตัวระบุ provider ที่ตรวจสอบแล้ว เช่น issuer + sub ในบริบท channel/provider ที่ตั้งค่า ไม่ใช้อีเมลหรือชื่อแสดงผลเป็นตัวเชื่อมหลัก
-- Login เป็นการพิสูจน์ตัวตน สิทธิ์งานต้องมาจาก OrganizationMembership และการมอบหมาย ไม่มาจากข้อมูลที่ผู้ใช้เลือกบนหน้า Login
-- หลัง Login ให้กลับรายการเดิมหรือองค์กรล่าสุดที่ยังมีสิทธิ์ หากมีหลายองค์กรให้เลือกได้
-- สมัครเป็นผู้จัดด้วยบัญชีเดิมและสร้างองค์กรรอตรวจ การเปิดขายขึ้นกับการตรวจผู้จัด/บัญชีรับเงิน
+- รองรับวิธีเข้าสู่ระบบและสมัครใช้งาน: **Google Login**, **LINE Login**, **Email Registration** และ **Email Login** (ใช้มาตรฐาน OAuth 2.0 / OpenID Connect)
+- หน้าเข้าสู่ระบบมีอีเมล/รหัสผ่าน ปุ่มแสดงหรือซ่อนรหัสผ่าน ลืมรหัสผ่าน สมัครใหม่ และปุ่ม Google/LINE
+- แยกข้อมูลผู้ให้บริการยืนยันตัวตน (`AuthIdentity` / `user_auth_providers` เช่น `issuer + sub`) ออกจากข้อมูลโปรไฟล์ผู้ใช้ (`UserProfile`) ไม่ใช้อีเมลหรือชื่อแสดงผลจาก social เป็นคีย์หลักแทนตัวระบุ provider
+- **การเชื่อมบัญชีและป้องกันบัญชีซ้ำ:**
+  - บัญชีผู้ใช้ (`User`) หนึ่งรายการถือได้หลายบทบาทเมื่อกฎธุรกิจอนุญาต และเชื่อมวิธีเข้าสู่ระบบได้หลายช่องทาง
+  - ผู้ใช้ที่ Login อยู่เชื่อม Google/LINE เพิ่มได้หลังยืนยันตัวตนซ้ำ; ผู้สมัครผ่าน social เพิ่มอีเมลที่ยืนยันแล้วและตั้งรหัสผ่านเพิ่มเติมได้
+  - ป้องกันบัญชีซ้ำเมื่ออีเมลที่ยืนยันแล้วตรงกับบัญชีเดิม โดยบังคับผ่านขั้นตอนยืนยันความเป็นเจ้าของบัญชีเดิมก่อนเชื่อม (**ห้ามรวมบัญชีอัตโนมัติเงียบ ๆ**)
+  - หาก provider identity ผูกกับบัญชีอื่นอยู่แล้ว ต้องหยุดการเชื่อมและเข้าสู่ขั้นตอนพิสูจน์ตัวตนทั้งสองฝั่ง ห้ามย้ายประวัติ เงิน หรือสิทธิ์องค์กรโดยอัตโนมัติ
+  - ห้ามถอดช่องทางเข้าสู่ระบบช่องทางสุดท้ายจนกว่าจะเพิ่มและยืนยันช่องทางทดแทนแล้ว
+- **กรณี LINE ไม่มีอีเมล:** สร้างบัญชีจากตัวตน LINE ที่ตรวจสอบแล้วได้โดยไม่สร้างอีเมลสมมติแทน และขอให้เพิ่ม/ยืนยันอีเมลติดต่อเมื่อใช้ฟังก์ชันที่ต้องใช้อีเมล
+- **ขอบเขตอำนาจองค์กร:** ห้ามถือว่าการผ่าน Google หรือ LINE Login เป็นการยืนยันสิทธิ์หรืออำนาจตัวแทนองค์กรผู้จัด สิทธิ์ผู้จัดต้องมาจาก `OrganizationMembership` และการตรวจสอบองค์กรเท่านั้น
 - คำเชิญทีมมีบทบาท ขอบเขต อายุ และการใช้ครั้งเดียว ตรวจบัญชีผู้รับตามนโยบายก่อนเพิ่มสมาชิก ไม่อาศัยการมีลิงก์อย่างเดียวเพื่อให้สิทธิ์สำคัญ
+- อ่านรายละเอียดงานและดูสินค้าได้ก่อน Login เมื่อยืนยันตัวตนสำเร็จให้พากลับไปยังรายการที่ทำค้าง (`ReturnIntent` เฉพาะปลายทางภายในที่อนุญาต ป้องกัน open redirect)
 
-### 16.3 เชื่อมบัญชีและจัดการบัญชีซ้ำ
+### 16.3 Runner Registration Flow (Wizard 2 ขั้นตอน — เร็วและกระชับ)
 
-- ผู้ใช้ที่ Login อยู่เชื่อม Google/LINE เพิ่มได้หลังยืนยันตัวตนใหม่และยืนยันกับ provider ที่จะเพิ่ม
-- ผู้สมัครผ่าน social เพิ่มอีเมลที่ยืนยันแล้วและตั้งรหัสผ่านได้ เพื่อเข้าสู่บัญชีเดิม
-- หากอีเมลตรงบัญชีเดิม ให้ยืนยันความเป็นเจ้าของบัญชีเดิมก่อนเชื่อม ไม่รวมอัตโนมัติ
-- หาก provider identity ผูกกับ User อื่นแล้ว ให้หยุดการเชื่อมและใช้ขั้นตอนแก้บัญชีซ้ำที่พิสูจน์ทั้งสองบัญชี ห้ามย้ายประวัติ เงิน หรือสิทธิ์องค์กรเงียบ ๆ
-- ห้ามถอดช่องทางสุดท้ายที่ใช้เข้าสู่ระบบได้ จนกว่าจะเพิ่มและยืนยันช่องทางทดแทน
-- บัญชีและความปลอดภัยรวมการเปลี่ยนอีเมล/รหัสผ่าน วิธีเข้าสู่ระบบ และ session อุปกรณ์ พร้อมออกจากระบบอุปกรณ์อื่น
+ออกแบบให้สมัครง่ายและเร็ว แยกเป็น 2 ขั้นตอน:
 
-### 16.4 ข้อมูลและข้อกำหนดระบบจริง
+- **Step 1 — Account Registration:**
+  - ฟิลด์: `First Name` (บังคับ), `Last Name` (บังคับ), `Email Address` (บังคับ), `Phone Number` (บังคับหรือไม่บังคับตามนโยบายแพลตฟอร์ม), และกรณีสมัครด้วยอีเมลต้องมี `Password` + `Confirm Password` พร้อมแถบวัดความแข็งแรงของรหัสผ่าน (`Password strength indicator`)
+  - ปุ่ม Social: `Continue with Google` และ `Continue with LINE`
+  - ดึงข้อมูลโปรไฟล์ที่ได้จาก provider มาเติมให้อัตโนมัติโดยผู้ใช้แก้ไขได้ ตรวจรูปแบบอีเมลและเบอร์โทรพร้อมแสดง Inline validation errors ชัดเจน
+- **Step 2 — Runner Profile (ข้ามฟิลด์ไม่บังคับได้):**
+  - ข้อมูลทั่วไป: `Profile Picture` (ไม่บังคับ), `Date of Birth` (ไม่บังคับ), `Gender` (ไม่บังคับ), `Nationality` (ค่าเริ่มต้น `Thailand`), `Running Experience` (`Beginner` / `Intermediate` / `Advanced`)
+  - ผู้ติดต่อฉุกเฉินเริ่มต้น (`Emergency Contact`): `Name`, `Relationship`, `Phone`
+  - ความสนใจระยะวิ่ง (`Preferred Running Distance` — ไม่บังคับ): `3 KM`, `5 KM`, `10 KM`, `Half Marathon (21.1 KM)`, `Marathon (42.195 KM)`, `Other`
+  - **กฎธุรกิจสำคัญของ Runner Onboarding:**
+    - ไม่บังคับกรอกทุกช่องในโปรไฟล์เพื่อจบการสร้างบัญชี ผู้ใช้กดข้ามฟิลด์ไม่บังคับไปเติมภายหลังได้
+    - **ห้ามบังคับเลือกไซส์เสื้อ (`T-shirt size`) และห้ามบังคับเลือกระยะแข่งขันจริงระหว่างสมัครบัญชีผู้ใช้**
+    - ข้อมูลทางการแพทย์ต้องไม่บังคับ (`optional`) เก็บเฉพาะเมื่อจำเป็นต่อวัตถุประสงค์ของแต่ละงานพร้อมมาตรการคุ้มครองข้อมูลส่วนบุคคล
+- **Runner Registration Completion:**
+  - แสดงหน้าต้อนรับพร้อมชื่อผู้ใช้ ตัววัดความสมบูรณ์ของโปรไฟล์ (`Profile Completion Indicator`) ปุ่ม CTA ไปค้นหางานวิ่ง และนำทางเข้าสู่ **Runner Dashboard**
 
-แนวคิดข้อมูล: User, AuthIdentity, PasswordCredential, ContactVerification, Session, PasswordResetToken, Invitation และ ConsentAcceptance เชื่อม OrganizationMembership เดิม ไม่เพิ่มบทบาทที่เชื่อถือจาก frontend
+### 16.4 Organizer Registration Flow (Wizard 3 ขั้นตอน + บันทึกแบบร่าง + ตรวจสอบเอกสาร)
 
-- ใช้ password hash ที่เหมาะสม ไม่เก็บรหัสผ่าน plaintext หรือบันทึกลง logs
-- ลิงก์ยืนยันอีเมล/รีเซ็ตรหัสผ่านมีอายุ ใช้ครั้งเดียว และจัดเก็บ token อย่างปลอดภัย
-- จำกัดความถี่ Login, reset และ resend ตอบแบบไม่เปิดเผยว่าบัญชีอีเมลมีอยู่หรือไม่
-- ตรวจ provider token ฝั่ง backend รวมลายเซ็น issuer audience อายุ และ nonce; ตรวจ state และใช้ PKCE ตาม flow มาตรฐานที่เลือก
-- จัดการ session ฝั่งเซิร์ฟเวอร์และ cookie HttpOnly/Secure ในระบบจริง พร้อมการป้องกัน CSRF ที่เหมาะสม ไม่ใช้ localStorage mock เป็นหลักฐานสิทธิ์
-- ไม่ใส่ client secret ใน frontend/repository และไม่ขอสิทธิ์ provider เกินจำเป็น
-- การเปลี่ยนอีเมล รหัสผ่าน หรือการเชื่อม/ถอดวิธี Login ต้องยืนยันตัวตนใหม่ แจ้งการเปลี่ยนแปลง และกำหนดการเพิกถอน session ที่เกี่ยวข้อง
-- ทดสอบบัญชีถูกระงับ provider ยกเลิก consent, callback หมดอายุ และ recovery เมื่อเข้า provider เดิมไม่ได้
-- แยกปุ่ม/บัญชีสาธิตและข้อมูลสาธิตจากระบบจริงชัดเจน
+การลงทะเบียนผู้จัดงานต้องเก็บข้อมูลองค์กรและหลักฐานยืนยันตัวตน แยกเป็น 3 ขั้นตอน พร้อมรองรับการบันทึกแบบร่าง (`Save Draft`):
 
-### 16.5 เกณฑ์ยอมรับและเรื่องต้องตัดสินใจ
+- **Step 1 — Account & Contact Information:**
+  - ฟิลด์: `First Name`, `Last Name`, `Email`, `Phone Number`, `Position / Job Title`
+  - รองรับ `Google Login`, `LINE Login` และ `Email Registration` (`Password`, `Confirm Password`, `Password strength indicator`)
+- **Step 2 — Organization Details:**
+  - *Section A — Organization Profile:* `Organization Name (Thai)` (บังคับ), `Organization Name (English)` (ไม่บังคับ), `Organization Type` (บังคับ: `Private Company`, `Government Organization`, `Sports Club / Association`, `Independent Organizer`, `Non-Profit Organization`, `Other`), `Business Registration Number` (บังคับตามเงื่อนไขประเภทองค์กร), `Website`, `Organization Email`, `Organization Phone`, `Organization Logo`
+  - *Section B — Office Address:* `Address`, `Province`, `District`, `Subdistrict`, `Postal Code`, `Country` (ใช้ Dropdown จังหวัด-อำเภอ-ตำบล-รหัสไปรษณีย์ของไทยแบบเชื่อมโยงกันเมื่อมีชุดข้อมูลมาตรฐานที่ถูกต้อง)
+  - *Section C — Organization Description:* `Organization Description`, `Previous Running Events`, `Facebook Page`, `Other Social Media Links`
+  - *Section D — Main Contact Person:* `Contact Person Name`, `Position`, `Contact Phone`, `Contact Email` พร้อมตัวเลือก `"Same as account contact"`
+- **Step 3 — Identity & Organization Verification:**
+  - *Section A — Verification Type:* `Company / Legal Entity`, `Government Organization`, `Sports Club / Association`, `Independent Organizer`, `Non-Profit Organization`
+  - *Section B — Personal Identity Verification (เก็บเฉพาะเมื่อนโยบายตรวจสอบกำหนด):* `Identity Document Type`, `Identity Document File`, `Document Expiry Date` (ถ้ามี)
+  - *Section C — Organization Verification Documents:* รองรับหนังสือรับรองนิติบุคคล (`Company Registration Certificate`), หนังสืออนุญาตหน่วยงานรัฐ (`Government Authorization Document`), เอกสารจดทะเบียนชมรม/สมาคม (`Club / Association Registration Document`), เอกสารองค์กรไม่แสวงหากำไร (`Non-Profit Organization Certificate`) และเอกสารประกอบอื่น (`Other Supporting Documents`)
+  - *Section D — Authorization Documents (แสดงตามเงื่อนไขเมื่อผู้ยื่นไม่ใช่ผู้มีอำนาจลงนามโดยตรงหรือเมื่อนโยบายกำหนด):* หนังสือมอบอำนาจ (`Power of Attorney`), หนังสือแต่งตั้งตัวแทน (`Representative Appointment Letter`) หรือหนังสือรับรองการดำเนินการ (`Authorization Letter`)
+  - *Section E — Consent:* ยืนยันว่าข้อมูลที่ยื่นถูกต้อง ยอมรับกระบวนการตรวจสอบผู้จัด รับทราบประกาศความเป็นส่วนตัว (`Privacy Notice`) และแยกความยินยอมรับข่าวสารการตลาด (`Optional Marketing Consent`) ออกจากความยินยอมหลักพร้อมบันทึกเวอร์ชัน
+- **ข้อกำหนดการอัปโหลดเอกสารยืนยันตัวตน:**
+  - รองรับไฟล์ `PDF, JPG, JPEG, PNG` แสดงขนาดไฟล์สูงสุดที่รับได้ ชื่อไฟล์ ขนาดไฟล์จริง แถบความคืบหน้าอัปโหลด (`Upload progress`) พรีวิวไฟล์ (กรณีรองรับ) และการเปลี่ยน/ลบไฟล์
+  - ตรวจสอบทั้งนามสกุลไฟล์และชนิดไฟล์จริง (`MIME type` ฝั่งเซิร์ฟเวอร์)
+  - จัดเก็บในพื้นที่ส่วนตัว (`Private Storage`) **ห้ามเปิดเผยเอกสารยืนยันตัวตนผ่าน Public URL โดยเด็ดขาด**
+- **Organizer Registration Completion:**
+  - แสดงหน้าส่งคำขอสำเร็จ ระบุชื่อองค์กร หมายเลขอ้างอิงคำขอ (`Registration Reference Number`) วันที่ส่ง สถานะเริ่มต้น (`SUBMITTED` หรือ `PENDING_REVIEW`) และอธิบายขั้นตอนการรอตรวจสอบถัดไป (**ห้ามอนุมัติผู้จัดโดยอัตโนมัติ**)
 
-ต้องทดสอบผู้ใช้ใหม่/เดิมทั้งสามวิธี อีเมลไม่ยืนยัน LINE ไม่มีอีเมล provider identity ซ้ำ อีเมลตรงแต่คนละบัญชี ลิงก์หมดอายุ/ใช้ซ้ำ ยกเลิก Login กลับหน้ารายการเดิม องค์กรไม่มีสิทธิ์ คำเชิญใช้ซ้ำ และเพิกถอน session
+### 16.5 การแยกโมดูลสมัครบัญชีออกจากโมดูลสมัครงานวิ่ง (Account vs Event Registration Separation)
 
-ยังต้องเลือก auth stack, provider app/channel, callback URLs ของแต่ละ environment, ผู้ส่งอีเมล, อายุ session/token, นโยบาย recovery/บัญชีซ้ำ และการยืนยันเพิ่มเติมสำหรับบทบาทสำคัญก่อนพัฒนาระบบจริง
+- **Account Registration (Runner):** เก็บเฉพาะข้อมูลบัญชีและโปรไฟล์ทั่วไปของนักวิ่ง
+- **Event Registration:** เก็บข้อมูลเฉพาะของการลงสมัครแต่ละงานวิ่ง ได้แก่ งานที่เลือก ประเภทและระยะวิ่ง ไซส์เสื้อของงานนั้น ข้อมูล BIB คำถามเพิ่มเติมเฉพาะงาน (`Custom Fields`) ข้อมูลฉุกเฉินเฉพาะงาน การชำระเงิน และสถานะใบสมัคร
+- ห้ามนำฟิลด์เฉพาะงานวิ่งไปผูกบังคับในฟอร์มสมัครบัญชีผู้ใช้ทั่วไป
+
+### 16.6 การแยก Dashboard บทบาทสิทธิ์ และ Workflow ตรวจสอบผู้จัด (7 สถานะ)
+
+- **การนำทางเข้า Dashboard หลังลงทะเบียน:**
+  - **Runner Dashboard:** ประกอบด้วย `Runner Profile`, `Discover Events`, `My Registrations`, `Upcoming Events`, `Registration History`, `Payment History`, `Notifications` และ `Account Settings`
+  - **Organizer Dashboard:** ประกอบด้วย `Organization Profile`, `Organization Verification Status`, `Event Management`, `Create New Event`, `Runner Management`, `Registration Monitoring`, `Payment Monitoring`, `Event Reports`, `Team Members` และ `Organization Settings` (อนุญาตให้สร้างและเผยแพร่งานเปิดรับสมัครจริงได้เฉพาะองค์กรที่ผ่านการอนุมัติ `APPROVED` และบัญชีรับเงินพร้อมตามนโยบายแพลตฟอร์ม)
+- **บทบาทหลักที่ต้องรองรับ (RBAC):**
+  - `Runner`: จัดการโปรไฟล์ตนเอง ค้นหางาน สมัครวิ่ง และดูประวัติการสมัคร/ชำระเงิน
+  - `Organizer Admin`: จัดการข้อมูลองค์กร สมาชิกทีม สิทธิ์ผู้จัด สร้าง/บริหารงานวิ่ง และดูรายการสมัคร
+  - `Organizer Staff`: เข้าถึงเฉพาะงานที่ได้รับมอบหมาย จัดการผู้สมัครและดูรายงานเฉพาะขอบเขตสิทธิ์ที่ได้รับ
+  - `Platform Admin`: ตรวจคำขอขึ้นทะเบียนผู้จัด อนุมัติ/ปฏิเสธ ขอเอกสารเพิ่ม ระงับองค์กร และบริหารผู้ใช้/สิทธิ์ระดับแพลตฟอร์ม
+- **สถานะการตรวจสอบผู้จัด (Organizer Verification Workflow — 7 สถานะ):**
+  - `DRAFT` → `SUBMITTED` → `UNDER_REVIEW` → `MORE_INFORMATION_REQUIRED` / `APPROVED` / `REJECTED` และรองรับ `SUSPENDED`
+  - หน้าตรวจพิจารณาของ `Platform Admin` ต้องแสดงข้อมูลองค์กร ข้อมูลผู้ยื่น เอกสารที่ส่ง บันทึกความเห็นผู้ตรวจ ปุ่มดำเนินการ (`Approve`, `Reject`, `Request Additional Information`) พร้อมเก็บประวัติการตรวจสอบ (`verification_history`) และ Audit Logs ครบถ้วน
+
+### 16.7 แนวทาง Design System ร่วม การตรวจสอบฟอร์ม และการจัดการสถานะหน้าจอ
+
+- **Shared Design System:** ใช้ระบบออกแบบและคอมโพเนนต์มาตรฐานชุดเดียวกันทั้งฝั่ง Runner และ Organizer (`Text Input`, `Select`, `Date Picker`, `Radio Group`, `Checkbox`, `File Upload`, `Phone Input`, `Progress Stepper`, `Form Section`, `Validation Message`, `Primary Button`, `Secondary Button`) เน้นลำดับชั้นสายตาชัดเจน ช่องว่างเหมาะสม คอนทราสต์ผ่านเกณฑ์การเข้าถึง รองรับทุกขนาดหน้าจอ หลีกเลี่ยงการ์ดซ้อนเกินจำเป็น เกรเดียนต์ฉูดฉาด หรือแอนิเมชันฟุ่มเฟือย
+- **Form Validation & State Management:**
+  - ตรวจฟิลด์บังคับ รูปแบบอีเมล เบอร์โทร ความแข็งแรงรหัสผ่าน ฟิลด์ตามเงื่อนไข (`Conditional validation`) และไฟล์อัปโหลดแบบ Step-by-step พร้อมข้อความแจ้งเตือนระดับช่องกรอก (`Inline error messages`)
+  - รักษาค่าที่กรอกไว้เมื่อเดินหน้า/ย้อนกลับระหว่าง Step รองรับ `Save Draft` ของฝั่งผู้จัด รองรับสถานะ `Loading`, `Success`, `Error` และมีกล่องยืนยันเตือนก่อนออกจากหน้าเมื่อมีข้อมูลค้างที่ยังไม่บันทึก (`Unsaved changes confirmation`)
+
+### 16.8 ข้อเสนอโครงสร้างฐานข้อมูลและสัญญา API (สำหรับปรับใช้ในระยะพัฒนาระบบจริง)
+
+โครงสร้างตารางเชิงสัมพันธ์และ API ด้านล่างเป็น **ข้อเสนอตั้งต้น (Suggested Structure & Contracts)** เพื่อใช้ปรับให้สอดคล้องกับสถาปัตยกรรมหลังบ้านที่จะยืนยันก่อนพัฒนา โดยหลีกเลี่ยงการเก็บข้อมูลผู้ใช้ซ้ำซ้อนหลายตารางโดยไม่มีเหตุผล และกำหนด Foreign keys, Unique constraints, Indexes, Timestamps และนโยบาย Soft-delete ให้เหมาะสม:
+
+- **กลุ่มตาราง Authentication & Users:** `users`, `user_auth_providers`, `user_roles`, `user_profiles`, `user_emergency_contacts`
+- **กลุ่มตาราง Organizations & Verification:** `organizations`, `organization_addresses`, `organization_members`, `organization_documents`, `organization_verifications`, `verification_history`
+- **กลุ่มตาราง Events & Registrations:** `events`, `event_categories`, `event_registrations`, `event_registration_answers`, `event_payments`
+- **ข้อเสนอ API Contracts เบื้องต้น:**
+  - *Authentication:* `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `POST /api/auth/link-provider`
+  - *Runner:* `GET /api/runners/me`, `PUT /api/runners/me/profile`, `PUT /api/runners/me/emergency-contact`
+  - *Organizer Onboarding:* `POST /api/organizers/registration/draft`, `PUT /api/organizers/registration/{registrationId}`, `POST /api/organizers/registration/{registrationId}/documents`, `POST /api/organizers/registration/{registrationId}/submit`, `GET /api/organizers/registration/{registrationId}/status`
+  - *Event Registration:* `GET /api/events`, `GET /api/events/{eventId}`, `POST /api/events/{eventId}/registrations`, `GET /api/runners/me/registrations`
+
+### 16.9 ความปลอดภัย ความเป็นส่วนตัว (PDPA) และข้อกำหนดระบบจริง
+
+- ปฏิบัติตามหลักคุ้มครองข้อมูลส่วนบุคคล (PDPA) เก็บข้อมูลเท่าที่จำเป็น กำหนดอายุการเก็บรักษาข้อมูล (`Data retention`) และปกป้องเอกสารอ่อนไหวใน Private Storage เสมอ
+- ใช้ Password hash มาตรฐานสูง ไม่เก็บรหัสผ่านแบบ plaintext หรือบันทึกลง logs; ลิงก์ยืนยันอีเมลและรีเซ็ตรหัสผ่านใช้ครั้งเดียวและมีวันหมดอายุ
+- จำกัดความถี่ (`Rate limit`) ของ Login, Reset และ Resend โดยตอบกลับแบบไม่เปิดเผยว่าอีเมลใดมีอยู่ในระบบ
+- ตรวจ Provider token ฝั่งเซิร์ฟเวอร์ครบทั้งลายเซ็น `issuer`, `audience`, อายุ token, `state`, `nonce` และใช้ `PKCE`; จัดการ session ด้วย `HttpOnly` / `Secure` cookie พร้อมป้องกัน CSRF ไม่ใช้ `localStorage` เป็นหลักฐานสิทธิ์ในระบบจริง และไม่ใส่ client secret ใน frontend/repository
+- การเปลี่ยนอีเมล รหัสผ่าน หรือการเชื่อม/ถอดวิธีเข้าสู่ระบบต้องยืนยันตัวตนใหม่ แจ้งเตือนเจ้าของบัญชี และเพิกถอน session อุปกรณ์อื่นที่เกี่ยวข้องได้จากหน้า “บัญชีและความปลอดภัย”
+- ตรวจสิทธิ์และตรวจความถูกต้องข้อมูลซ้ำฝั่งเซิร์ฟเวอร์ทุกครั้ง (`Server-side validation & RBAC`) และแยกปุ่ม/ข้อมูลสาธิตในโหมดพัฒนาออกจากระบบจริงอย่างชัดเจน
+
+### 16.10 รายการส่งมอบเป้าหมายและเกณฑ์ยอมรับ (เมื่อได้รับคำสั่งให้ลงโค้ด)
+
+- **รายการส่งมอบ 17 ส่วนเมื่อเริ่มพัฒนา:** (1) หน้าเลือกประเภทบัญชี Runner/Organizer, (2–4) Runner Registration Step 1–2 และหน้าสำเร็จพร้อม Profile Completion, (5–8) Organizer Registration Step 1–3 (รวม Save Draft & อัปโหลดเอกสาร) และหน้าส่งคำขอสำเร็จ, (9–12) Shared Auth UI, Shared Design System, Form Validation และ Responsive Layout, (13–15) ทางเข้า Runner Dashboard, Organizer Dashboard และหน้า Admin Verification Interface ครบ 7 สถานะ, (16–17) โครงสร้าง Database Schema และโครงเชื่อมต่อ API/Mock contracts ที่แยกชัดเจน
+- **เกณฑ์ทดสอบสำคัญ:** ทดสอบผู้ใช้ใหม่/เดิมทั้งอีเมล Google และ LINE, LINE ไม่มีอีเมล, อีเมลชนบัญชีเดิม, การสลับหรือเพิ่มบทบาท Runner/Organizer บนบัญชีเดียว, การไม่ปะปนฟิลด์สมัครงานวิ่งในฟอร์มสมัครบัญชี, การส่งเอกสารผู้จัดและตรวจครบทุกสถานะ (`DRAFT` ถึง `APPROVED`/`MORE_INFORMATION_REQUIRED`/`REJECTED`/`SUSPENDED`), คำเชิญใช้ซ้ำ, การเตือนก่อนทิ้งข้อมูลที่ยังไม่บันทึก และการเพิกถอน session
+- **เรื่องที่ยังต้องตัดสินใจก่อนพัฒนาระบบจริง:** เลือก auth stack, ตั้งค่า Google/LINE app & callback URLs ต่อ environment, เลือกผู้ให้บริการส่งอีเมลและ Private Object Storage สำหรับเอกสารยืนยันตัวตน, ยืนยันชุดข้อมูลที่อยู่ไทย และกำหนดนโยบายเอกสารบังคับตามประเภทองค์กร
 
 แหล่งอ้างอิงจากการศึกษาวันที่ 17 พฤศจิกายน 2026 (ตรวจเงื่อนไขปัจจุบันอีกครั้งตอน implementation):
 

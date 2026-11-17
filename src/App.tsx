@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  DEMO_CUSTOM_FIELDS,
   DEMO_ORGANIZATIONS,
   INITIAL_AUDIT_LOGS,
   INITIAL_EVENTS,
@@ -9,16 +10,20 @@ import {
   INITIAL_PRODUCTION_INQUIRIES,
   INITIAL_REGISTRATIONS,
   INITIAL_USERS,
+  PLATFORM_OWNER_USER,
 } from './data/mockData';
 import {
   AuditLogEntry,
   AuthProviderType,
   CustomRegistrationField,
   EventProduct,
+  EventStatus,
   FeeBearerPolicy,
   MerchOrderRecord,
   Organization,
   OrgRole,
+  PayoutBatch,
+  PayoutStatus,
   ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
@@ -29,6 +34,7 @@ import {
   UserAccount,
 } from './types';
 import { calculateFeeQuote, getCurrentTier } from './utils/pricing';
+import { cloneCustomFieldsSchema } from './utils/eventConfig';
 import { AccountSecurityView, AuthScreen } from './components/AuthViews';
 import {
   CustomerPortalView,
@@ -53,8 +59,17 @@ import {
   OrganizerDashboardView,
   OrgSection,
 } from './components/OrganizerDashboardView';
+import {
+  PlatformAdminView,
+  PlatformSection,
+} from './components/PlatformAdminView';
 
-type RootSurface = 'customer' | 'organizer' | 'auth' | 'account_security';
+type RootSurface =
+  | 'customer'
+  | 'organizer'
+  | 'platform_admin'
+  | 'auth'
+  | 'account_security';
 
 const STORAGE_KEY = 'runevent_v2_mock_system';
 const SESSION_USER_KEY = 'runevent_v2_session_user_id';
@@ -67,6 +82,7 @@ interface PersistedSystemState {
   registrations: RegistrationRecord[];
   merchOrders: MerchOrderRecord[];
   productionInquiries: ProductionInquiry[];
+  payouts: PayoutBatch[];
   auditLogs: AuditLogEntry[];
 }
 
@@ -79,6 +95,7 @@ function createDefaultState(): PersistedSystemState {
     registrations: INITIAL_REGISTRATIONS,
     merchOrders: INITIAL_MERCH_ORDERS,
     productionInquiries: INITIAL_PRODUCTION_INQUIRIES,
+    payouts: INITIAL_PAYOUTS,
     auditLogs: INITIAL_AUDIT_LOGS,
   };
 }
@@ -100,15 +117,67 @@ function loadSystemState(): PersistedSystemState {
         Array.isArray(parsed.events) &&
         Array.isArray(parsed.registrations)
       ) {
+        const hasPlatformOwner = parsed.users.some(
+          (u) => u.id === PLATFORM_OWNER_USER.id || u.isPlatformAdmin
+        );
+        const migratedUsers = hasPlatformOwner
+          ? parsed.users
+          : [PLATFORM_OWNER_USER, ...parsed.users];
+        const hasClubRfq = (parsed.productionInquiries ?? []).some(
+          (q) => q.id === 'pinq-02'
+        );
+        const migratedInquiries = hasClubRfq
+          ? parsed.productionInquiries
+          : [
+              ...(parsed.productionInquiries ?? []),
+              ...INITIAL_PRODUCTION_INQUIRIES.filter((q) => q.id === 'pinq-02'),
+            ];
+
         return {
           ...parsed,
+          users: migratedUsers,
+          payouts: Array.isArray(parsed.payouts)
+            ? parsed.payouts
+            : INITIAL_PAYOUTS,
+          productionInquiries: migratedInquiries,
           events: parsed.events.map((ev) => ({
             ...ev,
+            customFields:
+              ev.customFields === undefined &&
+              (ev.id === 'evt-doisuthep-2026' ||
+                ev.id === 'evt-promthep-2026' ||
+                ev.id === 'evt-oldmoat-2026')
+                ? DEMO_CUSTOM_FIELDS
+                : ev.customFields,
             categories: ev.categories.map((cat) => ({
               ...cat,
               code: normalizeCategoryDistanceCode(cat.code, cat.distanceKm),
             })),
           })),
+          registrations: parsed.registrations.map((reg) => {
+            if (reg.customAnswers !== undefined) return reg;
+            if (reg.id === 'reg-01') {
+              return {
+                ...reg,
+                customAnswers: {
+                  cf_medical: 'แพ้ยาแอสไพริน',
+                  cf_club: 'Chiang Mai Morning Miles',
+                  cf_blood: 'O',
+                },
+              };
+            }
+            if (reg.id === 'reg-02') {
+              return {
+                ...reg,
+                customAnswers: {
+                  cf_medical: 'ไม่มี',
+                  cf_club: 'Lanna Road Runners',
+                  cf_blood: 'B',
+                },
+              };
+            }
+            return reg;
+          }),
         };
       }
     }
@@ -158,6 +227,18 @@ function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
   if (cleanPath === '/account/security') {
     return {
       surface: 'account_security',
+      customerSubView: 'directory',
+      eventSlug: null,
+      eventTab: 'register',
+      authTab: 'signin',
+    };
+  }
+  if (
+    cleanPath === '/platform-admin' ||
+    cleanPath.startsWith('/platform-admin/')
+  ) {
+    return {
+      surface: 'platform_admin',
       customerSubView: 'directory',
       eventSlug: null,
       eventTab: 'register',
@@ -267,6 +348,8 @@ export const App: React.FC = () => {
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const [activeOrgSection, setActiveOrgSection] =
     useState<OrgSection>('org_overview');
+  const [activePlatformSection, setActivePlatformSection] =
+    useState<PlatformSection>('plat_overview');
   const [simulatedState, setSimulatedState] =
     useState<SimulatedUiState>('normal');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -356,7 +439,15 @@ export const App: React.FC = () => {
   // Production Route Guard: redirect unauthenticated visitors from protected routes to /login with ReturnIntent
   useEffect(() => {
     if (!currentUser) {
-      if (surface === 'organizer') {
+      if (surface === 'platform_admin') {
+        setReturnIntent({
+          surface: 'platform_admin',
+          label: 'เข้าใช้งานศูนย์ควบคุม Platform Owner',
+        });
+        setAuthInitialTab('signin');
+        setSurface('auth');
+        pushUrl('/login', true);
+      } else if (surface === 'organizer') {
         setReturnIntent({
           surface: 'organizer',
           label: 'เข้าใช้งานระบบผู้จัดงาน (Organizer Dashboard)',
@@ -467,11 +558,27 @@ export const App: React.FC = () => {
     pushUrl('/organizer');
   };
 
+  const navigatePlatformAdmin = (sec?: PlatformSection) => {
+    setShowProfileMenu(false);
+    if (sec) setActivePlatformSection(sec);
+    if (!currentUser) {
+      setReturnIntent({
+        surface: 'platform_admin',
+        label: 'เข้าใช้งานศูนย์ควบคุม Platform Owner',
+      });
+      navigateLogin('signin');
+      return;
+    }
+    setSurface('platform_admin');
+    pushUrl('/platform-admin');
+  };
+
   const handleLogout = () => {
     setCurrentUserId(null);
     setShowProfileMenu(false);
     setReturnIntent(null);
     if (
+      surface === 'platform_admin' ||
       surface === 'organizer' ||
       surface === 'account_security' ||
       (surface === 'customer' && customerSubView === 'my_orders')
@@ -482,8 +589,6 @@ export const App: React.FC = () => {
     }
   };
 
-
-
   const appendAudit = (
     orgId: string,
     actionSummary: string,
@@ -491,15 +596,16 @@ export const App: React.FC = () => {
     eventId?: string
   ) => {
     const entry: AuditLogEntry = {
-      id: `aud-${Date.now()}`,
+      id: `aud-${Date.now()}-${Math.floor(Math.random() * 999)}`,
       organizationId: orgId,
       eventId,
-      timestamp: '2026-11-17 09:45',
-      actorName: currentUser?.fullNameTh ?? 'ผู้ใช้งานระบบจำลอง',
-      actorRole:
-        currentUser && currentUser.memberships.length > 0
-          ? 'ทีมผู้จัดงาน'
-          : 'ลูกค้า / นักวิ่ง',
+      timestamp: '2026-11-17 13:40',
+      actorName: currentUser?.fullNameTh ?? 'ผู้ใช้งานระบบ',
+      actorRole: currentUser?.isPlatformAdmin
+        ? 'Platform Owner'
+        : currentUser && currentUser.memberships.length > 0
+        ? 'ทีมผู้จัดงาน'
+        : 'ลูกค้า / นักวิ่ง',
       actionSummary,
       detailChange,
     };
@@ -552,6 +658,11 @@ export const App: React.FC = () => {
         pushUrl('/account/security');
         return;
       }
+      if (intent.surface === 'platform_admin') {
+        setSurface('platform_admin');
+        pushUrl('/platform-admin');
+        return;
+      }
       if (intent.surface === 'organizer') {
         if (user.memberships.length > 0) {
           const targetOrg =
@@ -562,6 +673,13 @@ export const App: React.FC = () => {
         pushUrl('/organizer');
         return;
       }
+    }
+
+    if (user.isPlatformAdmin && !preferredOrgId) {
+      setActivePlatformSection('plat_overview');
+      setSurface('platform_admin');
+      pushUrl('/platform-admin');
+      return;
     }
 
     if (preferredOrgId || user.memberships.length > 0) {
@@ -902,6 +1020,7 @@ export const App: React.FC = () => {
     simulateImmediateWebhook: boolean;
     addonProduct?: EventProduct | null;
     addonSize?: string;
+    customAnswers?: Record<string, string | boolean>;
   }) => {
     const ev = sys.events.find((e) => e.id === payload.eventId)!;
     const cat = ev.categories.find((c) => c.id === payload.categoryId)!;
@@ -931,6 +1050,7 @@ export const App: React.FC = () => {
       phoneMasked: '081-•••-9900',
       emergencyContact: 'ผู้ติดต่อฉุกเฉินจำลอง 089-•••-0011',
       shirtSize: payload.shirtSize,
+      customAnswers: payload.customAnswers,
       bibNumber: null,
       qrCheckInToken: `TKN-${cat.bibPrefix}${seq}-${tokenSuffix}`,
       acceptedRulesVersion: ev.rulesVersion,
@@ -1101,22 +1221,63 @@ export const App: React.FC = () => {
     return newOrder;
   };
 
-  // ตัวอย่าง Handler ใน App.tsx สำหรับส่งต่อไปยัง OrganizerDashboardView
+  const handleUpdateEventTotalQuota = (
+    eventId: string,
+    newTotalQuota: number
+  ) => {
+    const target = sys.events.find((e) => e.id === eventId);
+    if (!target) return;
+
+    setSys((prev) => ({
+      ...prev,
+      events: prev.events.map((ev) =>
+        ev.id === eventId ? { ...ev, totalEventQuota: newTotalQuota } : ev
+      ),
+    }));
+
+    appendAudit(
+      target.organizationId,
+      `ปรับเพดานโควตารวมงาน ${target.code}`,
+      `${target.totalEventQuota} -> ${newTotalQuota} คน`,
+      target.id
+    );
+  };
+
   const handleUpdateCategoryQuota = (
     eventId: string,
     categoryId: string,
-    newMaxQuota: number
+    newCategoryQuota: number
   ) => {
-    setEvents((prevEvents) =>
-      prevEvents.map((ev) => {
+    const target = sys.events.find((e) => e.id === eventId);
+    const targetCat = target?.categories.find((c) => c.id === categoryId);
+    if (!target || !targetCat) return;
+
+    setSys((prev) => ({
+      ...prev,
+      events: prev.events.map((ev) => {
         if (ev.id !== eventId) return ev;
+        const nextCategories = ev.categories.map((cat) =>
+          cat.id === categoryId
+            ? { ...cat, categoryQuota: newCategoryQuota }
+            : cat
+        );
+        const nextTotalQuota = nextCategories.reduce(
+          (sum, cat) => sum + cat.categoryQuota,
+          0
+        );
         return {
           ...ev,
-          categories: ev.categories.map((cat) =>
-            cat.id === categoryId ? { ...cat, maxQuota: newMaxQuota } : cat
-          ),
+          categories: nextCategories,
+          totalEventQuota: Math.max(ev.totalEventQuota, nextTotalQuota),
         };
-      })
+      }),
+    }));
+
+    appendAudit(
+      target.organizationId,
+      `ปรับโควตาระยะ ${targetCat.code} งาน ${target.code}`,
+      `${targetCat.categoryQuota} -> ${newCategoryQuota} คน`,
+      target.id
     );
   };
 
@@ -1124,10 +1285,21 @@ export const App: React.FC = () => {
     eventId: string,
     nextFields: CustomRegistrationField[]
   ) => {
-    setEvents((prevEvents) =>
-      prevEvents.map((ev) =>
+    const target = sys.events.find((e) => e.id === eventId);
+    if (!target) return;
+
+    setSys((prev) => ({
+      ...prev,
+      events: prev.events.map((ev) =>
         ev.id === eventId ? { ...ev, customFields: nextFields } : ev
-      )
+      ),
+    }));
+
+    appendAudit(
+      target.organizationId,
+      `อัปเดตคำถามเพิ่มเติมในใบสมัครงาน ${target.code}`,
+      `จำนวนคำถามทั้งหมด ${nextFields.length} ข้อ`,
+      target.id
     );
   };
 
@@ -1359,6 +1531,7 @@ export const App: React.FC = () => {
       })),
       verifiedPhotoAlbums: undefined,
       officialResultsUrl: undefined,
+      customFields: cloneCustomFieldsSchema(src.customFields ?? []),
     };
     setSys((prev) => ({ ...prev, events: [copyEv, ...prev.events] }));
     appendAudit(
@@ -1735,8 +1908,306 @@ export const App: React.FC = () => {
     return inv;
   };
 
+  /* ---- Platform Owner Governance Operations ---- */
+  const handleReviewOrganization = (
+    orgId: string,
+    action: 'approve_kyc_bank' | 'hold_bank' | 'suspend_org' | 'reinstate_org',
+    bankSummary?: string
+  ) => {
+    const target = sys.organizations.find((o) => o.id === orgId);
+    if (!target) return;
+
+    setSys((prev) => ({
+      ...prev,
+      organizations: prev.organizations.map((o) => {
+        if (o.id !== orgId) return o;
+        if (action === 'approve_kyc_bank' || action === 'reinstate_org') {
+          return {
+            ...o,
+            nameTh: o.nameTh.replace(/\s*\(องค์กรใหม่รอตรวจ\)|\s*\(รอตรวจสอบผู้จัด\)/g, ''),
+            verificationStatus: 'verified',
+            payoutReady: true,
+            payoutBankSummary:
+              bankSummary || o.payoutBankSummary,
+          };
+        }
+        if (action === 'hold_bank') {
+          return {
+            ...o,
+            payoutReady: false,
+            payoutBankSummary: 'พักความพร้อมบัญชีรับเงินชั่วคราวโดยผู้ดูแลแพลตฟอร์ม',
+          };
+        }
+        return {
+          ...o,
+          verificationStatus: 'suspended',
+          payoutReady: false,
+        };
+      }),
+    }));
+
+    appendAudit(
+      orgId,
+      action === 'approve_kyc_bank'
+        ? `อนุมัติองค์กรผู้จัดและบัญชีรับเงิน (${target.code})`
+        : action === 'reinstate_org'
+        ? `ปลดระงับองค์กรผู้จัด (${target.code})`
+        : action === 'hold_bank'
+        ? `สั่งพักสถานะบัญชีรับเงินขององค์กร (${target.code})`
+        : `สั่งระงับองค์กรผู้จัดชั่วคราว (${target.code})`,
+      bankSummary ?? target.nameTh
+    );
+  };
+
+  const handleGovernEventStatus = (
+    eventId: string,
+    nextStatus: EventStatus,
+    adminNote?: string,
+    postRaceLinks?: {
+      resultsUrl?: string;
+      albumTitle?: string;
+      albumUrl?: string;
+    }
+  ) => {
+    const target = sys.events.find((e) => e.id === eventId);
+    if (!target) return;
+
+    setSys((prev) => ({
+      ...prev,
+      events: prev.events.map((ev) => {
+        if (ev.id !== eventId) return ev;
+        const nextAlbums =
+          nextStatus === 'completed' && postRaceLinks?.albumTitle
+            ? [
+                ...(ev.verifiedPhotoAlbums ?? []),
+                {
+                  id: `alb-adm-${Date.now()}`,
+                  title: postRaceLinks.albumTitle,
+                  photographerCredit: 'ตรวจสอบและประกาศผ่านระบบแพลตฟอร์ม',
+                  photoCount: 850,
+                  externalUrl:
+                    postRaceLinks.albumUrl ??
+                    `#verified-album-${ev.code.toLowerCase()}`,
+                },
+              ]
+            : ev.verifiedPhotoAlbums;
+
+        return {
+          ...ev,
+          status: nextStatus,
+          statusNote: adminNote || undefined,
+          officialResultsUrl:
+            nextStatus === 'completed' && postRaceLinks?.resultsUrl
+              ? postRaceLinks.resultsUrl
+              : ev.officialResultsUrl,
+          verifiedPhotoAlbums: nextAlbums,
+        };
+      }),
+    }));
+
+    appendAudit(
+      target.organizationId,
+      `ผู้ดูแลแพลตฟอร์มเปลี่ยนสถานะงาน ${target.code} (${target.status} -> ${nextStatus})`,
+      adminNote || nextStatus,
+      target.id
+    );
+  };
+
+  const handleUpdateProductionInquiry = (
+    inquiryId: string,
+    patch: {
+      quoteStatus?: ProductionInquiry['quoteStatus'];
+      productionStatus?: ProductionInquiry['productionStatus'];
+      quotedTotalSatang?: number;
+      adminNote?: string;
+    }
+  ) => {
+    const target = sys.productionInquiries.find((q) => q.id === inquiryId);
+    if (!target) return;
+
+    setSys((prev) => ({
+      ...prev,
+      productionInquiries: prev.productionInquiries.map((q) =>
+        q.id === inquiryId
+          ? {
+              ...q,
+              quoteStatus: patch.quoteStatus ?? q.quoteStatus,
+              productionStatus: patch.productionStatus ?? q.productionStatus,
+              quotedTotalSatang:
+                patch.quotedTotalSatang !== undefined
+                  ? patch.quotedTotalSatang
+                  : q.quotedTotalSatang,
+              adminNote:
+                patch.adminNote !== undefined ? patch.adminNote : q.adminNote,
+            }
+          : q
+      ),
+    }));
+
+    appendAudit(
+      target.organizationId ?? 'PLATFORM-HQ',
+      `อัปเดตใบเสนอราคา/การผลิต ${target.inquiryCode}`,
+      `quote=${patch.quoteStatus ?? target.quoteStatus}, prod=${
+        patch.productionStatus ?? target.productionStatus
+      }`,
+      target.eventId
+    );
+  };
+
+  const handleUpdatePayoutBatchStatus = (
+    payoutId: string,
+    nextStatus: PayoutStatus
+  ) => {
+    const target = sys.payouts.find((p) => p.id === payoutId);
+    if (!target) return;
+
+    setSys((prev) => ({
+      ...prev,
+      payouts: prev.payouts.map((p) =>
+        p.id === payoutId ? { ...p, status: nextStatus } : p
+      ),
+    }));
+
+    appendAudit(
+      target.organizationId,
+      `อัปเดตสถานะรอบโอนยอดนำส่ง ${target.payoutCode}`,
+      `${target.status} -> ${nextStatus}`,
+      target.eventId
+    );
+  };
+
+  const handleCreatePayoutBatch = (payload: {
+    organizationId: string;
+    eventId: string;
+    periodLabel: string;
+    scheduledDate: string;
+    netPayoutSatang: number;
+  }) => {
+    const code = `PO-2026-${Math.floor(1200 + Math.random() * 800)}`;
+    const newBatch: PayoutBatch = {
+      id: `po-dyn-${Date.now()}`,
+      payoutCode: code,
+      organizationId: payload.organizationId,
+      eventId: payload.eventId,
+      periodLabel: payload.periodLabel,
+      scheduledDate: payload.scheduledDate,
+      grossSucceededSatang: payload.netPayoutSatang,
+      deductedRefundSatang: 0,
+      deductedOrganizerFeeSatang: 0,
+      netPayoutSatang: payload.netPayoutSatang,
+      status: 'scheduled',
+    };
+
+    setSys((prev) => ({
+      ...prev,
+      payouts: [newBatch, ...prev.payouts],
+    }));
+
+    appendAudit(
+      payload.organizationId,
+      `สร้างรอบโอนยอดนำส่งใหม่ (${code})`,
+      payload.periodLabel,
+      payload.eventId
+    );
+  };
+
+  const handleAdminResolveOrForceRefund = (
+    regId: string,
+    decision: 'approve_succeed' | 'reject' | 'admin_force_refund',
+    reason: string
+  ) => {
+    if (decision === 'approve_succeed' || decision === 'reject') {
+      handleResolveRefundRequest(regId, decision, `[Platform Owner] ${reason}`);
+      return;
+    }
+    const target = sys.registrations.find((r) => r.id === regId);
+    if (!target) return;
+
+    setSys((prev) => ({
+      ...prev,
+      registrations: prev.registrations.map((r) =>
+        r.id === regId
+          ? {
+              ...r,
+              registrationStatus: 'cancelled',
+              refundStatus: 'succeeded',
+              refundedAt: '2026-11-17T13:45:00+07:00',
+              snapshotRefundedSatang: r.snapshotBaseSatang,
+              refundReason: `[Platform Exception] ${reason}`,
+            }
+          : r
+      ),
+    }));
+
+    appendAudit(
+      target.organizationId,
+      `ผู้ดูแลแพลตฟอร์มสั่งคืนเงินกรณีพิเศษ (${target.regCode})`,
+      reason,
+      target.eventId
+    );
+  };
+
+  const handleAdminUpdateUserAccess = (
+    targetUserId: string,
+    action:
+      | { kind: 'verify_email' }
+      | { kind: 'toggle_platform_admin' }
+      | { kind: 'grant_org_role'; organizationId: string; role: OrgRole }
+      | { kind: 'revoke_org_role'; organizationId: string }
+  ) => {
+    const targetUser = sys.users.find((u) => u.id === targetUserId);
+    if (!targetUser) return;
+
+    setSys((prev) => ({
+      ...prev,
+      users: prev.users.map((u) => {
+        if (u.id !== targetUserId) return u;
+        if (action.kind === 'verify_email') {
+          return {
+            ...u,
+            contactEmail: u.contactEmail ?? `${u.code.toLowerCase()}@verified.local`,
+            emailVerified: true,
+          };
+        }
+        if (action.kind === 'toggle_platform_admin') {
+          return {
+            ...u,
+            isPlatformAdmin: !u.isPlatformAdmin,
+          };
+        }
+        if (action.kind === 'grant_org_role') {
+          const rest = u.memberships.filter(
+            (m) => m.organizationId !== action.organizationId
+          );
+          return {
+            ...u,
+            memberships: [
+              ...rest,
+              { organizationId: action.organizationId, role: action.role },
+            ],
+          };
+        }
+        return {
+          ...u,
+          memberships: u.memberships.filter(
+            (m) => m.organizationId !== action.organizationId
+          ),
+        };
+      }),
+    }));
+
+    appendAudit(
+      action.kind === 'grant_org_role' || action.kind === 'revoke_org_role'
+        ? action.organizationId
+        : 'PLATFORM-HQ',
+      `ปรับสิทธิ์บัญชีผู้ใช้ ${targetUser.fullNameTh} (${targetUser.code})`,
+      action.kind
+    );
+  };
+
+  const isPlatformOwner = Boolean(currentUser?.isPlatformAdmin);
   const hasOrganizerAccess = Boolean(
-    currentUser && currentUser.memberships.length > 0
+    currentUser && (currentUser.memberships.length > 0 || currentUser.isPlatformAdmin)
   );
   const pendingWebhookRegs = sys.registrations.filter(
     (r) => r.registrationStatus === 'pending_payment'
@@ -1798,7 +2269,7 @@ export const App: React.FC = () => {
             <span>บัตรวิ่ง & คำสั่งซื้อ</span>
           </button>
 
-          {/* VISIBLE ONLY WHEN LOGGED IN AS AN ORGANIZER MEMBER */}
+          {/* VISIBLE ONLY WHEN LOGGED IN AS AN ORGANIZER MEMBER (OR PLATFORM ADMIN) */}
           {hasOrganizerAccess && (
             <button
               type="button"
@@ -1808,6 +2279,20 @@ export const App: React.FC = () => {
             >
               <IconBuilding size={15} />
               <span>ระบบผู้จัดงาน</span>
+            </button>
+          )}
+
+          {/* VISIBLE ONLY WHEN LOGGED IN AS PLATFORM OWNER */}
+          {isPlatformOwner && (
+            <button
+              type="button"
+              className={`surface-switch-btn ${
+                surface === 'platform_admin' ? 'active' : ''
+              }`}
+              onClick={() => navigatePlatformAdmin()}
+            >
+              <IconShield size={15} />
+              <span>จัดการแพลตฟอร์ม</span>
             </button>
           )}
         </nav>
@@ -1881,6 +2366,17 @@ export const App: React.FC = () => {
                     <IconShield size={15} />
                     <span>บัญชีและความปลอดภัย</span>
                   </button>
+
+                  {isPlatformOwner && (
+                    <button
+                      type="button"
+                      className="profile-menu-item"
+                      onClick={() => navigatePlatformAdmin()}
+                    >
+                      <IconShield size={15} />
+                      <span>ศูนย์ควบคุม Platform Owner</span>
+                    </button>
+                  )}
 
                   {hasOrganizerAccess ? (
                     <div className="profile-org-section">
@@ -2005,7 +2501,7 @@ export const App: React.FC = () => {
             registrations={sys.registrations}
             merchOrders={sys.merchOrders}
             productionInquiries={sys.productionInquiries}
-            payouts={INITIAL_PAYOUTS}
+            payouts={sys.payouts}
             auditLogs={sys.auditLogs}
             simulatedState={simulatedState}
             onClearSimulatedState={() => setSimulatedState('normal')}
@@ -2043,6 +2539,9 @@ export const App: React.FC = () => {
                 navigateCustomer('directory', null);
               }
             }}
+            onUpdateEventTotalQuota={handleUpdateEventTotalQuota}
+            onUpdateCategoryQuota={handleUpdateCategoryQuota}
+            onUpdateCustomFields={handleUpdateCustomFields}
           />
         ) : (
           <main className="customer-container">
@@ -2072,6 +2571,61 @@ export const App: React.FC = () => {
                 <button
                   type="button"
                   className="btn-secondary"
+                  onClick={() => navigateCustomer('directory', null)}
+                >
+                  <span>กลับหน้าค้นหางานวิ่ง</span>
+                </button>
+              </div>
+            </div>
+          </main>
+        ))}
+
+      {surface === 'platform_admin' &&
+        currentUser &&
+        (isPlatformOwner ? (
+          <PlatformAdminView
+            currentUser={currentUser}
+            activeSection={activePlatformSection}
+            onSelectSection={setActivePlatformSection}
+            organizations={sys.organizations}
+            events={sys.events}
+            registrations={sys.registrations}
+            merchOrders={sys.merchOrders}
+            productionInquiries={sys.productionInquiries}
+            payouts={sys.payouts}
+            users={sys.users}
+            auditLogs={sys.auditLogs}
+            onReviewOrganization={handleReviewOrganization}
+            onGovernEventStatus={handleGovernEventStatus}
+            onUpdateProductionInquiry={handleUpdateProductionInquiry}
+            onUpdatePayoutBatchStatus={handleUpdatePayoutBatchStatus}
+            onCreatePayoutBatch={handleCreatePayoutBatch}
+            onAdminResolveOrForceRefund={handleAdminResolveOrForceRefund}
+            onAdminUpdateUserAccess={handleAdminUpdateUserAccess}
+            onOpenPublicEvent={(evId) =>
+              navigateCustomer('event_detail', evId, 'register')
+            }
+            onInspectOrganizerWorkspace={(orgId, evId) =>
+              navigateOrganizer(orgId, evId)
+            }
+          />
+        ) : (
+          <main className="customer-container">
+            <div className="empty-state-box">
+              <div className="cta-inline-row" style={{ marginBottom: '0.45rem' }}>
+                <span className="status-pill badge-danger">
+                  <IconAlert size={14} />
+                  <span>ไม่มีสิทธิ์เข้าถึงส่วนกลางแพลตฟอร์ม (403 Forbidden)</span>
+                </span>
+              </div>
+              <h1>หน้านี้จำกัดเฉพาะผู้ดูแลระบบสูงสุดของแพลตฟอร์ม (Platform Owner)</h1>
+              <p>
+                บัญชีผู้จัดงานและลูกค้าทั่วไปไม่สามารถเข้าถึงศูนย์อนุมัติกลางของ RunEvent ได้
+              </p>
+              <div className="cta-inline-row">
+                <button
+                  type="button"
+                  className="btn-primary"
                   onClick={() => navigateCustomer('directory', null)}
                 >
                   <span>กลับหน้าค้นหางานวิ่ง</span>
@@ -2166,7 +2720,9 @@ export const App: React.FC = () => {
                       <div>
                         <strong>{u.fullNameTh}</strong>
                         <div className="muted-inline">
-                          {isOrg
+                          {u.isPlatformAdmin
+                            ? 'Platform Owner · อนุมัติผู้จัด/งานวิ่ง/รอบโอนทั้งระบบ'
+                            : isOrg
                             ? `ทีมผู้จัด (${u.memberships.length} องค์กร) · เห็นเมนูผู้จัด`
                             : 'ลูกค้า/นักวิ่งทั่วไป · ไม่เห็นเมนูผู้จัด'}
                         </div>

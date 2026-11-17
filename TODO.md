@@ -20,17 +20,22 @@
 - [x] สร้างและปรับปรุง Interactive Local Mockup v2 (`Vite + React + TypeScript`) ครอบคลุมหน้าค้นหางานวิ่ง Modern Minimal + ร้านค้าของที่ระลึก/ขอราคาผลิตจำลอง (`CustomerPortalView`), ระบบจำลองบัญชีเดียว Email/Google/LINE + บัญชีและความปลอดภัย (`AuthViews`), และ Organizer Dashboard ที่อธิบายหน้าที่ชัดเจนทุกส่วน (`OrganizerDashboardView`) พร้อมตรวจ `tsc` / `vite build` และทดสอบบนเบราว์เซอร์จริง — `src/`, [PRODUCT.md](PRODUCT.md), [DESIGN.md](DESIGN.md) (หมายเหตุ: เป็นต้นแบบฝั่งหน้าบ้านใน `localStorage` ยังไม่เชื่อม Backend/OAuth/Payment จริง)
 - [x] สร้าง Workspace Skill สำหรับรันและตรวจสอบโปรเจกต์บน Local — [.agents/skills/run-local/SKILL.md](.agents/skills/run-local/SKILL.md)
 
-## ฟีเจอร์บัญชีที่เพิ่ม — 17 พฤศจิกายน 2026
+## ฟีเจอร์บัญชีและการลงทะเบียนครบวงจร — อัปเดต 17 พฤศจิกายน 2026
 
 - [x] บันทึกฟีเจอร์อีเมล/รหัสผ่าน Google และ LINE ในบัญชีเดียวลงแผน — ยังไม่เชื่อมระบบจริง
-- [ ] วาง flow สมัครเอง ยืนยันอีเมล Login ลืม/รีเซ็ตรหัสผ่าน และตั้งค่าผู้ใช้ใหม่ผ่าน social
+- [x] บันทึกข้อกำหนด **Complete Registration System (Runner 2-Step Wizard & Organizer 3-Step Verification Wizard)** ลงแผนตามคำสั่งวันที่ 17 พฤศจิกายน 2026 — ยังไม่ลงโค้ด
+- [ ] ออกแบบและพัฒนาหน้าเลือกประเภทบัญชี (`Join the Running Community`: การ์ด Runner / Organizer) และการสลับ/เพิ่มบทบาทโดยไม่เสียข้อมูลเดิม (เมื่อได้รับคำสั่งลงโค้ด)
+- [ ] ออกแบบและพัฒนา **Runner Registration 2 ขั้นตอน** (Account + Optional Runner Profile/Emergency Contact, Profile Completion Indicator, แยกขาดจากฟิลด์สมัครงานวิ่ง และทางเข้า Runner Dashboard)
+- [ ] ออกแบบและพัฒนา **Organizer Registration 3 ขั้นตอน + Save Draft** (ข้อมูลผู้ติดต่อ, โปรไฟล์/ประเภทองค์กร/ที่อยู่ไทย/ผู้ประสานงานหลัก, อัปโหลดเอกสารยืนยันตัวตนและหนังสือมอบอำนาจแบบ Private Storage)
+- [ ] ออกแบบและพัฒนา **Organizer Verification Workflow 7 สถานะ** (`DRAFT`, `SUBMITTED`, `UNDER_REVIEW`, `MORE_INFORMATION_REQUIRED`, `APPROVED`, `REJECTED`, `SUSPENDED`) พร้อมหน้าตรวจเอกสารของ Platform Admin และ `verification_history`
+- [ ] วาง flow สมัครเอง ยืนยันอีเมล Login ลืม/รีเซ็ตรหัสผ่าน ตัววัดความแข็งแรงรหัสผ่าน และการเตือนก่อนออกจากหน้าเมื่อมีข้อมูลค้าง (`Unsaved changes`)
 - [ ] วาง LINE ไม่มีอีเมล การเชื่อม/ถอด provider เพิ่มรหัสผ่าน และแก้บัญชีซ้ำโดยพิสูจน์เจ้าของ
 - [ ] วางหน้า “บัญชีและความปลอดภัย” และการกลับรายการเดิม/เลือกองค์กร/รับคำเชิญ
-- [ ] กำหนด auth stack, provider app/channel, callback environment และผู้ส่งอีเมล
-- [ ] ออกแบบ AuthIdentity/credentials, session, token expiry/revocation, rate limits และการป้องกัน CSRF
-- [ ] พัฒนา Login/Register จริงทั้งสามวิธีเมื่อได้รับอนุญาต backend และแยกออกจากบัญชีสาธิต
-- [ ] ทดสอบบัญชีซ้ำ LINE ไม่มีอีเมล token ใช้ซ้ำ/หมดอายุ การยกเลิก consent และ session ถูกเพิกถอน
-- [ ] ทดสอบการกลับรายการเดิมไม่เกิด open redirect และ Login ไม่เพิ่มสิทธิ์องค์กรเอง
+- [ ] กำหนด auth stack, provider app/channel, callback environment, ผู้ส่งอีเมล และ Private Object Storage สำหรับเอกสารผู้จัด
+- [ ] ออกแบบตารางฐานข้อมูล (`users`, `user_auth_providers`, `user_roles`, `user_profiles`, `user_emergency_contacts`, `organizations`, `organization_addresses`, `organization_members`, `organization_documents`, `organization_verifications`, `verification_history`) และ API contracts ให้สอดคล้องกับระบบเดิม
+- [ ] พัฒนา Login/Register จริงครบทั้ง 17 Deliverables เมื่อได้รับอนุญาตลงโค้ด/backend และแยกออกจากบัญชีสาธิต
+- [ ] ทดสอบบัญชีซ้ำ LINE ไม่มีอีเมล เอกสารผู้จัด (ชนิดไฟล์/MIME/สิทธิ์เข้าถึง) token ใช้ซ้ำ/หมดอายุ การยกเลิก consent และ session ถูกเพิกถอน
+- [ ] ทดสอบการกลับรายการเดิมไม่เกิด open redirect และ Login ไม่เพิ่มสิทธิ์องค์กรหรืออนุมัติผู้จัดเอง
 
 รายละเอียดและเกณฑ์ยอมรับ: [Product blueprint ข้อ 16](docs/product-blueprint.md)
 

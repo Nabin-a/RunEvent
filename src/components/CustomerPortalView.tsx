@@ -39,6 +39,7 @@ import {
   PaymentStatusBadge,
   RegStatusBadge,
 } from './StatusBadges';
+import { RunnerCustomFieldsInputs } from './PublicEventView';
 
 export type CustomerSubView =
   | 'directory'
@@ -75,6 +76,7 @@ interface CustomerPortalViewProps {
     simulateImmediateWebhook: boolean;
     addonProduct?: EventProduct | null;
     addonSize?: string;
+    customAnswers?: Record<string, string | boolean>;
   }) => { reg: RegistrationRecord; addonOrder?: MerchOrderRecord };
   onCreateStandaloneMerchOrder: (payload: {
     eventId: string;
@@ -151,6 +153,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   );
   const [acceptedRules, setAcceptedRules] = useState(false);
   const [marketingConsent, setMarketingConsent] = useState(false);
+  const [customAnswers, setCustomAnswers] = useState<
+    Record<string, string | boolean>
+  >({});
+  const [step2Error, setStep2Error] = useState<string | null>(null);
   const [paymentChannel, setPaymentChannel] = useState<'promptpay' | 'card'>(
     'promptpay'
   );
@@ -187,6 +193,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
   React.useEffect(() => {
     setDetailTab(initialEventTab);
+    setCustomAnswers({});
+    setStep2Error(null);
   }, [initialEventTab, selectedEventId]);
 
   React.useEffect(() => {
@@ -368,6 +376,19 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       return;
     }
 
+    const missingCustom = (selectedEvent.customFields ?? []).find((f) => {
+      if (!f.required) return false;
+      const val = customAnswers[f.id];
+      if (f.type === 'checkbox') return val !== true;
+      return !String(val ?? '').trim();
+    });
+    if (missingCustom) {
+      setCheckoutError(
+        `กรุณากรอกข้อมูลเพิ่มเติมที่จำเป็น: "${missingCustom.label}" ในขั้นตอนที่ 2`
+      );
+      return;
+    }
+
     const catSeats = getCategoryOpenSeats(selectedEvent.id, activeCategory);
     const eventSeats = getEventOpenSeats(selectedEvent);
     if (catSeats <= 0 || eventSeats <= 0) {
@@ -387,6 +408,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       simulateImmediateWebhook: payImmediately,
       addonProduct: selectedAddonProduct,
       addonSize,
+      customAnswers:
+        (selectedEvent.customFields ?? []).length > 0
+          ? customAnswers
+          : undefined,
     });
     setCreatedResult(res);
   };
@@ -1368,6 +1393,25 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       </div>
                     </div>
 
+                    <RunnerCustomFieldsInputs
+                      fields={selectedEvent.customFields}
+                      answers={customAnswers}
+                      onAnswerChange={(fieldId, val) => {
+                        setStep2Error(null);
+                        setCustomAnswers((prev) => ({
+                          ...prev,
+                          [fieldId]: val,
+                        }));
+                      }}
+                    />
+
+                    {step2Error && (
+                      <div className="error-callout" role="alert">
+                        <IconAlert size={16} />
+                        <span>{step2Error}</span>
+                      </div>
+                    )}
+
                     <div className="consent-group">
                       <label className="checkbox-row">
                         <input
@@ -1408,7 +1452,24 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       <button
                         type="button"
                         className="btn-primary"
-                        onClick={() => setRegStep(3)}
+                        onClick={() => {
+                          const missingField = (
+                            selectedEvent.customFields ?? []
+                          ).find((f) => {
+                            if (!f.required) return false;
+                            const val = customAnswers[f.id];
+                            if (f.type === 'checkbox') return val !== true;
+                            return !String(val ?? '').trim();
+                          });
+                          if (missingField) {
+                            setStep2Error(
+                              `กรุณาระบุ "${missingField.label}" ให้ครบก่อนไปขั้นตอนถัดไป`
+                            );
+                            return;
+                          }
+                          setStep2Error(null);
+                          setRegStep(3);
+                        }}
                       >
                         <span>ถัดไป: ตรวจสอบยอดรวม</span>
                         <IconArrowRight size={15} />
