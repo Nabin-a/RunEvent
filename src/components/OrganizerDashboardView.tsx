@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import {
   AuditLogEntry,
+  CustomFieldType,
+  CustomRegistrationField,
   EventStatus,
   FeeBearerPolicy,
   MerchOrderRecord,
@@ -56,6 +58,7 @@ import {
   RefundStatusBadge,
   RegStatusBadge,
 } from './StatusBadges';
+import { validateQuotaUpdate } from '../utils/eventConfig';
 
 export type OrgSection =
   | 'org_overview'
@@ -141,6 +144,156 @@ const roleNameMap: Record<OrgRole, string> = {
   finance: 'ฝ่ายการเงิน (ตรวจยอดและอนุมัติคืนเงิน)',
   staff: 'เจ้าหน้าที่หน้างาน (เช็กอิน BIB และจ่ายสินค้า)',
 };
+
+export function QuotaEditorRow({
+  categoryName,
+  maxQuota,
+  registeredCount,
+  reservedCount,
+  canEdit,
+  onSaveQuota,
+}: {
+  categoryName: string;
+  maxQuota: number;
+  registeredCount: number;
+  reservedCount: number;
+  canEdit: boolean; // true สำหรับ owner และ event_manager
+  onSaveQuota: (nextQuota: number) => void;
+}) {
+  const [draftQuota, setDraftQuota] = useState<number>(maxQuota);
+  const check = validateQuotaUpdate(draftQuota, registeredCount, reservedCount);
+
+  return (
+    <div className="quota-editor-row">
+      <div>
+        <strong>{categoryName}</strong>
+        <span> (ใช้โควตาแล้ว {registeredCount + reservedCount} / {maxQuota})</span>
+      </div>
+      {canEdit && (
+        <div>
+          <input
+            type="number"
+            min={check.minAllowed}
+            value={draftQuota}
+            onChange={(e) => setDraftQuota(Number(e.target.value))}
+          />
+          <button
+            type="button"
+            disabled={!check.valid || draftQuota === maxQuota}
+            onClick={() => onSaveQuota(draftQuota)}
+          >
+            บันทึกโควตา
+          </button>
+          {!check.valid && <p className="field-error">{check.message}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 2) ส่วนเพิ่ม/ลบ Field กรอกข้อมูลเพิ่มเติมสำหรับผู้จัด
+export function CustomFieldsManager({
+  fields = [],
+  canEdit,
+  onChange,
+}: {
+  fields?: CustomRegistrationField[];
+  canEdit: boolean;
+  onChange: (next: CustomRegistrationField[]) => void;
+}) {
+  const [label, setLabel] = useState('');
+  const [type, setType] = useState<CustomFieldType>('text');
+  const [optionsText, setOptionsText] = useState('');
+  const [required, setRequired] = useState(false);
+  const [isSensitive, setIsSensitive] = useState(false);
+
+  const handleAddField = () => {
+    if (!label.trim()) return;
+    const newField: CustomRegistrationField = {
+      id: `cf_${Date.now()}`,
+      label: label.trim(),
+      type,
+      required,
+      isSensitive,
+      options:
+        type === 'select'
+          ? optionsText.split(',').map((s) => s.trim()).filter(Boolean)
+          : undefined,
+    };
+    onChange([...fields, newField]);
+    setLabel('');
+    setOptionsText('');
+    setRequired(false);
+    setIsSensitive(false);
+  };
+
+  return (
+    <section className="custom-fields-panel">
+      <h4>คำถามเพิ่มเติมในใบสมัคร</h4>
+      <ul>
+        {fields.map((f) => (
+          <li key={f.id}>
+            <span>
+              {f.label} ({f.type}) {f.required ? '*จำเป็น' : ''}{' '}
+              {f.isSensitive ? '[ข้อมูลอ่อนไหว/PII]' : ''}
+            </span>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => onChange(fields.filter((item) => item.id !== f.id))}
+              >
+                ลบ
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {canEdit && (
+        <div className="custom-field-creator">
+          <input
+            type="text"
+            placeholder="ชื่อคำถาม เช่น โรคประจำตัว หรือ ชื่อชมรม"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+          />
+          <select value={type} onChange={(e) => setType(e.target.value as CustomFieldType)}>
+            <option value="text">ข้อความสั้น</option>
+            <option value="select">ตัวเลือก (Dropdown)</option>
+            <option value="checkbox">ช่องติ๊กยืนยัน</option>
+          </select>
+          {type === 'select' && (
+            <input
+              type="text"
+              placeholder="ตัวเลือกคั่นด้วยลูกน้ำ เช่น A, B, AB, O"
+              value={optionsText}
+              onChange={(e) => setOptionsText(e.target.value)}
+            />
+          )}
+          <label>
+            <input
+              type="checkbox"
+              checked={required}
+              onChange={(e) => setRequired(e.target.checked)}
+            />
+            บังคับกรอก
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={isSensitive}
+              onChange={(e) => setIsSensitive(e.target.checked)}
+            />
+            ซ่อนจากจุดรับอุปกรณ์หน้างาน (PII)
+          </label>
+          <button type="button" onClick={handleAddField}>
+            + เพิ่มฟิลด์คำถาม
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
 
 export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
   currentUser,
@@ -297,11 +450,11 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
     () =>
       selectedEvent
         ? computeMetrics(
-            [selectedEvent],
-            orgRegistrations.filter((r) => r.eventId === selectedEvent.id),
-            orgMerchOrders.filter((m) => m.eventId === selectedEvent.id),
-            timeWindow
-          )
+          [selectedEvent],
+          orgRegistrations.filter((r) => r.eventId === selectedEvent.id),
+          orgMerchOrders.filter((m) => m.eventId === selectedEvent.id),
+          timeWindow
+        )
         : null,
     [selectedEvent, orgRegistrations, orgMerchOrders, timeWindow]
   );
@@ -620,9 +773,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
           <div className="rail-group-heading">ระดับองค์กร (ดูรวมทุกงาน)</div>
           <button
             type="button"
-            className={`rail-nav-btn ${
-              activeSection === 'org_overview' ? 'active' : ''
-            }`}
+            className={`rail-nav-btn ${activeSection === 'org_overview' ? 'active' : ''
+              }`}
             onClick={() => {
               onSelectEvent(null);
               onSelectSection('org_overview');
@@ -634,9 +786,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
 
           <button
             type="button"
-            className={`rail-nav-btn ${
-              activeSection === 'org_events' ? 'active' : ''
-            }`}
+            className={`rail-nav-btn ${activeSection === 'org_events' ? 'active' : ''
+              }`}
             onClick={() => {
               onSelectEvent(null);
               onSelectSection('org_events');
@@ -648,9 +799,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
 
           <button
             type="button"
-            className={`rail-nav-btn ${
-              activeSection === 'org_merch_production' ? 'active' : ''
-            }`}
+            className={`rail-nav-btn ${activeSection === 'org_merch_production' ? 'active' : ''
+              }`}
             onClick={() => {
               onSelectEvent(null);
               onSelectSection('org_merch_production');
@@ -663,9 +813,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
           {canViewFinance && (
             <button
               type="button"
-              className={`rail-nav-btn ${
-                activeSection === 'org_finance' ? 'active' : ''
-              }`}
+              className={`rail-nav-btn ${activeSection === 'org_finance' ? 'active' : ''
+                }`}
               onClick={() => {
                 onSelectEvent(null);
                 onSelectSection('org_finance');
@@ -678,9 +827,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
 
           <button
             type="button"
-            className={`rail-nav-btn ${
-              activeSection === 'org_team_settings' ? 'active' : ''
-            }`}
+            className={`rail-nav-btn ${activeSection === 'org_team_settings' ? 'active' : ''
+              }`}
             onClick={() => {
               onSelectEvent(null);
               onSelectSection('org_team_settings');
@@ -729,9 +877,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             </div>
             <button
               type="button"
-              className={`rail-nav-btn ${
-                activeSection === 'evt_overview' ? 'active' : ''
-              }`}
+              className={`rail-nav-btn ${activeSection === 'evt_overview' ? 'active' : ''
+                }`}
               onClick={() => onSelectSection('evt_overview')}
             >
               <IconFlag size={16} />
@@ -739,9 +886,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             </button>
             <button
               type="button"
-              className={`rail-nav-btn ${
-                activeSection === 'evt_pricing_quota' ? 'active' : ''
-              }`}
+              className={`rail-nav-btn ${activeSection === 'evt_pricing_quota' ? 'active' : ''
+                }`}
               onClick={() => onSelectSection('evt_pricing_quota')}
             >
               <IconBib size={16} />
@@ -749,9 +895,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             </button>
             <button
               type="button"
-              className={`rail-nav-btn ${
-                activeSection === 'evt_participants' ? 'active' : ''
-              }`}
+              className={`rail-nav-btn ${activeSection === 'evt_participants' ? 'active' : ''
+                }`}
               onClick={() => onSelectSection('evt_participants')}
             >
               <IconUsers size={16} />
@@ -759,9 +904,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             </button>
             <button
               type="button"
-              className={`rail-nav-btn ${
-                activeSection === 'evt_storefront' ? 'active' : ''
-              }`}
+              className={`rail-nav-btn ${activeSection === 'evt_storefront' ? 'active' : ''
+                }`}
               onClick={() => onSelectSection('evt_storefront')}
             >
               <IconBag size={16} />
@@ -770,9 +914,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             {canCheckIn && (
               <button
                 type="button"
-                className={`rail-nav-btn ${
-                  activeSection === 'evt_checkin_bib' ? 'active' : ''
-                }`}
+                className={`rail-nav-btn ${activeSection === 'evt_checkin_bib' ? 'active' : ''
+                  }`}
                 onClick={() => onSelectSection('evt_checkin_bib')}
               >
                 <IconQr size={16} />
@@ -782,9 +925,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             {canViewFinance && (
               <button
                 type="button"
-                className={`rail-nav-btn ${
-                  activeSection === 'evt_finance' ? 'active' : ''
-                }`}
+                className={`rail-nav-btn ${activeSection === 'evt_finance' ? 'active' : ''
+                  }`}
                 onClick={() => onSelectSection('evt_finance')}
               >
                 <IconLedger size={16} />
@@ -1515,10 +1657,10 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                     {rfq.quoteStatus === 'quoted_demo'
                                       ? 'ส่งใบเสนอราคาแล้ว'
                                       : rfq.quoteStatus === 'accepted'
-                                      ? 'อนุมัติราคาแล้ว'
-                                      : rfq.quoteStatus === 'submitted'
-                                      ? 'ส่งคำขอราคาแล้ว'
-                                      : 'ร่างคำขอราคา'}
+                                        ? 'อนุมัติราคาแล้ว'
+                                        : rfq.quoteStatus === 'submitted'
+                                          ? 'ส่งคำขอราคาแล้ว'
+                                          : 'ร่างคำขอราคา'}
                                   </span>
                                 </span>{' '}
                                 <span className="status-pill badge-amber">
@@ -1527,10 +1669,10 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                     {rfq.productionStatus === 'awaiting_approval'
                                       ? 'รออนุมัติแบบก่อนผลิต'
                                       : rfq.productionStatus === 'ready_to_produce'
-                                      ? 'พร้อมเริ่มผลิต'
-                                      : rfq.productionStatus === 'in_production'
-                                      ? 'กำลังผลิต'
-                                      : 'ตรวจ QC ผ่านแล้ว'}
+                                        ? 'พร้อมเริ่มผลิต'
+                                        : rfq.productionStatus === 'in_production'
+                                          ? 'กำลังผลิต'
+                                          : 'ตรวจ QC ผ่านแล้ว'}
                                   </span>
                                 </span>
                               </td>
@@ -1723,96 +1865,96 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
 
                   {(financeSubFilter === 'payments' ||
                     financeSubFilter === 'refunds') && (
-                    <div
-                      className="table-scroll"
-                      style={{ marginBottom: '1rem' }}
-                    >
-                      <table className="ops-table">
-                        <thead>
-                          <tr>
-                            <th>คำสั่งซื้อ</th>
-                            <th>ผู้เข้าแข่งขัน</th>
-                            <th>สถานะรับเงิน</th>
-                            <th className="num-col">ยอดรับชำระ</th>
-                            <th>สถานะคืนเงิน</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {orgRegistrations
-                            .filter((r) =>
-                              financeSubFilter === 'payments'
-                                ? r.paymentStatus === 'succeeded' &&
+                      <div
+                        className="table-scroll"
+                        style={{ marginBottom: '1rem' }}
+                      >
+                        <table className="ops-table">
+                          <thead>
+                            <tr>
+                              <th>คำสั่งซื้อ</th>
+                              <th>ผู้เข้าแข่งขัน</th>
+                              <th>สถานะรับเงิน</th>
+                              <th className="num-col">ยอดรับชำระ</th>
+                              <th>สถานะคืนเงิน</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {orgRegistrations
+                              .filter((r) =>
+                                financeSubFilter === 'payments'
+                                  ? r.paymentStatus === 'succeeded' &&
                                   isWithinTimeWindow(r.paidAt, timeWindow)
-                                : r.refundStatus !== 'none'
-                            )
-                            .map((r) => (
-                              <tr key={r.id}>
-                                <td className="mono-code">{r.orderCode}</td>
-                                <td>{r.participantNameTh}</td>
-                                <td>
-                                  <PaymentStatusBadge
-                                    status={r.paymentStatus}
-                                  />
-                                </td>
-                                <td className="num-col mono-num">
-                                  {formatThb(
-                                    r.snapshotTotalChargedSatang,
-                                    true
-                                  )}
-                                </td>
-                                <td>
-                                  <RefundStatusBadge status={r.refundStatus} />
-                                </td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                                  : r.refundStatus !== 'none'
+                              )
+                              .map((r) => (
+                                <tr key={r.id}>
+                                  <td className="mono-code">{r.orderCode}</td>
+                                  <td>{r.participantNameTh}</td>
+                                  <td>
+                                    <PaymentStatusBadge
+                                      status={r.paymentStatus}
+                                    />
+                                  </td>
+                                  <td className="num-col mono-num">
+                                    {formatThb(
+                                      r.snapshotTotalChargedSatang,
+                                      true
+                                    )}
+                                  </td>
+                                  <td>
+                                    <RefundStatusBadge status={r.refundStatus} />
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
 
                   {(financeSubFilter === 'all' ||
                     financeSubFilter === 'payouts') && (
-                    <div className="table-scroll">
-                      <table className="ops-table">
-                        <thead>
-                          <tr>
-                            <th>รหัสรอบโอน</th>
-                            <th>รายละเอียดงวด</th>
-                            <th>กำหนดโอน</th>
-                            <th className="num-col">รับชำระรวม</th>
-                            <th className="num-col">หักคืนเงิน</th>
-                            <th className="num-col">ยอดโอนเข้าบัญชีสุทธิ</th>
-                            <th>สถานะ</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {payouts
-                            .filter((p) => p.organizationId === activeOrg.id)
-                            .map((po) => (
-                              <tr key={po.id}>
-                                <td className="mono-code">{po.payoutCode}</td>
-                                <td>{po.periodLabel}</td>
-                                <td className="mono-num">{po.scheduledDate}</td>
-                                <td className="num-col mono-num">
-                                  {formatThb(po.grossSucceededSatang, true)}
-                                </td>
-                                <td className="num-col mono-num text-danger">
-                                  −{formatThb(po.deductedRefundSatang, true)}
-                                </td>
-                                <td className="num-col mono-num text-vermilion">
-                                  <strong>
-                                    {formatThb(po.netPayoutSatang, true)}
-                                  </strong>
-                                </td>
-                                <td>
-                                  <PayoutStatusBadge status={po.status} />
-                                </td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                      <div className="table-scroll">
+                        <table className="ops-table">
+                          <thead>
+                            <tr>
+                              <th>รหัสรอบโอน</th>
+                              <th>รายละเอียดงวด</th>
+                              <th>กำหนดโอน</th>
+                              <th className="num-col">รับชำระรวม</th>
+                              <th className="num-col">หักคืนเงิน</th>
+                              <th className="num-col">ยอดโอนเข้าบัญชีสุทธิ</th>
+                              <th>สถานะ</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {payouts
+                              .filter((p) => p.organizationId === activeOrg.id)
+                              .map((po) => (
+                                <tr key={po.id}>
+                                  <td className="mono-code">{po.payoutCode}</td>
+                                  <td>{po.periodLabel}</td>
+                                  <td className="mono-num">{po.scheduledDate}</td>
+                                  <td className="num-col mono-num">
+                                    {formatThb(po.grossSucceededSatang, true)}
+                                  </td>
+                                  <td className="num-col mono-num text-danger">
+                                    −{formatThb(po.deductedRefundSatang, true)}
+                                  </td>
+                                  <td className="num-col mono-num text-vermilion">
+                                    <strong>
+                                      {formatThb(po.netPayoutSatang, true)}
+                                    </strong>
+                                  </td>
+                                  <td>
+                                    <PayoutStatusBadge status={po.status} />
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                 </section>
               </div>
             )}
@@ -1841,9 +1983,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       </p>
                     </div>
                     <span
-                      className={`status-pill ${
-                        activeOrg.payoutReady ? 'badge-forest' : 'badge-amber'
-                      }`}
+                      className={`status-pill ${activeOrg.payoutReady ? 'badge-forest' : 'badge-amber'
+                        }`}
                     >
                       {activeOrg.payoutReady ? (
                         <IconCheckCircle size={14} />
@@ -1973,9 +2114,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     ).map(([label, isActive], idx) => (
                       <div
                         key={idx}
-                        className={`lifecycle-step ${
-                          isActive ? 'active' : ''
-                        }`}
+                        className={`lifecycle-step ${isActive ? 'active' : ''
+                          }`}
                       >
                         <strong>{label}</strong>
                       </div>
@@ -2005,9 +2145,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         {selectedEvent.readinessChecks.map((chk) => (
                           <div key={chk.id} className="checklist-row">
                             <span
-                              className={`status-pill ${
-                                chk.passed ? 'badge-forest' : 'badge-amber'
-                              }`}
+                              className={`status-pill ${chk.passed ? 'badge-forest' : 'badge-amber'
+                                }`}
                             >
                               {chk.passed ? (
                                 <IconCheckCircle size={14} />
@@ -2216,9 +2355,9 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       const netToProduce = Math.max(
                         0,
                         packageShirtUsed +
-                          addonShirtSold +
-                          bufferShirtQty -
-                          existingShirtStock
+                        addonShirtSold +
+                        bufferShirtQty -
+                        existingShirtStock
                       );
 
                       return (
@@ -2533,10 +2672,10 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         </dl>
                         {inspectedReg.registrationStatus ===
                           'pending_payment' && (
-                          <div className="subtle-empty-note">
-                            รายการอยู่ระหว่างกันโควตารอผู้สมัครชำระเงิน ระบบจะเปลี่ยนเป็นยืนยันสิทธิ์อัตโนมัติเมื่อผู้ให้บริการรับชำระยืนยันยอด
-                          </div>
-                        )}
+                            <div className="subtle-empty-note">
+                              รายการอยู่ระหว่างกันโควตารอผู้สมัครชำระเงิน ระบบจะเปลี่ยนเป็นยืนยันสิทธิ์อัตโนมัติเมื่อผู้ให้บริการรับชำระยืนยันยอด
+                            </div>
+                          )}
                       </aside>
                     )}
                   </div>
@@ -2639,9 +2778,9 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                           onChange={(e) =>
                             setNewProdCat(
                               e.target.value as
-                                | 'เสื้อที่ระลึก'
-                                | 'เหรียญที่ระลึก'
-                                | 'อุปกรณ์เสริม'
+                              | 'เสื้อที่ระลึก'
+                              | 'เหรียญที่ระลึก'
+                              | 'อุปกรณ์เสริม'
                             )
                           }
                         >
@@ -2772,9 +2911,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     type="button"
                     role="tab"
                     aria-selected={handoverTab === 'race_bib'}
-                    className={`pill-tab ${
-                      handoverTab === 'race_bib' ? 'active' : ''
-                    }`}
+                    className={`pill-tab ${handoverTab === 'race_bib' ? 'active' : ''
+                      }`}
                     onClick={() => {
                       setHandoverTab('race_bib');
                       setCheckinFeedback(null);
@@ -2786,9 +2924,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     type="button"
                     role="tab"
                     aria-selected={handoverTab === 'merch_pickup'}
-                    className={`pill-tab ${
-                      handoverTab === 'merch_pickup' ? 'active' : ''
-                    }`}
+                    className={`pill-tab ${handoverTab === 'merch_pickup' ? 'active' : ''
+                      }`}
                     onClick={() => {
                       setHandoverTab('merch_pickup');
                       setCheckinFeedback(null);
@@ -2872,9 +3009,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                               <p className="muted-block">
                                 ระยะ{' '}
                                 <span
-                                  className={`category-bib-chip tone-${
-                                    cat?.colorTag ?? 'navy'
-                                  }`}
+                                  className={`category-bib-chip tone-${cat?.colorTag ?? 'navy'
+                                    }`}
                                 >
                                   <strong>{cat?.code}</strong>
                                 </span>{' '}
@@ -2949,8 +3085,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                 {alreadyPicked
                                   ? 'รับแล้ว (กดเพื่อทดสอบป้องกันรับซ้ำ)'
                                   : !reg.bibNumber
-                                  ? 'กรุณาบันทึกเลข BIB ก่อนส่งมอบ'
-                                  : `ยืนยันจ่ายเสื้อ ${reg.shirtSize} + BIB ${reg.bibNumber}`}
+                                    ? 'กรุณาบันทึกเลข BIB ก่อนส่งมอบ'
+                                    : `ยืนยันจ่ายเสื้อ ${reg.shirtSize} + BIB ${reg.bibNumber}`}
                               </button>
                             </div>
                           </div>

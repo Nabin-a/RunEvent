@@ -13,6 +13,7 @@ import {
 import {
   AuditLogEntry,
   AuthProviderType,
+  CustomRegistrationField,
   EventProduct,
   FeeBearerPolicy,
   MerchOrderRecord,
@@ -142,8 +143,8 @@ function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
     modeParam === 'signup'
       ? 'signup'
       : modeParam === 'forgot'
-      ? 'forgot'
-      : 'signin';
+        ? 'forgot'
+        : 'signin';
 
   if (cleanPath === '/login') {
     return {
@@ -198,8 +199,8 @@ function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
       sub === 'shop'
         ? 'storefront'
         : sub === 'results'
-        ? 'info_results'
-        : 'register';
+          ? 'info_results'
+          : 'register';
     return {
       surface: 'customer',
       customerSubView: slug ? 'event_detail' : 'directory',
@@ -420,8 +421,8 @@ export const App: React.FC = () => {
         resolvedTab === 'storefront'
           ? '/shop'
           : resolvedTab === 'info_results'
-          ? '/results'
-          : '';
+            ? '/results'
+            : '';
       pushUrl(`/events/${codeSlug}${suffix}`);
     }
   };
@@ -481,6 +482,8 @@ export const App: React.FC = () => {
     }
   };
 
+
+
   const appendAudit = (
     orgId: string,
     actionSummary: string,
@@ -523,8 +526,8 @@ export const App: React.FC = () => {
           tab === 'storefront'
             ? '/shop'
             : tab === 'info_results'
-            ? '/results'
-            : '';
+              ? '/results'
+              : '';
         setSelectedPublicEventId(intent.eventId);
         setInitialEventTab(tab);
         setCustomerSubView('event_detail');
@@ -716,14 +719,14 @@ export const App: React.FC = () => {
           identities: hasPwIdentity
             ? u.identities
             : [
-                ...u.identities,
-                {
-                  id: `id-pw-${Date.now()}`,
-                  provider: 'password',
-                  providerSubject: u.contactEmail ?? u.code,
-                  linkedAt: '2026-11-17 09:46',
-                },
-              ],
+              ...u.identities,
+              {
+                id: `id-pw-${Date.now()}`,
+                provider: 'password',
+                providerSubject: u.contactEmail ?? u.code,
+                linkedAt: '2026-11-17 09:46',
+              },
+            ],
         };
       }),
     }));
@@ -736,17 +739,17 @@ export const App: React.FC = () => {
       users: prev.users.map((u) =>
         u.id === currentUser.id
           ? {
-              ...u,
-              identities: [
-                ...u.identities,
-                {
-                  id: `id-${provider}-${Date.now()}`,
-                  provider,
-                  providerSubject: `${provider}-linked-${Date.now()}`,
-                  linkedAt: '2026-11-17 09:46',
-                },
-              ],
-            }
+            ...u,
+            identities: [
+              ...u.identities,
+              {
+                id: `id-${provider}-${Date.now()}`,
+                provider,
+                providerSubject: `${provider}-linked-${Date.now()}`,
+                linkedAt: '2026-11-17 09:46',
+              },
+            ],
+          }
           : u
       ),
     }));
@@ -768,9 +771,9 @@ export const App: React.FC = () => {
       users: prev.users.map((u) =>
         u.id === currentUser.id
           ? {
-              ...u,
-              identities: u.identities.filter((i) => i.provider !== provider),
-            }
+            ...u,
+            identities: u.identities.filter((i) => i.provider !== provider),
+          }
           : u
       ),
     }));
@@ -784,9 +787,9 @@ export const App: React.FC = () => {
       users: prev.users.map((u) =>
         u.id === currentUser.id
           ? {
-              ...u,
-              sessions: u.sessions.filter((s) => s.isCurrentDevice),
-            }
+            ...u,
+            sessions: u.sessions.filter((s) => s.isCurrentDevice),
+          }
           : u
       ),
     }));
@@ -827,16 +830,16 @@ export const App: React.FC = () => {
       users: prev.users.map((u) =>
         u.id === currentUser.id
           ? {
-              ...u,
-              memberships: [
-                ...u.memberships,
-                {
-                  organizationId: inv.organizationId,
-                  role: inv.role,
-                  assignedEventIds: inv.assignedEventIds,
-                },
-              ],
-            }
+            ...u,
+            memberships: [
+              ...u.memberships,
+              {
+                organizationId: inv.organizationId,
+                role: inv.role,
+                assignedEventIds: inv.assignedEventIds,
+              },
+            ],
+          }
           : u
       ),
     }));
@@ -844,10 +847,10 @@ export const App: React.FC = () => {
       inv.role === 'owner'
         ? 'เจ้าขององค์กร'
         : inv.role === 'event_manager'
-        ? 'ผู้จัดการงานวิ่ง'
-        : inv.role === 'finance'
-        ? 'ฝ่ายการเงิน'
-        : 'เจ้าหน้าที่หน้างาน';
+          ? 'ผู้จัดการงานวิ่ง'
+          : inv.role === 'finance'
+            ? 'ฝ่ายการเงิน'
+            : 'เจ้าหน้าที่หน้างาน';
     return {
       ok: true,
       message: `เข้าร่วมทีม ${org?.nameTh ?? inv.organizationId} ในบทบาท ${roleTh} สำเร็จ!`,
@@ -875,12 +878,12 @@ export const App: React.FC = () => {
       users: prev.users.map((u) =>
         u.id === currentUser?.id
           ? {
-              ...u,
-              memberships: [
-                ...u.memberships,
-                { organizationId: newOrg.id, role: 'owner' },
-              ],
-            }
+            ...u,
+            memberships: [
+              ...u.memberships,
+              { organizationId: newOrg.id, role: 'owner' },
+            ],
+          }
           : u
       ),
     }));
@@ -992,20 +995,20 @@ export const App: React.FC = () => {
       events: prev.events.map((item) =>
         item.id === ev.id
           ? {
-              ...item,
-              shirtStocks: item.shirtStocks.map((st) =>
-                st.size === payload.shirtSize
-                  ? { ...st, reservedOrConfirmed: st.reservedOrConfirmed + 1 }
-                  : st
-              ),
-              products: payload.addonProduct
-                ? item.products.map((p) =>
-                    p.id === payload.addonProduct!.id
-                      ? { ...p, soldCount: p.soldCount + 1 }
-                      : p
-                  )
-                : item.products,
-            }
+            ...item,
+            shirtStocks: item.shirtStocks.map((st) =>
+              st.size === payload.shirtSize
+                ? { ...st, reservedOrConfirmed: st.reservedOrConfirmed + 1 }
+                : st
+            ),
+            products: payload.addonProduct
+              ? item.products.map((p) =>
+                p.id === payload.addonProduct!.id
+                  ? { ...p, soldCount: p.soldCount + 1 }
+                  : p
+              )
+              : item.products,
+          }
           : item
       ),
       registrations: [newReg, ...prev.registrations],
@@ -1016,8 +1019,7 @@ export const App: React.FC = () => {
 
     appendAudit(
       ev.organizationId,
-      `สมัครวิ่งรายการใหม่ (${regCode})${
-        addonOrder ? ` พร้อมซื้อสินค้าเพิ่ม (${addonOrder.merchOrderCode})` : ''
+      `สมัครวิ่งรายการใหม่ (${regCode})${addonOrder ? ` พร้อมซื้อสินค้าเพิ่ม (${addonOrder.merchOrderCode})` : ''
       }`,
       `${cat.code} · เสื้อ ${payload.shirtSize}`,
       ev.id
@@ -1078,13 +1080,13 @@ export const App: React.FC = () => {
       events: prev.events.map((e) =>
         e.id === ev.id
           ? {
-              ...e,
-              products: e.products.map((p) =>
-                p.id === payload.product.id
-                  ? { ...p, soldCount: p.soldCount + payload.quantity }
-                  : p
-              ),
-            }
+            ...e,
+            products: e.products.map((p) =>
+              p.id === payload.product.id
+                ? { ...p, soldCount: p.soldCount + payload.quantity }
+                : p
+            ),
+          }
           : e
       ),
     }));
@@ -1097,6 +1099,36 @@ export const App: React.FC = () => {
     );
 
     return newOrder;
+  };
+
+  // ตัวอย่าง Handler ใน App.tsx สำหรับส่งต่อไปยัง OrganizerDashboardView
+  const handleUpdateCategoryQuota = (
+    eventId: string,
+    categoryId: string,
+    newMaxQuota: number
+  ) => {
+    setEvents((prevEvents) =>
+      prevEvents.map((ev) => {
+        if (ev.id !== eventId) return ev;
+        return {
+          ...ev,
+          categories: ev.categories.map((cat) =>
+            cat.id === categoryId ? { ...cat, maxQuota: newMaxQuota } : cat
+          ),
+        };
+      })
+    );
+  };
+
+  const handleUpdateCustomFields = (
+    eventId: string,
+    nextFields: CustomRegistrationField[]
+  ) => {
+    setEvents((prevEvents) =>
+      prevEvents.map((ev) =>
+        ev.id === eventId ? { ...ev, customFields: nextFields } : ev
+      )
+    );
   };
 
   const handleUpdateRunnerShirtSize = (
@@ -1115,26 +1147,26 @@ export const App: React.FC = () => {
       events: prev.events.map((ev) =>
         ev.id === target.eventId
           ? {
-              ...ev,
-              shirtStocks: ev.shirtStocks.map((st) => {
-                if (st.size === oldSize) {
-                  return {
-                    ...st,
-                    reservedOrConfirmed: Math.max(
-                      0,
-                      st.reservedOrConfirmed - 1
-                    ),
-                  };
-                }
-                if (st.size === newSize) {
-                  return {
-                    ...st,
-                    reservedOrConfirmed: st.reservedOrConfirmed + 1,
-                  };
-                }
-                return st;
-              }),
-            }
+            ...ev,
+            shirtStocks: ev.shirtStocks.map((st) => {
+              if (st.size === oldSize) {
+                return {
+                  ...st,
+                  reservedOrConfirmed: Math.max(
+                    0,
+                    st.reservedOrConfirmed - 1
+                  ),
+                };
+              }
+              if (st.size === newSize) {
+                return {
+                  ...st,
+                  reservedOrConfirmed: st.reservedOrConfirmed + 1,
+                };
+              }
+              return st;
+            }),
+          }
           : ev
       ),
     }));
@@ -1262,26 +1294,26 @@ export const App: React.FC = () => {
 
     const optRfq: ProductionInquiry | null = payload.requestProductionHelp
       ? {
-          id: `rfq-ev-${Date.now()}`,
-          inquiryCode: `RFQ-2611-0${sys.productionInquiries.length + 2}`,
-          organizationId: payload.orgId,
-          requesterName: currentUser?.fullNameTh ?? 'ผู้จัดงาน',
-          requesterContact: 'ผ่านระบบผู้จัดงาน',
-          eventId: newEv.id,
-          contextType: 'event_organizer',
-          itemType: 'ชุดเสื้อพร้อมเหรียญครบวงจร',
-          serviceModel: 'produce_bulk',
-          packageEntitlementQty: 100,
-          addonStoreQty: 0,
-          organizerBufferQty: 10,
-          existingStockDeductedQty: 0,
-          netQtyToProduce: 110,
-          artworkVersion: 'ขอคำปรึกษาออกแบบจากทีม RunEvent',
-          targetDeliveryDate: payload.eventDate,
-          quoteStatus: 'submitted',
-          productionStatus: 'awaiting_approval',
-          createdAt: '2026-11-17 09:48',
-        }
+        id: `rfq-ev-${Date.now()}`,
+        inquiryCode: `RFQ-2611-0${sys.productionInquiries.length + 2}`,
+        organizationId: payload.orgId,
+        requesterName: currentUser?.fullNameTh ?? 'ผู้จัดงาน',
+        requesterContact: 'ผ่านระบบผู้จัดงาน',
+        eventId: newEv.id,
+        contextType: 'event_organizer',
+        itemType: 'ชุดเสื้อพร้อมเหรียญครบวงจร',
+        serviceModel: 'produce_bulk',
+        packageEntitlementQty: 100,
+        addonStoreQty: 0,
+        organizerBufferQty: 10,
+        existingStockDeductedQty: 0,
+        netQtyToProduce: 110,
+        artworkVersion: 'ขอคำปรึกษาออกแบบจากทีม RunEvent',
+        targetDeliveryDate: payload.eventDate,
+        quoteStatus: 'submitted',
+        productionStatus: 'awaiting_approval',
+        createdAt: '2026-11-17 09:48',
+      }
       : null;
 
     setSys((prev) => ({
@@ -1347,19 +1379,19 @@ export const App: React.FC = () => {
       events: prev.events.map((ev) =>
         ev.id === eventId
           ? {
-              ...ev,
-              status: 'in_review',
-              rulesVersion: 'v1.0-submitted',
-              statusNote:
-                'ส่งตรวจความพร้อมเรียบร้อยแล้ว รอผู้ดูแลแพลตฟอร์มอนุมัติเปิดรับสมัคร',
-              shirtStocks: ev.shirtStocks.map((s) =>
-                s.size === '2XL' && s.total === 0 ? { ...s, total: 10 } : s
-              ),
-              readinessChecks: ev.readinessChecks.map((c) => ({
-                ...c,
-                passed: true,
-              })),
-            }
+            ...ev,
+            status: 'in_review',
+            rulesVersion: 'v1.0-submitted',
+            statusNote:
+              'ส่งตรวจความพร้อมเรียบร้อยแล้ว รอผู้ดูแลแพลตฟอร์มอนุมัติเปิดรับสมัคร',
+            shirtStocks: ev.shirtStocks.map((s) =>
+              s.size === '2XL' && s.total === 0 ? { ...s, total: 10 } : s
+            ),
+            readinessChecks: ev.readinessChecks.map((c) => ({
+              ...c,
+              passed: true,
+            })),
+          }
           : ev
       ),
     }));
@@ -1465,9 +1497,9 @@ export const App: React.FC = () => {
     const net = Math.max(
       0,
       payload.packageQty +
-        payload.addonQty +
-        payload.bufferQty -
-        payload.existingStockQty
+      payload.addonQty +
+      payload.bufferQty -
+      payload.existingStockQty
     );
     const rfq: ProductionInquiry = {
       id: `rfq-${Date.now()}`,
@@ -1559,11 +1591,11 @@ export const App: React.FC = () => {
       registrations: prev.registrations.map((r) =>
         r.id === regId
           ? {
-              ...r,
-              fulfillmentStatus: 'kit_picked_up',
-              fulfillmentUpdatedBy: actor,
-              fulfillmentUpdatedAt: '2026-11-17 09:50',
-            }
+            ...r,
+            fulfillmentStatus: 'kit_picked_up',
+            fulfillmentUpdatedBy: actor,
+            fulfillmentUpdatedAt: '2026-11-17 09:50',
+          }
           : r
       ),
     }));
@@ -1600,10 +1632,10 @@ export const App: React.FC = () => {
       merchOrders: prev.merchOrders.map((m) =>
         m.id === merchOrderId
           ? {
-              ...m,
-              deliveredQty: nextDelivered,
-              fulfillmentStatus: nextStatus,
-            }
+            ...m,
+            deliveredQty: nextDelivered,
+            fulfillmentStatus: nextStatus,
+          }
           : m
       ),
     }));
@@ -1627,13 +1659,13 @@ export const App: React.FC = () => {
       registrations: prev.registrations.map((r) =>
         r.id === regId
           ? {
-              ...r,
-              registrationStatus: 'confirmed',
-              paymentStatus: 'succeeded',
-              fulfillmentStatus: 'ready',
-              paidAt: '2026-11-17T09:50:00+07:00',
-              reservationExpiresAt: null,
-            }
+            ...r,
+            registrationStatus: 'confirmed',
+            paymentStatus: 'succeeded',
+            fulfillmentStatus: 'ready',
+            paidAt: '2026-11-17T09:50:00+07:00',
+            reservationExpiresAt: null,
+          }
           : r
       ),
     }));
@@ -1658,18 +1690,18 @@ export const App: React.FC = () => {
         r.id === regId
           ? decision === 'approve_succeed'
             ? {
-                ...r,
-                registrationStatus: 'cancelled',
-                refundStatus: 'succeeded',
-                refundedAt: '2026-11-17T09:52:00+07:00',
-                snapshotRefundedSatang: r.snapshotBaseSatang,
-                refundReason: `${r.refundReason ?? ''} (${note})`,
-              }
+              ...r,
+              registrationStatus: 'cancelled',
+              refundStatus: 'succeeded',
+              refundedAt: '2026-11-17T09:52:00+07:00',
+              snapshotRefundedSatang: r.snapshotBaseSatang,
+              refundReason: `${r.refundReason ?? ''} (${note})`,
+            }
             : {
-                ...r,
-                refundStatus: 'rejected',
-                refundReason: `${r.refundReason ?? ''} (ปฏิเสธ: ${note})`,
-              }
+              ...r,
+              refundStatus: 'rejected',
+              refundReason: `${r.refundReason ?? ''} (ปฏิเสธ: ${note})`,
+            }
           : r
       ),
     }));
@@ -1730,13 +1762,12 @@ export const App: React.FC = () => {
         <nav className="global-surface-nav" aria-label="เมนูหลักของแพลตฟอร์ม">
           <button
             type="button"
-            className={`surface-switch-btn ${
-              surface === 'customer' &&
+            className={`surface-switch-btn ${surface === 'customer' &&
               (customerSubView === 'directory' ||
                 customerSubView === 'event_detail')
-                ? 'active'
-                : ''
-            }`}
+              ? 'active'
+              : ''
+              }`}
             onClick={() => navigateCustomer('directory', null)}
           >
             <IconFlag size={15} />
@@ -1745,11 +1776,10 @@ export const App: React.FC = () => {
 
           <button
             type="button"
-            className={`surface-switch-btn ${
-              surface === 'customer' && customerSubView === 'custom_production'
-                ? 'active'
-                : ''
-            }`}
+            className={`surface-switch-btn ${surface === 'customer' && customerSubView === 'custom_production'
+              ? 'active'
+              : ''
+              }`}
             onClick={() => navigateCustomer('custom_production')}
           >
             <IconShirt size={15} />
@@ -1758,11 +1788,10 @@ export const App: React.FC = () => {
 
           <button
             type="button"
-            className={`surface-switch-btn ${
-              surface === 'customer' && customerSubView === 'my_orders'
-                ? 'active'
-                : ''
-            }`}
+            className={`surface-switch-btn ${surface === 'customer' && customerSubView === 'my_orders'
+              ? 'active'
+              : ''
+              }`}
             onClick={() => navigateCustomer('my_orders')}
           >
             <IconBag size={15} />
@@ -1773,9 +1802,8 @@ export const App: React.FC = () => {
           {hasOrganizerAccess && (
             <button
               type="button"
-              className={`surface-switch-btn ${
-                surface === 'organizer' ? 'active' : ''
-              }`}
+              className={`surface-switch-btn ${surface === 'organizer' ? 'active' : ''
+                }`}
               onClick={() => navigateOrganizer()}
             >
               <IconBuilding size={15} />
@@ -1807,11 +1835,10 @@ export const App: React.FC = () => {
             <div className="profile-menu-wrap">
               <button
                 type="button"
-                className={`btn-account-pill ${
-                  showProfileMenu || surface === 'account_security'
-                    ? 'active'
-                    : ''
-                }`}
+                className={`btn-account-pill ${showProfileMenu || surface === 'account_security'
+                  ? 'active'
+                  : ''
+                  }`}
                 aria-expanded={showProfileMenu}
                 onClick={() => setShowProfileMenu((v) => !v)}
               >

@@ -973,12 +973,12 @@ function buildReg(params: {
   registrationStatus: 'pending_payment' | 'confirmed' | 'cancelled' | 'expired';
   paymentStatus: 'pending' | 'succeeded' | 'failed' | 'expired';
   refundStatus:
-    | 'none'
-    | 'requested'
-    | 'approved'
-    | 'processing'
-    | 'succeeded'
-    | 'rejected';
+  | 'none'
+  | 'requested'
+  | 'approved'
+  | 'processing'
+  | 'succeeded'
+  | 'rejected';
   fulfillmentStatus: 'not_ready' | 'ready' | 'checked_in' | 'kit_picked_up';
   fulfillmentUpdatedBy?: string;
   fulfillmentUpdatedAt?: string;
@@ -1463,5 +1463,30 @@ export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
     actorRole: 'เจ้าขององค์กร',
     actionSummary: 'กำหนดนโยบายผู้จัดรับภาระค่าบริการ (Organizer Absorbs)',
     detailChange: 'นักวิ่งจ่ายตามราคาป้าย หักค่าบริการจากยอดนำส่งผู้จัด',
+  },
+];
+
+export const DEMO_CUSTOM_FIELDS = [
+  {
+    id: 'cf_medical',
+    label: 'โรคประจำตัว / ประวัติแพ้ยา',
+    type: 'text' as const,
+    required: false,
+    isSensitive: true, // ซ่อนจากเจ้าหน้าที่จุดรับอุปกรณ์
+  },
+  {
+    id: 'cf_club',
+    label: 'ชื่อชมรมวิ่ง (ถ้ามี)',
+    type: 'text' as const,
+    required: false,
+    isSensitive: false,
+  },
+  {
+    id: 'cf_blood',
+    label: 'กรุ๊ปเลือด',
+    type: 'select' as const,
+    required: true,
+    options: ['A', 'B', 'AB', 'O'],
+    isSensitive: true,
   },
 ];

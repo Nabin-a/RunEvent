@@ -13,6 +13,8 @@ export type RegistrationStatus =
   | 'cancelled'
   | 'expired';
 
+export type CustomFieldType = 'text' | 'select' | 'checbox'
+
 export type PaymentStatus = 'pending' | 'succeeded' | 'failed' | 'expired';
 
 export type RefundStatus =
@@ -99,11 +101,11 @@ export interface TeamInvitation {
 
 export interface ReturnIntent {
   surface:
-    | 'events'
-    | 'my_orders'
-    | 'custom_production'
-    | 'organizer'
-    | 'account_security';
+  | 'events'
+  | 'my_orders'
+  | 'custom_production'
+  | 'organizer'
+  | 'account_security';
   eventId?: string | null;
   eventTab?: 'register' | 'storefront' | 'info_results';
   label: string;
@@ -156,6 +158,29 @@ export interface ReadinessCheck {
   fixTargetHint: string;
 }
 
+export interface CustomRegistrationField {
+  id: string;
+  label: string;
+  type: CustomFieldType;
+  required: boolean;
+  options?: string[];     // ใช้เมื่อ type เป็น 'select'
+  isSensitive: boolean;   // ถ้าเป็น true จะซ่อนจากเจ้าหน้าที่รับอุปกรณ์หน้างาน
+}
+
+export interface CategoryQuotaPatch {
+  maxQuota: number;
+  registeredCount: number; // ชำระเงินสำเร็จแล้ว
+  reservedCount: number;   // กำลังถือโควตารอผลชำระเงิน
+}
+
+export interface EventCustomConfigPatch {
+  customFields?: CustomRegistrationField[];
+}
+
+export interface RegistrationAnswerPatch {
+  customAnswers?: Record<string, string | boolean>;
+}
+
 export type SellerServiceModel =
   | 'organizer_self_sell'
   | 'runevent_produce_bulk'
@@ -205,11 +230,11 @@ export interface MerchOrderRecord {
   totalPaidSatang: number;
   paymentStatus: PaymentStatus;
   fulfillmentStatus:
-    | 'unallocated'
-    | 'preparing'
-    | 'ready_or_shipped'
-    | 'partial_received'
-    | 'completed';
+  | 'unallocated'
+  | 'preparing'
+  | 'ready_or_shipped'
+  | 'partial_received'
+  | 'completed';
   pickupToken: string;
   linkedRegistrationCode?: string;
   createdAt: string;
@@ -224,9 +249,9 @@ export interface ProductionInquiry {
   eventId?: string;
   contextType: 'event_organizer' | 'club_or_company';
   itemType:
-    | 'เสื้อแข่งขันและเสื้อที่ระลึก'
-    | 'เหรียญรางวัลและสายคล้อง'
-    | 'ชุดเสื้อพร้อมเหรียญครบวงจร';
+  | 'เสื้อแข่งขันและเสื้อที่ระลึก'
+  | 'เหรียญรางวัลและสายคล้อง'
+  | 'ชุดเสื้อพร้อมเหรียญครบวงจร';
   serviceModel: 'produce_bulk' | 'full_preorder_fulfillment';
   packageEntitlementQty: number;
   addonStoreQty: number;
@@ -237,10 +262,10 @@ export interface ProductionInquiry {
   targetDeliveryDate: string;
   quoteStatus: 'draft' | 'submitted' | 'quoted_demo' | 'accepted';
   productionStatus:
-    | 'awaiting_approval'
-    | 'ready_to_produce'
-    | 'in_production'
-    | 'qc_passed';
+  | 'awaiting_approval'
+  | 'ready_to_produce'
+  | 'in_production'
+  | 'qc_passed';
   createdAt: string;
 }
 
