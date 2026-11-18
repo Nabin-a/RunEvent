@@ -7,6 +7,7 @@ import {
   RegistrationRecord,
   TimeWindowFilter,
 } from '../types';
+import { tx } from '../i18n';
 
 /**
  * Simulated platform fee schedule for mockup demonstration only.
@@ -229,11 +230,11 @@ export function computeMetrics(
 export function feePolicyLabel(policy: FeeBearerPolicy): string {
   switch (policy) {
     case 'runner_pays':
-      return 'นักวิ่งรับภาระค่าบริการ (แสดงราคาสุทธิก่อนจ่าย)';
+      return tx('นักวิ่งรับภาระค่าบริการ (แสดงราคาสุทธิก่อนจ่าย)');
     case 'organizer_absorbs':
-      return 'ผู้จัดรับภาระค่าบริการ (นักวิ่งจ่ายตามราคาป้าย)';
+      return tx('ผู้จัดรับภาระค่าบริการ (นักวิ่งจ่ายตามราคาป้าย)');
     case 'split_50_50':
-      return 'แบ่งรับภาระค่าบริการ 50 / 50';
+      return tx('แบ่งรับภาระค่าบริการ 50 / 50');
   }
 }
 
@@ -242,10 +243,10 @@ export function sellerModelLabel(
 ): string {
   switch (model) {
     case 'organizer_self_sell':
-      return 'ผู้จัดนำสินค้ามาขายและจัดส่งเอง (RunEvent ให้หน้าร้านและรายงาน)';
+      return tx('ผู้จัดนำสินค้ามาขายและจัดส่งเอง (RunEvent ให้หน้าร้านและรายงาน)');
     case 'runevent_produce_bulk':
-      return 'ให้ RunEvent ผลิตตามยอดอนุมัติ ส่งล็อตใหญ่ให้ผู้จัดแจกจ่าย';
+      return tx('ให้ RunEvent ผลิตตามยอดอนุมัติ ส่งล็อตใหญ่ให้ผู้จัดแจกจ่าย');
     case 'runevent_full_service':
-      return 'RunEvent ดูแลครบวงจร (รับพรีออเดอร์ ผลิต แพ็ก และจัดส่งถึงผู้ซื้อ)';
+      return tx('RunEvent ดูแลครบวงจร (รับพรีออเดอร์ ผลิต แพ็ก และจัดส่งถึงผู้ซื้อ)');
   }
 }

@@ -7,6 +7,7 @@ import {
   RaceCategory,
   RaceEvent,
   RegistrationRecord,
+  RegistrationStepDef,
   ReturnIntent,
   UserAccount,
 } from '../types';
@@ -17,16 +18,18 @@ import {
   getCurrentTier,
 } from '../utils/pricing';
 import {
-  EventCoverArtwork,
+  EventCoverMedia,
   IconAlert,
   IconArrowLeft,
   IconArrowRight,
   IconBag,
   IconBib,
+  IconBuilding,
   IconCalendar,
   IconCamera,
   IconCheckCircle,
   IconClock,
+  IconFlag,
   IconLock,
   IconMapPin,
   IconQr,
@@ -39,11 +42,16 @@ import {
   PaymentStatusBadge,
   RegStatusBadge,
 } from './StatusBadges';
-import { RunnerCustomFieldsInputs } from './PublicEventView';
+import {
+  evaluateConditionRule,
+  RunnerCustomFieldsInputs,
+} from './PublicEventView';
 
+import { tx, txf } from '../i18n';
 export type CustomerSubView =
   | 'directory'
   | 'event_detail'
+  | 'event_register'
   | 'my_orders'
   | 'custom_production';
 
@@ -56,6 +64,7 @@ interface CustomerPortalViewProps {
   registrations: RegistrationRecord[];
   merchOrders: MerchOrderRecord[];
   productionInquiries: ProductionInquiry[];
+  registrationSteps?: RegistrationStepDef[];
   currentUser: UserAccount | null;
   onNavigate: (
     view: CustomerSubView,
@@ -111,6 +120,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   registrations,
   merchOrders,
   productionInquiries,
+  registrationSteps = [],
   currentUser,
   onNavigate,
   onRequireLoginWithIntent,
@@ -130,12 +140,24 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   const [distanceFilter, setDistanceFilter] = useState<string>('all');
   const [regionFilter, setRegionFilter] = useState<string>('all');
 
-  // Event detail & step-by-step registration state
+  // Event detail & step-by-step registration state (6-step dedicated page)
   const [detailTab, setDetailTab] = useState<
     'register' | 'storefront' | 'info_results'
   >(initialEventTab);
-  const [regStep, setRegStep] = useState<1 | 2 | 3>(1);
+  const [showRegForm, setShowRegForm] = useState(false);
+  const [regStep, setRegStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
   const [selectedCatId, setSelectedCatId] = useState<string>('');
+  const [selectedDivisionOption, setSelectedDivisionOption] =
+    useState<string>('');
+  const [kitDeliveryOption, setKitDeliveryOption] = useState<
+    'expo_pickup' | 'postal'
+  >('expo_pickup');
+  const [runnerShippingAddress, setRunnerShippingAddress] = useState(
+    '199/8 ถ.ห้วยแก้ว ต.สุเทพ อ.เมือง จ.เชียงใหม่ 50200'
+  );
+  const [emergencyContactText, setEmergencyContactText] = useState(
+    'วีระ วัฒนากูล (089-110-2211)'
+  );
   const [shirtSize, setShirtSize] = useState<
     'XS' | 'S' | 'M' | 'L' | 'XL' | '2XL'
   >('M');
@@ -193,6 +215,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
   React.useEffect(() => {
     setDetailTab(initialEventTab);
+    setShowRegForm(false);
     setCustomAnswers({});
     setStep2Error(null);
   }, [initialEventTab, selectedEventId]);
@@ -320,11 +343,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
   const openEventPage = (
     ev: RaceEvent,
-    tab: 'register' | 'storefront' | 'info_results' = 'register',
-    prelinkRegCode = ''
+    tab: 'register' | 'storefront' | 'info_results' = 'info_results',
+    prelinkRegCode = '',
+    openWizardImmediately = false
   ) => {
-    const resolvedTab =
-      ev.status !== 'published' && tab === 'register' ? 'info_results' : tab;
     setSelectedCatId(ev.categories[0]?.id ?? '');
     setActiveProductId(ev.products[0]?.id ?? '');
     setMerchSize(ev.products[0]?.availableSizes[0] ?? 'M');
@@ -335,8 +357,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     setCreatedResult(null);
     setCreatedMerchReceipt(null);
     setLinkedRegForMerch(prelinkRegCode);
-    setDetailTab(resolvedTab);
-    onNavigate('event_detail', ev.id, resolvedTab);
+    setDetailTab(tab);
+    setShowRegForm(openWizardImmediately);
+    onNavigate('event_detail', ev.id, tab);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -355,7 +378,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
     if (!currentUser.contactEmail || !currentUser.emailVerified) {
       setCheckoutError(
-        'บัญชีของคุณยังไม่ได้ยืนยันอีเมลติดต่อ กรุณากดปุ่ม "เพิ่มและยืนยันอีเมล" ด้านล่างก่อนออกใบยืนยันสิทธิ์แข่งขัน'
+        tx("บัญชีของคุณยังไม่ได้ยืนยันอีเมลติดต่อ กรุณากดปุ่ม \"เพิ่มและยืนยันอีเมล\" ด้านล่างก่อนออกใบยืนยันสิทธิ์แข่งขัน")
       );
       return;
     }
@@ -366,25 +389,34 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       : participantNameTh.trim();
 
     if (!finalBuyer || !finalParticipant) {
-      setCheckoutError('กรุณากรอกชื่อผู้ชำระเงินและชื่อผู้เข้าแข่งขันให้ครบถ้วน');
+      setCheckoutError(tx("กรุณากรอกชื่อผู้ชำระเงินและชื่อผู้เข้าแข่งขันให้ครบถ้วน"));
       return;
     }
     if (!acceptedRules) {
       setCheckoutError(
-        `กรุณาติ๊กยอมรับกติกาการแข่งขัน (${selectedEvent.rulesVersion}) ก่อนยืนยัน`
+        txf("กรุณาติ๊กยอมรับกติกาการแข่งขัน ({0}) ก่อนยืนยัน", selectedEvent.rulesVersion)
       );
       return;
     }
 
     const missingCustom = (selectedEvent.customFields ?? []).find((f) => {
       if (!f.required) return false;
-      const val = customAnswers[f.id];
+      const isVisible = evaluateConditionRule(
+        f.visibilityCondition,
+        customAnswers,
+        {
+          raceDistance: activeCategory.code,
+          shirtSize,
+        }
+      );
+      if (!isVisible) return false;
+      const val = customAnswers[f.id] ?? f.defaultValue;
       if (f.type === 'checkbox') return val !== true;
       return !String(val ?? '').trim();
     });
     if (missingCustom) {
       setCheckoutError(
-        `กรุณากรอกข้อมูลเพิ่มเติมที่จำเป็น: "${missingCustom.label}" ในขั้นตอนที่ 2`
+        txf("กรุณากรอกข้อมูลเพิ่มเติมที่จำเป็น: \"{0}\" ในขั้นตอนที่ 2", missingCustom.label)
       );
       return;
     }
@@ -392,7 +424,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     const catSeats = getCategoryOpenSeats(selectedEvent.id, activeCategory);
     const eventSeats = getEventOpenSeats(selectedEvent);
     if (catSeats <= 0 || eventSeats <= 0) {
-      setCheckoutError('ขออภัย โควตาเต็มแล้ว ระบบป้องกันการขายเกินอัตโนมัติ');
+      setCheckoutError(tx("ขออภัย โควตาเต็มแล้ว ระบบป้องกันการขายเกินอัตโนมัติ"));
       return;
     }
 
@@ -414,6 +446,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           : undefined,
     });
     setCreatedResult(res);
+    setRegStep(6);
   };
 
   const handleRegistrationSubmit = (e: React.FormEvent) => {
@@ -466,15 +499,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             onClick={() => onNavigate('directory', null)}
           >
             <IconArrowLeft size={15} />
-            <span>กลับหน้ารวมงานวิ่ง</span>
+            <span>{tx("กลับหน้ารวมงานวิ่ง")}</span>
           </button>
         </div>
 
         <section className="clean-panel">
-          <h1>บริการสั่งผลิตเสื้อวิ่งและเหรียญรางวัลสำหรับชมรม ทีม และองค์กร</h1>
+          <h1>{tx("บริการสั่งผลิตเสื้อวิ่งและเหรียญรางวัลสำหรับชมรม ทีม และองค์กร")}</h1>
           <p className="muted-block">
-            ส่งความต้องการเพื่อขอใบเสนอราคาได้โดยไม่จำเป็นต้องเปิดรับสมัครงานวิ่งในระบบ
-            (คำขอราคายังไม่ใช่คำสั่งเริ่มผลิตจริง จนกว่าจะยืนยันแบบ จำนวน ราคา และเงื่อนไขชำระ)
+            {tx("ส่งความต้องการเพื่อขอใบเสนอราคาได้โดยไม่จำเป็นต้องเปิดรับสมัครงานวิ่งในระบบ (คำขอราคายังไม่ใช่คำสั่งเริ่มผลิตจริง จนกว่าจะยืนยันแบบ จำนวน ราคา และเงื่อนไขชำระ)")}
           </p>
 
           <form
@@ -493,7 +525,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           >
             <div className="form-grid-2">
               <div className="form-row">
-                <label htmlFor="clb-name">ชื่อชมรม / บริษัท / ผู้ติดต่อ</label>
+                <label htmlFor="clb-name">{tx("ชื่อชมรม / บริษัท / ผู้ติดต่อ")}</label>
                 <input
                   id="clb-name"
                   type="text"
@@ -503,7 +535,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 />
               </div>
               <div className="form-row">
-                <label htmlFor="clb-mail">อีเมลหรือเบอร์ติดต่อกลับ</label>
+                <label htmlFor="clb-mail">{tx("อีเมลหรือเบอร์ติดต่อกลับ")}</label>
                 <input
                   id="clb-mail"
                   type="text"
@@ -516,7 +548,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
             <div className="form-grid-3">
               <div className="form-row">
-                <label htmlFor="clb-item">ประเภทสินค้าที่ต้องการสั่งผลิต</label>
+                <label htmlFor="clb-item">{tx("ประเภทสินค้าที่ต้องการสั่งผลิต")}</label>
                 <select
                   id="clb-item"
                   value={clubItemType}
@@ -527,18 +559,18 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   }
                 >
                   <option value="เสื้อแข่งขันและเสื้อที่ระลึก">
-                    เสื้อวิ่งชมรม / เสื้อกิจกรรมองค์กร
+                    {tx("เสื้อวิ่งชมรม / เสื้อกิจกรรมองค์กร")}
                   </option>
                   <option value="เหรียญรางวัลและสายคล้อง">
-                    เหรียญที่ระลึกพร้อมสายคล้องพิมพ์ลาย
+                    {tx("เหรียญที่ระลึกพร้อมสายคล้องพิมพ์ลาย")}
                   </option>
                   <option value="ชุดเสื้อพร้อมเหรียญครบวงจร">
-                    ชุดเสื้อพร้อมเหรียญครบวงจร
+                    {tx("ชุดเสื้อพร้อมเหรียญครบวงจร")}
                   </option>
                 </select>
               </div>
               <div className="form-row">
-                <label htmlFor="clb-qty">จำนวนประมาณการ (ชิ้น)</label>
+                <label htmlFor="clb-qty">{tx("จำนวนประมาณการ (ชิ้น)")}</label>
                 <input
                   id="clb-qty"
                   type="text"
@@ -551,7 +583,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 />
               </div>
               <div className="form-row">
-                <label htmlFor="clb-date">วันที่ต้องการใช้งานสินค้า</label>
+                <label htmlFor="clb-date">{tx("วันที่ต้องการใช้งานสินค้า")}</label>
                 <input
                   id="clb-date"
                   type="text"
@@ -564,7 +596,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
             <div>
               <button type="submit" className="btn-primary">
-                ส่งคำขอใบเสนอราคาสั่งผลิต
+                {tx("ส่งคำขอใบเสนอราคาสั่งผลิต")}
               </button>
             </div>
 
@@ -573,10 +605,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 <IconCheckCircle size={18} />
                 <div>
                   <strong>
-                    บันทึกคำขอราคา {createdClubRfq.inquiryCode} เรียบร้อยแล้ว
+                    {tx("บันทึกคำขอราคา ")} {tx(createdClubRfq.inquiryCode)} {tx(" เรียบร้อยแล้ว")}
                   </strong>
                   <p>
-                    ทีมประสานงานจะตรวจสอบแบบและส่งใบเสนอราคาให้พิจารณาอนุมัติก่อนเริ่มผลิตจริง
+                    {tx("ทีมประสานงานจะตรวจสอบแบบและส่งใบเสนอราคาให้พิจารณาอนุมัติก่อนเริ่มผลิตจริง")}
                   </p>
                 </div>
               </div>
@@ -586,16 +618,16 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           {productionInquiries.filter((q) => q.contextType === 'club_or_company')
             .length > 0 && (
             <div style={{ marginTop: '1.25rem' }}>
-              <h2>รายการคำขอราคาของชมรม/บริษัทที่ส่งแล้ว</h2>
+              <h2>{tx("รายการคำขอราคาของชมรม/บริษัทที่ส่งแล้ว")}</h2>
               <div className="table-scroll">
                 <table className="ops-table">
                   <thead>
                     <tr>
-                      <th>รหัสคำขอ</th>
-                      <th>ผู้ขอ / ช่องทางติดต่อ</th>
-                      <th>รายการ</th>
-                      <th className="num-col">จำนวนประมาณการ</th>
-                      <th>สถานะใบเสนอราคา</th>
+                      <th>{tx("รหัสคำขอ")}</th>
+                      <th>{tx("ผู้ขอ / ช่องทางติดต่อ")}</th>
+                      <th>{tx("รายการ")}</th>
+                      <th className="num-col">{tx("จำนวนประมาณการ")}</th>
+                      <th>{tx("สถานะใบเสนอราคา")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -603,21 +635,21 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       .filter((q) => q.contextType === 'club_or_company')
                       .map((rfq) => (
                         <tr key={rfq.id}>
-                          <td className="mono-code">{rfq.inquiryCode}</td>
+                          <td className="mono-code">{tx(rfq.inquiryCode)}</td>
                           <td>
-                            <strong>{rfq.requesterName}</strong>
+                            <strong>{tx(rfq.requesterName)}</strong>
                             <div className="muted-inline">
-                              {rfq.requesterContact}
+                              {tx(rfq.requesterContact)}
                             </div>
                           </td>
-                          <td>{rfq.itemType}</td>
+                          <td>{tx(rfq.itemType)}</td>
                           <td className="num-col mono-num">
-                            {rfq.netQtyToProduce} ชิ้น
+                            {tx(rfq.netQtyToProduce)} {tx(" ชิ้น")}
                           </td>
                           <td>
                             <span className="status-pill badge-amber">
                               <IconClock size={13} />
-                              <span>รอทีมงานส่งใบเสนอราคา</span>
+                              <span>{tx("รอทีมงานส่งใบเสนอราคา")}</span>
                             </span>
                           </td>
                         </tr>
@@ -638,10 +670,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       <main className="customer-container">
         <div className="hub-header-bar">
           <div>
-            <h1>บัตรวิ่งและคำสั่งซื้อสินค้าของฉัน</h1>
+            <h1>{tx("บัตรวิ่งและคำสั่งซื้อสินค้าของฉัน")}</h1>
             <p className="muted-block">
-              แยกแสดงระหว่าง <strong>สิทธิ์เข้าร่วมการแข่งขัน (รับ BIB)</strong> และ{' '}
-              <strong>คำสั่งซื้อสินค้าที่ระลึก</strong> อย่างชัดเจนเพื่อความสะดวกรวดเร็วในวันรับของ
+              {tx("แยกแสดงระหว่าง ")} <strong>{tx("สิทธิ์เข้าร่วมการแข่งขัน (รับ BIB)")}</strong> {tx(" และ")}{' '}
+              <strong>{tx("คำสั่งซื้อสินค้าที่ระลึก")}</strong> {tx(" อย่างชัดเจนเพื่อความสะดวกรวดเร็วในวันรับของ")}
             </p>
           </div>
           <button
@@ -650,15 +682,15 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             onClick={() => onNavigate('directory', null)}
           >
             <IconArrowLeft size={15} />
-            <span>ดูงานวิ่งทั้งหมด</span>
+            <span>{tx("ดูงานวิ่งทั้งหมด")}</span>
           </button>
         </div>
 
         {!currentUser ? (
           <div className="empty-state-box">
-            <h2>กรุณาเข้าสู่ระบบเพื่อดูบัตรวิ่งและคำสั่งซื้อของคุณ</h2>
+            <h2>{tx("กรุณาเข้าสู่ระบบเพื่อดูบัตรวิ่งและคำสั่งซื้อของคุณ")}</h2>
             <p>
-              เข้าสู่ระบบด้วยอีเมล, Google หรือ LINE เพื่อตรวจสอบบัตร QR รับอุปกรณ์และประวัติคำสั่งซื้อสินค้าที่ระลึก
+              {tx("เข้าสู่ระบบด้วยอีเมล, Google หรือ LINE เพื่อตรวจสอบบัตร QR รับอุปกรณ์และประวัติคำสั่งซื้อสินค้าที่ระลึก")}
             </p>
             <button
               type="button"
@@ -671,27 +703,27 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               }
             >
               <IconLock size={15} />
-              <span>เข้าสู่ระบบ</span>
+              <span>{tx("เข้าสู่ระบบ")}</span>
             </button>
           </div>
         ) : (
           <div className="hub-sections-stack">
-            <section className="clean-panel" aria-label="ใบสมัครวิ่งของฉัน">
+            <section className="clean-panel" aria-label={tx("ใบสมัครวิ่งของฉัน")}>
               <div className="section-title-bar">
                 <div>
                   <h2>
-                    ใบสมัครวิ่งและบัตร QR รับอุปกรณ์แข่งขัน (
-                    <span className="mono-num">{myRegistrations.length}</span>)
+                    {tx("ใบสมัครวิ่งและบัตร QR รับอุปกรณ์แข่งขัน (")}
+                    <span className="mono-num">{tx(myRegistrations.length)}</span>)
                   </h2>
                   <p className="muted-inline">
-                    แสดง QR Token นี้ที่จุดเช็กอินนักวิ่งเพื่อรับป้าย BIB และเสื้อตามสิทธิ์สมัคร
+                    {tx("แสดง QR Token นี้ที่จุดเช็กอินนักวิ่งเพื่อรับป้าย BIB และเสื้อตามสิทธิ์สมัคร")}
                   </p>
                 </div>
               </div>
 
               {myRegistrations.length === 0 ? (
                 <div className="subtle-empty-note">
-                  บัญชีนี้ยังไม่มีใบสมัครวิ่ง (ลูกค้าทั่วไปสามารถดูคำสั่งซื้อสินค้าที่ระลึกได้ในส่วนถัดไปด้านล่าง)
+                  {tx("บัญชีนี้ยังไม่มีใบสมัครวิ่ง (ลูกค้าทั่วไปสามารถดูคำสั่งซื้อสินค้าที่ระลึกได้ในส่วนถัดไปด้านล่าง)")}
                 </div>
               ) : (
                 <div className="pass-list">
@@ -710,7 +742,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       <article key={reg.id} className="runner-pass-item">
                         <div className="pass-main-info">
                           <div className="pass-badges-row">
-                            <span className="mono-code">{reg.regCode}</span>
+                            <span className="mono-code">{tx(reg.regCode)}</span>
                             <RegStatusBadge status={reg.registrationStatus} />
                             <PaymentStatusBadge status={reg.paymentStatus} />
                             <FulfillmentStatusBadge
@@ -719,17 +751,16 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           </div>
                           <h3>{ev?.titleTh ?? reg.eventId}</h3>
                           <p className="muted-block">
-                            ระยะทาง: <strong>{cat?.name}</strong> · วันงาน:{' '}
-                            <span className="mono-num">{ev?.eventDate}</span> ·
-                            ผู้เข้าแข่งขัน: <strong>{reg.participantNameTh}</strong>{' '}
-                            (ผู้สั่งซื้อ: {reg.buyerName})
+                            {tx("ระยะทาง: ")} <strong>{tx(cat?.name)}</strong> {tx(" · วันงาน:")}{' '}
+                            <span className="mono-num">{tx(ev?.eventDate)}</span> {tx(" · ผู้เข้าแข่งขัน: ")} <strong>{tx(reg.participantNameTh)}</strong>{' '}
+                            {tx("(ผู้สั่งซื้อ: ")} {tx(reg.buyerName)})
                           </p>
                           <p className="muted-inline">
-                            ชำระสุทธิ:{' '}
+                            {tx("ชำระสุทธิ:")}{' '}
                             <strong className="mono-num">
                               {formatThb(reg.snapshotTotalChargedSatang, true)}
                             </strong>{' '}
-                            (ไม่แก้ยอดใบสมัครย้อนหลังหากมีการสั่งซื้อของที่ระลึกเพิ่มภายหลัง)
+                            {tx("(ไม่แก้ยอดใบสมัครย้อนหลังหากมีการสั่งซื้อของที่ระลึกเพิ่มภายหลัง)")}
                           </p>
 
                           <div className="cta-inline-row" style={{ marginTop: '0.55rem' }}>
@@ -741,7 +772,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               >
                                 <IconCheckCircle size={15} />
                                 <span>
-                                  ชำระเงินต่อให้เสร็จสิ้น (
+                                  {tx("ชำระเงินต่อให้เสร็จสิ้น (")}
                                   {formatThb(
                                     reg.snapshotTotalChargedSatang,
                                     true
@@ -754,7 +785,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                             {canEditShirt && (
                               <div className="inline-shirt-editor">
                                 <label htmlFor={`my-shirt-${reg.id}`}>
-                                  แก้ขนาดเสื้อสิทธิ์สมัคร (ถึง {ev.editDeadlineDate}):
+                                  {tx("แก้ขนาดเสื้อสิทธิ์สมัคร (ถึง ")} {tx(ev.editDeadlineDate)}):
                                 </label>
                                 <select
                                   id={`my-shirt-${reg.id}`}
@@ -776,7 +807,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                                     ['XS', 'S', 'M', 'L', 'XL', '2XL'] as const
                                   ).map((s) => (
                                     <option key={s} value={s}>
-                                      ไซส์ {s}
+                                      {tx("ไซส์ ")} {tx(s)}
                                     </option>
                                   ))}
                                 </select>
@@ -792,7 +823,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                                 }
                               >
                                 <IconBag size={14} />
-                                <span>ซื้อเสื้อ/เหรียญที่ระลึกเพิ่ม (สร้างออเดอร์ใหม่)</span>
+                                <span>{tx("ซื้อเสื้อ/เหรียญที่ระลึกเพิ่ม (สร้างออเดอร์ใหม่)")}</span>
                               </button>
                             )}
 
@@ -806,7 +837,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                                   }
                                 >
                                   <IconCamera size={14} />
-                                  <span>ดูผลและรูปภาพหลังงาน</span>
+                                  <span>{tx("ดูผลและรูปภาพหลังงาน")}</span>
                                 </button>
                               )}
                           </div>
@@ -814,15 +845,15 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
                         <div className="pass-qr-card">
                           <div className="pass-bib-num mono-num">
-                            {reg.bibNumber ?? 'รอกำหนด BIB'}
+                            {reg.bibNumber ?? tx("รอกำหนด BIB")}
                           </div>
                           <div className="qr-token-box">
                             <IconQr size={26} />
                             <div>
                               <div className="mono-code">
-                                {reg.qrCheckInToken}
+                                {tx(reg.qrCheckInToken)}
                               </div>
-                              <small>เสื้อตามสิทธิ์: ไซส์ {reg.shirtSize}</small>
+                              <small>{tx("เสื้อตามสิทธิ์: ไซส์")} {tx(reg.shirtSize)}</small>
                             </div>
                           </div>
                         </div>
@@ -833,22 +864,22 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               )}
             </section>
 
-            <section className="clean-panel" aria-label="คำสั่งซื้อสินค้าที่ระลึก">
+            <section className="clean-panel" aria-label={tx("คำสั่งซื้อสินค้าที่ระลึก")}>
               <div className="section-title-bar">
                 <div>
                   <h2>
-                    คำสั่งซื้อสินค้าที่ระลึกและพรีออเดอร์ (
-                    <span className="mono-num">{myMerchOrders.length}</span>)
+                    {tx("คำสั่งซื้อสินค้าที่ระลึกและพรีออเดอร์ (")}
+                    <span className="mono-num">{tx(myMerchOrders.length)}</span>)
                   </h2>
                   <p className="muted-inline">
-                    ใช้รหัสรับสินค้าด้านขวาในการรับของที่บูธร้านค้า (ไม่ต้องมีเลข BIB และไม่กระทบสถานะเช็กอินวิ่ง)
+                    {tx("ใช้รหัสรับสินค้าด้านขวาในการรับของที่บูธร้านค้า (ไม่ต้องมีเลข BIB และไม่กระทบสถานะเช็กอินวิ่ง)")}
                   </p>
                 </div>
               </div>
 
               {myMerchOrders.length === 0 ? (
                 <div className="subtle-empty-note">
-                  ยังไม่มีคำสั่งซื้อสินค้าที่ระลึกในบัญชีนี้
+                  {tx("ยังไม่มีคำสั่งซื้อสินค้าที่ระลึกในบัญชีนี้")}
                 </div>
               ) : (
                 <div className="pass-list">
@@ -859,48 +890,46 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         <div className="pass-main-info">
                           <div className="pass-badges-row">
                             <span className="mono-code">
-                              {ord.merchOrderCode}
+                              {tx(ord.merchOrderCode)}
                             </span>
                             <PaymentStatusBadge status={ord.paymentStatus} />
                             {ord.linkedRegistrationCode && (
                               <span className="muted-inline">
-                                อ้างอิงใบสมัคร {ord.linkedRegistrationCode}
+                                {tx("อ้างอิงใบสมัคร ")} {tx(ord.linkedRegistrationCode)}
                               </span>
                             )}
                           </div>
-                          <h3>{ord.productNameTh}</h3>
+                          <h3>{tx(ord.productNameTh)}</h3>
                           <p className="muted-block">
-                            งาน: {ev?.titleTh} · ขนาด:{' '}
-                            <strong>{ord.variantSize}</strong> · จำนวน{' '}
-                            <span className="mono-num">{ord.quantity}</span> ชิ้น
-                            (รับแล้ว{' '}
-                            <span className="mono-num">{ord.deliveredQty}</span>/
-                            <span className="mono-num">{ord.quantity}</span>) ·
-                            ยอดรวม{' '}
+                            {tx("งาน: ")} {tx(ev?.titleTh)} {tx(" · ขนาด:")}{' '}
+                            <strong>{tx(ord.variantSize)}</strong> {tx(" · จำนวน")}{' '}
+                            <span className="mono-num">{tx(ord.quantity)}</span> {tx(" ชิ้น (รับแล้ว")}{' '}
+                            <span className="mono-num">{tx(ord.deliveredQty)}</span>/
+                            <span className="mono-num">{tx(ord.quantity)}</span>{tx(") · ยอดรวม")}{' '}
                             <strong className="mono-num">
                               {formatThb(ord.totalPaidSatang, true)}
                             </strong>
                           </p>
                           <p className="muted-inline">
-                            {ord.sellerLabel} ·{' '}
+                            {tx(ord.sellerLabel)} ·{' '}
                             {ord.deliveryMethod === 'pickup_at_expo'
-                              ? 'รับที่บูธร้านค้าหน้างาน'
-                              : `จัดส่งไปรษณีย์: ${ord.shippingAddress ?? ''}`}
+                              ? tx("รับที่บูธร้านค้าหน้างาน")
+                              : txf("จัดส่งไปรษณีย์: {0}", ord.shippingAddress ?? '')}
                           </p>
                         </div>
 
                         <div className="pass-qr-card">
-                          <span className="muted-inline">รหัสรับสินค้า</span>
-                          <strong className="mono-code">{ord.pickupToken}</strong>
+                          <span className="muted-inline">{tx("รหัสรับสินค้า")}</span>
+                          <strong className="mono-code">{tx(ord.pickupToken)}</strong>
                           <small className="muted-inline">
-                            สถานะส่งมอบ:{' '}
+                            {tx("สถานะส่งมอบ:")}{' '}
                             {ord.fulfillmentStatus === 'completed'
-                              ? 'รับสินค้าครบแล้ว'
+                              ? tx("รับสินค้าครบแล้ว")
                               : ord.fulfillmentStatus === 'partial_received'
-                              ? 'รับสินค้าบางส่วนแล้ว'
+                              ? tx("รับสินค้าบางส่วนแล้ว")
                               : ord.fulfillmentStatus === 'ready_or_shipped'
-                              ? 'พร้อมรับ / จัดส่งแล้ว'
-                              : 'กำลังเตรียมของ'}
+                              ? tx("พร้อมรับ / จัดส่งแล้ว")
+                              : tx("กำลังเตรียมของ")}
                           </small>
                         </div>
                       </article>
@@ -915,15 +944,1000 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     );
   }
 
-  /* ================= SUBVIEW 2: EVENT DETAIL (REGISTRATION + STOREFRONT) ================= */
+  /* ================= SUBVIEW 2A: DEDICATED EVENT REGISTRATION PAGE (/events/:code/register) ================= */
+  if (subView === 'event_register' && selectedEvent) {
+    const org = organizations.find(
+      (o) => o.id === selectedEvent.organizationId
+    );
+    const stepLabels: { step: 1 | 2 | 3 | 4 | 5 | 6; label: string }[] = [
+      { step: 1, label: 'เริ่ม' },
+      { step: 2, label: 'ข้อมูล' },
+      { step: 3, label: 'สินค้า' },
+      { step: 4, label: 'ที่อยู่' },
+      { step: 5, label: 'ชำระเงิน' },
+      { step: 6, label: 'สำเร็จ' },
+    ];
+
+    const sizeSpecMap: Record<
+      'XS' | 'S' | 'M' | 'L' | 'XL' | '2XL',
+      { chest: string; length: string }
+    > = {
+      XS: { chest: '36 นิ้ว', length: '25 นิ้ว' },
+      S: { chest: '38 นิ้ว', length: '26 นิ้ว' },
+      M: { chest: '40 นิ้ว', length: '27 นิ้ว' },
+      L: { chest: '42 นิ้ว', length: '28 นิ้ว' },
+      XL: { chest: '44 นิ้ว', length: '29 นิ้ว' },
+      '2XL': { chest: '46 นิ้ว', length: '30 นิ้ว' },
+    };
+
+    // สร้างตัวเลือกรายการสมัครแบบการ์ด Radio เรียงแนวตั้งตามระยะของงานวิ่ง
+    const registrationOptions = [
+      {
+        optionId: `alumni-${selectedEvent.categories[0]?.id ?? 'cat'}`,
+        catId: selectedEvent.categories[0]?.id ?? '',
+        label: `ศิษย์เก่า / สมาชิกชมรม ${selectedEvent.titleTh.split(' ')[0]}`,
+        subLabel: `${selectedEvent.categories[0]?.name ?? ''} (${
+          selectedEvent.categories[0]?.code ?? ''
+        })`,
+      },
+      ...selectedEvent.categories.flatMap((cat) => [
+        {
+          optionId: `female-${cat.id}`,
+          catId: cat.id,
+          label: `นักวิ่งใหม่ (หญิง) : ${cat.code.toUpperCase()}`,
+          subLabel: `${cat.name} · ปล่อยตัว ${cat.startTimeLocal} น.`,
+        },
+        {
+          optionId: `male-${cat.id}`,
+          catId: cat.id,
+          label: `นักวิ่งใหม่ (ชาย) : ${cat.code.toUpperCase()}`,
+          subLabel: `${cat.name} · ปล่อยตัว ${cat.startTimeLocal} น.`,
+        },
+      ]),
+    ];
+
+    const currentPickedOptionId =
+      selectedDivisionOption ||
+      registrationOptions.find((o) => o.catId === activeCategory?.id)
+        ?.optionId ||
+      registrationOptions[0]?.optionId ||
+      '';
+
+    return (
+      <main className="event-reg-page-shell">
+        <div className="event-reg-split-frame">
+          {/* LEFT POSTER COLUMN */}
+          <aside
+            className={`event-reg-poster-pane ${
+              selectedEvent.coverImageUrl ? 'has-cover-photo' : 'has-cover-motif'
+            }`}
+            aria-label={tx("ข้อมูลงานวิ่งที่กำลังสมัคร")}
+          >
+            <div className="poster-cover-media" aria-hidden="true">
+              <EventCoverMedia
+                event={selectedEvent}
+                className="poster-cover-img"
+              />
+              <div className="poster-cover-scrim" />
+            </div>
+
+            <div className="poster-top-copy">
+              <p className="poster-org-name">
+                {tx(org?.nameTh ?? "องค์กรผู้จัดงานวิ่ง RunEvent")}
+              </p>
+              <h1 className="poster-event-title">
+                {selectedEvent.titleEn || selectedEvent.titleTh}
+              </h1>
+              <p className="poster-event-sub">{tx(selectedEvent.titleTh)}</p>
+              <ul className="poster-meta-list">
+                <li>
+                  <IconCalendar size={14} />
+                  <span className="mono-num">{tx(selectedEvent.eventDate)}</span>
+                </li>
+                <li>
+                  <IconMapPin size={14} />
+                  <span>
+                    {tx(selectedEvent.venue)} · {tx(selectedEvent.province)}
+                  </span>
+                </li>
+                {activeCategory && (
+                  <li>
+                    <IconFlag size={14} />
+                    <span>
+                      {tx(activeCategory.name)} ({tx(activeCategory.code)})
+                    </span>
+                  </li>
+                )}
+              </ul>
+            </div>
+
+            {(selectedEvent.galleryImageUrls ?? []).length > 0 && (
+              <div className="poster-gallery-strip" aria-label={tx("ภาพประกอบงานวิ่ง")}>
+                {(selectedEvent.galleryImageUrls ?? []).slice(0, 3).map((src, i) => (
+                  <img
+                    key={`${src}-${i}`}
+                    src={src}
+                    alt={txf("{0} ภาพที่ {1}", selectedEvent.titleTh, i + 1)}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ))}
+              </div>
+            )}
+
+            <div className="poster-bottom-bar">
+              <button
+                type="button"
+                className="poster-back-btn"
+                onClick={() =>
+                  onNavigate('event_detail', selectedEvent.id, 'info_results')
+                }
+              >
+                <IconArrowLeft size={15} />
+                <span>{tx("กลับหน้ารายละเอียดงานวิ่ง")}</span>
+              </button>
+            </div>
+          </aside>
+
+          {/* RIGHT STEP-BY-STEP WIZARD COLUMN */}
+          <section
+            className="event-reg-wizard-pane"
+            aria-label={tx("ขั้นตอนการสมัครเข้าร่วมงานวิ่ง")}
+          >
+            {/* 6-STEP CONNECTED CIRCLE PROGRESS STEPPER */}
+            <nav
+              className="circle-stepper-bar"
+              aria-label={tx("ความคืบหน้าขั้นตอนการสมัคร")}
+            >
+              {stepLabels.map((item, idx) => {
+                const isCurrent = regStep === item.step;
+                const isDone = regStep > item.step;
+                return (
+                  <React.Fragment key={item.step}>
+                    <button
+                      type="button"
+                      className={`circle-step-node ${
+                        isCurrent ? 'active' : isDone ? 'done' : ''
+                      }`}
+                      onClick={() => {
+                        if (item.step < regStep) {
+                          setRegStep(item.step);
+                        }
+                      }}
+                    >
+                      <span className="circle-step-label">{tx(item.label)}</span>
+                      <span className="circle-step-ring" aria-hidden="true">
+                        {isDone && <IconCheckCircle size={14} />}
+                      </span>
+                    </button>
+                    {idx < stepLabels.length - 1 && (
+                      <div
+                        className={`circle-stepper-line ${
+                          regStep > item.step ? 'line-done' : ''
+                        }`}
+                        aria-hidden="true"
+                      />
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </nav>
+
+            {/* STEP 1: เริ่ม — เลือกประเภทการสมัคร */}
+            {regStep === 1 && (
+              <div className="reg-step-body">
+                <h2 className="reg-step-accent-heading">{tx("เลือกประเภทการสมัคร")}</h2>
+
+                <div
+                  className="reg-radio-cards-stack"
+                  role="radiogroup"
+                  aria-label={tx("เลือกประเภทการสมัคร")}
+                >
+                  {registrationOptions.map((opt) => {
+                    const cat =
+                      selectedEvent.categories.find(
+                        (c) => c.id === opt.catId
+                      ) ?? selectedEvent.categories[0];
+                    const tier = cat ? getCurrentTier(cat) : null;
+                    const quote = tier
+                      ? calculateFeeQuote(
+                          tier.priceSatang,
+                          selectedEvent.feeBearerPolicy
+                        )
+                      : null;
+                    const openCatSeats = cat
+                      ? getCategoryOpenSeats(selectedEvent.id, cat)
+                      : 0;
+                    const isSelected = currentPickedOptionId === opt.optionId;
+
+                    return (
+                      <label
+                        key={opt.optionId}
+                        className={`reg-category-radio-card ${
+                          isSelected ? 'selected' : ''
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="event-reg-cat-option"
+                          checked={isSelected}
+                          onChange={() => {
+                            setSelectedDivisionOption(opt.optionId);
+                            setSelectedCatId(opt.catId);
+                          }}
+                        />
+                        <span className="custom-radio-circle" aria-hidden="true" />
+                        <div className="reg-radio-card-copy">
+                          <strong>{tx(opt.label)}</strong>
+                          <span className="muted-inline mono-num">
+                            {tx(opt.subLabel)} ·{' '}
+                            {quote
+                              ? formatThb(quote.runnerNetPaySatang, true)
+                              : ''}{' '}
+                            {tx("· ว่าง ")} {tx(openCatSeats)} {tx(" สิทธิ์")}
+                          </span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <div className="reg-step-footer-center">
+                  <button
+                    type="button"
+                    className="btn-primary reg-next-pill-btn"
+                    onClick={() => {
+                      if (!selectedCatId && selectedEvent.categories[0]) {
+                        setSelectedCatId(selectedEvent.categories[0].id);
+                      }
+                      setRegStep(2);
+                    }}
+                  >
+                    {tx("ถัดไป")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 2: ข้อมูล — ข้อมูลผู้สมัคร & คำถามเฉพาะงาน */}
+            {regStep === 2 && activeCategory && (
+              <div className="reg-step-body">
+                <h2 className="reg-step-accent-heading">
+                  {tx("กรอกข้อมูลผู้เข้าแข่งขัน (")}{tx(activeCategory.name)})
+                </h2>
+
+                {!currentUser && (
+                  <div className="login-prompt-inline">
+                    <div>
+                      <strong>{tx("ยังไม่ได้เข้าสู่ระบบ:")}</strong>{' '}
+                      {tx("คุณสามารถกรอกข้อมูลไว้ก่อนได้ และระบบจะให้ยืนยันตัวตนก่อนชำระเงินในขั้นตอนที่ 5")}
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() =>
+                        onRequireLoginWithIntent({
+                          surface: 'events',
+                          eventId: selectedEvent.id,
+                          eventTab: 'register',
+                          label: `สมัครวิ่ง ${selectedEvent.titleTh}`,
+                        })
+                      }
+                    >
+                      {tx("เข้าสู่ระบบ / สมัครบัญชี")}
+                    </button>
+                  </div>
+                )}
+
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={registerForSelf}
+                    onChange={(e) => setRegisterForSelf(e.target.checked)}
+                  />
+                  <span>
+                    {tx("สมัครให้ตนเอง (ผู้ซื้อคำสั่งซื้อและผู้เข้าแข่งขันเป็นบุคคลเดียวกัน)")}
+                  </span>
+                </label>
+
+                <div className="form-grid-2">
+                  <div className="form-row">
+                    <label htmlFor="p2-buyer">{tx("ชื่อ-นามสกุลผู้ซื้อคำสั่งซื้อ *")}</label>
+                    <input
+                      id="p2-buyer"
+                      type="text"
+                      value={buyerName}
+                      onChange={(e) => {
+                        setBuyerName(e.target.value);
+                        if (registerForSelf) {
+                          setParticipantNameTh(e.target.value);
+                        }
+                      }}
+                      placeholder={tx("เช่น กานต์พิชชา วัฒนากูล")}
+                      required
+                    />
+                  </div>
+
+                  {!registerForSelf && (
+                    <div className="form-row">
+                      <label htmlFor="p2-part">
+                        {tx("ชื่อ-นามสกุลผู้เข้าแข่งขันจริง *")}
+                      </label>
+                      <input
+                        id="p2-part"
+                        type="text"
+                        value={participantNameTh}
+                        onChange={(e) => setParticipantNameTh(e.target.value)}
+                        required
+                      />
+                    </div>
+                  )}
+
+                  <div className="form-row">
+                    <label htmlFor="p2-en">{tx("ชื่อภาษาอังกฤษบนป้าย BIB")}</label>
+                    <input
+                      id="p2-en"
+                      type="text"
+                      value={participantNameEn}
+                      onChange={(e) => setParticipantNameEn(e.target.value)}
+                      placeholder={tx("เช่น KANPITCHA W.")}
+                    />
+                  </div>
+
+                  <div className="form-row">
+                    <label htmlFor="p2-emerg">
+                      {tx("ชื่อและเบอร์โทรผู้ติดต่อฉุกเฉิน *")}
+                    </label>
+                    <input
+                      id="p2-emerg"
+                      type="text"
+                      value={emergencyContactText}
+                      onChange={(e) => setEmergencyContactText(e.target.value)}
+                      placeholder={tx("ชื่อผู้ติดต่อ และเบอร์โทร 10 หลัก")}
+                    />
+                  </div>
+                </div>
+
+                <RunnerCustomFieldsInputs
+                  fields={selectedEvent.customFields}
+                  answers={customAnswers}
+                  raceDistanceCode={activeCategory.code}
+                  shirtSize={shirtSize}
+                  publishedFormVersion={
+                    selectedEvent.publishedFormVersion ?? 'v1.2-published'
+                  }
+                  onAnswerChange={(fieldId, val) => {
+                    setStep2Error(null);
+                    setCustomAnswers((prev) => ({
+                      ...prev,
+                      [fieldId]: val,
+                    }));
+                  }}
+                />
+
+                {step2Error && (
+                  <div className="error-callout" role="alert">
+                    <IconAlert size={16} />
+                    <span>{tx(step2Error)}</span>
+                  </div>
+                )}
+
+                <div className="reg-step-footer-between">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setRegStep(1)}
+                  >
+                    {tx("ย้อนกลับ")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary reg-next-pill-btn"
+                    onClick={() => {
+                      if (!buyerName.trim()) {
+                        setStep2Error(tx("กรุณากรอกชื่อ-นามสกุลผู้สมัครให้ครบถ้วน"));
+                        return;
+                      }
+                      const missingField = (
+                        selectedEvent.customFields ?? []
+                      ).find((f) => {
+                        if (!f.required) return false;
+                        const isVisible = evaluateConditionRule(
+                          f.visibilityCondition,
+                          customAnswers,
+                          {
+                            raceDistance: activeCategory.code,
+                            shirtSize,
+                          }
+                        );
+                        if (!isVisible) return false;
+                        const val = customAnswers[f.id] ?? f.defaultValue;
+                        if (f.type === 'checkbox') return val !== true;
+                        return !String(val ?? '').trim();
+                      });
+                      if (missingField) {
+                        setStep2Error(
+                          txf("กรุณาระบุ \"{0}\" ให้ครบก่อนไปขั้นตอนถัดไป", missingField.label)
+                        );
+                        return;
+                      }
+                      setStep2Error(null);
+                      setRegStep(3);
+                    }}
+                  >
+                    {tx("ถัดไป")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3: สินค้า — เลือกไซส์เสื้อตามสิทธิ์ & สินค้าซื้อเพิ่ม */}
+            {regStep === 3 && activeCategory && (
+              <div className="reg-step-body">
+                <h2 className="reg-step-accent-heading">
+                  {tx("เลือกไซส์เสื้อตามสิทธิ์สมัครและของที่ระลึก")}
+                </h2>
+
+                <div className="form-row">
+                  <label>
+                    {tx("เลือกขนาดเสื้อตามสิทธิ์สมัคร (แก้ไขไซส์ได้ถึงวันที่")}{' '}
+                    <span className="mono-num">
+                      {tx(selectedEvent.editDeadlineDate)}
+                    </span>
+                    )
+                  </label>
+                  <div className="reg-radio-cards-stack">
+                    {selectedEvent.shirtStocks.map((st) => {
+                      const left = Math.max(
+                        0,
+                        st.total - st.reservedOrConfirmed
+                      );
+                      const spec = sizeSpecMap[st.size];
+                      const isPicked = shirtSize === st.size;
+                      return (
+                        <label
+                          key={st.size}
+                          className={`reg-category-radio-card ${
+                            isPicked ? 'selected' : ''
+                          } ${left === 0 ? 'disabled' : ''}`}
+                        >
+                          <input
+                            type="radio"
+                            name="event-shirt-size-pick"
+                            disabled={left === 0}
+                            checked={isPicked}
+                            onChange={() => setShirtSize(st.size)}
+                          />
+                          <span
+                            className="custom-radio-circle"
+                            aria-hidden="true"
+                          />
+                          <div className="reg-radio-card-copy">
+                            <strong>
+                              {tx("เสื้อวิ่งไซส์ ")} {tx(st.size)} {tx(" (รอบอก")} {tx(spec.chest)} {tx(" · ยาว")}{' '}
+                              {tx(spec.length)})
+                            </strong>
+                            <span className="muted-inline mono-num">
+                              {left > 0
+                                ? txf("คงเหลือ {0} ตัว (รวมในสิทธิ์ค่าสมัครแล้ว)", left)
+                                : tx("สต็อกไซส์นี้เต็มแล้ว")}
+                            </span>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {selectedEvent.products.length > 0 && (
+                  <div className="addon-merch-box">
+                    <div className="addon-head">
+                      <IconShirt size={16} />
+                      <strong>
+                        {tx("สั่งซื้อเสื้อหรือเหรียญที่ระลึกเพิ่มพร้อมใบสมัคร (ไม่บังคับ)")}
+                      </strong>
+                    </div>
+                    <div className="form-grid-2">
+                      <div className="form-row">
+                        <label htmlFor="p3-addon">{tx("เลือกสินค้าที่ระลึก")}</label>
+                        <select
+                          id="p3-addon"
+                          value={includeAddonId}
+                          onChange={(e) => setIncludeAddonId(e.target.value)}
+                        >
+                          <option value="none">
+                            {tx("-- ไม่ซื้อสินค้าเพิ่ม (รับเฉพาะสิทธิ์สมัครวิ่ง) --")}
+                          </option>
+                          {selectedEvent.products.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {tx(p.nameTh)} (+{formatThb(p.priceSatang)})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {selectedAddonProduct && (
+                        <div className="form-row">
+                          <label htmlFor="p3-addon-sz">{tx("ขนาด / รูปแบบ")}</label>
+                          <select
+                            id="p3-addon-sz"
+                            value={addonSize}
+                            onChange={(e) => setAddonSize(e.target.value)}
+                          >
+                            {selectedAddonProduct.availableSizes.map((sz) => (
+                              <option key={sz} value={sz}>
+                                {tx(sz)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="reg-step-footer-between">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setRegStep(2)}
+                  >
+                    {tx("ย้อนกลับ")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary reg-next-pill-btn"
+                    onClick={() => setRegStep(4)}
+                  >
+                    {tx("ถัดไป")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 4: ที่อยู่ — วิธีรับอุปกรณ์ Race Kit & ที่อยู่จัดส่ง */}
+            {regStep === 4 && (
+              <div className="reg-step-body">
+                <h2 className="reg-step-accent-heading">
+                  {tx("เลือกวิธีรับอุปกรณ์ (Race Kit) และที่อยู่ติดต่อ")}
+                </h2>
+
+                <div className="reg-radio-cards-stack">
+                  <label
+                    className={`reg-category-radio-card ${
+                      kitDeliveryOption === 'expo_pickup' ? 'selected' : ''
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="kit-delivery-mode"
+                      checked={kitDeliveryOption === 'expo_pickup'}
+                      onChange={() => setKitDeliveryOption('expo_pickup')}
+                    />
+                    <span className="custom-radio-circle" aria-hidden="true" />
+                    <div className="reg-radio-card-copy">
+                      <strong>
+                        {tx("รับเสื้อและป้าย BIB ด้วยตนเองที่หน้างาน (QR Check-in · ไม่มีค่าจัดส่ง)")}
+                      </strong>
+                      <span className="muted-inline">
+                        {tx("กำหนดการรับอุปกรณ์: ")} {tx(selectedEvent.kitPickupWindow)} {tx(" ณ")}{' '}
+                        {tx(selectedEvent.venue)}
+                      </span>
+                    </div>
+                  </label>
+
+                  <label
+                    className={`reg-category-radio-card ${
+                      kitDeliveryOption === 'postal' ? 'selected' : ''
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="kit-delivery-mode"
+                      checked={kitDeliveryOption === 'postal'}
+                      onChange={() => setKitDeliveryOption('postal')}
+                    />
+                    <span className="custom-radio-circle" aria-hidden="true" />
+                    <div className="reg-radio-card-copy">
+                      <strong>
+                        {tx("ระบุที่อยู่สำหรับรับเอกสาร/จัดส่งอุปกรณ์ทางไปรษณีย์")}
+                      </strong>
+                      <span className="muted-inline">
+                        {tx("บันทึกที่อยู่สำหรับจัดส่งเสื้อและของที่ระลึกตามเงื่อนไขของผู้จัดงาน")}
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="form-row" style={{ marginTop: '0.6rem' }}>
+                  <label htmlFor="p4-addr">
+                    {tx("ที่อยู่ติดต่อ / ที่อยู่สำหรับจัดส่งพัสดุ *")}
+                  </label>
+                  <textarea
+                    id="p4-addr"
+                    rows={3}
+                    value={runnerShippingAddress}
+                    onChange={(e) => setRunnerShippingAddress(e.target.value)}
+                    placeholder={tx("บ้านเลขที่ ถนน ตำบล/แขวง อำเภอ/เขต จังหวัด รหัสไปรษณีย์")}
+                  />
+                </div>
+
+                <div className="reg-step-footer-between">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setRegStep(3)}
+                  >
+                    {tx("ย้อนกลับ")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary reg-next-pill-btn"
+                    onClick={() => setRegStep(5)}
+                  >
+                    {tx("ถัดไป")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 5: ชำระเงิน — ตรวจสอบยอดชำระ & ยืนยันการสมัคร */}
+            {regStep === 5 && activeCategory && (
+              <form
+                onSubmit={handleRegistrationSubmit}
+                className="reg-step-body"
+              >
+                <h2 className="reg-step-accent-heading">
+                  {tx("สรุปยอดชำระแยกรายการและยืนยันการสมัคร")}
+                </h2>
+
+                {(() => {
+                  const tier = getCurrentTier(activeCategory);
+                  const quote = calculateFeeQuote(
+                    tier.priceSatang,
+                    selectedEvent.feeBearerPolicy
+                  );
+                  const addonSatang = selectedAddonProduct
+                    ? selectedAddonProduct.priceSatang
+                    : 0;
+                  const grandTotal = quote.runnerNetPaySatang + addonSatang;
+
+                  return (
+                    <div className="price-breakdown-box">
+                      <div className="breakdown-line">
+                        <span>
+                          {tx("ค่าสมัครวิ่ง ")} {tx(activeCategory.name)} ({tx(tier.label)}{tx(") · เสื้อไซส์ ")} {tx(shirtSize)}
+                        </span>
+                        <span className="mono-num">
+                          {formatThb(quote.baseSatang, true)}
+                        </span>
+                      </div>
+                      <div className="breakdown-line">
+                        <span>
+                          {tx("ค่าบริการระบบ (")}{feePolicyLabel(selectedEvent.feeBearerPolicy)})
+                        </span>
+                        <span className="mono-num">
+                          {formatThb(quote.runnerFeeSatang, true)}
+                        </span>
+                      </div>
+                      {selectedAddonProduct && (
+                        <div className="breakdown-line">
+                          <span>
+                            {tx("สินค้าซื้อเพิ่ม: ")} {tx(selectedAddonProduct.nameTh)} (
+                            {tx(addonSize)})
+                          </span>
+                          <span className="mono-num">
+                            {formatThb(selectedAddonProduct.priceSatang, true)}
+                          </span>
+                        </div>
+                      )}
+                      <div className="breakdown-total">
+                        <strong>{tx("ยอดชำระสุทธิทั้งหมด")}</strong>
+                        <strong className="mono-num text-vermilion">
+                          {formatThb(grandTotal, true)}
+                        </strong>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div className="form-row">
+                  <label>{tx("เลือกช่องทางชำระเงิน (จำลอง)")}</label>
+                  <div className="cta-inline-row">
+                    <button
+                      type="button"
+                      className={`filter-pill ${
+                        paymentChannel === 'promptpay' ? 'active' : ''
+                      }`}
+                      onClick={() => setPaymentChannel('promptpay')}
+                    >
+                      {tx("QR PromptPay (สแกนจ่ายทันที)")}
+                    </button>
+                    <button
+                      type="button"
+                      className={`filter-pill ${
+                        paymentChannel === 'card' ? 'active' : ''
+                      }`}
+                      onClick={() => setPaymentChannel('card')}
+                    >
+                      {tx("บัตรเครดิต / เดบิต")}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="consent-group">
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={acceptedRules}
+                      onChange={(e) => setAcceptedRules(e.target.checked)}
+                    />
+                    <span>
+                      <strong>{tx("[จำเป็น]")}</strong> {tx(" ข้าพเจ้ายอมรับกติกาการแข่งขันและเงื่อนไขความปลอดภัยของงาน (")}{tx(selectedEvent.rulesVersion)})
+                    </span>
+                  </label>
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={marketingConsent}
+                      onChange={(e) => setMarketingConsent(e.target.checked)}
+                    />
+                    <span>
+                      {tx("[ไม่บังคับ] ยินยอมรับข่าวสารงานวิ่งและโปรโมชันจากผู้จัดงาน")}
+                    </span>
+                  </label>
+                </div>
+
+                {checkoutError && (
+                  <div className="error-callout" role="alert">
+                    <IconAlert size={17} />
+                    <div className="callout-flex">
+                      <span>{tx(checkoutError)}</span>
+                      {currentUser && !currentUser.emailVerified && (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={onOpenAccountSecurity}
+                        >
+                          {tx("เพิ่มและยืนยันอีเมล")}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="reg-step-footer-between">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setRegStep(4)}
+                  >
+                    {tx("ย้อนกลับ")}
+                  </button>
+                  <div className="cta-inline-row">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => submitRegistrationOrder(false)}
+                    >
+                      {tx("กันโควตาไว้ชำระภายหลัง (15 นาที)")}
+                    </button>
+                    <button type="submit" className="btn-primary">
+                      {tx("ชำระเงินและยืนยันการสมัครทันที")}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
+
+            {/* STEP 6: สำเร็จ — ใบยืนยันสิทธิ์และ QR Token */}
+            {regStep === 6 && createdResult && (
+              <div className="reg-step-body">
+                <div className="receipt-success-panel">
+                  <div className="receipt-head">
+                    <IconCheckCircle size={24} />
+                    <div>
+                      <h2>
+                        {createdResult.reg.registrationStatus === 'confirmed'
+                          ? tx("สมัครวิ่งและยืนยันการชำระเงินสำเร็จ!")
+                          : tx("สร้างใบจองโควตาสำเร็จ (รอผลชำระเงินภายใน 15 นาที)")}
+                      </h2>
+                      <p className="muted-inline">
+                        {tx("บันทึกใบสมัครด้วยฟอร์มเวอร์ชัน")}{' '}
+                        <span className="mono-code">
+                          {selectedEvent.publishedFormVersion ?? 'v1.2-published'}
+                        </span>{' '}
+                        {tx("เรียบร้อยแล้ว")}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="receipt-grid">
+                    <div>
+                      <span className="muted-inline">{tx("รหัสใบสมัครวิ่ง")}</span>
+                      <strong className="mono-code">
+                        {tx(createdResult.reg.regCode)}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="muted-inline">{tx("ผู้เข้าแข่งขัน")}</span>
+                      <strong>{tx(createdResult.reg.participantNameTh)}</strong>
+                    </div>
+                    <div>
+                      <span className="muted-inline">{tx("เสื้อตามสิทธิ์สมัคร")}</span>
+                      <strong>{tx("ไซส์")} {tx(createdResult.reg.shirtSize)}</strong>
+                    </div>
+                    <div>
+                      <span className="muted-inline">{tx("QR Token รับอุปกรณ์")}</span>
+                      <strong className="mono-code">
+                        {tx(createdResult.reg.qrCheckInToken)}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="muted-inline">{tx("ยอดค่าสมัครสุทธิ")}</span>
+                      <strong className="mono-num text-vermilion">
+                        {formatThb(
+                          createdResult.reg.snapshotTotalChargedSatang,
+                          true
+                        )}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="cta-inline-row">
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => onNavigate('my_orders', null)}
+                    >
+                      {tx("ไปหน้าบัตรวิ่งและคำสั่งซื้อของฉัน")}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => {
+                        setCreatedResult(null);
+                        setRegStep(1);
+                      }}
+                    >
+                      {tx("สมัครเพิ่มอีกท่าน")}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  /* ================= SUBVIEW 2: EVENT DETAIL (EDITORIAL + STICKY SIDEBAR + REGISTRATION + STOREFRONT) ================= */
   if (subView === 'event_detail' && selectedEvent) {
     const org = organizations.find(
       (o) => o.id === selectedEvent.organizationId
     );
     const openSeats = getEventOpenSeats(selectedEvent);
-    const canManageThisEvent = currentUser?.memberships.some(
-      (m) => m.organizationId === selectedEvent.organizationId
+    const usedSeats = Math.max(0, selectedEvent.totalEventQuota - openSeats);
+    const quotaPct = Math.min(
+      100,
+      Math.round((usedSeats / Math.max(1, selectedEvent.totalEventQuota)) * 100)
     );
+    const canManageThisEvent = Boolean(
+      currentUser?.isPlatformAdmin ||
+        currentUser?.memberships.some(
+          (m) => m.organizationId === selectedEvent.organizationId
+        )
+    );
+
+    const stickyCategory = activeCategory ?? selectedEvent.categories[0];
+    const stickyTier = stickyCategory ? getCurrentTier(stickyCategory) : null;
+    const stickyQuote = stickyTier
+      ? calculateFeeQuote(stickyTier.priceSatang, selectedEvent.feeBearerPolicy)
+      : null;
+    const stickyCatOpen = stickyCategory
+      ? getCategoryOpenSeats(selectedEvent.id, stickyCategory)
+      : 0;
+
+    const overviewParas =
+      selectedEvent.overviewParagraphs &&
+      selectedEvent.overviewParagraphs.length > 0
+        ? selectedEvent.overviewParagraphs
+        : [
+            `${selectedEvent.titleTh} (${selectedEvent.titleEn}) จัดขึ้น ณ ${selectedEvent.venue} จังหวัด${selectedEvent.province} ในรูปแบบ ${selectedEvent.raceType} โดยเน้นมาตรฐานความปลอดภัยของเส้นทาง การจัดการจุดปล่อยตัวตามรหัสสี BIB และความโปร่งใสของราคาค่าสมัครสุทธิ`,
+            'ผู้สมัครทุกคนจะได้รับเสื้อแข่งขันประจำงาน ป้ายหมายเลข BIB พร้อม QR Token สำหรับรับอุปกรณ์ล่วงหน้า และเหรียญรางวัล Finisher เมื่อวิ่งเข้าเส้นชัยตามเวลาที่กำหนด นอกจากนี้ผู้ติดตามหรือลูกค้าทั่วไปยังสามารถสั่งซื้อเสื้อและของที่ระลึกผ่านหน้าร้านค้าประจำงานได้โดยไม่ต้องสมัครวิ่ง',
+          ];
+
+    const racePackList =
+      selectedEvent.racePackItems && selectedEvent.racePackItems.length > 0
+        ? selectedEvent.racePackItems
+        : [
+            {
+              title: 'เสื้อวิ่งประจำงาน (Official Race Jersey)',
+              detail:
+                'เนื้อผ้าไมโครโพลีเอสเตอร์ระบายอากาศ แห้งไว เลือกขนาด XS ถึง 2XL ได้ตามโควตาและแก้ไขไซส์ได้ก่อนเส้นตาย',
+              scope: 'ผู้สมัครทุกระยะ',
+            },
+            {
+              title: 'ป้ายหมายเลขแข่งขัน (BIB) พร้อม QR Token',
+              detail:
+                'แยกสีตามระยะการแข่งขัน ใช้แสดงเพื่อรับอุปกรณ์ในวัน Expo และเข้าบล็อกปล่อยตัว',
+              scope: 'ผู้สมัครทุกระยะ',
+            },
+            {
+              title: 'เหรียญรางวัล Finisher',
+              detail:
+                'มอบให้ผู้เข้าแข่งขันที่วิ่งผ่านจุดเช็กและเข้าเส้นชัยภายในเวลา Cut-off ของแต่ละระยะ',
+              scope: 'ผู้เข้าเส้นชัยตามกติกา',
+            },
+            {
+              title: 'ประกันอุบัติเหตุ & บริการจุดให้น้ำ-อาหารหลังเส้นชัย',
+              detail:
+                'ดูแลความปลอดภัยด้วยทีมแพทย์เคลื่อนที่ จุดบริการน้ำดื่มตลอดเส้นทาง และอาหารว่างหลังเข้าเส้นชัย',
+              scope: 'ผู้สมัครทุกคน',
+            },
+          ];
+
+    const scheduleTimeline =
+      selectedEvent.scheduleItems && selectedEvent.scheduleItems.length > 0
+        ? selectedEvent.scheduleItems
+        : [
+            {
+              timeLabel: `วันนี้ – ${selectedEvent.editDeadlineDate}`,
+              title: 'ช่วงเวลาเปิดรับสมัครและแก้ไขขนาดเสื้อออนไลน์',
+              detail:
+                'สมัครออนไลน์พร้อมรับ QR Token ทันที และสามารถปรับขนาดเสื้อได้ด้วยตนเองก่อนวันปิดแก้ไขข้อมูล',
+            },
+            {
+              timeLabel: selectedEvent.kitPickupWindow,
+              title: 'วันรับเสื้อและป้าย BIB (Expo & Race Kit Pickup)',
+              detail: `แสดง QR Token ที่จุดรับอุปกรณ์ ณ ${selectedEvent.venue} เพื่อรับเสื้อและป้าย BIB`,
+            },
+            ...selectedEvent.categories.map((c) => ({
+              timeLabel: `${selectedEvent.eventDate} · ${c.startTimeLocal} น.`,
+              title: `ปล่อยตัวระยะ ${c.name} (${c.code})`,
+              detail: `รหัสหน้า BIB ${c.bibPrefix}-xxxx · เวลา Cut-off ${c.cutoffHours} ชั่วโมง`,
+            })),
+            {
+              timeLabel: `${selectedEvent.eventDate} · หลังเข้าเส้นชัย`,
+              title: 'รับเหรียญรางวัล Finisher และประกาศผลการแข่งขัน/อัลบั้มภาพ',
+              detail:
+                'ตรวจสอบผลการแข่งขันและลิงก์อัลบั้มภาพถ่ายหลังงานที่ผู้จัดตรวจสอบแล้วผ่านหน้าเว็บนี้',
+            },
+          ];
+
+    const sizeSpecMap: Record<
+      'XS' | 'S' | 'M' | 'L' | 'XL' | '2XL',
+      { chest: string; length: string }
+    > = {
+      XS: { chest: '36 นิ้ว', length: '25 นิ้ว' },
+      S: { chest: '38 นิ้ว', length: '26 นิ้ว' },
+      M: { chest: '40 นิ้ว', length: '27 นิ้ว' },
+      L: { chest: '42 นิ้ว', length: '28 นิ้ว' },
+      XL: { chest: '44 นิ้ว', length: '29 นิ้ว' },
+      '2XL': { chest: '46 นิ้ว', length: '30 นิ้ว' },
+    };
+
+    const startRegistrationForCategory = (catId?: string) => {
+      if (catId) setSelectedCatId(catId);
+      setCreatedResult(null);
+      setRegStep(1);
+      onNavigate('event_register', selectedEvent.id, 'register');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const jumpToEditorialSection = (sectionId: string) => {
+      setDetailTab('info_results');
+      setShowRegForm(false);
+      setTimeout(() => {
+        const el = document.getElementById(sectionId);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 30);
+    };
+
+    const isEditorialView =
+      !showRegForm && detailTab !== 'storefront';
 
     return (
       <main className="customer-container">
@@ -934,29 +1948,46 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             onClick={() => onNavigate('directory', null)}
           >
             <IconArrowLeft size={15} />
-            <span>กลับหน้ารวมงานวิ่งทั้งหมด</span>
+            <span>{tx("กลับหน้ารวมงานวิ่งทั้งหมด")}</span>
           </button>
 
-          {canManageThisEvent && (
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() =>
-                onOpenOrganizerDashboard(
-                  selectedEvent.organizationId,
-                  selectedEvent.id
-                )
-              }
-            >
-              จัดการงานนี้ใน Organizer Dashboard
-            </button>
-          )}
+          <div className="cta-inline-row">
+            {!isEditorialView && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  setShowRegForm(false);
+                  setDetailTab('info_results');
+                }}
+              >
+                <IconArrowLeft size={14} />
+                <span>{tx("กลับไปอ่านรายละเอียดงานวิ่ง")}</span>
+              </button>
+            )}
+
+            {canManageThisEvent && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() =>
+                  onOpenOrganizerDashboard(
+                    selectedEvent.organizationId,
+                    selectedEvent.id
+                  )
+                }
+              >
+                {tx("จัดการงานนี้ใน Organizer Dashboard")}
+              </button>
+            )}
+          </div>
         </div>
 
+        {/* HERO COVER BANNER */}
         <section className="event-detail-hero">
           <div className="detail-cover-box">
-            <EventCoverArtwork
-              motif={selectedEvent.coverMotif}
+            <EventCoverMedia
+              event={selectedEvent}
               className="detail-cover-svg"
             />
           </div>
@@ -964,35 +1995,37 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           <div className="detail-hero-body">
             <div className="detail-meta-top">
               <EventStatusBadge status={selectedEvent.status} />
-              <span className="race-type-tag">{selectedEvent.raceType}</span>
-              <span className="mono-code">{selectedEvent.code}</span>
+              <span className="race-type-tag">{tx(selectedEvent.raceType)}</span>
+              <span className="mono-code">{tx(selectedEvent.code)}</span>
             </div>
 
-            <h1>{selectedEvent.titleTh}</h1>
-            <p className="muted-block">{selectedEvent.tagline}</p>
+            <h1>{tx(selectedEvent.titleTh)}</h1>
+            <p className="muted-block">{tx(selectedEvent.tagline)}</p>
 
             <div className="detail-key-facts">
               <div>
                 <IconCalendar size={16} />
                 <span>
-                  วันแข่งขัน:{' '}
-                  <strong className="mono-num">{selectedEvent.eventDate}</strong>
+                  {tx("วันแข่งขัน:")}{' '}
+                  <strong className="mono-num">{tx(selectedEvent.eventDate)}</strong>{' '}
+                  {tx("· เปิดรับสมัคร:")}{' '}
+                  <strong>
+                    {selectedEvent.registrationPeriodLabel ??
+                      txf("ถึง {0}", selectedEvent.editDeadlineDate)}
+                  </strong>
                 </span>
               </div>
               <div>
                 <IconMapPin size={16} />
                 <span>
-                  {selectedEvent.province} · {selectedEvent.venue}
+                  {tx("จังหวัด")}{tx(selectedEvent.province)} · {tx(selectedEvent.venue)}
                 </span>
               </div>
               <div>
-                <IconBib size={16} />
+                <IconBuilding size={16} />
                 <span>
-                  โควตาว่างรวม:{' '}
-                  <strong className="mono-num">
-                    {openSeats} / {selectedEvent.totalEventQuota}
-                  </strong>{' '}
-                  สิทธิ์ · ผู้จัด: {org?.nameTh}
+                  {tx("ผู้จัดงาน: ")} <strong>{tx(org?.nameTh)}</strong> {tx(" · นโยบายค่าบริการ:")}{' '}
+                  <strong>{feePolicyLabel(selectedEvent.feeBearerPolicy)}</strong>
                 </span>
               </div>
             </div>
@@ -1002,188 +2035,624 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         {selectedEvent.statusNote && (
           <div className="status-explanation-banner" role="status">
             <IconAlert size={17} />
-            <span>{selectedEvent.statusNote}</span>
+            <span>{tx(selectedEvent.statusNote)}</span>
           </div>
         )}
 
+        {/* TOP SECTION & MODE BAR */}
         <div
+          id="event-main-workspace"
           className="detail-mode-tabs"
           role="tablist"
-          aria-label="เลือกส่วนบริการของงานวิ่งนี้"
+          aria-label={tx("เลือกดูรายละเอียดงาน สมัครวิ่ง หรือร้านค้าของที่ระลึก")}
         >
           <button
             type="button"
             role="tab"
-            aria-selected={detailTab === 'register'}
-            className={`detail-tab-btn ${
-              detailTab === 'register' ? 'active' : ''
-            }`}
-            onClick={() => setDetailTab('register')}
+            aria-selected={isEditorialView}
+            className={`detail-tab-btn ${isEditorialView ? 'active' : ''}`}
+            onClick={() => {
+              setShowRegForm(false);
+              setDetailTab('info_results');
+            }}
           >
-            <IconBib size={16} />
-            <span>สมัครเข้าร่วมวิ่ง (รับสิทธิ์ BIB)</span>
+            <IconFlag size={16} />
+            <span>{tx("รายละเอียดงานวิ่งครบถ้วน")}</span>
           </button>
 
           <button
             type="button"
             role="tab"
-            aria-selected={detailTab === 'storefront'}
+            aria-selected={showRegForm && detailTab === 'register'}
             className={`detail-tab-btn ${
-              detailTab === 'storefront' ? 'active' : ''
+              showRegForm && detailTab === 'register' ? 'active' : ''
             }`}
-            onClick={() => setDetailTab('storefront')}
+            onClick={() => startRegistrationForCategory(selectedCatId)}
+          >
+            <IconBib size={16} />
+            <span>{tx("กรอกใบสมัครวิ่ง (รับสิทธิ์ BIB)")}</span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={!showRegForm && detailTab === 'storefront'}
+            className={`detail-tab-btn ${
+              !showRegForm && detailTab === 'storefront' ? 'active' : ''
+            }`}
+            onClick={() => {
+              setShowRegForm(false);
+              setDetailTab('storefront');
+            }}
           >
             <IconBag size={16} />
             <span>
-              ร้านค้าของงาน ({selectedEvent.products.length} รายการ — ไม่สมัครวิ่งก็ซื้อได้)
+              {tx("ร้านค้าของที่ระลึก (")}{tx(selectedEvent.products.length)} {tx(" รายการ — ไม่สมัครวิ่งก็ซื้อได้)")}
             </span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={detailTab === 'info_results'}
-            className={`detail-tab-btn ${
-              detailTab === 'info_results' ? 'active' : ''
-            }`}
-            onClick={() => setDetailTab('info_results')}
-          >
-            <IconCamera size={16} />
-            <span>กำหนดการ & ผลการแข่งขัน/รูปภาพ</span>
           </button>
         </div>
 
-        {/* TAB 1: RACE REGISTRATION + OPTIONAL MERCH ADD-ON */}
-        {detailTab === 'register' && (
-          <section className="clean-panel">
-            {selectedEvent.status !== 'published' ? (
-              <div className="empty-state-box">
-                <h2>งานวิ่งนี้ไม่ได้เปิดรับสมัครในขณะนี้</h2>
-                <p>
-                  คุณสามารถเปิดดูผลการแข่งขัน อัลบั้มภาพหลังงาน หรือเลือกซื้อสินค้าที่ระลึกที่เปิดขายในแท็บร้านค้าของงานได้
-                </p>
-                <div className="cta-inline-row">
+        {/* 2-COLUMN RACE.THAI.RUN STYLE LAYOUT: MAIN CONTENT LEFT + STICKY SUMMARY RIGHT */}
+        <div className="event-detail-two-col">
+          <div className="event-editorial-col">
+            {/* MODE A: FULL EDITORIAL EVENT PAGE (DEFAULT) */}
+            {isEditorialView && (
+              <div className="editorial-sections-stack">
+                <nav
+                  className="editorial-anchor-strip"
+                  aria-label={tx("ทางลัดไปยังหัวข้อในหน้านี้")}
+                >
                   <button
                     type="button"
-                    className="btn-primary"
-                    onClick={() => setDetailTab('info_results')}
+                    className="filter-pill"
+                    onClick={() => jumpToEditorialSection('sec-about')}
                   >
-                    ดูผลการแข่งขันและรูปภาพ
+                    {tx("เกี่ยวกับงาน")}
                   </button>
-                  {selectedEvent.products.length > 0 && (
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => setDetailTab('storefront')}
-                    >
-                      เปิดร้านค้าของงาน
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : createdResult ? (
-              <div className="registration-complete-view" role="status">
-                <div className="complete-icon-badge">
-                  <IconCheckCircle size={28} />
-                </div>
-                <h2>
-                  {createdResult.reg.registrationStatus === 'confirmed'
-                    ? 'ยืนยันการสมัครวิ่งเรียบร้อยแล้ว'
-                    : 'กันโควตาชั่วคราวแล้ว (รอชำระเงินภายใน 30 นาที)'}
-                </h2>
-                <p className="muted-block">
-                  ใบสมัคร <strong className="mono-code">{createdResult.reg.regCode}</strong>
-                  {createdResult.addonOrder && (
-                    <>
-                      {' '}
-                      และคำสั่งซื้อสินค้าเพิ่ม{' '}
-                      <strong className="mono-code">
-                        {createdResult.addonOrder.merchOrderCode}
-                      </strong>
-                    </>
-                  )}{' '}
-                  ได้รับการบันทึกในบัญชีของคุณแล้ว สามารถตรวจสอบสถานะและ QR รับอุปกรณ์ได้ในหน้าบัตรวิ่งของฉัน
-                </p>
+                  <button
+                    type="button"
+                    className="filter-pill"
+                    onClick={() => jumpToEditorialSection('sec-categories')}
+                  >
+                    {tx("ระยะทาง & ค่าสมัคร")}
+                  </button>
+                  <button
+                    type="button"
+                    className="filter-pill"
+                    onClick={() => jumpToEditorialSection('sec-racepack')}
+                  >
+                    {tx("เสื้อ เหรียญ & ตารางไซส์")}
+                  </button>
+                  <button
+                    type="button"
+                    className="filter-pill"
+                    onClick={() => jumpToEditorialSection('sec-schedule')}
+                  >
+                    {tx("กำหนดการวันงาน")}
+                  </button>
+                  <button
+                    type="button"
+                    className="filter-pill"
+                    onClick={() => jumpToEditorialSection('sec-venue-rules')}
+                  >
+                    {tx("สถานที่ กติกา & รูปภาพ")}
+                  </button>
+                </nav>
 
-                <div className="receipt-summary-box">
-                  <div>
-                    <span className="muted-inline">ผู้เข้าแข่งขัน</span>
-                    <strong>{createdResult.reg.participantNameTh}</strong>
+                {/* SECTION 1: ABOUT & HIGHLIGHTS */}
+                <section id="sec-about" className="clean-panel">
+                  <h2>{tx("รายละเอียดการจัดงานและไฮไลต์สำคัญ")}</h2>
+                  {overviewParas.map((p, idx) => (
+                    <p key={idx} className="muted-block">
+                      {tx(p)}
+                    </p>
+                  ))}
+
+                  <h3>{tx("จุดเด่นและสิทธิพิเศษสำหรับผู้สมัคร")}</h3>
+                  <ul className="compact-bullet-list">
+                    {selectedEvent.highlights.map((h, i) => (
+                      <li key={i}>{tx(h)}</li>
+                    ))}
+                    <li>
+                      {tx("แสดงราคาสุทธิชัดเจนก่อนชำระเงิน (")}{feePolicyLabel(selectedEvent.feeBearerPolicy)})
+                    </li>
+                  </ul>
+                </section>
+
+                {/* SECTION 2: RACE CATEGORIES, DISTANCES & PRICE TIERS */}
+                <section id="sec-categories" className="clean-panel">
+                  <div className="section-title-bar">
+                    <div>
+                      <h2>{tx("ประเภทการแข่งขัน ระยะทาง และอัตราค่าสมัคร")}</h2>
+                      <p className="muted-inline">
+                        {tx("คลิกเลือกระยะที่ต้องการเพื่อดูราคาสุทธิในการ์ดด้านขวา หรือกดปุ่มสมัครระยะนั้นได้ทันที")}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <span className="muted-inline">เสื้อตามสิทธิ์สมัคร</span>
-                    <strong>ไซส์ {createdResult.reg.shirtSize}</strong>
+
+                  <div className="editorial-category-list">
+                    {selectedEvent.categories.map((cat) => {
+                      const curTier = getCurrentTier(cat);
+                      const quote = calculateFeeQuote(
+                        curTier.priceSatang,
+                        selectedEvent.feeBearerPolicy
+                      );
+                      const left = getCategoryOpenSeats(selectedEvent.id, cat);
+                      const isPicked = stickyCategory?.id === cat.id;
+
+                      return (
+                        <article
+                          key={cat.id}
+                          className={`editorial-cat-card ${
+                            isPicked ? 'selected' : ''
+                          }`}
+                          onClick={() => setSelectedCatId(cat.id)}
+                        >
+                          <div className="editorial-cat-head">
+                            <div className="cta-inline-row">
+                              <span
+                                className={`category-bib-chip tone-${cat.colorTag}`}
+                              >
+                                <strong>{tx(cat.code)}</strong>
+                              </span>
+                              <h3>{tx(cat.name)}</h3>
+                              <span className="mono-code">
+                                BIB {tx(cat.bibPrefix)}-xxxx
+                              </span>
+                            </div>
+
+                            <div className="editorial-cat-price">
+                              <span className="muted-inline">
+                                {tx("ราคาสุทธิ (")}{tx(curTier.label)})
+                              </span>
+                              <strong className="mono-num text-vermilion">
+                                {formatThb(quote.runnerNetPaySatang, true)}
+                              </strong>
+                            </div>
+                          </div>
+
+                          <div className="editorial-cat-facts">
+                            <span>
+                              <IconClock size={14} /> {tx(" ปล่อยตัว")}{' '}
+                              <strong className="mono-num">
+                                {tx(cat.startTimeLocal)} {tx(" น.")}
+                              </strong>
+                            </span>
+                            <span>
+                              {tx("เวลา Cut-off")}{' '}
+                              <strong className="mono-num">
+                                {tx(cat.cutoffHours)} {tx(" ชม.")}
+                              </strong>
+                            </span>
+                            <span>
+                              {tx("ที่นั่งว่าง")}{' '}
+                              <strong className="mono-num">
+                                {tx(left)} / {tx(cat.categoryQuota)}
+                              </strong>{' '}
+                              {tx("สิทธิ์")}
+                            </span>
+                          </div>
+
+                          <div className="editorial-tier-strip">
+                            {cat.priceTiers.map((t) => (
+                              <span
+                                key={t.id}
+                                className={`editorial-tier-pill ${
+                                  t.isCurrent ? 'active' : ''
+                                }`}
+                              >
+                                <strong>{tx(t.label)}:</strong>{' '}
+                                <span className="mono-num">
+                                  {formatThb(t.priceSatang)}
+                                </span>{' '}
+                                ({tx(t.startsAt)} – {tx(t.endsAt)})
+                                {t.isCurrent ? tx(" · เปิดใช้อยู่") : ''}
+                              </span>
+                            ))}
+                          </div>
+
+                          <div className="editorial-cat-actions">
+                            <span className="muted-inline">
+                              {tx("ค่าสมัครป้าย ")} {formatThb(quote.baseSatang)} {tx(" + ค่าบริการฝั่งนักวิ่ง")}{' '}
+                              {formatThb(quote.runnerFeeSatang, true)}
+                            </span>
+                            {selectedEvent.status === 'published' && (
+                              <button
+                                type="button"
+                                className="btn-primary"
+                                disabled={left <= 0}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startRegistrationForCategory(cat.id);
+                                }}
+                              >
+                                <span>
+                                  {left > 0
+                                    ? txf("สมัครระยะ {0}", cat.code)
+                                    : tx("โควตาเต็มแล้ว")}
+                                </span>
+                                <IconArrowRight size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
                   </div>
-                  <div>
-                    <span className="muted-inline">QR Token รับ BIB</span>
-                    <strong className="mono-code">
-                      {createdResult.reg.qrCheckInToken}
-                    </strong>
+                </section>
+
+                {/* SECTION 3: RACE PACK ENTITLEMENTS, SHIRT & MEDAL + SIZE CHART */}
+                <section id="sec-racepack" className="clean-panel">
+                  <h2>{tx("เสื้อแข่งขัน เหรียญรางวัล สิทธิ์ที่ผู้สมัครจะได้รับ และตารางไซส์เสื้อ")}</h2>
+                  <p className="muted-block">
+                    {tx("แยกชัดเจนระหว่างสิ่งที่ได้รับตามสิทธิ์การสมัครแข่งขัน (Race Pack) กับสินค้าที่ระลึกที่เปิดขายแยกในหน้าร้านค้า")}
+                  </p>
+
+                  <div className="racepack-grid">
+                    {racePackList.map((item, idx) => (
+                      <div key={idx} className="racepack-item-card">
+                        <div className="cta-inline-row">
+                          <IconShirt size={16} />
+                          <strong>{tx(item.title)}</strong>
+                        </div>
+                        <p className="muted-block">{tx(item.detail)}</p>
+                        <span className="mono-code">{tx(item.scope)}</span>
+                      </div>
+                    ))}
                   </div>
-                  <div>
-                    <span className="muted-inline">ยอดค่าสมัครสุทธิ</span>
-                    <strong className="mono-num text-vermilion">
-                      {formatThb(
-                        createdResult.reg.snapshotTotalChargedSatang,
-                        true
+
+                  <h3 style={{ marginTop: '1.1rem' }}>
+                    {tx("ตารางขนาดเสื้อแข่งขันมาตรฐานและสต็อกคงเหลือจริง")}
+                  </h3>
+                  <div className="table-scroll">
+                    <table className="ops-table">
+                      <thead>
+                        <tr>
+                          <th>{tx("ขนาดเสื้อ (Size)")}</th>
+                          <th>{tx("รอบอก (นิ้ว)")}</th>
+                          <th>{tx("ความยาวเสื้อ (นิ้ว)")}</th>
+                          <th className="num-col">{tx("โควตาเสื้อทั้งหมด")}</th>
+                          <th className="num-col">{tx("คงเหลือให้เลือก")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedEvent.shirtStocks.map((st) => {
+                          const left = Math.max(
+                            0,
+                            st.total - st.reservedOrConfirmed
+                          );
+                          const spec = sizeSpecMap[st.size];
+                          return (
+                            <tr key={st.size}>
+                              <td>
+                                <strong>{tx("ไซส์")} {tx(st.size)}</strong>
+                              </td>
+                              <td className="mono-num">{tx(spec.chest)}</td>
+                              <td className="mono-num">{tx(spec.length)}</td>
+                              <td className="num-col mono-num">
+                                {tx(st.total)} {tx(" ตัว")}
+                              </td>
+                              <td className="num-col mono-num">
+                                {left > 0 ? (
+                                  <strong className="text-forest">
+                                    {tx("ว่าง ")} {tx(left)} {tx(" ตัว")}
+                                  </strong>
+                                ) : (
+                                  <span className="text-danger">{tx("หมดโควตา")}</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                {/* SECTION 4: SCHEDULE & TIMELINE */}
+                <section id="sec-schedule" className="clean-panel">
+                  <h2>{tx("กำหนดการรับอุปกรณ์และตารางเวลาวันแข่งขัน (Timeline)")}</h2>
+                  <p className="muted-block">
+                    {tx("เวลาอ้างอิงตามเขตเวลามาตรฐานประเทศไทย (")}{tx(selectedEvent.timezone)})
+                  </p>
+
+                  <div className="schedule-timeline-list">
+                    {scheduleTimeline.map((item, idx) => (
+                      <div key={idx} className="schedule-timeline-row">
+                        <div className="schedule-time-badge mono-num">
+                          <IconClock size={14} />
+                          <span>{tx(item.timeLabel)}</span>
+                        </div>
+                        <div className="schedule-row-body">
+                          <strong>{tx(item.title)}</strong>
+                          <p className="muted-inline">{tx(item.detail)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                {/* SECTION 5: VENUE, RULES, CONTACT & VERIFIED RESULTS/PHOTOS */}
+                <section id="sec-venue-rules" className="clean-panel">
+                  <h2>{tx("สถานที่จัดงาน กติกาการแข่งขัน และช่องทางติดต่อผู้จัด")}</h2>
+                  <div className="form-grid-2">
+                    <div className="racepack-item-card">
+                      <strong>{tx("จุดปล่อยตัวและสถานที่จัดงาน")}</strong>
+                      <p className="muted-block">
+                        {tx(selectedEvent.venue)} {tx(" · จังหวัด")}{tx(selectedEvent.province)} {tx(" (ภูมิภาค")}
+                        {tx(selectedEvent.region)})
+                      </p>
+                      <span className="muted-inline">
+                        {tx("เวลารับเสื้อและ BIB: ")} {tx(selectedEvent.kitPickupWindow)}
+                      </span>
+                    </div>
+
+                    <div className="racepack-item-card">
+                      <strong>{tx("กติกาการแข่งขันและการแก้ไขข้อมูล")}</strong>
+                      <p className="muted-block">
+                        {tx("ใช้กติกาฉบับ ")} <code>{tx(selectedEvent.rulesVersion)}</code> {tx(" · ผู้สมัครแก้ไขขนาดเสื้อด้วยตนเองได้ถึงวันที่")}{' '}
+                        <strong className="mono-num">
+                          {tx(selectedEvent.editDeadlineDate)}
+                        </strong>
+                      </p>
+                      <span className="muted-inline">
+                        {tx("ผู้จัดงาน: ")} {tx(org?.nameTh)} ({tx(org?.contactEmail)})
+                      </span>
+                    </div>
+                  </div>
+
+                  {selectedEvent.verifiedPhotoAlbums &&
+                    selectedEvent.verifiedPhotoAlbums.length > 0 && (
+                      <div className="completed-showcase-box">
+                        <h3>{tx("ผลการแข่งขันและอัลบั้มภาพหลังงาน (ผู้จัดตรวจสอบแล้ว)")}</h3>
+                        <div className="album-list">
+                          {selectedEvent.verifiedPhotoAlbums.map((alb) => (
+                            <div key={alb.id} className="album-item-row">
+                              <div>
+                                <strong>{tx(alb.title)}</strong>
+                                <div className="muted-inline">
+                                  {tx(alb.photographerCredit)} ·{' '}
+                                  <span className="mono-num">
+                                    {alb.photoCount.toLocaleString('th-TH')}
+                                  </span>{' '}
+                                  {tx("ภาพ")}
+                                </div>
+                              </div>
+                              <span className="status-pill badge-forest">
+                                <IconCamera size={13} />
+                                <span>{tx("ตรวจสอบแล้ว")}</span>
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                </section>
+
+                {/* SECTION 6: MERCHANDISE STOREFRONT PREVIEW */}
+                {selectedEvent.products.length > 0 && (
+                  <section id="sec-merch-preview" className="clean-panel">
+                    <div className="section-title-bar">
+                      <div>
+                        <h2>
+                          {tx("ของที่ระลึกประจำงาน (")}{tx(selectedEvent.products.length)}{' '}
+                          {tx("รายการ — ลูกค้าทั่วไปซื้อได้โดยไม่ต้องสมัครวิ่ง)")}
+                        </h2>
+                        <p className="muted-inline">
+                          {tx("คำสั่งซื้อสินค้าที่ระลึกจะแยกออกจากใบสมัครวิ่ง และรับของด้วยรหัสรับสินค้าเฉพาะ")}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => {
+                          setShowRegForm(false);
+                          setDetailTab('storefront');
+                        }}
+                      >
+                        <IconBag size={15} />
+                        <span>{tx("เปิดหน้าร้านค้าของงาน")}</span>
+                      </button>
+                    </div>
+
+                    <div className="form-grid-2">
+                      {selectedEvent.products.map((prd) => {
+                        const left = Math.max(
+                          0,
+                          prd.stockOrCeiling - prd.soldCount
+                        );
+                        return (
+                          <div key={prd.id} className="racepack-item-card">
+                            <div className="section-title-bar">
+                              <strong>{tx(prd.nameTh)}</strong>
+                              <strong className="mono-num text-vermilion">
+                                {formatThb(prd.priceSatang, true)}
+                              </strong>
+                            </div>
+                            <p className="muted-inline">{tx(prd.description)}</p>
+                            <div className="cta-inline-row">
+                              <span className="mono-code">
+                                {tx("คงเหลือ ")} {tx(left)}/{tx(prd.stockOrCeiling)} {tx(" ชิ้น")}
+                              </span>
+                              <button
+                                type="button"
+                                className="btn-ghost-sm"
+                                onClick={() => {
+                                  setActiveProductId(prd.id);
+                                  setShowRegForm(false);
+                                  setDetailTab('storefront');
+                                }}
+                              >
+                                {tx("เลือกซื้อรายการนี้")}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+              </div>
+            )}
+
+            {/* MODE B: 3-STEP RACE REGISTRATION WIZARD */}
+            {showRegForm && detailTab === 'register' && (
+              <section className="clean-panel">
+                {selectedEvent.status !== 'published' ? (
+                  <div className="empty-state-box">
+                    <h2>{tx("งานวิ่งนี้ไม่ได้เปิดรับสมัครในขณะนี้")}</h2>
+                    <p>
+                      {tx("คุณสามารถกลับไปดูรายละเอียดกำหนดการ ผลการแข่งขัน อัลบั้มภาพหลังงาน หรือเลือกซื้อสินค้าที่ระลึกในร้านค้าของงานได้")}
+                    </p>
+                    <div className="cta-inline-row">
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={() => {
+                          setShowRegForm(false);
+                          setDetailTab('info_results');
+                        }}
+                      >
+                        {tx("ดูรายละเอียดงานและผลการแข่งขัน")}
+                      </button>
+                      {selectedEvent.products.length > 0 && (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => {
+                            setShowRegForm(false);
+                            setDetailTab('storefront');
+                          }}
+                        >
+                          {tx("เปิดร้านค้าของงาน")}
+                        </button>
                       )}
-                    </strong>
+                    </div>
                   </div>
-                </div>
+                ) : createdResult ? (
+                  <div className="registration-complete-view" role="status">
+                    <div className="complete-icon-badge">
+                      <IconCheckCircle size={28} />
+                    </div>
+                    <h2>
+                      {createdResult.reg.registrationStatus === 'confirmed'
+                        ? tx("ยืนยันการสมัครวิ่งเรียบร้อยแล้ว")
+                        : tx("กันโควตาชั่วคราวแล้ว (รอชำระเงินภายใน 30 นาที)")}
+                    </h2>
+                    <p className="muted-block">
+                      {tx("ใบสมัคร")}{' '}
+                      <strong className="mono-code">
+                        {tx(createdResult.reg.regCode)}
+                      </strong>
+                      {createdResult.addonOrder && (
+                        <>
+                          {' '}
+                          {tx("และคำสั่งซื้อสินค้าเพิ่ม")}{' '}
+                          <strong className="mono-code">
+                            {tx(createdResult.addonOrder.merchOrderCode)}
+                          </strong>
+                        </>
+                      )}{' '}
+                      {tx("ได้รับการบันทึกในบัญชีของคุณแล้ว สามารถตรวจสอบสถานะและ QR รับอุปกรณ์ได้ในหน้าบัตรวิ่งของฉัน")}
+                    </p>
 
-                <div className="cta-inline-row">
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={() => onNavigate('my_orders', null)}
+                    <div className="receipt-summary-box">
+                      <div>
+                        <span className="muted-inline">{tx("ผู้เข้าแข่งขัน")}</span>
+                        <strong>{tx(createdResult.reg.participantNameTh)}</strong>
+                      </div>
+                      <div>
+                        <span className="muted-inline">{tx("เสื้อตามสิทธิ์สมัคร")}</span>
+                        <strong>{tx("ไซส์")} {tx(createdResult.reg.shirtSize)}</strong>
+                      </div>
+                      <div>
+                        <span className="muted-inline">{tx("QR Token รับ BIB")}</span>
+                        <strong className="mono-code">
+                          {tx(createdResult.reg.qrCheckInToken)}
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="muted-inline">{tx("ยอดค่าสมัครสุทธิ")}</span>
+                        <strong className="mono-num text-vermilion">
+                          {formatThb(
+                            createdResult.reg.snapshotTotalChargedSatang,
+                            true
+                          )}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="cta-inline-row">
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={() => onNavigate('my_orders', null)}
+                      >
+                        {tx("ไปหน้าบัตรวิ่งและคำสั่งซื้อของฉัน")}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => {
+                          setCreatedResult(null);
+                          setRegStep(1);
+                        }}
+                      >
+                        {tx("สมัครเพิ่มอีกท่าน")}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <form
+                    onSubmit={handleRegistrationSubmit}
+                    className="wizard-stack"
                   >
-                    ไปหน้าบัตรวิ่งและคำสั่งซื้อของฉัน
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => {
-                      setCreatedResult(null);
-                      setRegStep(1);
-                    }}
-                  >
-                    สมัครเพิ่มอีกท่าน
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={handleRegistrationSubmit} className="wizard-stack">
-                <div className="wizard-steps-indicator">
-                  <button
-                    type="button"
-                    className={`step-pill ${regStep === 1 ? 'current' : 'done'}`}
-                    onClick={() => setRegStep(1)}
-                  >
-                    1. เลือกระยะทาง & เสื้อ
-                  </button>
-                  <button
-                    type="button"
-                    className={`step-pill ${
-                      regStep === 2 ? 'current' : regStep > 2 ? 'done' : ''
-                    }`}
-                    onClick={() => setRegStep(2)}
-                  >
-                    2. ข้อมูลผู้สมัคร & กติกา
-                  </button>
-                  <button
-                    type="button"
-                    className={`step-pill ${regStep === 3 ? 'current' : ''}`}
-                    onClick={() => setRegStep(3)}
-                  >
-                    3. สรุปยอดแยกรายการ & ยืนยัน
-                  </button>
-                </div>
+                    <div className="wizard-steps-indicator">
+                      <button
+                        type="button"
+                        className={`step-pill ${
+                          regStep === 1 ? 'current' : 'done'
+                        }`}
+                        onClick={() => setRegStep(1)}
+                      >
+                        1.{' '}
+                        {registrationSteps.find(
+                          (s) => s.key === 'step_distance_shirt'
+                        )?.titleTh ?? tx("เลือกระยะทาง & เสื้อ")}
+                      </button>
+                      <button
+                        type="button"
+                        className={`step-pill ${
+                          regStep === 2
+                            ? 'current'
+                            : regStep > 2
+                            ? 'done'
+                            : ''
+                        }`}
+                        onClick={() => setRegStep(2)}
+                      >
+                        2.{' '}
+                        {registrationSteps.find(
+                          (s) => s.key === 'step_runner_info'
+                        )?.titleTh ?? tx("ข้อมูลผู้สมัคร & คำถามเฉพาะงาน")}
+                      </button>
+                      <button
+                        type="button"
+                        className={`step-pill ${regStep === 3 ? 'current' : ''}`}
+                        onClick={() => setRegStep(3)}
+                      >
+                        3.{' '}
+                        {registrationSteps.find(
+                          (s) => s.key === 'step_review_payment'
+                        )?.titleTh ?? tx("สรุปยอดแยกรายการ & ยืนยัน")}
+                      </button>
+                    </div>
 
                 {regStep === 1 && activeCategory && (
                   <div className="wizard-pane">
-                    <h2>เลือกระยะทาง เสื้อตามสิทธิ์ และสินค้าซื้อเพิ่ม (ไม่บังคับ)</h2>
+                    <h2>{tx("เลือกระยะทาง เสื้อตามสิทธิ์ และสินค้าซื้อเพิ่ม (ไม่บังคับ)")}</h2>
                     <p className="muted-block">
-                      นโยบายค่าบริการงานนี้:{' '}
+                      {tx("นโยบายค่าบริการงานนี้:")}{' '}
                       <strong>{feePolicyLabel(selectedEvent.feeBearerPolicy)}</strong>
                     </p>
 
@@ -1213,23 +2682,23 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               <span
                                 className={`category-bib-chip tone-${cat.colorTag}`}
                               >
-                                <strong>{cat.code}</strong>
+                                <strong>{tx(cat.code)}</strong>
                               </span>
                               <span className="mono-num muted-inline">
-                                ว่าง {left}/{cat.categoryQuota}
+                                {tx("ว่าง ")} {tx(left)}/{tx(cat.categoryQuota)}
                               </span>
                             </div>
-                            <strong>{cat.name}</strong>
+                            <strong>{tx(cat.name)}</strong>
                             <span className="muted-inline mono-num">
-                              ปล่อยตัว {cat.startTimeLocal} น. · Cut-off{' '}
-                              {cat.cutoffHours} ชม.
+                              {tx("ปล่อยตัว ")} {tx(cat.startTimeLocal)} {tx(" น. · Cut-off")}{' '}
+                              {tx(cat.cutoffHours)} {tx(" ชม.")}
                             </span>
                             <div className="dist-opt-price">
                               <strong className="mono-num">
                                 {formatThb(quote.runnerNetPaySatang, true)}
                               </strong>
                               <small className="muted-inline">
-                                ช่วง {tier.label} (ป้าย{' '}
+                                {tx("ช่วง ")} {tx(tier.label)} {tx(" (ป้าย")}{' '}
                                 <span className="mono-num">
                                   {formatThb(tier.priceSatang)}
                                 </span>
@@ -1242,7 +2711,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     </div>
 
                     <div className="shirt-picker-block">
-                      <h3>ขนาดเสื้อแข่งขันที่รวมในแพ็กเกจสมัครแล้ว</h3>
+                      <h3>{tx("ขนาดเสื้อแข่งขันที่รวมในแพ็กเกจสมัครแล้ว")}</h3>
                       <div className="size-pill-row">
                         {selectedEvent.shirtStocks
                           .filter((s) => s.total > 0)
@@ -1261,8 +2730,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                                 }`}
                                 onClick={() => setShirtSize(st.size)}
                               >
-                                <strong>ไซส์ {st.size}</strong>
-                                <span className="mono-num">เหลือ {rem}</span>
+                                <strong>{tx("ไซส์")} {tx(st.size)}</strong>
+                                <span className="mono-num">{tx("เหลือ")} {tx(rem)}</span>
                               </button>
                             );
                           })}
@@ -1271,10 +2740,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
                     {selectedEvent.products.length > 0 && (
                       <div className="addon-box">
-                        <h3>ซื้อสินค้าที่ระลึกเพิ่มพร้อมการสมัคร (ทางเลือก — แยกรายการจากค่าสมัคร)</h3>
+                        <h3>{tx("ซื้อสินค้าที่ระลึกเพิ่มพร้อมการสมัคร (ทางเลือก — แยกรายการจากค่าสมัคร)")}</h3>
                         <div className="form-grid-2">
                           <div className="form-row">
-                            <label htmlFor="addon-sel">เลือกรายการซื้อเพิ่ม</label>
+                            <label htmlFor="addon-sel">{tx("เลือกรายการซื้อเพิ่ม")}</label>
                             <select
                               id="addon-sel"
                               value={includeAddonId}
@@ -1290,11 +2759,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               }}
                             >
                               <option value="none">
-                                ไม่ซื้อสินค้าเพิ่ม (รับเฉพาะสิทธิ์ตามแพ็กเกจสมัคร)
+                                {tx("ไม่ซื้อสินค้าเพิ่ม (รับเฉพาะสิทธิ์ตามแพ็กเกจสมัคร)")}
                               </option>
                               {selectedEvent.products.map((p) => (
                                 <option key={p.id} value={p.id}>
-                                  + {p.nameTh} ({formatThb(p.priceSatang)})
+                                  + {tx(p.nameTh)} ({formatThb(p.priceSatang)})
                                 </option>
                               ))}
                             </select>
@@ -1302,7 +2771,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
                           {selectedAddonProduct && (
                             <div className="form-row">
-                              <label htmlFor="addon-sz">ขนาดสินค้าซื้อเพิ่ม</label>
+                              <label htmlFor="addon-sz">{tx("ขนาดสินค้าซื้อเพิ่ม")}</label>
                               <select
                                 id="addon-sz"
                                 value={addonSize}
@@ -1310,7 +2779,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               >
                                 {selectedAddonProduct.availableSizes.map((s) => (
                                   <option key={s} value={s}>
-                                    {s}
+                                    {tx(s)}
                                   </option>
                                 ))}
                               </select>
@@ -1322,14 +2791,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
                     <div className="wizard-nav-row">
                       <span className="muted-inline">
-                        ระยะที่เลือก: <strong>{activeCategory.name}</strong>
+                        {tx("ระยะที่เลือก: ")} <strong>{tx(activeCategory.name)}</strong>
                       </span>
                       <button
                         type="button"
                         className="btn-primary"
                         onClick={() => setRegStep(2)}
                       >
-                        <span>ถัดไป: ข้อมูลผู้สมัคร</span>
+                        <span>{tx("ถัดไป: ข้อมูลผู้สมัคร")}</span>
                         <IconArrowRight size={15} />
                       </button>
                     </div>
@@ -1338,19 +2807,19 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
                 {regStep === 2 && (
                   <div className="wizard-pane">
-                    <h2>กรอกข้อมูลผู้เข้าแข่งขันและยอมรับกติกางาน</h2>
+                    <h2>{tx("กรอกข้อมูลผู้เข้าแข่งขันและยอมรับกติกางาน")}</h2>
                     <label className="checkbox-row">
                       <input
                         type="checkbox"
                         checked={registerForSelf}
                         onChange={(e) => setRegisterForSelf(e.target.checked)}
                       />
-                      <span>สมัครให้ตนเอง (ผู้ซื้อและผู้เข้าแข่งขันเป็นบุคคลเดียวกัน)</span>
+                      <span>{tx("สมัครให้ตนเอง (ผู้ซื้อและผู้เข้าแข่งขันเป็นบุคคลเดียวกัน)")}</span>
                     </label>
 
                     <div className="form-grid-2">
                       <div className="form-row">
-                        <label htmlFor="reg-b-name">ชื่อ-นามสกุลผู้ซื้อคำสั่งซื้อ</label>
+                        <label htmlFor="reg-b-name">{tx("ชื่อ-นามสกุลผู้ซื้อคำสั่งซื้อ")}</label>
                         <input
                           id="reg-b-name"
                           type="text"
@@ -1368,7 +2837,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       {!registerForSelf && (
                         <div className="form-row">
                           <label htmlFor="reg-p-name">
-                            ชื่อ-นามสกุลผู้เข้าแข่งขันจริง
+                            {tx("ชื่อ-นามสกุลผู้เข้าแข่งขันจริง")}
                           </label>
                           <input
                             id="reg-p-name"
@@ -1383,7 +2852,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       )}
 
                       <div className="form-row">
-                        <label htmlFor="reg-p-en">ชื่อภาษาอังกฤษบนป้าย BIB</label>
+                        <label htmlFor="reg-p-en">{tx("ชื่อภาษาอังกฤษบนป้าย BIB")}</label>
                         <input
                           id="reg-p-en"
                           type="text"
@@ -1396,6 +2865,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     <RunnerCustomFieldsInputs
                       fields={selectedEvent.customFields}
                       answers={customAnswers}
+                      raceDistanceCode={activeCategory?.code}
+                      shirtSize={shirtSize}
+                      publishedFormVersion={
+                        selectedEvent.publishedFormVersion ?? 'v1.2-published'
+                      }
                       onAnswerChange={(fieldId, val) => {
                         setStep2Error(null);
                         setCustomAnswers((prev) => ({
@@ -1408,7 +2882,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     {step2Error && (
                       <div className="error-callout" role="alert">
                         <IconAlert size={16} />
-                        <span>{step2Error}</span>
+                        <span>{tx(step2Error)}</span>
                       </div>
                     )}
 
@@ -1420,9 +2894,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           onChange={(e) => setAcceptedRules(e.target.checked)}
                         />
                         <span>
-                          <strong>[จำเป็น]</strong> ยอมรับกติกาการแข่งขันและเงื่อนไขความปลอดภัยฉบับ{' '}
+                          <strong>{tx("[จำเป็น]")}</strong> {tx(" ยอมรับกติกาการแข่งขันและเงื่อนไขความปลอดภัยฉบับ")}{' '}
                           <span className="mono-code">
-                            {selectedEvent.rulesVersion}
+                            {tx(selectedEvent.rulesVersion)}
                           </span>
                         </span>
                       </label>
@@ -1436,7 +2910,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           }
                         />
                         <span>
-                          [ไม่บังคับ] ยินยอมรับข่าวสารประชาสัมพันธ์จากผู้จัดงาน
+                          {tx("[ไม่บังคับ] ยินยอมรับข่าวสารประชาสัมพันธ์จากผู้จัดงาน")}
                         </span>
                       </label>
                     </div>
@@ -1447,7 +2921,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         className="btn-secondary"
                         onClick={() => setRegStep(1)}
                       >
-                        ย้อนกลับ
+                        {tx("ย้อนกลับ")}
                       </button>
                       <button
                         type="button"
@@ -1457,13 +2931,22 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                             selectedEvent.customFields ?? []
                           ).find((f) => {
                             if (!f.required) return false;
-                            const val = customAnswers[f.id];
+                            const isVisible = evaluateConditionRule(
+                              f.visibilityCondition,
+                              customAnswers,
+                              {
+                                raceDistance: activeCategory?.code,
+                                shirtSize,
+                              }
+                            );
+                            if (!isVisible) return false;
+                            const val = customAnswers[f.id] ?? f.defaultValue;
                             if (f.type === 'checkbox') return val !== true;
                             return !String(val ?? '').trim();
                           });
                           if (missingField) {
                             setStep2Error(
-                              `กรุณาระบุ "${missingField.label}" ให้ครบก่อนไปขั้นตอนถัดไป`
+                              txf("กรุณาระบุ \"{0}\" ให้ครบก่อนไปขั้นตอนถัดไป", missingField.label)
                             );
                             return;
                           }
@@ -1471,7 +2954,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           setRegStep(3);
                         }}
                       >
-                        <span>ถัดไป: ตรวจสอบยอดรวม</span>
+                        <span>{tx("ถัดไป: ตรวจสอบยอดรวม")}</span>
                         <IconArrowRight size={15} />
                       </button>
                     </div>
@@ -1480,7 +2963,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
                 {regStep === 3 && activeCategory && (
                   <div className="wizard-pane">
-                    <h2>สรุปยอดชำระแยกรายการก่อนยืนยัน</h2>
+                    <h2>{tx("สรุปยอดชำระแยกรายการก่อนยืนยัน")}</h2>
                     {(() => {
                       const tier = getCurrentTier(activeCategory);
                       const quote = calculateFeeQuote(
@@ -1496,15 +2979,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         <div className="price-breakdown-box">
                           <div className="breakdown-line">
                             <span>
-                              ค่าสมัครวิ่ง {activeCategory.name} ({tier.label}) ·
-                              เสื้อสิทธิ์สมัครไซส์ {shirtSize}
+                              {tx("ค่าสมัครวิ่ง ")} {tx(activeCategory.name)} ({tx(tier.label)}{tx(") · เสื้อสิทธิ์สมัครไซส์ ")} {tx(shirtSize)}
                             </span>
                             <span className="mono-num">
                               {formatThb(quote.baseSatang, true)}
                             </span>
                           </div>
                           <div className="breakdown-line">
-                            <span>ค่าบริการแพลตฟอร์มฝั่งผู้สมัคร</span>
+                            <span>{tx("ค่าบริการแพลตฟอร์มฝั่งผู้สมัคร")}</span>
                             <span className="mono-num">
                               {formatThb(quote.runnerFeeSatang, true)}
                             </span>
@@ -1512,8 +2994,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           {selectedAddonProduct && (
                             <div className="breakdown-line">
                               <span>
-                                สินค้าซื้อเพิ่ม: {selectedAddonProduct.nameTh} (
-                                {addonSize}) — รับหน้างาน
+                                {tx("สินค้าซื้อเพิ่ม: ")} {tx(selectedAddonProduct.nameTh)} (
+                                {tx(addonSize)}{tx(") — รับหน้างาน")}
                               </span>
                               <span className="mono-num">
                                 {formatThb(addonSatang, true)}
@@ -1521,7 +3003,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                             </div>
                           )}
                           <div className="breakdown-line breakdown-total">
-                            <strong>ยอดชำระสุทธิรวมทั้งหมด</strong>
+                            <strong>{tx("ยอดชำระสุทธิรวมทั้งหมด")}</strong>
                             <strong className="mono-num text-vermilion">
                               {formatThb(grandTotal, true)}
                             </strong>
@@ -1531,8 +3013,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     })()}
 
                     <div className="form-row">
-                      <label>ช่องทางชำระเงิน</label>
-                      <div className="pill-tabs-bar" role="radiogroup" aria-label="เลือกช่องทางชำระเงิน">
+                      <label>{tx("ช่องทางชำระเงิน")}</label>
+                      <div className="pill-tabs-bar" role="radiogroup" aria-label={tx("เลือกช่องทางชำระเงิน")}>
                         <button
                           type="button"
                           role="radio"
@@ -1542,7 +3024,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           }`}
                           onClick={() => setPaymentChannel('promptpay')}
                         >
-                          QR PromptPay (สแกนจ่ายทันที)
+                          {tx("QR PromptPay (สแกนจ่ายทันที)")}
                         </button>
                         <button
                           type="button"
@@ -1553,7 +3035,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           }`}
                           onClick={() => setPaymentChannel('card')}
                         >
-                          บัตรเครดิต / เดบิต
+                          {tx("บัตรเครดิต / เดบิต")}
                         </button>
                       </div>
                     </div>
@@ -1562,14 +3044,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       <div className="error-callout" role="alert">
                         <IconAlert size={16} />
                         <div className="callout-flex">
-                          <span>{checkoutError}</span>
+                          <span>{tx(checkoutError)}</span>
                           {currentUser && !currentUser.emailVerified && (
                             <button
                               type="button"
                               className="btn-secondary"
                               onClick={onOpenAccountSecurity}
                             >
-                              ไปหน้าเพิ่มและยืนยันอีเมล
+                              {tx("ไปหน้าเพิ่มและยืนยันอีเมล")}
                             </button>
                           )}
                         </div>
@@ -1582,7 +3064,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         className="btn-secondary"
                         onClick={() => setRegStep(2)}
                       >
-                        ย้อนกลับ
+                        {tx("ย้อนกลับ")}
                       </button>
                       {!currentUser ? (
                         <button
@@ -1598,7 +3080,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           }
                         >
                           <IconLock size={15} />
-                          <span>เข้าสู่ระบบเพื่อดำเนินการชำระเงิน</span>
+                          <span>{tx("เข้าสู่ระบบเพื่อดำเนินการชำระเงิน")}</span>
                         </button>
                       ) : (
                         <div className="cta-inline-row">
@@ -1608,15 +3090,15 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                             onClick={() => submitRegistrationOrder(false)}
                           >
                             <IconClock size={15} />
-                            <span>ชำระภายหลัง (กันโควตา 30 นาที)</span>
+                            <span>{tx("ชำระภายหลัง (กันโควตา 30 นาที)")}</span>
                           </button>
                           <button type="submit" className="btn-cta-accent">
                             <IconCheckCircle size={16} />
                             <span>
-                              ชำระเงินด้วย{' '}
+                              {tx("ชำระเงินด้วย")}{' '}
                               {paymentChannel === 'promptpay'
                                 ? 'PromptPay'
-                                : 'บัตร'}
+                                : tx("บัตร")}
                             </span>
                           </button>
                         </div>
@@ -1629,27 +3111,27 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           </section>
         )}
 
-        {/* TAB 2: EVENT STOREFRONT FOR GENERAL CUSTOMERS */}
-        {detailTab === 'storefront' && (
-          <section className="clean-panel">
-            <h2>
-              หน้าร้านประจำงานวิ่ง (ลูกค้าทั่วไปซื้อได้โดยไม่เกิดใบสมัครวิ่ง)
-            </h2>
+            {/* MODE C: EVENT STOREFRONT FOR GENERAL CUSTOMERS */}
+            {!showRegForm && detailTab === 'storefront' && (
+              <section className="clean-panel">
+                <h2>
+                  {tx("หน้าร้านประจำงานวิ่ง (ลูกค้าทั่วไปซื้อได้โดยไม่เกิดใบสมัครวิ่ง)")}
+                </h2>
             <p className="muted-block">
-              ระบุผู้ขาย สถานะพร้อมขาย/พรีออเดอร์ เพดานขั้นต่ำ วันปิดรับ และผู้รับผิดชอบจัดส่งอย่างชัดเจนในทุกรายการ
+              {tx("ระบุผู้ขาย สถานะพร้อมขาย/พรีออเดอร์ เพดานขั้นต่ำ วันปิดรับ และผู้รับผิดชอบจัดส่งอย่างชัดเจนในทุกรายการ")}
               {linkedRegForMerch && (
                 <>
                   {' '}
-                  · กำลังสั่งซื้อเพิ่มโดยอ้างอิงใบสมัครเดิม{' '}
-                  <span className="mono-code">{linkedRegForMerch}</span>{' '}
-                  (สร้างคำสั่งซื้อใหม่แยกจากยอดใบสมัครเดิม)
+                  {tx("· กำลังสั่งซื้อเพิ่มโดยอ้างอิงใบสมัครเดิม")}{' '}
+                  <span className="mono-code">{tx(linkedRegForMerch)}</span>{' '}
+                  {tx("(สร้างคำสั่งซื้อใหม่แยกจากยอดใบสมัครเดิม)")}
                 </>
               )}
             </p>
 
             {selectedEvent.products.length === 0 ? (
               <div className="subtle-empty-note">
-                งานวิ่งนี้ยังไม่ได้เปิดรายการสินค้าหน้าร้านเพิ่มเติม
+                {tx("งานวิ่งนี้ยังไม่ได้เปิดรายการสินค้าหน้าร้านเพิ่มเติม")}
               </div>
             ) : (
               <div className="storefront-split">
@@ -1670,7 +3152,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         <div className="merch-item-head">
                           <span className="status-pill badge-navy">
                             <IconShirt size={13} />
-                            <span>{prd.categoryLabel}</span>
+                            <span>{tx(prd.categoryLabel)}</span>
                           </span>
                           <span
                             className={`status-pill ${
@@ -1681,22 +3163,22 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           >
                             <span>
                               {prd.saleMode === 'ready_stock'
-                                ? 'พร้อมขายตามสต็อก'
-                                : `พรีออเดอร์ · ปิดรับ ${prd.preorderCloseDate}`}
+                                ? tx("พร้อมขายตามสต็อก")
+                                : txf("พรีออเดอร์ · ปิดรับ {0}", prd.preorderCloseDate)}
                             </span>
                           </span>
                         </div>
 
-                        <h3>{prd.nameTh}</h3>
-                        <p className="muted-block">{prd.description}</p>
+                        <h3>{tx(prd.nameTh)}</h3>
+                        <p className="muted-block">{tx(prd.description)}</p>
 
                         <div className="merch-policy-meta">
                           <div>
-                            <strong>{prd.sellerLabel}</strong> ·{' '}
-                            {prd.fulfillmentOwnerLabel}
+                            <strong>{tx(prd.sellerLabel)}</strong> ·{' '}
+                            {tx(prd.fulfillmentOwnerLabel)}
                           </div>
-                          <div>กำหนดส่งมอบ: {prd.estimatedDeliveryNote}</div>
-                          <div>เงื่อนไข: {prd.refundAndMinPolicyNote}</div>
+                          <div>{tx("กำหนดส่งมอบ:")} {tx(prd.estimatedDeliveryNote)}</div>
+                          <div>{tx("เงื่อนไข:")} {tx(prd.refundAndMinPolicyNote)}</div>
                         </div>
 
                         <div className="merch-item-foot">
@@ -1706,9 +3188,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                             </strong>
                             <span className="muted-inline mono-num">
                               {' '}
-                              · คงเหลือ {remaining}/{prd.stockOrCeiling} ชิ้น
+                              {tx("· คงเหลือ ")} {tx(remaining)}/{tx(prd.stockOrCeiling)} {tx(" ชิ้น")}
                               {prd.preorderMinQty
-                                ? ` (ยอดจองปัจจุบัน ${prd.soldCount}/${prd.preorderMinQty} ขั้นต่ำ)`
+                                ? txf(" (ยอดจองปัจจุบัน {0}/{1} ขั้นต่ำ)", prd.soldCount, prd.preorderMinQty)
                                 : ''}
                             </span>
                           </div>
@@ -1723,7 +3205,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               setCreatedMerchReceipt(null);
                             }}
                           >
-                            {isPicked ? 'เลือกอยู่' : 'เลือกสินค้านี้'}
+                            {isPicked ? tx("เลือกอยู่") : tx("เลือกสินค้านี้")}
                           </button>
                         </div>
                       </article>
@@ -1736,14 +3218,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     className="merch-order-panel"
                     onSubmit={handleMerchSubmit}
                   >
-                    <h3>สรุปคำสั่งซื้อสินค้า</h3>
+                    <h3>{tx("สรุปคำสั่งซื้อสินค้า")}</h3>
                     <p className="muted-inline">
-                      สินค้า: <strong>{activeProduct.nameTh}</strong>
+                      {tx("สินค้า: ")} <strong>{tx(activeProduct.nameTh)}</strong>
                     </p>
 
                     <div className="form-grid-2">
                       <div className="form-row">
-                        <label htmlFor="sf-size">ขนาด / ตัวเลือก</label>
+                        <label htmlFor="sf-size">{tx("ขนาด / ตัวเลือก")}</label>
                         <select
                           id="sf-size"
                           value={merchSize}
@@ -1751,13 +3233,13 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         >
                           {activeProduct.availableSizes.map((sz) => (
                             <option key={sz} value={sz}>
-                              {sz}
+                              {tx(sz)}
                             </option>
                           ))}
                         </select>
                       </div>
                       <div className="form-row">
-                        <label htmlFor="sf-qty">จำนวน</label>
+                        <label htmlFor="sf-qty">{tx("จำนวน")}</label>
                         <select
                           id="sf-qty"
                           value={merchQty}
@@ -1765,7 +3247,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         >
                           {[1, 2, 3, 4, 5].map((n) => (
                             <option key={n} value={n}>
-                              {n} ชิ้น
+                              {tx(n)} {tx(" ชิ้น")}
                             </option>
                           ))}
                         </select>
@@ -1773,7 +3255,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     </div>
 
                     <div className="form-row">
-                      <label htmlFor="sf-deliv">ช่องทางรับสินค้า</label>
+                      <label htmlFor="sf-deliv">{tx("ช่องทางรับสินค้า")}</label>
                       <select
                         id="sf-deliv"
                         value={
@@ -1791,10 +3273,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         }
                       >
                         <option value="pickup_at_expo">
-                          รับที่บูธร้านค้าหน้างานด้วยหลักฐานคำสั่งซื้อ (ฟรีค่าส่ง)
+                          {tx("รับที่บูธร้านค้าหน้างานด้วยหลักฐานคำสั่งซื้อ (ฟรีค่าส่ง)")}
                         </option>
                         <option value="postal_shipping">
-                          จัดส่งทางไปรษณีย์ (+
+                          {tx("จัดส่งทางไปรษณีย์ (+")}
                           {formatThb(activeProduct.shippingFeeSatang)})
                         </option>
                       </select>
@@ -1803,7 +3285,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     {(selectedEvent.status === 'completed' ||
                       deliveryMethod === 'postal_shipping') && (
                       <div className="form-row">
-                        <label htmlFor="sf-addr">ที่อยู่สำหรับจัดส่งพัสดุ</label>
+                        <label htmlFor="sf-addr">{tx("ที่อยู่สำหรับจัดส่งพัสดุ")}</label>
                         <input
                           id="sf-addr"
                           type="text"
@@ -1816,13 +3298,13 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
                     <div className="price-breakdown-box">
                       <div className="breakdown-line">
-                        <span>ค่าสินค้า ({merchQty} ชิ้น)</span>
+                        <span>{tx("ค่าสินค้า (")}{tx(merchQty)} {tx(" ชิ้น)")}</span>
                         <span className="mono-num">
                           {formatThb(activeProduct.priceSatang * merchQty, true)}
                         </span>
                       </div>
                       <div className="breakdown-line">
-                        <span>ค่าจัดส่ง</span>
+                        <span>{tx("ค่าจัดส่ง")}</span>
                         <span className="mono-num">
                           {formatThb(
                             selectedEvent.status === 'completed' ||
@@ -1834,7 +3316,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         </span>
                       </div>
                       <div className="breakdown-line breakdown-total">
-                        <strong>ยอดรวมคำสั่งซื้อนี้</strong>
+                        <strong>{tx("ยอดรวมคำสั่งซื้อนี้")}</strong>
                         <strong className="mono-num text-vermilion">
                           {formatThb(
                             activeProduct.priceSatang * merchQty +
@@ -1862,79 +3344,262 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         }
                       >
                         <IconLock size={15} />
-                        <span>เข้าสู่ระบบเพื่อสั่งซื้อสินค้า</span>
+                        <span>{tx("เข้าสู่ระบบเพื่อสั่งซื้อสินค้า")}</span>
                       </button>
                     ) : (
                       <button type="submit" className="btn-primary btn-full">
                         <IconBag size={16} />
-                        <span>ยืนยันคำสั่งซื้อและชำระเงิน</span>
+                        <span>{tx("ยืนยันคำสั่งซื้อและชำระเงิน")}</span>
                       </button>
                     )}
 
-                    {createdMerchReceipt && (
-                      <div className="success-callout" role="status">
-                        <IconCheckCircle size={18} />
-                        <div>
-                          <strong>
-                            สร้างคำสั่งซื้อ {createdMerchReceipt.merchOrderCode}{' '}
-                            สำเร็จ
-                          </strong>
-                          <p>
-                            รหัสรับของ: <code>{createdMerchReceipt.pickupToken}</code>{' '}
-                            (คำสั่งซื้อนี้ไม่สร้างสิทธิ์แข่งขันหรือเลข BIB)
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </form>
-                )}
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* TAB 3: SCHEDULE & RESULTS/PHOTOS */}
-        {detailTab === 'info_results' && (
-          <section className="clean-panel">
-            <h2>กำหนดการรับอุปกรณ์และบริการหลังงาน</h2>
-            <p className="muted-block">
-              จุดและเวลารับเสื้อแข่งขัน/ป้าย BIB:{' '}
-              <strong>{selectedEvent.kitPickupWindow}</strong>
-            </p>
-            <ul className="compact-bullet-list">
-              {selectedEvent.highlights.map((h, i) => (
-                <li key={i}>{h}</li>
-              ))}
-            </ul>
-
-            {selectedEvent.verifiedPhotoAlbums &&
-              selectedEvent.verifiedPhotoAlbums.length > 0 && (
-                <div className="completed-showcase-box">
-                  <h3>ผลการแข่งขันและอัลบั้มภาพหลังงาน (ผู้จัดตรวจสอบแล้ว)</h3>
-                  <div className="album-list">
-                    {selectedEvent.verifiedPhotoAlbums.map((alb) => (
-                      <div key={alb.id} className="album-item-row">
-                        <div>
-                          <strong>{alb.title}</strong>
-                          <div className="muted-inline">
-                            {alb.photographerCredit} ·{' '}
-                            <span className="mono-num">
-                              {alb.photoCount.toLocaleString('th-TH')}
-                            </span>{' '}
-                            ภาพ
+                      {createdMerchReceipt && (
+                        <div className="success-callout" role="status">
+                          <IconCheckCircle size={18} />
+                          <div>
+                            <strong>
+                              {tx("สร้างคำสั่งซื้อ")}{' '}
+                              {tx(createdMerchReceipt.merchOrderCode)} {tx(" สำเร็จ")}
+                            </strong>
+                            <p>
+                              {tx("รหัสรับของ:")}{' '}
+                              <code>{tx(createdMerchReceipt.pickupToken)}</code>{' '}
+                              {tx("(คำสั่งซื้อนี้ไม่สร้างสิทธิ์แข่งขันหรือเลข BIB)")}
+                            </p>
                           </div>
                         </div>
-                        <span className="status-pill badge-forest">
-                          <IconCamera size={13} />
-                          <span>ตรวจสอบแล้ว</span>
-                        </span>
+                      )}
+                    </form>
+                  )}
+                </div>
+              )}
+              </section>
+            )}
+          </div>
+
+          {/* RIGHT COLUMN: STICKY EVENT SUMMARY & REGISTER SIDEBAR */}
+          <aside
+            className="event-sticky-aside"
+            aria-label={tx("สรุปข้อมูลสำคัญและปุ่มสมัครงานวิ่งแบบเกาะตามหน้าจอ")}
+          >
+            <div className="sticky-register-card">
+              <div className="sticky-card-head">
+                <EventStatusBadge status={selectedEvent.status} />
+                <span className="mono-code">{tx(selectedEvent.code)}</span>
+              </div>
+
+              <h2>{tx(selectedEvent.titleTh)}</h2>
+
+              <dl className="sticky-key-facts">
+                <div>
+                  <dt>{tx("วันแข่งขัน")}</dt>
+                  <dd className="mono-num">{tx(selectedEvent.eventDate)}</dd>
+                </div>
+                <div>
+                  <dt>{tx("สถานที่")}</dt>
+                  <dd>
+                    {tx("จ.")}{tx(selectedEvent.province)} · {tx(selectedEvent.venue)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{tx("รับเสื้อ & BIB")}</dt>
+                  <dd>{tx(selectedEvent.kitPickupWindow)}</dd>
+                </div>
+                <div>
+                  <dt>{tx("ผู้จัดงาน")}</dt>
+                  <dd>{tx(org?.nameTh)}</dd>
+                </div>
+              </dl>
+
+              <div className="sticky-quota-box">
+                <div className="sticky-quota-top">
+                  <span className="muted-inline">{tx("โควตารวมทั้งงาน")}</span>
+                  <strong className="mono-num">
+                    {tx("ว่าง ")} {tx(openSeats)} / {tx(selectedEvent.totalEventQuota)} {tx(" สิทธิ์")}
+                  </strong>
+                </div>
+                <div
+                  className="quota-track-bar"
+                  role="img"
+                  aria-label={txf("ใช้โควตาแล้ว {0} จาก {1} สิทธิ์", usedSeats, selectedEvent.totalEventQuota)}
+                >
+                  <div
+                    className="quota-seg-confirmed"
+                    style={{ width: `${Math.max(quotaPct, usedSeats > 0 ? 8 : 0)}%` }}
+                  />
+                </div>
+              </div>
+
+              {selectedEvent.categories.length > 0 && stickyCategory && (
+                <div className="sticky-category-picker">
+                  <span className="dev-section-label">
+                    {tx("เลือกระยะทางเพื่อดูราคาสุทธิและสมัคร:")}
+                  </span>
+                  <div className="sticky-cat-pills">
+                    {selectedEvent.categories.map((cat) => {
+                      const isSel = stickyCategory.id === cat.id;
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          className={`filter-pill ${isSel ? 'active' : ''}`}
+                          onClick={() => setSelectedCatId(cat.id)}
+                        >
+                          {tx(cat.code)}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="sticky-selected-cat-summary">
+                    <div className="section-title-bar">
+                      <strong>{tx(stickyCategory.name)}</strong>
+                      <span className="mono-code">
+                        {tx("ว่าง ")} {tx(stickyCatOpen)}/{tx(stickyCategory.categoryQuota)}
+                      </span>
+                    </div>
+                    <div className="muted-inline">
+                      {tx("ปล่อยตัว")}{' '}
+                      <span className="mono-num">
+                        {tx(stickyCategory.startTimeLocal)} {tx(" น.")}
+                      </span>{' '}
+                      · Cut-off{' '}
+                      <span className="mono-num">
+                        {tx(stickyCategory.cutoffHours)} {tx(" ชม.")}
+                      </span>
+                    </div>
+
+                    {stickyQuote && stickyTier && (
+                      <div className="sticky-price-row">
+                        <div>
+                          <span className="muted-inline">
+                            {tx("ราคาสุทธิ (")}{tx(stickyTier.label)})
+                          </span>
+                          <div className="muted-inline">
+                            {selectedEvent.feeBearerPolicy ===
+                            'organizer_absorbs'
+                              ? tx("ผู้จัดรับภาระค่าบริการแทนนักวิ่ง")
+                              : tx("รวมค่าบริการแพลตฟอร์มแล้ว")}
+                          </div>
+                        </div>
+                        <strong className="sticky-price-big mono-num text-vermilion">
+                          {formatThb(stickyQuote.runnerNetPaySatang, true)}
+                        </strong>
                       </div>
-                    ))}
+                    )}
                   </div>
                 </div>
               )}
-          </section>
-        )}
+
+              {/* PRIMARY STICKY CTA */}
+              {selectedEvent.status === 'published' ? (
+                showRegForm && detailTab === 'register' ? (
+                  <div className="sticky-active-wizard-note">
+                    <div className="cta-inline-row">
+                      <IconCheckCircle size={15} />
+                      <strong>{tx("กำลังกรอกใบสมัคร (ขั้นตอนที่")} {tx(regStep)}/3)</strong>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary btn-full"
+                      onClick={() => {
+                        setShowRegForm(false);
+                        setDetailTab('info_results');
+                      }}
+                    >
+                      {tx("กลับไปอ่านรายละเอียดงานวิ่ง")}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-cta-accent btn-full"
+                    disabled={openSeats <= 0 || stickyCatOpen <= 0}
+                    onClick={() =>
+                      startRegistrationForCategory(stickyCategory?.id)
+                    }
+                  >
+                    <IconBib size={16} />
+                    <span>
+                      {openSeats <= 0 || stickyCatOpen <= 0
+                        ? tx("โควตาระยะนี้เต็มแล้ว")
+                        : txf("สมัครเข้าร่วมงานวิ่ง ({0})", stickyCategory?.code ?? '')}
+                    </span>
+                  </button>
+                )
+              ) : (
+                <button
+                  type="button"
+                  className="btn-secondary btn-full"
+                  onClick={() => jumpToEditorialSection('sec-venue-rules')}
+                >
+                  <IconCamera size={16} />
+                  <span>
+                    {selectedEvent.status === 'completed'
+                      ? tx("ดูผลการแข่งขัน & รูปภาพหลังงาน")
+                      : tx("ดูสถานะและรายละเอียดงาน")}
+                  </span>
+                </button>
+              )}
+
+              {selectedEvent.products.length > 0 && (
+                <button
+                  type="button"
+                  className="btn-secondary btn-full"
+                  onClick={() => {
+                    setShowRegForm(false);
+                    setDetailTab(
+                      !showRegForm && detailTab === 'storefront'
+                        ? 'info_results'
+                        : 'storefront'
+                    );
+                  }}
+                >
+                  <IconBag size={15} />
+                  <span>
+                    {!showRegForm && detailTab === 'storefront'
+                      ? tx("กลับไปอ่านรายละเอียดงานวิ่ง")
+                      : txf("ซื้อเสื้อ/ของที่ระลึก ({0} รายการ)", selectedEvent.products.length)}
+                  </span>
+                </button>
+              )}
+
+              <div className="sticky-quick-jumps">
+                <span className="muted-inline">{tx("หัวข้อในหน้านี้:")}</span>
+                <div className="cta-inline-row">
+                  <button
+                    type="button"
+                    className="footer-text-link"
+                    onClick={() => jumpToEditorialSection('sec-categories')}
+                  >
+                    {tx("ระยะและราคา")}
+                  </button>
+                  <button
+                    type="button"
+                    className="footer-text-link"
+                    onClick={() => jumpToEditorialSection('sec-racepack')}
+                  >
+                    {tx("เสื้อและตารางไซส์")}
+                  </button>
+                  <button
+                    type="button"
+                    className="footer-text-link"
+                    onClick={() => jumpToEditorialSection('sec-schedule')}
+                  >
+                    {tx("กำหนดการ")}
+                  </button>
+                  <button
+                    type="button"
+                    className="footer-text-link"
+                    onClick={() => jumpToEditorialSection('sec-venue-rules')}
+                  >
+                    {tx("กติกาและสถานที่")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
       </main>
     );
   }
@@ -1944,15 +3609,15 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     <main className="customer-container">
       <section className="minimal-hero">
         <div className="minimal-hero-copy">
-          <h1>ค้นหางานวิ่งทั่วไทย สมัครง่าย เห็นราคาสุทธิชัดเจนก่อนจ่าย</h1>
+          <h1>{tx("ค้นหางานวิ่งทั่วไทย สมัครง่าย เห็นราคาสุทธิชัดเจนก่อนจ่าย")}</h1>
           <p className="muted-block">
-            ลงสมัครงานวิ่งพร้อมรับบัตร QR รับอุปกรณ์หน้างาน หรือเลือกซื้อเสื้อและเหรียญที่ระลึกจากหน้าร้านแต่ละงานได้ทันทีโดยไม่ต้องสมัครแข่ง
+            {tx("ลงสมัครงานวิ่งพร้อมรับบัตร QR รับอุปกรณ์หน้างาน หรือเลือกซื้อเสื้อและเหรียญที่ระลึกจากหน้าร้านแต่ละงานได้ทันทีโดยไม่ต้องสมัครแข่ง")}
           </p>
         </div>
 
         <div className="minimal-hero-search">
           <label htmlFor="dir-q" className="field-caption">
-            ค้นหาชื่องานวิ่ง จังหวัด หรือสถานที่ปล่อยตัว
+            {tx("ค้นหาชื่องานวิ่ง จังหวัด หรือสถานที่ปล่อยตัว")}
           </label>
           <div className="input-with-icon">
             <IconSearch size={17} />
@@ -1961,11 +3626,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="พิมพ์ชื่อจังหวัดหรือชื่องาน เช่น เชียงใหม่, ภูเก็ต..."
+              placeholder={tx("พิมพ์ชื่อจังหวัดหรือชื่องาน เช่น เชียงใหม่, ภูเก็ต...")}
             />
           </div>
 
-          <div className="quick-pill-bar" role="group" aria-label="หมวดงานวิ่ง">
+          <div className="quick-pill-bar" role="group" aria-label={tx("หมวดงานวิ่ง")}>
             {(
               [
                 ['all', 'งานทั้งหมด'],
@@ -1980,23 +3645,23 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 className={`filter-pill ${quickFilter === k ? 'active' : ''}`}
                 onClick={() => setQuickFilter(k)}
               >
-                {lbl}
+                {tx(lbl)}
               </button>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="clean-filter-strip" aria-label="ตัวกรองระยะทางและภูมิภาค">
+      <section className="clean-filter-strip" aria-label={tx("ตัวกรองระยะทางและภูมิภาค")}>
         <div className="inline-select-group">
           <div className="inline-select-item">
-            <label htmlFor="flt-dist">ระยะทาง</label>
+            <label htmlFor="flt-dist">{tx("ระยะทาง")}</label>
             <select
               id="flt-dist"
               value={distanceFilter}
               onChange={(e) => setDistanceFilter(e.target.value)}
             >
-              <option value="all">ทุกระยะทาง</option>
+              <option value="all">{tx("ทุกระยะทาง")}</option>
               <option value="5k">Fun Run ~ 5 km</option>
               <option value="10k">Mini Marathon 10 km</option>
               <option value="21k">Half Marathon 21.1 km</option>
@@ -2005,30 +3670,30 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           </div>
 
           <div className="inline-select-item">
-            <label htmlFor="flt-reg">ภูมิภาค</label>
+            <label htmlFor="flt-reg">{tx("ภูมิภาค")}</label>
             <select
               id="flt-reg"
               value={regionFilter}
               onChange={(e) => setRegionFilter(e.target.value)}
             >
-              <option value="all">ทุกภูมิภาค</option>
-              <option value="เหนือ">ภาคเหนือ</option>
-              <option value="ใต้">ภาคใต้</option>
-              <option value="กลางและกรุงเทพฯ">ภาคกลางและกรุงเทพฯ</option>
-              <option value="อีสาน">ภาคอีสาน</option>
+              <option value="all">{tx("ทุกภูมิภาค")}</option>
+              <option value="เหนือ">{tx("ภาคเหนือ")}</option>
+              <option value="ใต้">{tx("ภาคใต้")}</option>
+              <option value="กลางและกรุงเทพฯ">{tx("ภาคกลางและกรุงเทพฯ")}</option>
+              <option value="อีสาน">{tx("ภาคอีสาน")}</option>
             </select>
           </div>
         </div>
 
         <span className="muted-inline">
-          พบ <strong className="mono-num">{filteredEvents.length}</strong> งานวิ่ง
+          {tx("พบ ")} <strong className="mono-num">{tx(filteredEvents.length)}</strong> {tx(" งานวิ่ง")}
         </span>
       </section>
 
       {filteredEvents.length === 0 ? (
         <div className="empty-state-box">
-          <h2>ไม่พบงานวิ่งตามตัวกรองที่เลือก</h2>
-          <p>สามารถล้างตัวกรองเพื่อดูงานวิ่งทั้งหมดที่เปิดแสดงผลได้ทันที</p>
+          <h2>{tx("ไม่พบงานวิ่งตามตัวกรองที่เลือก")}</h2>
+          <p>{tx("สามารถล้างตัวกรองเพื่อดูงานวิ่งทั้งหมดที่เปิดแสดงผลได้ทันที")}</p>
           <button
             type="button"
             className="btn-secondary"
@@ -2039,11 +3704,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               setRegionFilter('all');
             }}
           >
-            ล้างตัวกรองทั้งหมด
+            {tx("ล้างตัวกรองทั้งหมด")}
           </button>
         </div>
       ) : (
-        <section className="modern-event-grid" aria-label="รายการงานวิ่ง">
+        <section className="modern-event-grid" aria-label={tx("รายการงานวิ่ง")}>
           {filteredEvents.map((ev) => {
             const openSeats = getEventOpenSeats(ev);
             const lowestCat = [...ev.categories].sort(
@@ -2061,8 +3726,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   className="card-artwork-wrap"
                   onClick={() => openEventPage(ev, 'register')}
                 >
-                  <EventCoverArtwork
-                    motif={ev.coverMotif}
+                  <EventCoverMedia
+                    event={ev}
                     className="card-cover-svg"
                   />
                   <div className="card-floating-status">
@@ -2074,16 +3739,16 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   <div className="card-date-loc">
                     <span>
                       <IconCalendar size={14} />{' '}
-                      <strong className="mono-num">{ev.eventDate}</strong>
+                      <strong className="mono-num">{tx(ev.eventDate)}</strong>
                     </span>
                     <span>
-                      <IconMapPin size={14} /> {ev.province}
+                      <IconMapPin size={14} /> {tx(ev.province)}
                     </span>
-                    <span className="race-type-tag">{ev.raceType}</span>
+                    <span className="race-type-tag">{tx(ev.raceType)}</span>
                   </div>
 
-                  <h2>{ev.titleTh}</h2>
-                  <p className="card-tagline">{ev.tagline}</p>
+                  <h2>{tx(ev.titleTh)}</h2>
+                  <p className="card-tagline">{tx(ev.tagline)}</p>
 
                   <div className="category-chip-group">
                     {ev.categories.map((cat) => (
@@ -2091,13 +3756,13 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         key={cat.id}
                         className={`category-bib-chip tone-${cat.colorTag}`}
                       >
-                        <strong>{cat.code}</strong>
+                        <strong>{tx(cat.code)}</strong>
                       </span>
                     ))}
                     {ev.products.length > 0 && (
                       <span className="shop-available-pill">
                         <IconBag size={13} />
-                        <span>ร้านเสื้อ/เหรียญ ({ev.products.length} รายการ)</span>
+                        <span>{tx("ร้านเสื้อ/เหรียญ (")}{tx(ev.products.length)} {tx(" รายการ)")}</span>
                       </span>
                     )}
                   </div>
@@ -2108,10 +3773,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     {sampleQuote && (
                       <>
                         <span className="muted-inline">
-                          เริ่มต้นสุทธิ{' '}
+                          {tx("เริ่มต้นสุทธิ")}{' '}
                           {ev.feeBearerPolicy === 'organizer_absorbs'
-                            ? '(ฟรีค่าบริการ)'
-                            : '(รวมค่าบริการ)'}
+                            ? tx("(ฟรีค่าบริการ)")
+                            : tx("(รวมค่าบริการ)")}
                         </span>
                         <strong className="card-price-num mono-num">
                           {formatThb(sampleQuote.runnerNetPaySatang, true)}
@@ -2119,7 +3784,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       </>
                     )}
                     <small className="muted-inline mono-num">
-                      ว่าง {openSeats}/{ev.totalEventQuota} สิทธิ์
+                      {tx("ว่าง ")} {tx(openSeats)}/{tx(ev.totalEventQuota)} {tx(" สิทธิ์")}
                     </small>
                   </div>
 
@@ -2130,7 +3795,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         className="btn-ghost-sm"
                         onClick={() => openEventPage(ev, 'storefront')}
                       >
-                        ร้านค้างาน
+                        {tx("ร้านค้างาน")}
                       </button>
                     )}
                     <button
@@ -2151,10 +3816,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     >
                       <span>
                         {ev.status === 'published'
-                          ? 'สมัครวิ่ง'
+                          ? tx("รายละเอียด & สมัครวิ่ง")
                           : ev.status === 'completed'
-                          ? 'ผล & รูปภาพ'
-                          : 'รายละเอียด'}
+                          ? tx("ผล & รูปภาพ")
+                          : tx("รายละเอียดงาน")}
                       </span>
                       <IconArrowRight size={15} />
                     </button>
@@ -2169,12 +3834,12 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       {/* Banner for Club / Company Custom Shirt & Medal Production without Race Event */}
       <section
         className="custom-order-callout"
-        aria-label="บริการสั่งทำเสื้อและเหรียญสำหรับชมรมหรือองค์กร"
+        aria-label={tx("บริการสั่งทำเสื้อและเหรียญสำหรับชมรมหรือองค์กร")}
       >
         <div>
-          <h2>ต้องการสั่งทำเสื้อวิ่งหรือเหรียญที่ระลึกสำหรับชมรม ทีม หรือกิจกรรมบริษัท?</h2>
+          <h2>{tx("ต้องการสั่งทำเสื้อวิ่งหรือเหรียญที่ระลึกสำหรับชมรม ทีม หรือกิจกรรมบริษัท?")}</h2>
           <p className="muted-block">
-            ส่งแบบหรือความต้องการเพื่อขอใบเสนอราคาผลิตกับทีมงานได้โดยไม่จำเป็นต้องเปิดงานวิ่งบนแพลตฟอร์ม
+            {tx("ส่งแบบหรือความต้องการเพื่อขอใบเสนอราคาผลิตกับทีมงานได้โดยไม่จำเป็นต้องเปิดงานวิ่งบนแพลตฟอร์ม")}
           </p>
         </div>
         <button
@@ -2183,7 +3848,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           onClick={() => onNavigate('custom_production', null)}
         >
           <IconShirt size={16} />
-          <span>ขอใบเสนอราคาสั่งผลิต</span>
+          <span>{tx("ขอใบเสนอราคาสั่งผลิต")}</span>
         </button>
       </section>
     </main>

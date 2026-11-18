@@ -328,7 +328,7 @@ flowchart TD
 
 ## 16. บัญชีและการเข้าสู่ระบบ (Complete Registration & Authentication System)
 
-เพิ่มและขยายความวันที่ 17 พฤศจิกายน 2026 (ยืนยันโดยคำสั่งผู้ใช้ — บันทึกข้อกำหนดลงแผน ยังไม่ลงโค้ดส่วนขยายนี้): รองรับระบบลงทะเบียนและเข้าสู่ระบบแบบครบวงจรสำหรับ **Runner (นักวิ่ง/ผู้ใช้ทั่วไป)** และ **Organizer (ผู้จัดงาน)** ภายใต้ Design System เดียวกัน แต่แยกฟอร์ม กฎตรวจสอบ ขั้นตอน Onboarding สิทธิ์การใช้งาน และ Dashboard ออกจากกันอย่างชัดเจน ทั้งนี้ระบบในต้นแบบปัจจุบันยังเป็น Login จำลองฝั่งหน้าบ้านเท่านั้น
+เพิ่มและขยายความวันที่ 17 พฤศจิกายน 2026 และ **พัฒนาลงต้นแบบ Interactive Local Mockup เมื่อ 18 พฤศจิกายน 2026** (`src/components/AuthViews.tsx`, `src/components/PlatformAdminView.tsx`, `src/App.tsx`): รองรับระบบลงทะเบียนและเข้าสู่ระบบแบบครบวงจรสำหรับ **Runner (นักวิ่ง/ผู้ใช้ทั่วไป)** และ **Organizer (ผู้จัดงาน)** ภายใต้ Design System เดียวกัน แต่แยกฟอร์ม กฎตรวจสอบ ขั้นตอน Onboarding สิทธิ์การใช้งาน และ Dashboard ออกจากกันอย่างชัดเจน ทั้งนี้ระบบในต้นแบบปัจจุบันยังเป็นการจำลองฝั่งหน้าบ้านใน `localStorage` เท่านั้น (ยังไม่เชื่อม OAuth Provider จริงหรือเซิร์ฟเวอร์จริง)
 
 ### 16.1 เป้าหมายและหน้าเลือกประเภทบัญชี (Account Type Selection)
 
@@ -463,4 +463,96 @@ flowchart TD
 - [Google OpenID Connect](https://developers.google.com/identity/openid-connect/openid-connect)
 - [LINE Login สำหรับเว็บและสิทธิ์อีเมล](https://developers.line.biz/en/docs/line-login/web/integrate-line-login/)
 - [LINE PKCE](https://developers.line.biz/en/docs/line-login/integrate-pkce/)
+
+---
+
+## 17. โมดูลศูนย์กลางจัดการฟอร์มรับสมัครและขั้นตอนการสมัคร (Platform Owner Registration Form Builder — ยืนยันและพัฒนาต้นแบบเมื่อ 18 พฤศจิกายน 2026)
+
+### 17.1 วัตถุประสงค์และการแบ่งขอบเขตอำนาจหน้าที่
+
+- **หลักการสำคัญ (ยืนยันโดยคำสั่งผู้ใช้ 18 พ.ย. 2026):** ย้ายอำนาจการสร้าง/แก้ไขโครงสร้าง Input Fields และลำดับขั้นตอนการสมัครของนักวิ่ง (`Registration Steps`) ไปไว้ที่ **Platform Owner** เป็นผู้ควบคุมจากศูนย์กลาง ส่วน **ผู้จัดงาน (Organizer)** ทำหน้าที่เลือกแม่แบบที่เผยแพร่แล้ว ปรับแต่งเฉพาะฟิลด์ที่ได้รับอนุญาต และ **ส่งคำขอ (Request) ผ่านแพลตฟอร์ม** เมื่อต้องการให้นักวิ่งกรอกข้อมูลเพิ่มเติม
+- **สถานะปัจจุบัน:**
+  - **พัฒนาแล้วในต้นแบบ Interactive Local Mockup (`localStorage`):** `src/components/RegistrationFormBuilderAdmin.tsx`, `src/components/PlatformAdminView.tsx`, `src/components/OrganizerDashboardView.tsx`, `src/components/PublicEventView.tsx`, `src/components/CustomerPortalView.tsx`, `src/data/formBuilderData.ts`
+  - **ยังเป็นข้อเสนอสำหรับระบบหลังบ้านจริง:** โครงสร้างฐานข้อมูลเชิงสัมพันธ์ 13 ตารางและ REST API Contracts ด้านล่าง (รอเริ่มพัฒนาเมื่อผู้ใช้สั่งเปิดเฟส Backend/Database จริง)
+
+### 17.2 ฟีเจอร์ของ Platform Owner (`Registration Form Builder` — 7 เมนูย่อย)
+
+1. **คำขอจากผู้จัด & สิทธิ์ (`Organizer Permissions & Field Requests`):**
+   - คิวตรวจสอบและอนุมัติ/ปฏิเสธคำขอเพิ่มช่องกรอกข้อมูลจากผู้จัดงาน (`OrganizerFieldRequest`)
+   - เมื่อกดอนุมัติ ระบบสร้างฟิลด์เข้าสู่ `Global Field Library` พร้อมกำหนดระดับสิทธิ์ (`LOCKED` / `CONFIGURABLE` / `CUSTOMIZABLE`) และออกเวอร์ชันฟอร์มใหม่ให้งานวิ่งนั้นทันที
+2. **การจัดการขั้นตอนการสมัคร (`Step Management`):**
+   - สร้าง แก้ไข ลบ เปิด/ปิด และจัดลำดับขั้นตอนการสมัครของนักวิ่ง (รองรับทั้งการลากสลับ Drag-and-Drop และปุ่มเลื่อนลำดับ)
+   - ขั้นตอนที่ควบคุมโดยระบบ (`SYSTEM LOCKED` เช่น `เลือกระยะแข่งขัน & ไซส์เสื้อ`, `ข้อมูลผู้เข้าแข่งขัน & ผู้ติดต่อฉุกเฉิน`, และ `ตรวจสอบข้อมูล ยืนยันกติกา & ชำระเงิน`) ห้ามลบหรือปิดใช้งานตามนโยบายแพลตฟอร์ม
+   - มีหน้าต่าง **Interactive Flow Preview** สำหรับจำลองดูขั้นตอนและฟิลด์ที่นักวิ่งจะเห็น
+3. **คลังฟิลด์กลาง (`Global Field Library`):**
+   - รองรับชนิด Input 15 รูปแบบ: `Text Input`, `Textarea`, `Email`, `Phone Number`, `Number`, `Date Picker`, `Dropdown`, `Radio Group`, `Checkbox`, `Multi-select`, `File Upload`, `Image Choice`, `Address`, `Size Selector`, `Race Distance Selector`
+   - มีชุดฟิลด์มาตรฐานสำหรับงานวิ่งพร้อมใช้: `T-shirt Size`, `Race Distance`, `Running Experience`, `Running Club`, `Emergency Contact`, `Nationality`, `Food Preference`, `Transportation Requirement`, `Blood Group`, `Medical Details`
+4. **ตัวตั้งค่าคุณสมบัติฟิลด์ (`Field Configuration Editor & Live Preview`):**
+   - กำหนด `Field Label`, `Unique Field Key`, `Description`, `Placeholder`, `Required / Optional`, `Min / Max Length`, `Default Value`, `Validation Error Message`, สถานะข้อมูลอ่อนไหว (`PII Protection`) พร้อมแสดงตัวอย่าง Input สด (`Live Field Preview`)
+5. **ตัวสร้างเงื่อนไขการแสดงผล (`Visual Conditional Logic Builder`):**
+   - กำหนดเงื่อนไขแสดงฟิลด์หรือขั้นตอนอัตโนมัติในรูปแบบ `IF <source_field_key> <equals | not_equals | contains> <value> THEN SHOW <target_field_or_step>`
+   - ตัวอย่าง: `IF race_distance = "21.1 km" THEN SHOW cf_experience` หรือ `IF cf_has_medical = "มีโรคประจำตัวหรือแพ้ยา" THEN SHOW cf_medical`
+   - ตรวจสอบป้องกันการอ้างอิงวนซ้ำ (`Circular Dependency Validation`) ก่อนบันทึก
+6. **การจัดการแม่แบบฟอร์ม (`Form Template Management`):**
+   - แม่แบบมาตรฐานเริ่มต้น 5 รูปแบบ: `Fun Run`, `Mini Marathon`, `Half Marathon`, `Marathon / Trail`, และ `Custom Template`
+   - รองรับสถานะ `Draft` / `Published` และการออกเลขเวอร์ชันแม่แบบ (`v1.0`, `v1.1`, `v1.2`) โดยการปรับแต่งของผู้จัดในแต่ละงานจะไม่แก้ไขทับแม่แบบกลาง
+7. **การจัดการเวอร์ชันฟอร์ม (`Form Version Management`):**
+   - เวอร์ชันที่เผยแพร่แล้ว (`Published Form Version`) เป็นแบบไม่แก้ไขย้อนหลัง (`Immutable Snapshot`)
+   - ใบสมัครแต่ละรายการบันทึก `formVersionUsed` ที่ใช้ขณะสมัคร ไม่ลบคำตอบเดิมของผู้สมัครเมื่อฟอร์มถูกอัปเดตเป็นเวอร์ชันใหม่
+
+### 17.3 การปรับแต่งและการส่งคำขอของผู้จัดงาน (`Organizer Form Customization & Request`)
+
+- ในหน้า `ระยะ โควตา & คำถามสมัคร` ของ `Event Dashboard` ผู้จัดสามารถ:
+  1. เลือกแม่แบบที่เผยแพร่แล้ว (`Published Template`) มาใช้กับงานวิ่งของตน
+  2. ดูขั้นตอนการสมัครที่ Platform Owner กำหนด และกด **Preview ฟอร์มที่นักวิ่งจะเห็น**
+  3. ปรับแต่งฟิลด์ภายในงานตามนโยบายสิทธิ์ 3 ระดับที่ Platform Owner กำหนด:
+     - **`LOCKED`**: ห้ามแก้ไขหรือลบ (รวมถึงฟิลด์ระบบทั้งหมด เช่น `User ID`, `Registration ID`, `Payment Status`, `Race Distance`, `Shirt Size`)
+     - **`CONFIGURABLE`**: ปรับได้เฉพาะคุณสมบัติที่อนุญาต เช่น เปลี่ยนสถานะบังคับกรอก (`Required / Optional`)
+     - **`CUSTOMIZABLE`**: ปรับตัวเลือก เปลี่ยนสถานะบังคับกรอก หรือถอดออกจากฟอร์มเฉพาะของงานนี้ได้
+  4. **ส่งคำขอเพิ่มช่องกรอกข้อมูล (`Request Field to Platform Owner`):** ระบุชื่อคำถาม ชนิด Input ขั้นตอนที่ต้องการให้แสดง ตัวเลือก เงื่อนไขการแสดงผล และเหตุผลความจำเป็นทางปฏิบัติการ เพื่อส่งเข้าคิวอนุมัติของ Platform Owner พร้อมตารางติดตามสถานะคำขอ (`รอ Platform Owner อนุมัติ`, `อนุมัติและเปิดใช้ในฟอร์มแล้ว`, `ปฏิเสธคำขอ`)
+
+### 17.4 ฟอร์มสมัครวิ่งแบบ Dynamic ของนักวิ่ง (`Dynamic Runner Registration Form`)
+
+- หน้าสมัครวิ่ง (`/events/:code`) แสดงหัวข้อขั้นตอนตาม `registrationSteps` และเรนเดอร์ฟิลด์จาก `publishedFormVersion` ของงานนั้นแบบ Dynamic
+- ประมวลผล `Conditional Logic` แบบเรียลไทม์ตามระยะทางที่เลือก (`race_distance`), ไซส์เสื้อ (`shirt_size`), และคำตอบของฟิลด์ก่อนหน้า โดยตรวจบังคับกรอก (`Required validation`) เฉพาะฟิลด์ที่แสดงผลตามเงื่อนไขจริง
+
+### 17.5 ข้อเสนอโครงสร้างฐานข้อมูล 13 ตาราง และสัญญา API (สำหรับระยะพัฒนาระบบหลังบ้านจริง)
+
+- **โครงสร้างตารางเชิงสัมพันธ์ 13 ตาราง (`Normalized Database Schema`):**
+  1. `registration_templates` (`id`, `code`, `name_th`, `description_th`, `current_status`, `created_by`, `created_at`, `updated_at`)
+  2. `registration_template_versions` (`id`, `template_id`, `version_label`, `status`, `changelog_summary`, `published_at`, `published_by`)
+  3. `registration_steps` (`id`, `template_version_id`, `step_key`, `title_th`, `description_th`, `sort_order`, `is_enabled`, `is_system_locked`, `visibility_rule_json`)
+  4. `registration_fields` (`id`, `field_key`, `label_th`, `description_th`, `placeholder_th`, `input_type`, `default_step_key`, `is_required_default`, `is_sensitive_pii`, `category_tag`, `created_at`)
+  5. `registration_field_options` (`id`, `field_id`, `option_value`, `option_label_th`, `sort_order`, `is_active`)
+  6. `registration_field_rules` (`id`, `field_id`, `min_length`, `max_length`, `min_value`, `max_value`, `allowed_mime_types`, `max_file_size_bytes`, `regex_pattern`, `validation_message_th`, `conditional_rule_json`)
+  7. `registration_form_permissions` (`id`, `field_id`, `organizer_policy` [`LOCKED` | `CONFIGURABLE` | `CUSTOMIZABLE`], `allow_label_override`, `allow_required_toggle`, `allow_option_edit`, `updated_by`, `updated_at`)
+  8. `organizer_form_configs` (`id`, `organization_id`, `event_id`, `base_template_id`, `active_event_form_version_id`, `draft_config_json`, `updated_by`, `updated_at`)
+  9. `event_form_versions` (`id`, `event_id`, `template_version_id`, `version_label`, `status` [`draft` | `published`], `published_at`, `published_by`, `change_summary`)
+  10. `event_form_steps` (`id`, `event_form_version_id`, `step_key`, `title_th`, `description_th`, `sort_order`, `is_enabled`, `is_system_locked`, `visibility_rule_json`)
+  11. `event_form_fields` (`id`, `event_form_version_id`, `event_form_step_id`, `field_id`, `field_key`, `label_override_th`, `input_type`, `is_required`, `is_sensitive_pii`, `organizer_policy`, `options_snapshot_json`, `validation_snapshot_json`, `conditional_rule_json`, `sort_order`)
+  12. `event_registration_answers` (`id`, `registration_id`, `event_form_version_id`, `event_form_field_id`, `field_key`, `answer_text`, `answer_json`, `private_file_object_key`, `created_at`)
+  13. `registration_form_change_logs` (`id`, `organization_id`, `event_id`, `actor_user_id`, `actor_role`, `action_type`, `version_label`, `diff_summary_json`, `created_at`)
+- **ข้อเสนอสัญญา API (`API Contracts`):**
+  - *Platform Owner Form Builder:*
+    - `GET / POST / PUT /api/platform/form-builder/templates`
+    - `POST /api/platform/form-builder/templates/{templateId}/publish`
+    - `GET / POST / PUT / PATCH /api/platform/form-builder/steps`
+    - `GET / POST / PUT /api/platform/form-builder/fields`
+    - `PUT /api/platform/form-builder/fields/{fieldId}/permissions`
+    - `GET / POST / DELETE /api/platform/form-builder/conditional-rules`
+    - `GET / POST /api/platform/form-builder/field-requests/{requestId}/resolve`
+  - *Organizer Form Customizer & Field Requests:*
+    - `GET / PUT /api/organizer/events/{eventId}/form-config`
+    - `POST /api/organizer/events/{eventId}/form-config/publish`
+    - `POST / GET /api/organizer/events/{eventId}/field-requests`
+  - *Runner Dynamic Form Rendering & Submission:*
+    - `GET /api/events/{eventId}/published-form`
+    - `POST /api/events/{eventId}/registrations` (แนบ `event_form_version_id` และ `answers` เพื่อตรวจ Server-side validation ตามกฎของเวอร์ชันนั้น)
+
+### 17.6 กฎความปลอดภัยและความเป็นส่วนตัวของระบบฟอร์มรับสมัคร
+
+- ห้ามสร้างฟิลด์ที่ขอรหัสผ่าน (`password`), ข้อมูลบัตรชำระเงิน (`credit card` / `CVV` / `PIN`) หรือ secret tokens เด็ดขาด (มีตัวกรองป้องกันทั้งฝั่ง UI และฝั่งเซิร์ฟเวอร์)
+- ห้ามรันโค้ดหรือสคริปต์ที่ผู้ใช้ป้อนเข้ามาในกฎ Validation หรือ Conditional Logic ใช้เฉพาะตัวดำเนินการเชิงโครงสร้าง (`equals`, `not_equals`, `contains`, `min/max`) และ Regular Expression ที่ปลอดภัยเท่านั้น
+- คำตอบของฟิลด์ที่ตั้งค่า `isSensitive: true` (เช่น ข้อมูลทางการแพทย์ โรคประจำตัว หรือผู้ติดต่อฉุกเฉิน) ต้องถูกจำกัดสิทธิ์และปกปิด (`[ซ่อนตามสิทธิ์เจ้าหน้าที่]`) เมื่อเปิดดูด้วยบทบาทเจ้าหน้าที่จุดเช็กอินหน้างาน (`staff`)
+
 

@@ -4,6 +4,7 @@ set -eu
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../../../.." && pwd)"
 PORT="${PORT:-5173}"
+API_PORT="${API_PORT:-3001}"
 CHECK_ONLY="${1:-}"
 
 cd "$REPO_ROOT"
@@ -33,5 +34,7 @@ if [ "$CHECK_ONLY" = "--check-only" ]; then
   exit 0
 fi
 
-echo "==> [RunEvent Local] Starting Vite dev server on port $PORT..."
-exec npx vite --port "$PORT"
+export API_PORT="$API_PORT"
+export VITE_API_PROXY_TARGET="http://127.0.0.1:$API_PORT"
+echo "==> [RunEvent Local] Starting SQLite API (:$API_PORT) + Vite Web (:$PORT)..."
+exec npx concurrently -k -n api,web "npx tsx server/index.ts" "npx vite --port $PORT"

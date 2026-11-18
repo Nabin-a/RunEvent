@@ -1,12 +1,12 @@
 # TODO — RunEvent
 
-ปรับปรุงล่าสุด: 17 พฤศจิกายน 2026
+ปรับปรุงล่าสุด: 18 พฤศจิกายน 2026
 
 ## กติกาการติดตาม
 
 - `[x]` = เสร็จแล้วและมีเอกสารหรือผลตรวจยืนยัน; `[ ]` = ยังไม่เสร็จ
 - แผนที่เขียนแล้วไม่เท่ากับผ่านการยืนยันจากผู้ใช้ และไม่เท่ากับพัฒนาแล้ว
-- **อัปเดตขอบเขต (17 พ.ย. 2026):** ผู้ใช้สั่งให้สร้าง **Interactive Local Mockup (`Vite + React + TypeScript`)** สำหรับ Dashboard ผู้จัดงาน, ระบบ Login จำลองบทบาท/องค์กร, และหน้ารายการงานวิ่งสาธารณะ พร้อม Skill รันโปรเจกต์บน Local แล้ว ส่วนระบบ Backend จริง, ฐานข้อมูล, การรับชำระเงินจริง และระบบร้านค้า/สั่งผลิตจริงยังต้องรอยืนยันก่อนพัฒนา
+- **อัปเดตขอบเขต (18 พ.ย. 2026 — ยืนยันโดยคำสั่งผู้ใช้):** ยกระดับโปรเจกต์จาก Client-Side `localStorage` Mockup เป็น **ระบบทำงานจริงบน Local (`Vite + React + TypeScript` + `Node.js + Express + SQLite`)** โดยคงชุดข้อมูลผู้ใช้ทดสอบเดิมทั้งหมด, เพิ่มการสลับภาษา **TH / EN**, ปรับเมนูซ้ายของทั้งผู้จัดและ Platform Owner เป็น **Sticky Sidebar**, แก้ข้อความล้น Banner ทั่วทั้งโปรเจกต์ และปรับหน้าสมัครงานวิ่ง `/events/:code/register` (`.event-reg-poster-pane`) ให้แสดงรูปปก/รูปประกอบของงานวิ่งจริงพร้อม `EventMediaManager` ส่วน Google/LINE OAuth จริง, Payment Provider จริง และการ Deploy ขึ้น Production ยังคงเป็นงานระยะถัดไปเมื่อผู้ใช้ยืนยัน Credentials/Hosting
 - ลำดับด้านล่างเป็น dependency โดยรวม งานวางแผนที่ไม่ขึ้นต่อกันทำต่อได้
 
 ## 0. สิ่งที่เสร็จแล้ว
@@ -17,21 +17,21 @@
 - [x] จัดทำข้อเสนอ Dashboard — [organizer-dashboard-plan.md](docs/organizer-dashboard-plan.md)
 - [x] จัดทำกฎร่วม ภาพรวม และรายการงาน — AGENTS.md, README.md, TODO.md
 - [x] เพิ่มแผนร้านค้า โปรโมทเสื้อ/เหรียญ พรีออเดอร์ และบริการผลิตในเอกสารเดิมตามคำขอวันที่ 17 พฤศจิกายน 2026 — ยังไม่ได้ยืนยันรายละเอียดการค้าหรือพัฒนา
-- [x] สร้างและปรับปรุง Interactive Local Mockup v2 (`Vite + React + TypeScript`) ครอบคลุมหน้าค้นหางานวิ่ง Modern Minimal + ร้านค้าของที่ระลึก/ขอราคาผลิตจำลอง (`CustomerPortalView`), ระบบจำลองบัญชีเดียว Email/Google/LINE + บัญชีและความปลอดภัย (`AuthViews`), และ Organizer Dashboard ที่อธิบายหน้าที่ชัดเจนทุกส่วน (`OrganizerDashboardView`) พร้อมตรวจ `tsc` / `vite build` และทดสอบบนเบราว์เซอร์จริง — `src/`, [PRODUCT.md](PRODUCT.md), [DESIGN.md](DESIGN.md) (หมายเหตุ: เป็นต้นแบบฝั่งหน้าบ้านใน `localStorage` ยังไม่เชื่อม Backend/OAuth/Payment จริง)
+- [x] สร้างและปรับปรุง Interactive Local Mockup v2 (`Vite + React + TypeScript`) ครอบคลุมหน้าค้นหางานวิ่ง Modern Minimal + หน้ารายละเอียดงานแบบ 2 คอลัมน์และกล่องสมัคร Sticky (`CustomerPortalView`), ระบบจำลองบัญชีเดียว Email/Google/LINE (`AuthViews`), **Organizer Dashboard แยก Organization Overview / Event Dashboard พร้อมกราฟวิเคราะห์ 10 Components (P1–P3)** (`OrganizerDashboardView` + `OrganizerAnalyticsCharts`), และ **Platform Owner Console + Registration Form Builder** (`PlatformAdminView` + `RegistrationFormBuilderAdmin`) — `src/`, [PRODUCT.md](PRODUCT.md), [DESIGN.md](DESIGN.md) (หมายเหตุ: เป็นต้นแบบฝั่งหน้าบ้านใน `localStorage` ยังไม่เชื่อม Backend/OAuth/Payment จริง)
+- [x] พัฒนาต้นแบบและบันทึกสเปก **Platform Owner Registration Form Builder & Organizer Field Request Workflow** (ครบ 7 เมนูย่อย, นโยบาย `LOCKED`/`CONFIGURABLE`/`CUSTOMIZABLE`, ระบบผู้จัดส่งคำขอเพิ่มฟิลด์, ฟอร์มสมัครนักวิ่งแบบ Dynamic + Conditional Logic และข้อเสนอฐานข้อมูล 13 ตารางใน [Product blueprint ข้อ 17](docs/product-blueprint.md))
 - [x] สร้าง Workspace Skill สำหรับรันและตรวจสอบโปรเจกต์บน Local — [.agents/skills/run-local/SKILL.md](.agents/skills/run-local/SKILL.md)
+- [x] ยกระดับเป็นระบบ Full-Stack บน Local (`server/` ด้วย `Node.js + Express + node:sqlite`, แฮชรหัสผ่าน `scrypt`, `HttpOnly` Session Cookie, RBAC ฝั่งเซิร์ฟเวอร์, Atomic Quota/Shirt/BIB Transaction) พร้อมคงชุดผู้ใช้ทดสอบเดิมครบถ้วน (18 พ.ย. 2026)
+- [x] เพิ่มระบบสลับภาษา `TH / EN` ทั้งแพลตฟอร์ม (`src/i18n/`), ปรับ Sticky Sidebar ของผู้จัดและ Platform Owner, แก้ข้อความล้น Banner และรองรับรูปปก/แกลเลอรีงานวิ่งใน `.event-reg-poster-pane` (18 พ.ย. 2026)
 
-## ฟีเจอร์บัญชีและการลงทะเบียนครบวงจร — อัปเดต 17 พฤศจิกายน 2026
+## ฟีเจอร์บัญชีและการลงทะเบียนครบวงจร — อัปเดต 18 พฤศจิกายน 2026
 
-- [x] บันทึกฟีเจอร์อีเมล/รหัสผ่าน Google และ LINE ในบัญชีเดียวลงแผน — ยังไม่เชื่อมระบบจริง
-- [x] บันทึกข้อกำหนด **Complete Registration System (Runner 2-Step Wizard & Organizer 3-Step Verification Wizard)** ลงแผนตามคำสั่งวันที่ 17 พฤศจิกายน 2026 — ยังไม่ลงโค้ด
-- [ ] ออกแบบและพัฒนาหน้าเลือกประเภทบัญชี (`Join the Running Community`: การ์ด Runner / Organizer) และการสลับ/เพิ่มบทบาทโดยไม่เสียข้อมูลเดิม (เมื่อได้รับคำสั่งลงโค้ด)
-- [ ] ออกแบบและพัฒนา **Runner Registration 2 ขั้นตอน** (Account + Optional Runner Profile/Emergency Contact, Profile Completion Indicator, แยกขาดจากฟิลด์สมัครงานวิ่ง และทางเข้า Runner Dashboard)
-- [ ] ออกแบบและพัฒนา **Organizer Registration 3 ขั้นตอน + Save Draft** (ข้อมูลผู้ติดต่อ, โปรไฟล์/ประเภทองค์กร/ที่อยู่ไทย/ผู้ประสานงานหลัก, อัปโหลดเอกสารยืนยันตัวตนและหนังสือมอบอำนาจแบบ Private Storage)
-- [ ] ออกแบบและพัฒนา **Organizer Verification Workflow 7 สถานะ** (`DRAFT`, `SUBMITTED`, `UNDER_REVIEW`, `MORE_INFORMATION_REQUIRED`, `APPROVED`, `REJECTED`, `SUSPENDED`) พร้อมหน้าตรวจเอกสารของ Platform Admin และ `verification_history`
-- [ ] วาง flow สมัครเอง ยืนยันอีเมล Login ลืม/รีเซ็ตรหัสผ่าน ตัววัดความแข็งแรงรหัสผ่าน และการเตือนก่อนออกจากหน้าเมื่อมีข้อมูลค้าง (`Unsaved changes`)
-- [ ] วาง LINE ไม่มีอีเมล การเชื่อม/ถอด provider เพิ่มรหัสผ่าน และแก้บัญชีซ้ำโดยพิสูจน์เจ้าของ
-- [ ] วางหน้า “บัญชีและความปลอดภัย” และการกลับรายการเดิม/เลือกองค์กร/รับคำเชิญ
-- [ ] กำหนด auth stack, provider app/channel, callback environment, ผู้ส่งอีเมล และ Private Object Storage สำหรับเอกสารผู้จัด
+- [x] บันทึกฟีเจอร์อีเมล/รหัสผ่าน Google และ LINE ในบัญชีเดียวลงแผน
+- [x] บันทึกและพัฒนาต้นแบบ **Complete Registration System (Runner 2-Step Wizard & Organizer 3-Step Verification Wizard)** ลงใน Interactive Local Mockup (`src/components/AuthViews.tsx`, `src/components/PlatformAdminView.tsx`)
+- [x] พัฒนาต้นแบบหน้าเลือกประเภทบัญชี (`Join the Running Community`: การ์ด Runner / Organizer) และการสลับ/เพิ่มบทบาทโดยไม่เสียข้อมูลเดิม พร้อมการเตือนเมื่อมีข้อมูลค้าง (`Unsaved changes`)
+- [x] พัฒนาต้นแบบ **Runner Registration 2 ขั้นตอน** (Account + Optional Runner Profile/Emergency Contact, Password Strength Indicator, Profile Completion Indicator, แยกขาดจากฟิลด์สมัครงานวิ่ง และทางเข้า Runner Dashboard)
+- [x] พัฒนาต้นแบบ **Organizer Registration 3 ขั้นตอน + Save Draft** (ข้อมูลผู้ติดต่อ, โปรไฟล์/ประเภทองค์กร/ที่อยู่ไทยแบบเชื่อมโยง จังหวัด-อำเภอ-ตำบล-รหัสไปรษณีย์/ผู้ประสานงานหลัก, อัปโหลดเอกสารยืนยันตัวตนและหนังสือมอบอำนาจแบบจำลอง Private Storage)
+- [x] พัฒนาต้นแบบ **Organizer Verification Workflow 7 สถานะ** (`DRAFT`, `SUBMITTED`, `UNDER_REVIEW`, `MORE_INFORMATION_REQUIRED`, `APPROVED`, `REJECTED`, `SUSPENDED`) พร้อมหน้าตรวจเอกสารของ Platform Admin และ `verificationHistory`
+- [ ] กำหนด auth stack จริง, provider app/channel จริง, callback environment, ผู้ส่งอีเมล และ Private Object Storage จริงเมื่อเริ่มพัฒนาระบบหลังบ้าน
 - [ ] ออกแบบตารางฐานข้อมูล (`users`, `user_auth_providers`, `user_roles`, `user_profiles`, `user_emergency_contacts`, `organizations`, `organization_addresses`, `organization_members`, `organization_documents`, `organization_verifications`, `verification_history`) และ API contracts ให้สอดคล้องกับระบบเดิม
 - [ ] พัฒนา Login/Register จริงครบทั้ง 17 Deliverables เมื่อได้รับอนุญาตลงโค้ด/backend และแยกออกจากบัญชีสาธิต
 - [ ] ทดสอบบัญชีซ้ำ LINE ไม่มีอีเมล เอกสารผู้จัด (ชนิดไฟล์/MIME/สิทธิ์เข้าถึง) token ใช้ซ้ำ/หมดอายุ การยกเลิก consent และ session ถูกเพิกถอน

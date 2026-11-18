@@ -1,0 +1,2510 @@
+import express, { type Request, type Response } from 'express';
+import {
+  clearSessionCookie,
+  generateSessionToken,
+  hashSessionToken,
+  parseCookies,
+  SESSION_COOKIE_NAME,
+  setSessionCookie,
+  verifyPassword,
+} from './auth';
+import {
+  db,
+  DB_FILE_PATH,
+  getUserById,
+  insertAuditLog,
+  readSystemState,
+  seedDatabase,
+  upsertEventRow,
+  upsertMerchOrderRow,
+  upsertOrganizationRow,
+  upsertPayoutRow,
+  upsertProductionInquiryRow,
+  upsertRegistrationRow,
+  upsertUserRow,
+} from './db';
+import { calculateFeeQuote, getCurrentTier } from '../src/utils/pricing';
+import { cloneCustomFieldsSchema, validateQuotaUpdate } from '../src/utils/eventConfig';
+import type {
+  AuditLogEntry,
+  AuthProviderType,
+  ConditionalRule,
+  CustomRegistrationField,
+  EventProduct,
+  EventStatus,
+  FeeBearerPolicy,
+  FormFieldPolicy,
+  FormTemplate,
+  GlobalFormFieldDef,
+  MerchOrderRecord,
+  Organization,
+  OrganizerFieldRequest,
+  OrganizerVerificationWorkflowStatus,
+  OrgRole,
+  PayoutBatch,
+  PayoutStatus,
+  ProductionInquiry,
+  RaceEvent,
+  RegistrationRecord,
+  RegistrationStepDef,
+  SellerServiceModel,
+  TeamInvitation,
+  UserAccount,
+} from '../src/types';
+
+seedDatabase(false);
+
+const app = express();
+app.use(express.json({ limit: '12mb' }));
+
+function nowThaiStamp(): string {
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  return fmt.format(now).replace(',', '');
+}
+
+function nowIsoBangkok(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+    .formatToParts(d)
+    .reduce<Record<string, string>>((acc, p) => {
+      acc[p.type] = p.value;
+      return acc;
+    }, {});
+  return `${parts.year}-${parts.month}-${parts.day}T${pad(Number(parts.hour))}:${parts.minute}:${parts.second}+07:00`;
+}
+
+function resolveSessionUser(req: Request): {
+  user: UserAccount | null;
+  tokenHash: string | null;
+} {
+  const cookies = parseCookies(req.headers.cookie);
+  const rawToken = cookies[SESSION_COOKIE_NAME];
+  if (!rawToken) return { user: null, tokenHash: null };
+  const tokenHash = hashSessionToken(rawToken);
+  const row = db
+    .prepare('SELECT user_id, expires_at FROM auth_sessions WHERE token_hash = ?')
+    .get(tokenHash) as { user_id: string; expires_at: string } | undefined;
+  if (!row) return { user: null, tokenHash: null };
+  if (new Date(row.expires_at).getTime() < Date.now()) {
+    db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(tokenHash);
+    return { user: null, tokenHash: null };
+  }
+  return { user: getUserById(row.user_id), tokenHash };
+}
+
+function issueSession(req: Request, res: Response, userId: string): void {
+  const token = generateSessionToken();
+  const tokenHash = hashSessionToken(token);
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  db.prepare(`
+    INSERT INTO auth_sessions (token_hash, user_id, user_agent, created_at, expires_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(tokenHash, userId, String(req.headers['user-agent'] || '').slice(0, 200), createdAt, expiresAt);
+  setSessionCookie(res, token);
+}
+
+function hasOrgRole(
+  user: UserAccount | null,
+  orgId: string,
+  allowedRoles?: OrgRole[],
+  eventId?: string
+): boolean {
+  if (!user) return false;
+  if (user.isPlatformAdmin) return true;
+  const mem = user.memberships.find((m) => m.organizationId === orgId);
+  if (!mem) return false;
+  if (allowedRoles && !allowedRoles.includes(mem.role)) return false;
+  if (
+    eventId &&
+    (mem.role === 'event_manager' || mem.role === 'staff') &&
+    Array.isArray(mem.assignedEventIds) &&
+    mem.assignedEventIds.length > 0 &&
+    !mem.assignedEventIds.includes(eventId)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function recordAudit(
+  user: UserAccount | null,
+  orgId: string,
+  actionSummary: string,
+  detailChange: string,
+  eventId?: string
+): void {
+  const entry: AuditLogEntry = {
+    id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    organizationId: orgId,
+    eventId,
+    timestamp: nowThaiStamp(),
+    actorName: user?.fullNameTh ?? 'ผู้ใช้งานระบบ',
+    actorRole: user?.isPlatformAdmin
+      ? 'Platform Owner'
+      : user && user.memberships.length > 0
+      ? 'ทีมผู้จัดงาน'
+      : 'ลูกค้า / นักวิ่ง',
+    actionSummary,
+    detailChange,
+  };
+  insertAuditLog(entry);
+}
+
+function okSnapshot(res: Response, currentUserId: string | null, extra: Record<string, unknown> = {}) {
+  return res.json({
+    ok: true,
+    currentUserId,
+    state: readSystemState(),
+    ...extra,
+  });
+}
+
+/* ==================== HEALTH & BOOTSTRAP ==================== */
+
+app.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    engine: 'node:sqlite',
+    dbFile: DB_FILE_PATH,
+    timestamp: nowIsoBangkok(),
+  });
+});
+
+app.get('/api/bootstrap', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  return okSnapshot(res, user?.id ?? null);
+});
+
+/* ==================== AUTH & ACCOUNT SECURITY ==================== */
+
+app.post('/api/auth/login', (req, res) => {
+  const email = String(req.body?.email ?? '').trim().toLowerCase();
+  const password = String(req.body?.password ?? '');
+  if (!email || !password) {
+    return res.status(400).json({ ok: false, error: 'กรุณากรอกอีเมลและรหัสผ่านให้ครบถ้วน' });
+  }
+  const row = db
+    .prepare('SELECT id, has_password, password_hash FROM users WHERE LOWER(contact_email) = ?')
+    .get(email) as { id: string; has_password: number; password_hash: string | null } | undefined;
+
+  if (!row || !row.has_password || !verifyPassword(password, row.password_hash)) {
+    return res.status(401).json({
+      ok: false,
+      error:
+        'อีเมลหรือรหัสผ่านไม่ถูกต้อง (หากสมัครไว้ด้วย LINE หรือ Google อย่างเดียว กรุณาเข้าสู่ระบบด้วยปุ่มช่องทางนั้น)',
+    });
+  }
+
+  const user = getUserById(row.id)!;
+  issueSession(req, res, user.id);
+  return okSnapshot(res, user.id, { user });
+});
+
+app.post('/api/auth/verify-collision-password', (req, res) => {
+  const userId = String(req.body?.userId ?? '');
+  const password = String(req.body?.password ?? '');
+  const row = db
+    .prepare('SELECT id, has_password, password_hash FROM users WHERE id = ?')
+    .get(userId) as { id: string; has_password: number; password_hash: string | null } | undefined;
+
+  if (!row || !row.has_password || !verifyPassword(password, row.password_hash)) {
+    return res.status(401).json({
+      ok: false,
+      error: 'รหัสผ่านของบัญชีเดิมไม่ถูกต้อง ไม่สามารถผูกบัญชีอัตโนมัติได้',
+    });
+  }
+  const user = getUserById(row.id)!;
+  const provider = (req.body?.provider === 'line' ? 'line' : 'google') as 'google' | 'line';
+  const alreadyLinked = user.identities.some((i) => i.provider === provider);
+  const updatedUser: UserAccount = alreadyLinked
+    ? user
+    : {
+        ...user,
+        identities: [
+          ...user.identities,
+          {
+            id: `id-${provider}-${Date.now()}`,
+            provider,
+            providerSubject: `${provider}-verified-${Date.now()}`,
+            providerEmail: user.contactEmail ?? undefined,
+            linkedAt: nowThaiStamp(),
+          },
+        ],
+      };
+  upsertUserRow(updatedUser, { preservePasswordHash: true });
+  issueSession(req, res, updatedUser.id);
+  return okSnapshot(res, updatedUser.id, { user: updatedUser });
+});
+
+app.post('/api/auth/social-login', (req, res) => {
+  const userId = String(req.body?.userId ?? '');
+  const user = getUserById(userId);
+  if (!user) {
+    return res.status(404).json({ ok: false, error: 'ไม่พบบัญชีผู้ใช้' });
+  }
+  issueSession(req, res, user.id);
+  return okSnapshot(res, user.id, { user });
+});
+
+app.post('/api/auth/dev-switch', (req, res) => {
+  const { tokenHash } = resolveSessionUser(req);
+  if (tokenHash) {
+    db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(tokenHash);
+  }
+  const userId = req.body?.userId ? String(req.body.userId) : null;
+  if (!userId) {
+    clearSessionCookie(res);
+    return okSnapshot(res, null);
+  }
+  const user = getUserById(userId);
+  if (!user) {
+    return res.status(404).json({ ok: false, error: 'ไม่พบบัญชีทดสอบที่เลือก' });
+  }
+  issueSession(req, res, user.id);
+  return okSnapshot(res, user.id, { user });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const { tokenHash } = resolveSessionUser(req);
+  if (tokenHash) {
+    db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(tokenHash);
+  }
+  clearSessionCookie(res);
+  return okSnapshot(res, null);
+});
+
+app.post('/api/auth/register-runner', (req, res) => {
+  const email = String(req.body?.email ?? '').trim().toLowerCase();
+  const fullNameTh = String(req.body?.fullNameTh ?? '').trim();
+  const fullNameEn = String(req.body?.fullNameEn ?? fullNameTh).trim();
+  const password = String(req.body?.password ?? '');
+
+  if (!email || !fullNameTh) {
+    return res.status(400).json({ ok: false, error: 'กรุณากรอกชื่อและอีเมลให้ครบถ้วน' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ ok: false, error: 'รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร' });
+  }
+
+  const dup = db
+    .prepare('SELECT id FROM users WHERE LOWER(contact_email) = ?')
+    .get(email) as { id: string } | undefined;
+  if (dup) {
+    return res.status(409).json({
+      ok: false,
+      error: 'ไม่สามารถใช้ช่องทางนี้สร้างบัญชีซ้ำได้ กรุณาเข้าสู่ระบบด้วยบัญชีเดิมหรือกดลืมรหัสผ่าน',
+    });
+  }
+
+  const totalUsers = (db.prepare('SELECT COUNT(*) AS cnt FROM users').get() as { cnt: number }).cnt;
+  const newUser: UserAccount = {
+    id: `usr-${Date.now()}`,
+    code: `USR-${totalUsers + 910}`,
+    fullNameTh,
+    fullNameEn,
+    contactEmail: email,
+    emailVerified: true,
+    hasPassword: true,
+    runnerProfile: req.body?.runnerProfile,
+    identities: [
+      {
+        id: `id-pw-${Date.now()}`,
+        provider: 'password',
+        providerSubject: email,
+        providerEmail: email,
+        linkedAt: nowThaiStamp(),
+      },
+    ],
+    sessions: [
+      {
+        id: `ses-${Date.now()}`,
+        deviceLabel: 'เบราว์เซอร์ปัจจุบัน (เพิ่งสมัครใหม่)',
+        locationHint: 'ไทย',
+        lastActiveAt: 'เมื่อสักครู่',
+        isCurrentDevice: true,
+      },
+    ],
+    memberships: [],
+    demoRoleSummary: 'สมาชิกใหม่สมัครด้วยอีเมล (Runner 2-Step Wizard)',
+    isDemoPreset: false,
+  };
+
+  upsertUserRow(newUser, { passwordPlain: password, sortOrder: totalUsers + 10 });
+  issueSession(req, res, newUser.id);
+  return okSnapshot(res, newUser.id, { user: newUser });
+});
+
+app.post('/api/auth/register-social', (req, res) => {
+  const provider = (req.body?.provider === 'line' ? 'line' : 'google') as 'google' | 'line';
+  const fullNameTh = String(req.body?.fullNameTh ?? 'สมาชิกใหม่').trim();
+  const rawEmail = req.body?.email ? String(req.body.email).trim().toLowerCase() : null;
+
+  if (rawEmail) {
+    const dup = db
+      .prepare('SELECT id FROM users WHERE LOWER(contact_email) = ?')
+      .get(rawEmail) as { id: string } | undefined;
+    if (dup) {
+      return res.status(409).json({
+        ok: false,
+        error: 'พบอีเมลตรงกับบัญชีเดิม — ต้องยืนยันเจ้าของก่อนเชื่อม',
+      });
+    }
+  }
+
+  const totalUsers = (db.prepare('SELECT COUNT(*) AS cnt FROM users').get() as { cnt: number }).cnt;
+  const newUser: UserAccount = {
+    id: `usr-soc-${Date.now()}`,
+    code: `USR-${totalUsers + 920}`,
+    fullNameTh,
+    fullNameEn: fullNameTh,
+    contactEmail: rawEmail,
+    emailVerified: Boolean(rawEmail),
+    hasPassword: false,
+    runnerProfile: req.body?.runnerProfile,
+    identities: [
+      {
+        id: `id-soc-${Date.now()}`,
+        provider,
+        providerSubject: `${provider}-uid-${Date.now()}`,
+        providerEmail: rawEmail ?? undefined,
+        linkedAt: nowThaiStamp(),
+      },
+    ],
+    sessions: [
+      {
+        id: `ses-soc-${Date.now()}`,
+        deviceLabel: `เข้าผ่าน ${provider.toUpperCase()} (เครื่องปัจจุบัน)`,
+        locationHint: 'ไทย',
+        lastActiveAt: 'เมื่อสักครู่',
+        isCurrentDevice: true,
+      },
+    ],
+    memberships: [],
+    demoRoleSummary: `สมาชิกใหม่ผ่าน ${provider.toUpperCase()}`,
+    isDemoPreset: false,
+  };
+
+  upsertUserRow(newUser, { sortOrder: totalUsers + 10 });
+  issueSession(req, res, newUser.id);
+  return okSnapshot(res, newUser.id, { user: newUser });
+});
+
+app.post('/api/auth/register-organizer', (req, res) => {
+  const { user: sessionUser } = resolveSessionUser(req);
+  const p = req.body ?? {};
+  const email = String(p.email ?? '').trim().toLowerCase();
+  const password = String(p.password ?? 'demo1234');
+
+  const orgCount = (
+    db.prepare('SELECT COUNT(*) AS cnt FROM organizations').get() as { cnt: number }
+  ).cnt;
+  const userCount = (db.prepare('SELECT COUNT(*) AS cnt FROM users').get() as { cnt: number }).cnt;
+
+  const newOrgId = String(p.clientOrgId || `org-onb-${Date.now()}`);
+  const refNo = `ORG-REF-2026-${8840 + orgCount + 1}`;
+  const newOrg: Organization = {
+    id: newOrgId,
+    code: `ORG-NEW-${orgCount + 10}`,
+    nameTh: String(p.orgNameTh ?? '').trim(),
+    nameEn: String(p.orgNameEn ?? '').trim(),
+    province: String(p.province ?? 'เชียงใหม่'),
+    verificationStatus: 'pending_review',
+    workflowStatus: 'SUBMITTED',
+    referenceNumber: refNo,
+    orgType: p.orgType,
+    businessRegNumber: p.businessRegNumber,
+    website: p.website,
+    orgPhone: p.orgPhone,
+    officeAddress: {
+      address: String(p.address ?? ''),
+      province: String(p.province ?? ''),
+      district: String(p.district ?? ''),
+      subdistrict: String(p.subdistrict ?? ''),
+      postalCode: String(p.postalCode ?? ''),
+      country: 'Thailand',
+    },
+    descriptionTh: p.descriptionTh,
+    previousEvents: p.previousEvents,
+    facebookPage: p.facebookPage,
+    mainContact: {
+      name: String(p.mainContactName ?? ''),
+      position: String(p.mainContactPosition ?? ''),
+      phone: String(p.mainContactPhone ?? ''),
+      email: String(p.mainContactEmail ?? ''),
+    },
+    documents: Array.isArray(p.documents) ? p.documents : [],
+    verificationHistory: [
+      {
+        id: `vh-${Date.now()}`,
+        status: 'SUBMITTED',
+        actorName: `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim(),
+        note: `ยื่นคำขอขึ้นทะเบียนผู้จัดงาน (${p.orgType}) พร้อมเอกสาร ${(p.documents ?? []).length} รายการ`,
+        timestamp: nowThaiStamp(),
+      },
+    ],
+    submittedAt: nowThaiStamp(),
+    payoutBankSummary: 'รอ Platform Owner ตรวจสอบเอกสารนิติบุคคลและบัญชีรับเงิน',
+    payoutReady: false,
+    contactEmail: String(p.orgEmail || email),
+  };
+
+  const existingByEmailRow = email
+    ? (db
+        .prepare('SELECT id FROM users WHERE LOWER(contact_email) = ?')
+        .get(email) as { id: string } | undefined)
+    : undefined;
+  const existingUser =
+    sessionUser ?? (existingByEmailRow ? getUserById(existingByEmailRow.id) : null);
+
+  let targetUser: UserAccount;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    upsertOrganizationRow(newOrg, orgCount + 10);
+    if (existingUser) {
+      targetUser = {
+        ...existingUser,
+        memberships: [
+          ...existingUser.memberships.filter((m) => m.organizationId !== newOrgId),
+          { organizationId: newOrgId, role: 'owner' },
+        ],
+      };
+      upsertUserRow(targetUser, { preservePasswordHash: true });
+    } else {
+      const fullName = `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim() || 'ผู้จัดงานใหม่';
+      targetUser = {
+        id: `usr-org-${Date.now()}`,
+        code: `USR-${userCount + 930}`,
+        fullNameTh: fullName,
+        fullNameEn: fullName,
+        contactEmail: email || null,
+        emailVerified: true,
+        hasPassword: true,
+        identities: [
+          {
+            id: `id-org-pw-${Date.now()}`,
+            provider: 'password',
+            providerSubject: email,
+            providerEmail: email,
+            linkedAt: nowThaiStamp(),
+          },
+        ],
+        sessions: [
+          {
+            id: `ses-org-${Date.now()}`,
+            deviceLabel: 'เบราว์เซอร์ปัจจุบัน (ขึ้นทะเบียนผู้จัด)',
+            locationHint: `${newOrg.province}, ไทย`,
+            lastActiveAt: 'เมื่อสักครู่',
+            isCurrentDevice: true,
+          },
+        ],
+        memberships: [{ organizationId: newOrgId, role: 'owner' }],
+        demoRoleSummary: `ผู้จัดงานใหม่ (${newOrg.nameTh})`,
+        isDemoPreset: false,
+      };
+      upsertUserRow(targetUser, {
+        passwordPlain: password.length >= 8 ? password : 'demo1234',
+        sortOrder: userCount + 10,
+      });
+    }
+
+    recordAudit(
+      targetUser,
+      newOrgId,
+      `ยื่นคำขอขึ้นทะเบียนผู้จัดงานใหม่ (${refNo})`,
+      `${newOrg.nameTh} · สถานะเริ่มต้น SUBMITTED (PENDING_REVIEW)`
+    );
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  issueSession(req, res, targetUser.id);
+  return okSnapshot(res, targetUser.id, { user: targetUser, organization: newOrg });
+});
+
+app.patch('/api/account/profile', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const updated: UserAccount = { ...user, runnerProfile: req.body?.profile };
+  upsertUserRow(updated, { preservePasswordHash: true });
+  return okSnapshot(res, updated.id, { user: updated });
+});
+
+app.post('/api/account/verify-email', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const email = String(req.body?.email ?? '').trim().toLowerCase();
+  if (!email) return res.status(400).json({ ok: false, error: 'กรุณาระบุอีเมล' });
+  const dup = db
+    .prepare('SELECT id FROM users WHERE LOWER(contact_email) = ? AND id != ?')
+    .get(email, user.id) as { id: string } | undefined;
+  if (dup) {
+    return res.status(409).json({ ok: false, error: 'อีเมลนี้ถูกผูกกับบัญชีอื่นในระบบแล้ว' });
+  }
+  const updated: UserAccount = { ...user, contactEmail: email, emailVerified: true };
+  upsertUserRow(updated, { preservePasswordHash: true });
+  return okSnapshot(res, updated.id, { user: updated });
+});
+
+app.post('/api/account/password', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const newPassword = String(req.body?.newPassword ?? 'demo1234');
+  const hasPwIdentity = user.identities.some((i) => i.provider === 'password');
+  const updated: UserAccount = {
+    ...user,
+    hasPassword: true,
+    identities: hasPwIdentity
+      ? user.identities
+      : [
+          ...user.identities,
+          {
+            id: `id-pw-${Date.now()}`,
+            provider: 'password',
+            providerSubject: user.contactEmail ?? user.code,
+            linkedAt: nowThaiStamp(),
+          },
+        ],
+  };
+  upsertUserRow(updated, {
+    passwordPlain: newPassword.length >= 8 ? newPassword : hashPasswordFallback(newPassword),
+  });
+  return okSnapshot(res, updated.id, { user: updated });
+});
+
+function hashPasswordFallback(pw: string): string {
+  return pw && pw.trim().length > 0 ? pw.trim() : 'demo1234';
+}
+
+app.post('/api/account/providers', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const provider = (req.body?.provider === 'line' ? 'line' : 'google') as 'google' | 'line';
+  if (user.identities.some((i) => i.provider === provider)) {
+    return okSnapshot(res, user.id);
+  }
+  const updated: UserAccount = {
+    ...user,
+    identities: [
+      ...user.identities,
+      {
+        id: `id-${provider}-${Date.now()}`,
+        provider,
+        providerSubject: `${provider}-linked-${Date.now()}`,
+        linkedAt: nowThaiStamp(),
+      },
+    ],
+  };
+  upsertUserRow(updated, { preservePasswordHash: true });
+  return okSnapshot(res, updated.id);
+});
+
+app.delete('/api/account/providers/:provider', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const provider = req.params.provider as AuthProviderType;
+  if (user.identities.length <= 1) {
+    return res.status(400).json({
+      ok: false,
+      error:
+        'ไม่อนุญาตให้ถอดช่องทางเข้าสู่ระบบช่องทางสุดท้าย กรุณาเพิ่มรหัสผ่านหรือเชื่อมช่องทางอื่นทดแทนก่อน',
+    });
+  }
+  const updated: UserAccount = {
+    ...user,
+    hasPassword: provider === 'password' ? false : user.hasPassword,
+    identities: user.identities.filter((i) => i.provider !== provider),
+  };
+  upsertUserRow(updated, { preservePasswordHash: provider !== 'password' });
+  return okSnapshot(res, updated.id);
+});
+
+app.post('/api/account/revoke-sessions', (req, res) => {
+  const { user, tokenHash } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  if (tokenHash) {
+    db.prepare('DELETE FROM auth_sessions WHERE user_id = ? AND token_hash != ?').run(
+      user.id,
+      tokenHash
+    );
+  }
+  const updated: UserAccount = {
+    ...user,
+    sessions: user.sessions.filter((s) => s.isCurrentDevice),
+  };
+  upsertUserRow(updated, { preservePasswordHash: true });
+  return okSnapshot(res, updated.id);
+});
+
+/* ==================== INVITATIONS & QUICK ORG APPLY ==================== */
+
+app.post('/api/invitations/accept', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const code = String(req.body?.code ?? '').trim().toUpperCase();
+  const invRow = db
+    .prepare('SELECT * FROM invitations WHERE UPPER(invite_code) = ?')
+    .get(code) as Record<string, unknown> | undefined;
+  if (!invRow) {
+    return res.status(404).json({ ok: false, error: 'ไม่พบรหัสคำเชิญนี้ในระบบ' });
+  }
+  if (invRow.used_by_user_id) {
+    return res.status(409).json({
+      ok: false,
+      error: 'รหัสคำเชิญนี้ถูกใช้งานไปแล้ว (คำเชิญทีมจำกัดการใช้เพียงครั้งเดียว)',
+    });
+  }
+  const orgId = String(invRow.organization_id);
+  if (user.memberships.some((m) => m.organizationId === orgId)) {
+    return res.status(409).json({ ok: false, error: 'บัญชีของคุณเป็นสมาชิกขององค์กรนี้อยู่แล้ว' });
+  }
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare('UPDATE invitations SET used_by_user_id = ? WHERE id = ?').run(
+      user.code,
+      String(invRow.id)
+    );
+    const updatedUser: UserAccount = {
+      ...user,
+      memberships: [
+        ...user.memberships,
+        {
+          organizationId: orgId,
+          role: invRow.role as OrgRole,
+          assignedEventIds: invRow.assigned_event_ids_json
+            ? (JSON.parse(String(invRow.assigned_event_ids_json)) as string[])
+            : undefined,
+        },
+      ],
+    };
+    upsertUserRow(updatedUser, { preservePasswordHash: true });
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  return okSnapshot(res, user.id);
+});
+
+app.post('/api/invitations', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  const orgId = String(req.body?.orgId ?? '');
+  const role = (req.body?.role ?? 'staff') as OrgRole;
+  if (!hasOrgRole(user, orgId, ['owner'])) {
+    return res.status(403).json({ ok: false, error: 'เฉพาะเจ้าขององค์กรจึงออกรหัสคำเชิญได้' });
+  }
+  const inv: TeamInvitation = {
+    id: String(req.body?.id || `inv-${Date.now()}`),
+    inviteCode: String(
+      req.body?.inviteCode ||
+        `INV-${role.toUpperCase().slice(0, 4)}-${Math.floor(100 + Math.random() * 899)}`
+    ),
+    organizationId: orgId,
+    role,
+    expiresAt: '2026-12-15',
+  };
+  db.prepare(`
+    INSERT INTO invitations (id, sort_order, invite_code, organization_id, role, expires_at)
+    VALUES (?, 1, ?, ?, ?, ?)
+  `).run(inv.id, inv.inviteCode, inv.organizationId, inv.role, inv.expiresAt);
+  return okSnapshot(res, user!.id, { invitation: inv });
+});
+
+app.post('/api/organizations', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const orgNameTh = String(req.body?.orgNameTh ?? '').trim();
+  const province = String(req.body?.province ?? 'เชียงใหม่').trim();
+  const orgCount = (
+    db.prepare('SELECT COUNT(*) AS cnt FROM organizations').get() as { cnt: number }
+  ).cnt;
+  const newOrg: Organization = {
+    id: String(req.body?.id || `org-custom-${Date.now()}`),
+    code: `ORG-NEW-0${orgCount + 1}`,
+    nameTh: orgNameTh.includes('(รอตรวจสอบผู้จัด)')
+      ? orgNameTh
+      : `${orgNameTh} (รอตรวจสอบผู้จัด)`,
+    nameEn: orgNameTh,
+    province,
+    verificationStatus: 'pending_review',
+    payoutBankSummary: 'รอยืนยันเอกสารผู้จัดและบัญชีธนาคารรับยอดนำส่ง',
+    payoutReady: false,
+    contactEmail: user.contactEmail ?? 'pending@demo.local',
+  };
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    upsertOrganizationRow(newOrg, orgCount + 10);
+    const updatedUser: UserAccount = {
+      ...user,
+      memberships: [
+        ...user.memberships.filter((m) => m.organizationId !== newOrg.id),
+        { organizationId: newOrg.id, role: 'owner' },
+      ],
+    };
+    upsertUserRow(updatedUser, { preservePasswordHash: true });
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  return okSnapshot(res, user.id, { organization: newOrg });
+});
+
+/* ==================== REGISTRATIONS & MERCH ORDERS (ATOMIC) ==================== */
+
+app.post('/api/registrations', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  const payload = req.body ?? {};
+  const eventId = String(payload.eventId ?? '');
+  const categoryId = String(payload.categoryId ?? '');
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const evRow = db
+      .prepare('SELECT detail_json FROM events WHERE id = ?')
+      .get(eventId) as { detail_json: string } | undefined;
+    if (!evRow) {
+      db.exec('ROLLBACK');
+      return res.status(404).json({ ok: false, error: 'ไม่พบงานวิ่งที่เลือก' });
+    }
+    const ev = JSON.parse(evRow.detail_json) as RaceEvent;
+    if (ev.status !== 'published') {
+      db.exec('ROLLBACK');
+      return res.status(400).json({ ok: false, error: 'งานวิ่งนี้ไม่ได้เปิดรับสมัครในขณะนี้' });
+    }
+    const cat = ev.categories.find((c) => c.id === categoryId);
+    if (!cat) {
+      db.exec('ROLLBACK');
+      return res.status(400).json({ ok: false, error: 'ไม่พบระยะการแข่งขันที่เลือก' });
+    }
+
+    // Atomic quota checks inside SQLite transaction
+    const activeEventSeats = (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS cnt FROM registrations
+           WHERE event_id = ? AND registration_status IN ('confirmed', 'pending_payment')`
+        )
+        .get(ev.id) as { cnt: number }
+    ).cnt;
+    const activeCategorySeats = (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS cnt FROM registrations
+           WHERE event_id = ? AND category_id = ? AND registration_status IN ('confirmed', 'pending_payment')`
+        )
+        .get(ev.id, cat.id) as { cnt: number }
+    ).cnt;
+
+    if (activeEventSeats >= ev.totalEventQuota || activeCategorySeats >= cat.categoryQuota) {
+      db.exec('ROLLBACK');
+      return res.status(409).json({
+        ok: false,
+        error: 'ขออภัย โควตาเต็มแล้ว ระบบป้องกันการขายเกินอัตโนมัติ',
+      });
+    }
+
+    const shirtSize = payload.shirtSize as RegistrationRecord['shirtSize'];
+    const shirtSlot = ev.shirtStocks.find((s) => s.size === shirtSize);
+    if (shirtSlot && shirtSlot.reservedOrConfirmed >= shirtSlot.total) {
+      db.exec('ROLLBACK');
+      return res.status(409).json({ ok: false, error: 'สต็อกไซส์นี้เต็มแล้ว' });
+    }
+
+    // Server-side fee calculation (authoritative integer satang)
+    const tier = getCurrentTier(cat);
+    const quote = calculateFeeQuote(tier.priceSatang, ev.feeBearerPolicy);
+    const regCount = (
+      db.prepare('SELECT COUNT(*) AS cnt FROM registrations').get() as { cnt: number }
+    ).cnt;
+    const seq = regCount + 101;
+    const regCode = String(payload.regCode || `REG-2611-${seq}`);
+    const orderCode = String(payload.orderCode || `ORD-89${seq}`);
+    const tokenSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const immediate = Boolean(payload.simulateImmediateWebhook);
+    const createdIso = nowIsoBangkok();
+
+    const newReg: RegistrationRecord = {
+      id: String(payload.id || `reg-dyn-${Date.now()}`),
+      regCode,
+      orderCode,
+      eventId: ev.id,
+      organizationId: ev.organizationId,
+      categoryId: cat.id,
+      runnerUserId: user?.id,
+      buyerName: String(payload.buyerName ?? ''),
+      participantNameTh: String(payload.participantNameTh ?? ''),
+      participantNameEn: String(payload.participantNameEn ?? ''),
+      email: user?.contactEmail ?? 'verified.runner@demo.local',
+      phoneMasked: user?.runnerProfile?.phone || '081-•••-9900',
+      emergencyContact:
+        user?.runnerProfile?.emergencyContactName && user?.runnerProfile?.emergencyContactPhone
+          ? `${user.runnerProfile.emergencyContactName} ${user.runnerProfile.emergencyContactPhone}`
+          : 'ผู้ติดต่อฉุกเฉินจำลอง 089-•••-0011',
+      shirtSize,
+      customAnswers: payload.customAnswers,
+      bibNumber: null,
+      qrCheckInToken: String(payload.qrCheckInToken || `TKN-${cat.bibPrefix}${seq}-${tokenSuffix}`),
+      acceptedRulesVersion: ev.rulesVersion,
+      marketingConsent: Boolean(payload.marketingConsent),
+      createdAt: createdIso,
+      paidAt: immediate ? createdIso : null,
+      refundedAt: null,
+      reservationExpiresAt: immediate
+        ? null
+        : new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      registrationStatus: immediate ? 'confirmed' : 'pending_payment',
+      paymentStatus: immediate ? 'succeeded' : 'pending',
+      refundStatus: 'none',
+      fulfillmentStatus: immediate ? 'ready' : 'not_ready',
+      snapshotBaseSatang: quote.baseSatang,
+      snapshotPlatformFeeSatang: quote.platformFeeSatang,
+      snapshotRunnerFeeSatang: quote.runnerFeeSatang,
+      snapshotOrganizerFeeSatang: quote.organizerFeeSatang,
+      snapshotTotalChargedSatang: quote.runnerNetPaySatang,
+      snapshotRefundedSatang: 0,
+    };
+
+    let addonOrder: MerchOrderRecord | undefined;
+    if (payload.addonProductId || payload.addonProduct) {
+      const prdId = String(payload.addonProductId ?? payload.addonProduct?.id ?? '');
+      const prd = ev.products.find((p) => p.id === prdId);
+      if (prd) {
+        const mCount = (
+          db.prepare('SELECT COUNT(*) AS cnt FROM merch_orders').get() as { cnt: number }
+        ).cnt;
+        const mSeq = mCount + 510;
+        addonOrder = {
+          id: String(payload.addonOrderId || `mord-dyn-${Date.now()}`),
+          merchOrderCode: String(payload.addonOrderCode || `SHP-2611-${mSeq}`),
+          eventId: ev.id,
+          organizationId: ev.organizationId,
+          buyerUserId: user?.id,
+          buyerName: newReg.buyerName,
+          buyerEmail: user?.contactEmail ?? 'ติดต่อผ่านบัญชีผู้ใช้',
+          productId: prd.id,
+          productNameTh: prd.nameTh,
+          sellerLabel: prd.sellerLabel,
+          variantSize: String(payload.addonSize ?? 'M'),
+          quantity: 1,
+          deliveredQty: 0,
+          deliveryMethod: 'pickup_at_expo',
+          unitPriceSatang: prd.priceSatang,
+          shippingSatang: 0,
+          totalPaidSatang: prd.priceSatang,
+          paymentStatus: immediate ? 'succeeded' : 'pending',
+          fulfillmentStatus: 'ready_or_shipped',
+          pickupToken: String(payload.addonPickupToken || `PICK-SHP-${mSeq}`),
+          linkedRegistrationCode: regCode,
+          createdAt: createdIso,
+        };
+      }
+    }
+
+    const updatedEv: RaceEvent = {
+      ...ev,
+      shirtStocks: ev.shirtStocks.map((st) =>
+        st.size === shirtSize
+          ? { ...st, reservedOrConfirmed: st.reservedOrConfirmed + 1 }
+          : st
+      ),
+      products: addonOrder
+        ? ev.products.map((p) =>
+            p.id === addonOrder!.productId ? { ...p, soldCount: p.soldCount + 1 } : p
+          )
+        : ev.products,
+    };
+
+    upsertEventRow(updatedEv);
+    upsertRegistrationRow(newReg, 1);
+    if (addonOrder) upsertMerchOrderRow(addonOrder, 1);
+
+    recordAudit(
+      user,
+      ev.organizationId,
+      `สมัครวิ่งรายการใหม่ (${regCode})${
+        addonOrder ? ` พร้อมซื้อสินค้าเพิ่ม (${addonOrder.merchOrderCode})` : ''
+      }`,
+      `${cat.code} · เสื้อ ${shirtSize}`,
+      ev.id
+    );
+    db.exec('COMMIT');
+    return okSnapshot(res, user?.id ?? null, { reg: newReg, addonOrder });
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+});
+
+app.patch('/api/registrations/:id/shirt-size', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  const regId = req.params.id;
+  const newSize = req.body?.newSize as RegistrationRecord['shirtSize'];
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const rRow = db
+      .prepare('SELECT detail_json FROM registrations WHERE id = ?')
+      .get(regId) as { detail_json: string } | undefined;
+    if (!rRow) {
+      db.exec('ROLLBACK');
+      return res.status(404).json({ ok: false, error: 'ไม่พบใบสมัคร' });
+    }
+    const reg = JSON.parse(rRow.detail_json) as RegistrationRecord;
+    const evRow = db
+      .prepare('SELECT detail_json FROM events WHERE id = ?')
+      .get(reg.eventId) as { detail_json: string };
+    const ev = JSON.parse(evRow.detail_json) as RaceEvent;
+    const oldSize = reg.shirtSize;
+    if (oldSize !== newSize) {
+      const updatedReg: RegistrationRecord = { ...reg, shirtSize: newSize };
+      const updatedEv: RaceEvent = {
+        ...ev,
+        shirtStocks: ev.shirtStocks.map((st) => {
+          if (st.size === oldSize) {
+            return { ...st, reservedOrConfirmed: Math.max(0, st.reservedOrConfirmed - 1) };
+          }
+          if (st.size === newSize) {
+            return { ...st, reservedOrConfirmed: st.reservedOrConfirmed + 1 };
+          }
+          return st;
+        }),
+      };
+      upsertEventRow(updatedEv);
+      upsertRegistrationRow(updatedReg);
+      recordAudit(
+        user,
+        reg.organizationId,
+        `แก้ไขขนาดเสื้อตามสิทธิ์สมัคร (${reg.regCode})`,
+        `${oldSize} -> ${newSize}`,
+        reg.eventId
+      );
+    }
+    db.exec('COMMIT');
+    return okSnapshot(res, user?.id ?? null);
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+});
+
+app.post('/api/registrations/:id/confirm-payment', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  const regId = req.params.id;
+  const rRow = db
+    .prepare('SELECT detail_json FROM registrations WHERE id = ?')
+    .get(regId) as { detail_json: string } | undefined;
+  if (!rRow) return res.status(404).json({ ok: false, error: 'ไม่พบใบสมัคร' });
+  const reg = JSON.parse(rRow.detail_json) as RegistrationRecord;
+  if (reg.paymentStatus === 'succeeded') {
+    // Idempotent webhook behavior
+    return okSnapshot(res, user?.id ?? null);
+  }
+  const updated: RegistrationRecord = {
+    ...reg,
+    registrationStatus: 'confirmed',
+    paymentStatus: 'succeeded',
+    fulfillmentStatus: 'ready',
+    paidAt: nowIsoBangkok(),
+    reservationExpiresAt: null,
+  };
+  upsertRegistrationRow(updated);
+  recordAudit(
+    user,
+    reg.organizationId,
+    `ยืนยันผล Webhook รับเงินสำเร็จ (${reg.orderCode})`,
+    `${reg.regCode}: confirmed`,
+    reg.eventId
+  );
+  return okSnapshot(res, user?.id ?? null);
+});
+
+app.post('/api/registrations/:id/bib', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  const regId = req.params.id;
+  const bibNumber = String(req.body?.bibNumber ?? '').trim().toUpperCase();
+  if (!bibNumber) return res.status(400).json({ ok: false, error: 'กรุณาระบุเลข BIB' });
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const rRow = db
+      .prepare('SELECT detail_json FROM registrations WHERE id = ?')
+      .get(regId) as { detail_json: string } | undefined;
+    if (!rRow) {
+      db.exec('ROLLBACK');
+      return res.status(404).json({ ok: false, error: 'ไม่พบใบสมัคร' });
+    }
+    const target = JSON.parse(rRow.detail_json) as RegistrationRecord;
+    if (!hasOrgRole(user, target.organizationId, ['owner', 'event_manager', 'staff'], target.eventId)) {
+      db.exec('ROLLBACK');
+      return res.status(403).json({ ok: false, error: 'ไม่มีสิทธิ์กำหนดเลข BIB ของงานนี้' });
+    }
+    const dupRow = db
+      .prepare(
+        `SELECT detail_json FROM registrations
+         WHERE event_id = ? AND id != ? AND UPPER(bib_number) = ?`
+      )
+      .get(target.eventId, regId, bibNumber) as { detail_json: string } | undefined;
+    if (dupRow) {
+      const dup = JSON.parse(dupRow.detail_json) as RegistrationRecord;
+      db.exec('ROLLBACK');
+      return res.status(409).json({
+        ok: false,
+        error: `เลข BIB "${bibNumber}" ซ้ำกับผู้สมัคร ${dup.participantNameTh} (${dup.regCode}) ในงานเดียวกัน!`,
+      });
+    }
+    const updated: RegistrationRecord = { ...target, bibNumber };
+    upsertRegistrationRow(updated);
+    recordAudit(
+      user,
+      target.organizationId,
+      `กำหนดเลข BIB ให้ ${target.regCode}`,
+      `BIB -> ${bibNumber}`,
+      target.eventId
+    );
+    db.exec('COMMIT');
+    return okSnapshot(res, user?.id ?? null);
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+});
+
+app.post('/api/registrations/:id/pickup', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  const regId = req.params.id;
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const rRow = db
+      .prepare('SELECT detail_json FROM registrations WHERE id = ?')
+      .get(regId) as { detail_json: string } | undefined;
+    if (!rRow) {
+      db.exec('ROLLBACK');
+      return res.status(404).json({ ok: false, error: 'ไม่พบใบสมัคร' });
+    }
+    const target = JSON.parse(rRow.detail_json) as RegistrationRecord;
+    if (!hasOrgRole(user, target.organizationId, ['owner', 'event_manager', 'staff'], target.eventId)) {
+      db.exec('ROLLBACK');
+      return res.status(403).json({ ok: false, error: 'ไม่มีสิทธิ์เช็กอินส่งมอบอุปกรณ์' });
+    }
+    if (target.fulfillmentStatus === 'kit_picked_up') {
+      db.exec('ROLLBACK');
+      return res.status(409).json({
+        ok: false,
+        error: `ป้องกันการรับซ้ำ: ${target.participantNameTh} รับเสื้อและ BIB ไปแล้วโดย ${target.fulfillmentUpdatedBy} เมื่อ ${target.fulfillmentUpdatedAt}`,
+      });
+    }
+    if (!target.bibNumber) {
+      db.exec('ROLLBACK');
+      return res.status(400).json({ ok: false, error: 'กรุณากำหนดเลข BIB ก่อนส่งมอบอุปกรณ์' });
+    }
+    const actor = user?.fullNameTh ?? 'เจ้าหน้าที่จุดรับอุปกรณ์';
+    const updated: RegistrationRecord = {
+      ...target,
+      fulfillmentStatus: 'kit_picked_up',
+      fulfillmentUpdatedBy: actor,
+      fulfillmentUpdatedAt: nowThaiStamp(),
+    };
+    upsertRegistrationRow(updated);
+    recordAudit(
+      user,
+      target.organizationId,
+      `ส่งมอบเสื้อ ${target.shirtSize} และ BIB ${target.bibNumber}`,
+      `${target.regCode}: kit_picked_up`,
+      target.eventId
+    );
+    db.exec('COMMIT');
+    return okSnapshot(res, user?.id ?? null);
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+});
+
+app.post('/api/registrations/:id/refund', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  const regId = req.params.id;
+  const decision = req.body?.decision as 'approve_succeed' | 'reject';
+  const note = String(req.body?.note ?? '').trim();
+
+  const rRow = db
+    .prepare('SELECT detail_json FROM registrations WHERE id = ?')
+    .get(regId) as { detail_json: string } | undefined;
+  if (!rRow) return res.status(404).json({ ok: false, error: 'ไม่พบใบสมัคร' });
+  const target = JSON.parse(rRow.detail_json) as RegistrationRecord;
+
+  if (!hasOrgRole(user, target.organizationId, ['owner', 'finance'])) {
+    return res.status(403).json({
+      ok: false,
+      error: 'เฉพาะเจ้าขององค์กร ฝ่ายการเงิน หรือ Platform Owner จึงอนุมัติ/ปฏิเสธเงินคืนได้',
+    });
+  }
+
+  const updated: RegistrationRecord =
+    decision === 'approve_succeed'
+      ? {
+          ...target,
+          registrationStatus: 'cancelled',
+          refundStatus: 'succeeded',
+          refundedAt: nowIsoBangkok(),
+          snapshotRefundedSatang: target.snapshotBaseSatang,
+          refundReason: `${target.refundReason ?? ''} (${note})`.trim(),
+        }
+      : {
+          ...target,
+          refundStatus: 'rejected',
+          refundReason: `${target.refundReason ?? ''} (ปฏิเสธ: ${note})`.trim(),
+        };
+
+  upsertRegistrationRow(updated);
+  recordAudit(
+    user,
+    target.organizationId,
+    decision === 'approve_succeed'
+      ? `อนุมัติคืนเงินคำสั่งซื้อ ${target.orderCode}`
+      : `ปฏิเสธคำขอคืนเงิน ${target.orderCode}`,
+    note,
+    target.eventId
+  );
+  return okSnapshot(res, user?.id ?? null);
+});
+
+app.post('/api/merch-orders', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  const payload = req.body ?? {};
+  const eventId = String(payload.eventId ?? '');
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const evRow = db
+      .prepare('SELECT detail_json FROM events WHERE id = ?')
+      .get(eventId) as { detail_json: string } | undefined;
+    if (!evRow) {
+      db.exec('ROLLBACK');
+      return res.status(404).json({ ok: false, error: 'ไม่พบงานวิ่ง' });
+    }
+    const ev = JSON.parse(evRow.detail_json) as RaceEvent;
+    const prdId = String(payload.productId ?? payload.product?.id ?? '');
+    const prd = ev.products.find((p) => p.id === prdId);
+    if (!prd) {
+      db.exec('ROLLBACK');
+      return res.status(404).json({ ok: false, error: 'ไม่พบสินค้า' });
+    }
+    const qty = Math.max(1, Number(payload.quantity ?? 1));
+    if (prd.soldCount + qty > prd.stockOrCeiling) {
+      db.exec('ROLLBACK');
+      return res.status(409).json({ ok: false, error: 'สต็อกสินค้าไม่เพียงพอ' });
+    }
+    const mCount = (
+      db.prepare('SELECT COUNT(*) AS cnt FROM merch_orders').get() as { cnt: number }
+    ).cnt;
+    const mSeq = mCount + 520;
+    const deliveryMethod =
+      payload.deliveryMethod === 'postal_shipping' ? 'postal_shipping' : 'pickup_at_expo';
+    const shipFee = deliveryMethod === 'postal_shipping' ? prd.shippingFeeSatang : 0;
+
+    const newOrder: MerchOrderRecord = {
+      id: String(payload.id || `mord-${Date.now()}`),
+      merchOrderCode: String(payload.merchOrderCode || `SHP-2611-${mSeq}`),
+      eventId: ev.id,
+      organizationId: ev.organizationId,
+      buyerUserId: user?.id,
+      buyerName: String(payload.buyerName ?? ''),
+      buyerEmail: user?.contactEmail ?? 'บัญชี LINE (ไม่มีอีเมล)',
+      productId: prd.id,
+      productNameTh: prd.nameTh,
+      sellerLabel: prd.sellerLabel,
+      variantSize: String(payload.variantSize ?? 'M'),
+      quantity: qty,
+      deliveredQty: 0,
+      deliveryMethod,
+      shippingAddress: payload.shippingAddress,
+      unitPriceSatang: prd.priceSatang,
+      shippingSatang: shipFee,
+      totalPaidSatang: prd.priceSatang * qty + shipFee,
+      paymentStatus: 'succeeded',
+      fulfillmentStatus: deliveryMethod === 'pickup_at_expo' ? 'ready_or_shipped' : 'preparing',
+      pickupToken: String(payload.pickupToken || `PICK-SHP-${mSeq}`),
+      linkedRegistrationCode: payload.linkedRegistrationCode,
+      createdAt: nowIsoBangkok(),
+    };
+
+    const updatedEv: RaceEvent = {
+      ...ev,
+      products: ev.products.map((p) =>
+        p.id === prd.id ? { ...p, soldCount: p.soldCount + qty } : p
+      ),
+    };
+    upsertEventRow(updatedEv);
+    upsertMerchOrderRow(newOrder, 1);
+    recordAudit(
+      user,
+      ev.organizationId,
+      `คำสั่งซื้อสินค้าหน้าร้าน (${newOrder.merchOrderCode})`,
+      `${prd.nameTh} × ${qty} (ไม่เกิดใบสมัครวิ่ง)`,
+      ev.id
+    );
+    db.exec('COMMIT');
+    return okSnapshot(res, user?.id ?? null, { order: newOrder });
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+});
+
+app.post('/api/merch-orders/:id/handover', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  const mRow = db
+    .prepare('SELECT detail_json FROM merch_orders WHERE id = ?')
+    .get(req.params.id) as { detail_json: string } | undefined;
+  if (!mRow) return res.status(404).json({ ok: false, error: 'ไม่พบคำสั่งซื้อสินค้า' });
+  const ord = JSON.parse(mRow.detail_json) as MerchOrderRecord;
+
+  if (!hasOrgRole(user, ord.organizationId, ['owner', 'event_manager', 'staff'], ord.eventId)) {
+    return res.status(403).json({ ok: false, error: 'ไม่มีสิทธิ์บันทึกส่งมอบสินค้า' });
+  }
+  if (ord.deliveredQty >= ord.quantity) {
+    return res.status(409).json({
+      ok: false,
+      error: `ป้องกันการส่งมอบสินค้าซ้ำ: คำสั่งซื้อ ${ord.merchOrderCode} รับครบ ${ord.quantity} ชิ้นไปแล้ว`,
+    });
+  }
+  const mode = req.body?.mode === 'partial_one' ? 'partial_one' : 'complete_all';
+  const nextDelivered =
+    mode === 'partial_one' ? Math.min(ord.quantity, ord.deliveredQty + 1) : ord.quantity;
+  const nextStatus = nextDelivered >= ord.quantity ? 'completed' : 'partial_received';
+  const updated: MerchOrderRecord = {
+    ...ord,
+    deliveredQty: nextDelivered,
+    fulfillmentStatus: nextStatus,
+  };
+  upsertMerchOrderRow(updated);
+  recordAudit(
+    user,
+    ord.organizationId,
+    `ส่งมอบสินค้าหน้าร้าน (${ord.merchOrderCode})`,
+    `รับแล้ว ${nextDelivered}/${ord.quantity} ชิ้น`,
+    ord.eventId
+  );
+  return okSnapshot(res, user?.id ?? null);
+});
+
+/* ==================== PRODUCTION INQUIRIES ==================== */
+
+app.post('/api/production-inquiries', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  const p = req.body ?? {};
+  const count = (
+    db.prepare('SELECT COUNT(*) AS cnt FROM production_inquiries').get() as { cnt: number }
+  ).cnt;
+
+  if (p.contextType === 'event_organizer') {
+    if (!hasOrgRole(user, String(p.orgId ?? ''), ['owner', 'event_manager'])) {
+      return res.status(403).json({ ok: false, error: 'ไม่มีสิทธิ์ส่งคำขอใบเสนอราคาขององค์กรนี้' });
+    }
+    const net = Math.max(
+      0,
+      Number(p.packageQty ?? 0) +
+        Number(p.addonQty ?? 0) +
+        Number(p.bufferQty ?? 0) -
+        Number(p.existingStockQty ?? 0)
+    );
+    const rfq: ProductionInquiry = {
+      id: String(p.id || `rfq-${Date.now()}`),
+      inquiryCode: String(p.inquiryCode || `RFQ-2611-0${count + 3}`),
+      organizationId: p.orgId,
+      requesterName: user?.fullNameTh ?? 'ผู้จัดงาน',
+      requesterContact: 'ผ่านระบบผู้จัดงาน',
+      eventId: p.eventId,
+      contextType: 'event_organizer',
+      itemType: p.itemType,
+      serviceModel: 'produce_bulk',
+      packageEntitlementQty: Number(p.packageQty ?? 0),
+      addonStoreQty: Number(p.addonQty ?? 0),
+      organizerBufferQty: Number(p.bufferQty ?? 0),
+      existingStockDeductedQty: Number(p.existingStockQty ?? 0),
+      netQtyToProduce: net,
+      artworkVersion: 'Artwork-v1.0 (รอสรุปใบเสนอราคา)',
+      targetDeliveryDate: String(p.targetDeliveryDate ?? ''),
+      quoteStatus: 'submitted',
+      productionStatus: 'awaiting_approval',
+      createdAt: nowThaiStamp(),
+    };
+    upsertProductionInquiryRow(rfq, 1);
+    recordAudit(
+      user,
+      String(p.orgId),
+      `ส่งคำขอใบเสนอราคาผลิต (${rfq.inquiryCode})`,
+      `ยอดสุทธิ ${net} ชิ้น`,
+      p.eventId
+    );
+    return okSnapshot(res, user?.id ?? null, { inquiry: rfq });
+  }
+
+  const qty = Math.max(1, Number(p.estimatedQty ?? 50));
+  const rfq: ProductionInquiry = {
+    id: String(p.id || `rfq-club-${Date.now()}`),
+    inquiryCode: String(p.inquiryCode || `RFQ-CLB-${count + 11}`),
+    requesterName: String(p.requesterName ?? ''),
+    requesterContact: String(p.requesterContact ?? ''),
+    contextType: 'club_or_company',
+    itemType: p.itemType,
+    serviceModel: 'produce_bulk',
+    packageEntitlementQty: 0,
+    addonStoreQty: 0,
+    organizerBufferQty: qty,
+    existingStockDeductedQty: 0,
+    netQtyToProduce: qty,
+    artworkVersion: 'รอส่งไฟล์แบบให้ทีมงานตรวจ',
+    targetDeliveryDate: String(p.targetDeliveryDate ?? ''),
+    quoteStatus: 'submitted',
+    productionStatus: 'awaiting_approval',
+    createdAt: nowThaiStamp(),
+  };
+  upsertProductionInquiryRow(rfq, 1);
+  return okSnapshot(res, user?.id ?? null, { inquiry: rfq });
+});
+
+app.patch('/api/production-inquiries/:id', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const qRow = db
+    .prepare('SELECT detail_json FROM production_inquiries WHERE id = ?')
+    .get(req.params.id) as { detail_json: string } | undefined;
+  if (!qRow) return res.status(404).json({ ok: false, error: 'ไม่พบใบขอราคา' });
+  const target = JSON.parse(qRow.detail_json) as ProductionInquiry;
+  const patch = req.body ?? {};
+  const updated: ProductionInquiry = {
+    ...target,
+    quoteStatus: patch.quoteStatus ?? target.quoteStatus,
+    productionStatus: patch.productionStatus ?? target.productionStatus,
+    quotedTotalSatang:
+      patch.quotedTotalSatang !== undefined ? patch.quotedTotalSatang : target.quotedTotalSatang,
+    adminNote: patch.adminNote !== undefined ? patch.adminNote : target.adminNote,
+  };
+  upsertProductionInquiryRow(updated);
+  recordAudit(
+    user,
+    target.organizationId ?? 'PLATFORM-HQ',
+    `อัปเดตใบเสนอราคา/การผลิต ${target.inquiryCode}`,
+    `quote=${updated.quoteStatus}, prod=${updated.productionStatus}`,
+    target.eventId
+  );
+  return okSnapshot(res, user.id);
+});
+
+/* ==================== ORGANIZER EVENT MANAGEMENT ==================== */
+
+app.post('/api/events', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  const p = req.body ?? {};
+  const orgId = String(p.orgId ?? '');
+  if (!hasOrgRole(user, orgId, ['owner', 'event_manager'])) {
+    return res.status(403).json({ ok: false, error: 'ไม่มีสิทธิ์สร้างงานวิ่งในองค์กรนี้' });
+  }
+  const evCount = (db.prepare('SELECT COUNT(*) AS cnt FROM events').get() as { cnt: number }).cnt;
+  const num = evCount + 10;
+  const newEv: RaceEvent = {
+    id: String(p.id || `evt-drf-${Date.now()}`),
+    code: String(p.code || `EVT-DRF-27${num}`),
+    organizationId: orgId,
+    titleTh: String(p.titleTh ?? ''),
+    titleEn: String(p.titleTh ?? ''),
+    tagline: 'งานวิ่งแบบร่างที่สร้างใหม่ รอกำหนดรายละเอียดและส่งตรวจเปิดขาย',
+    coverMotif: 'mountain',
+    province: String(p.province ?? 'เชียงใหม่'),
+    region: 'เหนือ',
+    venue: 'สถานที่จัดงาน (รอกำหนดรายละเอียด)',
+    eventDate: String(p.eventDate ?? '2027-02-14'),
+    timezone: 'Asia/Bangkok',
+    raceType: 'Road Race',
+    status: 'draft',
+    statusNote:
+      'งานแบบร่างเพิ่งสร้างใหม่ — ตรวจ Checklist ความพร้อมด้านล่างก่อนส่งอนุมัติเปิดขาย',
+    totalEventQuota: 100,
+    feeBearerPolicy: 'runner_pays',
+    editDeadlineDate: String(p.eventDate ?? '2027-02-14'),
+    rulesVersion: 'v0.1-draft',
+    kitPickupWindow: 'วันก่อนแข่งขัน เวลา 10:00–18:00 น.',
+    highlights: ['งานวิ่งที่สร้างใหม่ผ่านหน้าผู้จัดงาน'],
+    categories: [
+      {
+        id: `cat-drf-${Date.now()}`,
+        code: '10 km',
+        name: 'Mini Marathon 10.0 กม.',
+        distanceKm: 10,
+        startTimeLocal: '05:30',
+        cutoffHours: 2.5,
+        categoryQuota: 100,
+        bibPrefix: 'D',
+        colorTag: 'vermilion',
+        priceTiers: [
+          {
+            id: `tier-drf-${Date.now()}`,
+            label: 'Regular',
+            priceSatang: 70000,
+            startsAt: '2026-12-01',
+            endsAt: String(p.eventDate ?? '2027-02-14'),
+            isCurrent: true,
+          },
+        ],
+      },
+    ],
+    shirtStocks: [
+      { size: 'XS', total: 10, reservedOrConfirmed: 0 },
+      { size: 'S', total: 20, reservedOrConfirmed: 0 },
+      { size: 'M', total: 35, reservedOrConfirmed: 0 },
+      { size: 'L', total: 25, reservedOrConfirmed: 0 },
+      { size: 'XL', total: 10, reservedOrConfirmed: 0 },
+      { size: '2XL', total: 0, reservedOrConfirmed: 0 },
+    ],
+    products: [],
+    readinessChecks: [
+      {
+        id: 'chk-n1',
+        label: 'ระบุชื่อจังหวัดและวันจัดงานเบื้องต้นแล้ว',
+        passed: true,
+        fixTargetHint: 'ข้อมูลพื้นฐานครบแล้ว',
+      },
+      {
+        id: 'chk-n2',
+        label: 'ยืนยันโควตาเสื้อ 2XL และนโยบายการคืนเงินก่อนส่งตรวจ',
+        passed: false,
+        fixTargetHint: 'กดปุ่มเติมข้อมูลจำลองด้านล่างเพื่อส่งตรวจเปิดขาย',
+      },
+    ],
+  };
+
+  upsertEventRow(newEv, 1);
+
+  if (p.requestProductionHelp) {
+    const qCount = (
+      db.prepare('SELECT COUNT(*) AS cnt FROM production_inquiries').get() as { cnt: number }
+    ).cnt;
+    const rfq: ProductionInquiry = {
+      id: `rfq-ev-${Date.now()}`,
+      inquiryCode: `RFQ-2611-0${qCount + 2}`,
+      organizationId: orgId,
+      requesterName: user?.fullNameTh ?? 'ผู้จัดงาน',
+      requesterContact: 'ผ่านระบบผู้จัดงาน',
+      eventId: newEv.id,
+      contextType: 'event_organizer',
+      itemType: 'ชุดเสื้อพร้อมเหรียญครบวงจร',
+      serviceModel: 'produce_bulk',
+      packageEntitlementQty: 100,
+      addonStoreQty: 0,
+      organizerBufferQty: 10,
+      existingStockDeductedQty: 0,
+      netQtyToProduce: 110,
+      artworkVersion: 'ขอคำปรึกษาออกแบบจากทีม RunEvent',
+      targetDeliveryDate: newEv.eventDate,
+      quoteStatus: 'submitted',
+      productionStatus: 'awaiting_approval',
+      createdAt: nowThaiStamp(),
+    };
+    upsertProductionInquiryRow(rfq, 1);
+  }
+
+  recordAudit(
+    user,
+    orgId,
+    `สร้างงานแบบร่างใหม่ (${newEv.code})`,
+    p.requestProductionHelp
+      ? `${newEv.titleTh} + ส่งคำขอช่วยผลิตเสื้อ/เหรียญ`
+      : newEv.titleTh,
+    newEv.id
+  );
+  return okSnapshot(res, user!.id, { event: newEv });
+});
+
+app.post('/api/events/:id/duplicate', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  const evRow = db
+    .prepare('SELECT detail_json FROM events WHERE id = ?')
+    .get(req.params.id) as { detail_json: string } | undefined;
+  if (!evRow) return res.status(404).json({ ok: false, error: 'ไม่พบงานต้นทาง' });
+  const src = JSON.parse(evRow.detail_json) as RaceEvent;
+  if (!hasOrgRole(user, src.organizationId, ['owner', 'event_manager'])) {
+    return res.status(403).json({ ok: false, error: 'ไม่มีสิทธิ์คัดลอกงานวิ่งนี้' });
+  }
+  const copyCode = `${src.code}-NEXT-${String(Date.now()).slice(-3)}`;
+  const copyEv: RaceEvent = {
+    ...src,
+    id: String(req.body?.newEventId || `evt-copy-${Date.now()}`),
+    code: String(req.body?.copyCode || copyCode),
+    titleTh: `${src.titleTh} (สำเนาจัดครั้งถัดไป)`,
+    status: 'draft',
+    statusNote:
+      'ทำสำเนาเฉพาะโครงสร้างระยะ ราคา และตารางไซส์เสื้อตั้งต้น — ไม่คัดลอกข้อมูลส่วนบุคคลของผู้สมัครเดิม',
+    shirtStocks: src.shirtStocks.map((s) => ({ ...s, reservedOrConfirmed: 0 })),
+    products: src.products.map((p) => ({
+      ...p,
+      id: `prd-copy-${p.id}-${Date.now()}`,
+      soldCount: 0,
+    })),
+    verifiedPhotoAlbums: undefined,
+    officialResultsUrl: undefined,
+    customFields: cloneCustomFieldsSchema(src.customFields ?? []),
+  };
+  upsertEventRow(copyEv, 1);
+  recordAudit(
+    user,
+    src.organizationId,
+    'คัดลอกโครงสร้างงานโดยไม่คัดลอกข้อมูลผู้สมัครเดิม',
+    `${src.code} -> ${copyEv.code}`,
+    copyEv.id
+  );
+  return okSnapshot(res, user!.id, { event: copyEv });
+});
+
+app.post('/api/events/:id/submit-review', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  const evRow = db
+    .prepare('SELECT detail_json FROM events WHERE id = ?')
+    .get(req.params.id) as { detail_json: string } | undefined;
+  if (!evRow) return res.status(404).json({ ok: false, error: 'ไม่พบงานวิ่ง' });
+  const target = JSON.parse(evRow.detail_json) as RaceEvent;
+  if (!hasOrgRole(user, target.organizationId, ['owner', 'event_manager'], target.id)) {
+    return res.status(403).json({ ok: false, error: 'ไม่มีสิทธิ์ส่งตรวจงานวิ่งนี้' });
+  }
+  const updated: RaceEvent = {
+    ...target,
+    status: 'in_review',
+    rulesVersion: 'v1.0-submitted',
+    statusNote: 'ส่งตรวจความพร้อมเรียบร้อยแล้ว รอผู้ดูแลแพลตฟอร์มอนุมัติเปิดรับสมัคร',
+    shirtStocks: target.shirtStocks.map((s) =>
+      s.size === '2XL' && s.total === 0 ? { ...s, total: 10 } : s
+    ),
+    readinessChecks: target.readinessChecks.map((c) => ({ ...c, passed: true })),
+  };
+  upsertEventRow(updated);
+  recordAudit(
+    user,
+    target.organizationId,
+    `ส่งงาน ${target.code} เข้าคิวตรวจอนุมัติเผยแพร่`,
+    'draft -> in_review',
+    target.id
+  );
+  return okSnapshot(res, user!.id);
+});
+
+app.patch('/api/events/:id', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  const evRow = db
+    .prepare('SELECT detail_json FROM events WHERE id = ?')
+    .get(req.params.id) as { detail_json: string } | undefined;
+  if (!evRow) return res.status(404).json({ ok: false, error: 'ไม่พบงานวิ่ง' });
+  const target = JSON.parse(evRow.detail_json) as RaceEvent;
+
+  if (!hasOrgRole(user, target.organizationId, ['owner', 'event_manager', 'finance'], target.id)) {
+    return res.status(403).json({ ok: false, error: 'ไม่มีสิทธิ์แก้ไขตั้งค่างานวิ่งนี้' });
+  }
+
+  const patch = req.body ?? {};
+  let nextEv: RaceEvent = { ...target };
+
+  if (typeof patch.totalEventQuota === 'number') {
+    const confirmed = (
+      db
+        .prepare(`SELECT COUNT(*) AS cnt FROM registrations WHERE event_id = ? AND registration_status = 'confirmed'`)
+        .get(target.id) as { cnt: number }
+    ).cnt;
+    const reserved = (
+      db
+        .prepare(`SELECT COUNT(*) AS cnt FROM registrations WHERE event_id = ? AND registration_status = 'pending_payment'`)
+        .get(target.id) as { cnt: number }
+    ).cnt;
+    const check = validateQuotaUpdate(patch.totalEventQuota, confirmed, reserved);
+    if (!check.valid) return res.status(400).json({ ok: false, error: check.message });
+    nextEv.totalEventQuota = patch.totalEventQuota;
+    recordAudit(
+      user,
+      target.organizationId,
+      `ปรับเพดานโควตารวมงาน ${target.code}`,
+      `${target.totalEventQuota} -> ${patch.totalEventQuota} คน`,
+      target.id
+    );
+  }
+
+  if (patch.categoryQuotaUpdate) {
+    const { categoryId, newCategoryQuota } = patch.categoryQuotaUpdate as {
+      categoryId: string;
+      newCategoryQuota: number;
+    };
+    const cat = target.categories.find((c) => c.id === categoryId);
+    if (cat) {
+      const nextCategories = target.categories.map((c) =>
+        c.id === categoryId ? { ...c, categoryQuota: newCategoryQuota } : c
+      );
+      const nextTotal = Math.max(
+        nextEv.totalEventQuota,
+        nextCategories.reduce((s, c) => s + c.categoryQuota, 0)
+      );
+      nextEv = { ...nextEv, categories: nextCategories, totalEventQuota: nextTotal };
+      recordAudit(
+        user,
+        target.organizationId,
+        `ปรับโควตาระยะ ${cat.code} งาน ${target.code}`,
+        `${cat.categoryQuota} -> ${newCategoryQuota} คน`,
+        target.id
+      );
+    }
+  }
+
+  if (Array.isArray(patch.customFields)) {
+    nextEv.customFields = patch.customFields as CustomRegistrationField[];
+    recordAudit(
+      user,
+      target.organizationId,
+      `อัปเดตคำถามเพิ่มเติมในใบสมัครงาน ${target.code}`,
+      `จำนวนคำถามทั้งหมด ${nextEv.customFields.length} ข้อ`,
+      target.id
+    );
+  }
+
+  if (patch.feeBearerPolicy) {
+    if (!hasOrgRole(user, target.organizationId, ['owner', 'finance'])) {
+      return res.status(403).json({
+        ok: false,
+        error: 'เฉพาะเจ้าขององค์กรหรือฝ่ายการเงินจึงเปลี่ยนนโยบายผู้รับภาระค่าบริการได้',
+      });
+    }
+    nextEv.feeBearerPolicy = patch.feeBearerPolicy as FeeBearerPolicy;
+    recordAudit(
+      user,
+      target.organizationId,
+      `เปลี่ยนนโยบายผู้รับภาระค่าบริการงาน ${target.code}`,
+      `เป็น ${nextEv.feeBearerPolicy} (เฉพาะใบสมัครใหม่)`,
+      target.id
+    );
+  }
+
+  if (patch.media) {
+    const m = patch.media as {
+      coverImageUrl?: string;
+      coverImageAlt?: string;
+      galleryImageUrls?: string[];
+    };
+    nextEv.coverImageUrl = m.coverImageUrl;
+    nextEv.coverImageAlt = m.coverImageAlt;
+    nextEv.galleryImageUrls = m.galleryImageUrls ?? [];
+    recordAudit(
+      user,
+      target.organizationId,
+      `อัปเดตรูปปกงาน ${target.code}`,
+      m.coverImageUrl
+        ? `ตั้งรูปปก + ภาพประกอบ ${nextEv.galleryImageUrls.length} รูป`
+        : 'ลบรูปปก (ใช้ภาพปกลายเส้นแทน)',
+      target.id
+    );
+  }
+
+  if (patch.templateId) {
+    const tplRow = db
+      .prepare('SELECT detail_json FROM form_templates WHERE id = ?')
+      .get(String(patch.templateId)) as { detail_json: string } | undefined;
+    if (tplRow) {
+      const tpl = JSON.parse(tplRow.detail_json) as FormTemplate;
+      const allGlobals = (
+        db.prepare('SELECT detail_json FROM global_fields').all() as { detail_json: string }[]
+      ).map((g) => JSON.parse(g.detail_json) as GlobalFormFieldDef);
+      const mappedFields: CustomRegistrationField[] = tpl.fieldIds
+        .map((fid) => allGlobals.find((gf) => gf.id === fid))
+        .filter((gf): gf is GlobalFormFieldDef => Boolean(gf))
+        .map((gf) => ({
+          id: gf.id,
+          fieldKey: gf.fieldKey,
+          label: gf.label,
+          descriptionTh: gf.descriptionTh,
+          placeholderTh: gf.placeholderTh,
+          type: gf.type,
+          stepKey: gf.stepKey,
+          required: gf.required,
+          options: gf.options ? [...gf.options] : undefined,
+          isSensitive: gf.isSensitive,
+          policy: gf.policy,
+          defaultValue: gf.defaultValue,
+          visibilityCondition: gf.visibilityCondition,
+        }));
+      const nextVer = `${tpl.versionLabel}-published`;
+      nextEv = {
+        ...nextEv,
+        activeTemplateId: tpl.id,
+        publishedFormVersion: nextVer,
+        customFields: mappedFields,
+      };
+      recordAudit(
+        user,
+        target.organizationId,
+        `เลือกใช้แม่แบบฟอร์ม ${tpl.code} กับงาน ${target.code}`,
+        `เผยแพร่ฟอร์มงานเวอร์ชัน ${nextVer} (${mappedFields.length} ฟิลด์)`,
+        target.id
+      );
+    }
+  }
+
+  if (patch.addProduct) {
+    const ap = patch.addProduct as {
+      id?: string;
+      sku?: string;
+      nameTh: string;
+      categoryLabel: 'เสื้อที่ระลึก' | 'เหรียญที่ระลึก' | 'อุปกรณ์เสริม';
+      saleMode: 'ready_stock' | 'preorder';
+      serviceModel: SellerServiceModel;
+      priceBaht: number;
+      stockOrCeiling: number;
+    };
+    const newPrd: EventProduct = {
+      id: ap.id || `prd-${Date.now()}`,
+      sku: ap.sku || `SKU-${Date.now().toString().slice(-4)}`,
+      eventId: target.id,
+      nameTh: ap.nameTh,
+      categoryLabel: ap.categoryLabel,
+      saleMode: ap.saleMode,
+      serviceModel: ap.serviceModel,
+      sellerLabel:
+        ap.serviceModel === 'runevent_full_service'
+          ? 'ดูแลพรีออเดอร์และจัดส่งโดย RunEvent (จำลอง)'
+          : 'ผู้ขาย: องค์กรผู้จัดงาน (จำลอง)',
+      fulfillmentOwnerLabel:
+        ap.serviceModel === 'runevent_full_service'
+          ? 'RunEvent ผลิตและจัดส่ง'
+          : 'ผู้จัดงานส่งมอบ',
+      priceSatang: ap.priceBaht * 100,
+      shippingFeeSatang: 5000,
+      stockOrCeiling: ap.stockOrCeiling,
+      soldCount: 0,
+      preorderMinQty: ap.saleMode === 'preorder' ? 20 : undefined,
+      preorderCloseDate: ap.saleMode === 'preorder' ? target.editDeadlineDate : undefined,
+      estimatedDeliveryNote: 'ตามกำหนดนัดรับหน้างานหรือจัดส่งไปรษณีย์',
+      refundAndMinPolicyNote:
+        ap.saleMode === 'preorder'
+          ? 'หากยอดไม่ถึงขั้นต่ำจะยกเลิกและคืนเงินเต็มจำนวน'
+          : 'เปลี่ยนได้กรณีชำรุดจากการผลิต',
+      availableSizes:
+        ap.categoryLabel === 'เสื้อที่ระลึก' ? ['S', 'M', 'L', 'XL'] : ['มาตรฐาน'],
+      description: 'รายการสินค้าที่ระลึกเฉพาะงาน ลูกค้าทั่วไปซื้อได้โดยไม่ต้องสมัครวิ่ง',
+    };
+    nextEv = { ...nextEv, products: [...nextEv.products, newPrd] };
+    recordAudit(
+      user,
+      target.organizationId,
+      `เพิ่มสินค้าหน้าร้าน ${newPrd.nameTh}`,
+      `${newPrd.sku} · ฿${ap.priceBaht}`,
+      target.id
+    );
+  }
+
+  upsertEventRow(nextEv);
+  return okSnapshot(res, user!.id);
+});
+
+/* ==================== PLATFORM OWNER GOVERNANCE & FORM BUILDER ==================== */
+
+app.post('/api/admin/organizations/:id/review', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const oRow = db
+    .prepare('SELECT detail_json FROM organizations WHERE id = ?')
+    .get(req.params.id) as { detail_json: string } | undefined;
+  if (!oRow) return res.status(404).json({ ok: false, error: 'ไม่พบองค์กรผู้จัด' });
+  const o = JSON.parse(oRow.detail_json) as Organization;
+  const action = String(req.body?.action ?? 'approve_kyc_bank') as
+    | 'approve_kyc_bank'
+    | 'hold_bank'
+    | 'suspend_org'
+    | 'reinstate_org'
+    | 'under_review'
+    | 'request_more_info'
+    | 'reject_org';
+  const bankSummary = req.body?.bankSummary ? String(req.body.bankSummary) : undefined;
+
+  const workflowMap: Record<typeof action, OrganizerVerificationWorkflowStatus> = {
+    approve_kyc_bank: 'APPROVED',
+    reinstate_org: 'APPROVED',
+    hold_bank: 'MORE_INFORMATION_REQUIRED',
+    suspend_org: 'SUSPENDED',
+    under_review: 'UNDER_REVIEW',
+    request_more_info: 'MORE_INFORMATION_REQUIRED',
+    reject_org: 'REJECTED',
+  };
+  const nextWf = workflowMap[action];
+  const historyEntry = {
+    id: `vh-${Date.now()}`,
+    status: nextWf,
+    actorName: user.fullNameTh,
+    note: bankSummary || `เปลี่ยนสถานะเป็น ${nextWf}`,
+    timestamp: nowThaiStamp(),
+  };
+  const nextHistory = [historyEntry, ...(o.verificationHistory ?? [])];
+
+  let updated: Organization;
+  if (action === 'approve_kyc_bank' || action === 'reinstate_org') {
+    updated = {
+      ...o,
+      nameTh: o.nameTh.replace(/\s*\(องค์กรใหม่รอตรวจ\)|\s*\(รอตรวจสอบผู้จัด\)/g, ''),
+      verificationStatus: 'verified',
+      workflowStatus: 'APPROVED',
+      payoutReady: true,
+      payoutBankSummary: bankSummary || o.payoutBankSummary,
+      verificationHistory: nextHistory,
+    };
+  } else if (
+    action === 'under_review' ||
+    action === 'request_more_info' ||
+    action === 'hold_bank'
+  ) {
+    updated = {
+      ...o,
+      verificationStatus: 'pending_review',
+      workflowStatus: nextWf,
+      payoutReady: false,
+      payoutBankSummary:
+        bankSummary ||
+        (action === 'under_review'
+          ? 'อยู่ระหว่าง Platform Owner ตรวจสอบเอกสาร (UNDER_REVIEW)'
+          : 'ขอเอกสารยืนยันตัวตน/บัญชีธนาคารเพิ่มเติม (MORE_INFORMATION_REQUIRED)'),
+      verificationHistory: nextHistory,
+    };
+  } else {
+    updated = {
+      ...o,
+      verificationStatus: 'suspended',
+      workflowStatus: nextWf,
+      payoutReady: false,
+      verificationHistory: nextHistory,
+    };
+  }
+
+  upsertOrganizationRow(updated);
+  recordAudit(
+    user,
+    o.id,
+    `Platform Owner อัปเดตสถานะผู้จัด (${o.code} -> ${nextWf})`,
+    bankSummary ?? o.nameTh
+  );
+  return okSnapshot(res, user.id);
+});
+
+app.post('/api/admin/events/:id/govern', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const evRow = db
+    .prepare('SELECT detail_json FROM events WHERE id = ?')
+    .get(req.params.id) as { detail_json: string } | undefined;
+  if (!evRow) return res.status(404).json({ ok: false, error: 'ไม่พบงานวิ่ง' });
+  const ev = JSON.parse(evRow.detail_json) as RaceEvent;
+  const nextStatus = req.body?.nextStatus as EventStatus;
+  const adminNote = req.body?.adminNote ? String(req.body.adminNote) : undefined;
+  const postRaceLinks = req.body?.postRaceLinks as
+    | { resultsUrl?: string; albumTitle?: string; albumUrl?: string }
+    | undefined;
+
+  const nextAlbums =
+    nextStatus === 'completed' && postRaceLinks?.albumTitle
+      ? [
+          ...(ev.verifiedPhotoAlbums ?? []),
+          {
+            id: `alb-adm-${Date.now()}`,
+            title: postRaceLinks.albumTitle,
+            photographerCredit: 'ตรวจสอบและประกาศผ่านระบบแพลตฟอร์ม',
+            photoCount: 850,
+            externalUrl: postRaceLinks.albumUrl || `#verified-album-${ev.code.toLowerCase()}`,
+          },
+        ]
+      : ev.verifiedPhotoAlbums;
+
+  const updated: RaceEvent = {
+    ...ev,
+    status: nextStatus,
+    statusNote: adminNote || undefined,
+    officialResultsUrl:
+      nextStatus === 'completed' && postRaceLinks?.resultsUrl
+        ? postRaceLinks.resultsUrl
+        : ev.officialResultsUrl,
+    verifiedPhotoAlbums: nextAlbums,
+  };
+  upsertEventRow(updated);
+  recordAudit(
+    user,
+    ev.organizationId,
+    `ผู้ดูแลแพลตฟอร์มเปลี่ยนสถานะงาน ${ev.code} (${ev.status} -> ${nextStatus})`,
+    adminNote || nextStatus,
+    ev.id
+  );
+  return okSnapshot(res, user.id);
+});
+
+app.post('/api/admin/payouts', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const p = req.body ?? {};
+  const code = String(p.payoutCode || `PO-2026-${Math.floor(1200 + Math.random() * 800)}`);
+  const newBatch: PayoutBatch = {
+    id: String(p.id || `po-dyn-${Date.now()}`),
+    payoutCode: code,
+    organizationId: String(p.organizationId ?? ''),
+    eventId: String(p.eventId ?? ''),
+    periodLabel: String(p.periodLabel ?? ''),
+    scheduledDate: String(p.scheduledDate ?? ''),
+    grossSucceededSatang: Number(p.netPayoutSatang ?? 0),
+    deductedRefundSatang: 0,
+    deductedOrganizerFeeSatang: 0,
+    netPayoutSatang: Number(p.netPayoutSatang ?? 0),
+    status: 'scheduled',
+  };
+  upsertPayoutRow(newBatch, 1);
+  recordAudit(
+    user,
+    newBatch.organizationId,
+    `สร้างรอบโอนยอดนำส่งใหม่ (${code})`,
+    newBatch.periodLabel,
+    newBatch.eventId
+  );
+  return okSnapshot(res, user.id);
+});
+
+app.patch('/api/admin/payouts/:id', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const pRow = db
+    .prepare('SELECT detail_json FROM payouts WHERE id = ?')
+    .get(req.params.id) as { detail_json: string } | undefined;
+  if (!pRow) return res.status(404).json({ ok: false, error: 'ไม่พบรอบโอน' });
+  const target = JSON.parse(pRow.detail_json) as PayoutBatch;
+  const nextStatus = req.body?.nextStatus as PayoutStatus;
+  const updated: PayoutBatch = { ...target, status: nextStatus };
+  upsertPayoutRow(updated);
+  recordAudit(
+    user,
+    target.organizationId,
+    `อัปเดตสถานะรอบโอนยอดนำส่ง ${target.payoutCode}`,
+    `${target.status} -> ${nextStatus}`,
+    target.eventId
+  );
+  return okSnapshot(res, user.id);
+});
+
+app.post('/api/admin/registrations/:id/force-refund', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const rRow = db
+    .prepare('SELECT detail_json FROM registrations WHERE id = ?')
+    .get(req.params.id) as { detail_json: string } | undefined;
+  if (!rRow) return res.status(404).json({ ok: false, error: 'ไม่พบใบสมัคร' });
+  const target = JSON.parse(rRow.detail_json) as RegistrationRecord;
+  const decision = String(req.body?.decision ?? 'admin_force_refund');
+  const reason = String(req.body?.reason ?? '').trim();
+
+  let updated: RegistrationRecord;
+  if (decision === 'reject') {
+    updated = {
+      ...target,
+      refundStatus: 'rejected',
+      refundReason: `${target.refundReason ?? ''} (ปฏิเสธ: [Platform Owner] ${reason})`.trim(),
+    };
+  } else {
+    updated = {
+      ...target,
+      registrationStatus: 'cancelled',
+      refundStatus: 'succeeded',
+      refundedAt: nowIsoBangkok(),
+      snapshotRefundedSatang: target.snapshotBaseSatang,
+      refundReason:
+        decision === 'admin_force_refund'
+          ? `[Platform Exception] ${reason}`
+          : `${target.refundReason ?? ''} ([Platform Owner] ${reason})`.trim(),
+    };
+  }
+  upsertRegistrationRow(updated);
+  recordAudit(
+    user,
+    target.organizationId,
+    `ผู้ดูแลแพลตฟอร์มสั่งคืนเงินกรณีพิเศษ (${target.regCode})`,
+    reason,
+    target.eventId
+  );
+  return okSnapshot(res, user.id);
+});
+
+app.patch('/api/admin/users/:id/access', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const targetUser = getUserById(req.params.id);
+  if (!targetUser) return res.status(404).json({ ok: false, error: 'ไม่พบบัญชีผู้ใช้' });
+
+  const action = req.body?.action as
+    | { kind: 'verify_email' }
+    | { kind: 'toggle_platform_admin' }
+    | { kind: 'grant_org_role'; organizationId: string; role: OrgRole }
+    | { kind: 'revoke_org_role'; organizationId: string };
+
+  let updated: UserAccount = { ...targetUser };
+  if (action.kind === 'verify_email') {
+    updated = {
+      ...targetUser,
+      contactEmail: targetUser.contactEmail ?? `${targetUser.code.toLowerCase()}@verified.local`,
+      emailVerified: true,
+    };
+  } else if (action.kind === 'toggle_platform_admin') {
+    updated = { ...targetUser, isPlatformAdmin: !targetUser.isPlatformAdmin };
+  } else if (action.kind === 'grant_org_role') {
+    updated = {
+      ...targetUser,
+      memberships: [
+        ...targetUser.memberships.filter((m) => m.organizationId !== action.organizationId),
+        { organizationId: action.organizationId, role: action.role },
+      ],
+    };
+  } else if (action.kind === 'revoke_org_role') {
+    updated = {
+      ...targetUser,
+      memberships: targetUser.memberships.filter(
+        (m) => m.organizationId !== action.organizationId
+      ),
+    };
+  }
+
+  upsertUserRow(updated, { preservePasswordHash: true });
+  recordAudit(
+    user,
+    action.kind === 'grant_org_role' || action.kind === 'revoke_org_role'
+      ? action.organizationId
+      : 'PLATFORM-HQ',
+    `ปรับสิทธิ์บัญชีผู้ใช้ ${targetUser.fullNameTh} (${targetUser.code})`,
+    action.kind
+  );
+  return okSnapshot(res, user.id);
+});
+
+/* ---- Form Builder Routes ---- */
+
+app.post('/api/form-builder/steps', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const step = req.body?.step as RegistrationStepDef;
+  db.prepare(`
+    INSERT INTO registration_steps (id, step_key, step_order, enabled, is_system_locked, detail_json)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      step_key = excluded.step_key,
+      step_order = excluded.step_order,
+      enabled = excluded.enabled,
+      is_system_locked = excluded.is_system_locked,
+      detail_json = excluded.detail_json
+  `).run(
+    step.id,
+    step.key,
+    step.order,
+    step.enabled ? 1 : 0,
+    step.isSystemLocked ? 1 : 0,
+    JSON.stringify(step)
+  );
+  recordAudit(
+    user,
+    'PLATFORM-HQ',
+    `อัปเดตขั้นตอนการสมัคร (${step.key})`,
+    `${step.titleTh} · enabled=${step.enabled}`
+  );
+  return okSnapshot(res, user.id);
+});
+
+app.post('/api/form-builder/steps/reorder', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const stepId = String(req.body?.stepId ?? '');
+  const direction = req.body?.direction === 'up' ? 'up' : 'down';
+  const rows = (
+    db
+      .prepare('SELECT detail_json FROM registration_steps ORDER BY step_order ASC')
+      .all() as { detail_json: string }[]
+  ).map((r) => JSON.parse(r.detail_json) as RegistrationStepDef);
+
+  const idx = rows.findIndex((s) => s.id === stepId);
+  const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (idx !== -1 && swapIdx >= 0 && swapIdx < rows.length - 1) {
+    const tmp = rows[idx];
+    rows[idx] = rows[swapIdx];
+    rows[swapIdx] = tmp;
+    const upd = db.prepare(
+      'UPDATE registration_steps SET step_order = ?, detail_json = ? WHERE id = ?'
+    );
+    rows.forEach((s, i) => {
+      const next = { ...s, order: i + 1 };
+      upd.run(next.order, JSON.stringify(next), next.id);
+    });
+  }
+  return okSnapshot(res, user.id);
+});
+
+app.delete('/api/form-builder/steps/:id', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const sRow = db
+    .prepare('SELECT detail_json FROM registration_steps WHERE id = ?')
+    .get(req.params.id) as { detail_json: string } | undefined;
+  if (!sRow) return okSnapshot(res, user.id);
+  const target = JSON.parse(sRow.detail_json) as RegistrationStepDef;
+  if (target.isSystemLocked) {
+    return res.status(400).json({ ok: false, error: 'ห้ามลบขั้นตอนที่ล็อกโดยระบบ' });
+  }
+  db.prepare('DELETE FROM registration_steps WHERE id = ?').run(target.id);
+  const remaining = (
+    db
+      .prepare('SELECT detail_json FROM registration_steps ORDER BY step_order ASC')
+      .all() as { detail_json: string }[]
+  ).map((r) => JSON.parse(r.detail_json) as RegistrationStepDef);
+  const upd = db.prepare(
+    'UPDATE registration_steps SET step_order = ?, detail_json = ? WHERE id = ?'
+  );
+  remaining.forEach((s, i) => {
+    const next = { ...s, order: i + 1 };
+    upd.run(next.order, JSON.stringify(next), next.id);
+  });
+  recordAudit(user, 'PLATFORM-HQ', `ลบขั้นตอนการสมัคร ${target.key}`, target.titleTh);
+  return okSnapshot(res, user.id);
+});
+
+app.post('/api/form-builder/fields', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const field = req.body?.field as GlobalFormFieldDef;
+  db.prepare(`
+    INSERT INTO global_fields (id, sort_order, field_key, policy, input_type, detail_json)
+    VALUES (?, 500, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      field_key = excluded.field_key,
+      policy = excluded.policy,
+      input_type = excluded.input_type,
+      detail_json = excluded.detail_json
+  `).run(field.id, field.fieldKey, field.policy, field.type, JSON.stringify(field));
+
+  // Sync matching customFields across events
+  const evRows = db.prepare('SELECT detail_json FROM events').all() as { detail_json: string }[];
+  for (const r of evRows) {
+    const ev = JSON.parse(r.detail_json) as RaceEvent;
+    if ((ev.customFields ?? []).some((cf) => cf.id === field.id)) {
+      const updatedEv: RaceEvent = {
+        ...ev,
+        customFields: (ev.customFields ?? []).map((cf) =>
+          cf.id === field.id
+            ? {
+                ...cf,
+                label: field.label,
+                policy: field.policy,
+                descriptionTh: field.descriptionTh,
+                placeholderTh: field.placeholderTh,
+                options: field.options ?? cf.options,
+                visibilityCondition: field.visibilityCondition,
+              }
+            : cf
+        ),
+      };
+      upsertEventRow(updatedEv);
+    }
+  }
+  recordAudit(
+    user,
+    'PLATFORM-HQ',
+    `อัปเดตคลังฟิลด์กลาง (${field.fieldKey})`,
+    `Policy: ${field.policy} · Type: ${field.type}`
+  );
+  return okSnapshot(res, user.id);
+});
+
+app.post('/api/form-builder/rules', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const rule = req.body?.rule as ConditionalRule;
+  db.prepare(`
+    INSERT INTO conditional_rules (id, sort_order, source_field_key, target_key, detail_json)
+    VALUES (?, 500, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      source_field_key = excluded.source_field_key,
+      target_key = excluded.target_key,
+      detail_json = excluded.detail_json
+  `).run(rule.id, rule.sourceFieldKey, rule.targetKey, JSON.stringify(rule));
+
+  if (rule.targetType === 'field') {
+    const gfRow = db
+      .prepare('SELECT detail_json FROM global_fields WHERE id = ?')
+      .get(rule.targetKey) as { detail_json: string } | undefined;
+    if (gfRow) {
+      const gf = JSON.parse(gfRow.detail_json) as GlobalFormFieldDef;
+      db.prepare('UPDATE global_fields SET detail_json = ? WHERE id = ?').run(
+        JSON.stringify({ ...gf, visibilityCondition: rule }),
+        gf.id
+      );
+    }
+    const evRows = db.prepare('SELECT detail_json FROM events').all() as { detail_json: string }[];
+    for (const r of evRows) {
+      const ev = JSON.parse(r.detail_json) as RaceEvent;
+      if ((ev.customFields ?? []).some((cf) => cf.id === rule.targetKey)) {
+        upsertEventRow({
+          ...ev,
+          customFields: (ev.customFields ?? []).map((cf) =>
+            cf.id === rule.targetKey ? { ...cf, visibilityCondition: rule } : cf
+          ),
+        });
+      }
+    }
+  }
+  recordAudit(
+    user,
+    'PLATFORM-HQ',
+    `เพิ่มกฎ Conditional Logic (${rule.id})`,
+    `IF ${rule.sourceFieldKey} ${rule.operator} "${rule.value}" -> SHOW ${rule.targetKey}`
+  );
+  return okSnapshot(res, user.id);
+});
+
+app.delete('/api/form-builder/rules/:id', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  db.prepare('DELETE FROM conditional_rules WHERE id = ?').run(req.params.id);
+  return okSnapshot(res, user.id);
+});
+
+app.post('/api/form-builder/templates', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const steps = (
+    db
+      .prepare('SELECT detail_json FROM registration_steps ORDER BY step_order ASC')
+      .all() as { detail_json: string }[]
+  ).map((r) => JSON.parse(r.detail_json) as RegistrationStepDef);
+  const rules = (
+    db.prepare('SELECT detail_json FROM conditional_rules').all() as { detail_json: string }[]
+  ).map((r) => JSON.parse(r.detail_json) as ConditionalRule);
+
+  const newTpl: FormTemplate = {
+    id: String(req.body?.id || `tpl-${Date.now()}`),
+    code: String(req.body?.code ?? ''),
+    nameTh: String(req.body?.nameTh ?? ''),
+    descriptionTh: String(req.body?.descriptionTh ?? ''),
+    status: 'published',
+    versionLabel: 'v1.0',
+    updatedAt: nowThaiStamp(),
+    steps,
+    fieldIds: ['cf_blood', 'cf_has_medical', 'cf_medical', 'cf_club'],
+    conditionalRules: rules,
+  };
+  db.prepare(`
+    INSERT INTO form_templates (id, sort_order, code, status, version_label, updated_at, detail_json)
+    VALUES (?, 500, ?, ?, ?, ?, ?)
+  `).run(
+    newTpl.id,
+    newTpl.code,
+    newTpl.status,
+    newTpl.versionLabel,
+    newTpl.updatedAt,
+    JSON.stringify(newTpl)
+  );
+  recordAudit(user, 'PLATFORM-HQ', `สร้างแม่แบบฟอร์มใหม่ (${newTpl.code})`, newTpl.nameTh);
+  return okSnapshot(res, user.id);
+});
+
+app.post('/api/form-builder/templates/:id/publish', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const tRow = db
+    .prepare('SELECT detail_json FROM form_templates WHERE id = ?')
+    .get(req.params.id) as { detail_json: string } | undefined;
+  if (!tRow) return res.status(404).json({ ok: false, error: 'ไม่พบแม่แบบ' });
+  const tpl = JSON.parse(tRow.detail_json) as FormTemplate;
+  const nextVerNum = Number(tpl.versionLabel.replace(/[^0-9.]/g, '')) + 0.1;
+  const updated: FormTemplate = {
+    ...tpl,
+    status: 'published',
+    versionLabel: `v${nextVerNum.toFixed(1)}`,
+    updatedAt: nowThaiStamp(),
+  };
+  db.prepare(`
+    UPDATE form_templates SET status = ?, version_label = ?, updated_at = ?, detail_json = ? WHERE id = ?
+  `).run(updated.status, updated.versionLabel, updated.updatedAt, JSON.stringify(updated), tpl.id);
+  recordAudit(user, 'PLATFORM-HQ', `Publish แม่แบบฟอร์ม ${tpl.id}`, String(req.body?.summary ?? ''));
+  return okSnapshot(res, user.id);
+});
+
+app.post('/api/form-builder/field-requests', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  const payload = req.body ?? {};
+  const orgId = String(payload.organizationId ?? '');
+  if (!hasOrgRole(user, orgId, ['owner', 'event_manager'])) {
+    return res.status(403).json({ ok: false, error: 'ไม่มีสิทธิ์ส่งคำขอเพิ่มฟิลด์' });
+  }
+  const cnt = (
+    db.prepare('SELECT COUNT(*) AS cnt FROM field_requests').get() as { cnt: number }
+  ).cnt;
+  const newReq: OrganizerFieldRequest = {
+    ...payload,
+    id: String(payload.id || `freq-${Date.now()}`),
+    requestCode: String(payload.requestCode || `REQ-FRM-260${cnt + 1}`),
+    status: 'pending',
+    createdAt: nowThaiStamp(),
+  };
+  db.prepare(`
+    INSERT INTO field_requests (id, sort_order, request_code, organization_id, event_id, status, created_at, detail_json)
+    VALUES (?, 1, ?, ?, ?, ?, ?, ?)
+  `).run(
+    newReq.id,
+    newReq.requestCode,
+    newReq.organizationId,
+    newReq.eventId,
+    newReq.status,
+    newReq.createdAt,
+    JSON.stringify(newReq)
+  );
+  recordAudit(
+    user,
+    newReq.organizationId,
+    `ผู้จัดส่งคำขอเพิ่มฟิลด์ใบสมัคร (${newReq.requestCode})`,
+    `${newReq.requestedLabelTh} [${newReq.inputType}] -> รอ Platform Owner อนุมัติ`,
+    newReq.eventId
+  );
+  return okSnapshot(res, user!.id);
+});
+
+app.post('/api/form-builder/field-requests/:id/resolve', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const fRow = db
+    .prepare('SELECT detail_json FROM field_requests WHERE id = ?')
+    .get(req.params.id) as { detail_json: string } | undefined;
+  if (!fRow) return res.status(404).json({ ok: false, error: 'ไม่พบคำขอฟิลด์' });
+  const freq = JSON.parse(fRow.detail_json) as OrganizerFieldRequest;
+  const decision = req.body?.decision === 'approved' ? 'approved' : 'rejected';
+  const policy = (req.body?.policy ?? 'CONFIGURABLE') as FormFieldPolicy;
+  const adminNote = String(req.body?.adminNote ?? '');
+
+  const updatedFreq: OrganizerFieldRequest = {
+    ...freq,
+    status: decision,
+    adminNote,
+    resolvedAt: nowThaiStamp(),
+  };
+  db.prepare('UPDATE field_requests SET status = ?, detail_json = ? WHERE id = ?').run(
+    decision,
+    JSON.stringify(updatedFreq),
+    freq.id
+  );
+
+  if (decision === 'approved') {
+    const newFieldId = `cf_${freq.requestedFieldKey}`;
+    const newGlobalField: GlobalFormFieldDef = {
+      id: newFieldId,
+      fieldKey: freq.requestedFieldKey,
+      label: freq.requestedLabelTh,
+      type: freq.inputType,
+      stepKey: freq.targetStepKey,
+      required: freq.required,
+      isSensitive: freq.isSensitive,
+      policy,
+      options: freq.options,
+      categoryTag: 'custom_library',
+    };
+    db.prepare(`
+      INSERT OR IGNORE INTO global_fields (id, sort_order, field_key, policy, input_type, detail_json)
+      VALUES (?, 500, ?, ?, ?, ?)
+    `).run(
+      newGlobalField.id,
+      newGlobalField.fieldKey,
+      newGlobalField.policy,
+      newGlobalField.type,
+      JSON.stringify(newGlobalField)
+    );
+
+    const evRow = db
+      .prepare('SELECT detail_json FROM events WHERE id = ?')
+      .get(freq.eventId) as { detail_json: string } | undefined;
+    if (evRow) {
+      const ev = JSON.parse(evRow.detail_json) as RaceEvent;
+      const curFields = ev.customFields ?? [];
+      if (!curFields.some((f) => f.id === newFieldId)) {
+        upsertEventRow({
+          ...ev,
+          publishedFormVersion: 'v1.3-published',
+          customFields: [...curFields, newGlobalField],
+        });
+      }
+    }
+  }
+
+  recordAudit(
+    user,
+    freq.organizationId,
+    `Platform Owner ${decision === 'approved' ? 'อนุมัติ' : 'ปฏิเสธ'}คำขอฟิลด์ ${freq.requestCode}`,
+    `${freq.requestedLabelTh} · สิทธิ์: ${policy} · ${adminNote}`,
+    freq.eventId
+  );
+  return okSnapshot(res, user.id);
+});
+
+/* ==================== DEV RESET TO INITIAL TEST SEED ==================== */
+
+app.post('/api/dev/reset', (_req, res) => {
+  seedDatabase(true);
+  clearSessionCookie(res);
+  return okSnapshot(res, null);
+});
+
+const PORT = Number(process.env.API_PORT || 3001);
+app.listen(PORT, '127.0.0.1', () => {
+  console.log(`[RunEvent API] SQLite server listening on http://127.0.0.1:${PORT} (DB: ${DB_FILE_PATH})`);
+});

@@ -16,6 +16,7 @@ import {
   IconLock,
 } from './Icons';
 
+import { tx } from '../i18n';
 export const EventStatusBadge: React.FC<{ status: EventStatus }> = ({
   status,
 }) => {
@@ -62,8 +63,8 @@ export const EventStatusBadge: React.FC<{ status: EventStatus }> = ({
   const item = map[status];
   return (
     <span className={`status-pill ${item.tone}`}>
-      {item.icon}
-      <span>{item.label}</span>
+      {tx(item.icon)}
+      <span>{tx(item.label)}</span>
     </span>
   );
 };
@@ -99,8 +100,8 @@ export const RegStatusBadge: React.FC<{ status: RegistrationStatus }> = ({
   const item = map[status];
   return (
     <span className={`status-pill ${item.tone}`}>
-      {item.icon}
-      <span>{item.label}</span>
+      {tx(item.icon)}
+      <span>{tx(item.label)}</span>
     </span>
   );
 };
@@ -136,8 +137,8 @@ export const PaymentStatusBadge: React.FC<{ status: PaymentStatus }> = ({
   const item = map[status];
   return (
     <span className={`status-pill ${item.tone}`}>
-      {item.icon}
-      <span>{item.label}</span>
+      {tx(item.icon)}
+      <span>{tx(item.label)}</span>
     </span>
   );
 };
@@ -146,7 +147,7 @@ export const RefundStatusBadge: React.FC<{ status: RefundStatus }> = ({
   status,
 }) => {
   if (status === 'none') {
-    return <span className="muted-inline">ไม่มีขอคืน</span>;
+    return <span className="muted-inline">{tx("ไม่มีขอคืน")}</span>;
   }
   const map: Record<
     Exclude<RefundStatus, 'none'>,
@@ -181,8 +182,8 @@ export const RefundStatusBadge: React.FC<{ status: RefundStatus }> = ({
   const item = map[status];
   return (
     <span className={`status-pill ${item.tone}`}>
-      {item.icon}
-      <span>{item.label}</span>
+      {tx(item.icon)}
+      <span>{tx(item.label)}</span>
     </span>
   );
 };
@@ -218,8 +219,8 @@ export const FulfillmentStatusBadge: React.FC<{
   const item = map[status];
   return (
     <span className={`status-pill ${item.tone}`}>
-      {item.icon}
-      <span>{item.label}</span>
+      {tx(item.icon)}
+      <span>{tx(item.label)}</span>
     </span>
   );
 };
@@ -255,8 +256,8 @@ export const PayoutStatusBadge: React.FC<{ status: PayoutStatus }> = ({
   const item = map[status];
   return (
     <span className={`status-pill ${item.tone}`}>
-      {item.icon}
-      <span>{item.label}</span>
+      {tx(item.icon)}
+      <span>{tx(item.label)}</span>
     </span>
   );
 };

@@ -1,4 +1,5 @@
 import { CustomRegistrationField } from '../types';
+import { tx, txf } from '../i18n';
 
 export function validateQuotaUpdate(
     nextMaxQuota: number,
@@ -8,13 +9,18 @@ export function validateQuotaUpdate(
     const minAllowed = registeredCount + reservedCount;
 
     if (!Number.isInteger(nextMaxQuota) || nextMaxQuota < 1) {
-        return { valid: false, message: 'จำนวนรับสมัครต้องเป็นจำนวนเต็มบวก', minAllowed };
+        return { valid: false, message: tx('จำนวนรับสมัครต้องเป็นจำนวนเต็มบวก'), minAllowed };
     }
 
     if (nextMaxQuota < minAllowed) {
         return {
             valid: false,
-            message: `ปรับลดต่ำกว่า ${minAllowed} ไม่ได้ (สมัครแล้ว ${registeredCount} + กันโควตาอยู่ ${reservedCount})`,
+            message: txf(
+                'ปรับลดต่ำกว่า {0} ไม่ได้ (สมัครแล้ว {1} + กันโควตาอยู่ {2})',
+                minAllowed,
+                registeredCount,
+                reservedCount
+            ),
             minAllowed,
         };
     }

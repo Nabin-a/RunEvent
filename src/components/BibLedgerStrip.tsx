@@ -3,6 +3,7 @@ import { TimeWindowFilter } from '../types';
 import { formatThb, ScopedLedgerMetrics } from '../utils/pricing';
 import { IconArrowRight, IconBag } from './Icons';
 
+import { tx, txf } from '../i18n';
 interface BibLedgerStripProps {
   scopeTitle: string;
   scopeCode: string;
@@ -47,15 +48,15 @@ export const BibLedgerStrip: React.FC<BibLedgerStripProps> = ({
   return (
     <section
       className="summary-ledger-strip"
-      aria-label="สรุปที่นั่งผู้สมัครและสมการยอดเงินที่ตรวจสอบที่มาได้"
+      aria-label={tx("สรุปที่นั่งผู้สมัครและสมการยอดเงินที่ตรวจสอบที่มาได้")}
     >
       <div className="summary-strip-head">
         <div className="summary-strip-title">
-          <span className="mono-code">{scopeCode}</span>
-          <strong>{scopeTitle}</strong>
+          <span className="mono-code">{tx(scopeCode)}</span>
+          <strong>{tx(scopeTitle)}</strong>
         </div>
         <span className="time-basis-pill">
-          ช่วงเวลาคำนวณเงิน: {windowLabel[timeWindow]} (คลิกตัวเลขเพื่อดูรายการต้นทาง)
+          {tx("ช่วงเวลาคำนวณเงิน: ")} {tx(windowLabel[timeWindow])} {tx(" (คลิกตัวเลขเพื่อดูรายการต้นทาง)")}
         </span>
       </div>
 
@@ -63,16 +64,16 @@ export const BibLedgerStrip: React.FC<BibLedgerStripProps> = ({
         {/* LEFT: QUOTA EXPLAINED CLEARLY */}
         <div className="summary-quota-col">
           <div className="summary-col-header">
-            <h3>สัดส่วนที่นั่งผู้เข้าแข่งขัน (โควตา)</h3>
+            <h3>{tx("สัดส่วนที่นั่งผู้เข้าแข่งขัน (โควตา)")}</h3>
             <span className="mono-num muted-inline">
-              เพดานรับรวม {metrics.totalEventQuota.toLocaleString('th-TH')} คน
+              {tx("เพดานรับรวม ")} {metrics.totalEventQuota.toLocaleString('th-TH')} {tx(" คน")}
             </span>
           </div>
 
           <div
             className="quota-track-bar"
             role="img"
-            aria-label={`ยืนยันสิทธิ์แล้ว ${metrics.confirmedParticipants} คน, กันที่นั่งรอชำระ ${metrics.pendingPaymentReservations} คน, ว่าง ${metrics.openEventQuota} ที่นั่ง`}
+            aria-label={txf("ยืนยันสิทธิ์แล้ว {0} คน, กันที่นั่งรอชำระ {1} คน, ว่าง {2} ที่นั่ง", metrics.confirmedParticipants, metrics.pendingPaymentReservations, metrics.openEventQuota)}
           >
             <div
               className="quota-seg-confirmed"
@@ -104,7 +105,7 @@ export const BibLedgerStrip: React.FC<BibLedgerStripProps> = ({
                 {metrics.confirmedParticipants.toLocaleString('th-TH')}
               </span>
               <span className="metric-label">
-                ยืนยันสิทธิ์แล้ว <IconArrowRight size={12} />
+                {tx("ยืนยันสิทธิ์แล้ว ")} <IconArrowRight size={12} />
               </span>
             </button>
 
@@ -117,7 +118,7 @@ export const BibLedgerStrip: React.FC<BibLedgerStripProps> = ({
                 {metrics.pendingPaymentReservations.toLocaleString('th-TH')}
               </span>
               <span className="metric-label">
-                กันที่นั่งรอจ่าย <IconArrowRight size={12} />
+                {tx("กันที่นั่งรอจ่าย ")} <IconArrowRight size={12} />
               </span>
             </button>
 
@@ -125,7 +126,7 @@ export const BibLedgerStrip: React.FC<BibLedgerStripProps> = ({
               <span className="metric-num mono-num">
                 {metrics.openEventQuota.toLocaleString('th-TH')}
               </span>
-              <span className="metric-label">ที่นั่งว่างคงเหลือ</span>
+              <span className="metric-label">{tx("ที่นั่งว่างคงเหลือ")}</span>
             </div>
           </div>
         </div>
@@ -133,8 +134,8 @@ export const BibLedgerStrip: React.FC<BibLedgerStripProps> = ({
         {/* RIGHT: FINANCIAL EQUATION EXPLAINED CLEARLY */}
         <div className="summary-finance-col">
           <div className="summary-col-header">
-            <h3>สมการยอดเงินค่าสมัครและยอดโอนให้ผู้จัด</h3>
-            <span className="muted-inline">สกุลเงิน THB (แยกจากยอดขายสินค้าหน้าร้าน)</span>
+            <h3>{tx("สมการยอดเงินค่าสมัครและยอดโอนให้ผู้จัด")}</h3>
+            <span className="muted-inline">{tx("สกุลเงิน THB (แยกจากยอดขายสินค้าหน้าร้าน)")}</span>
           </div>
 
           {canViewFinance ? (
@@ -149,7 +150,7 @@ export const BibLedgerStrip: React.FC<BibLedgerStripProps> = ({
                     {formatThb(metrics.grossPaidSatang, true)}
                   </span>
                   <span className="ledger-term-lbl">
-                    รับชำระค่าสมัคร <IconArrowRight size={12} />
+                    {tx("รับชำระค่าสมัคร ")} <IconArrowRight size={12} />
                   </span>
                 </button>
 
@@ -166,7 +167,7 @@ export const BibLedgerStrip: React.FC<BibLedgerStripProps> = ({
                     {formatThb(metrics.succeededRefundSatang, true)}
                   </span>
                   <span className="ledger-term-lbl">
-                    คืนเงินสำเร็จ <IconArrowRight size={12} />
+                    {tx("คืนเงินสำเร็จ ")} <IconArrowRight size={12} />
                   </span>
                 </button>
 
@@ -183,7 +184,7 @@ export const BibLedgerStrip: React.FC<BibLedgerStripProps> = ({
                     {formatThb(metrics.platformRevenueSatang, true)}
                   </span>
                   <span className="ledger-term-lbl">
-                    ค่าบริการระบบ <IconArrowRight size={12} />
+                    {tx("ค่าบริการระบบ ")} <IconArrowRight size={12} />
                   </span>
                 </button>
 
@@ -200,20 +201,20 @@ export const BibLedgerStrip: React.FC<BibLedgerStripProps> = ({
                     {formatThb(metrics.netOrganizerPayoutSatang, true)}
                   </span>
                   <span className="ledger-term-lbl">
-                    ยอดโอนให้ผู้จัดสุทธิ <IconArrowRight size={12} />
+                    {tx("ยอดโอนให้ผู้จัดสุทธิ ")} <IconArrowRight size={12} />
                   </span>
                 </button>
               </div>
 
               <div className="merch-separate-bar">
                 <span className="muted-inline">
-                  <IconBag size={14} /> ยอดขายสินค้าหน้าร้านแยกบัญชี (
-                  <span className="mono-num">{metrics.merchOrderCount}</span>{' '}
-                  ออเดอร์): ค่าสินค้า{' '}
+                  <IconBag size={14} /> {tx(" ยอดขายสินค้าหน้าร้านแยกบัญชี (")}
+                  <span className="mono-num">{tx(metrics.merchOrderCount)}</span>{' '}
+                  {tx("ออเดอร์): ค่าสินค้า")}{' '}
                   <strong className="mono-num">
                     {formatThb(metrics.merchGrossSalesSatang, true)}
                   </strong>{' '}
-                  + ค่าจัดส่ง{' '}
+                  {tx("+ ค่าจัดส่ง")}{' '}
                   <strong className="mono-num">
                     {formatThb(metrics.merchShippingSatang, true)}
                   </strong>
@@ -223,13 +224,13 @@ export const BibLedgerStrip: React.FC<BibLedgerStripProps> = ({
                   className="btn-ghost-sm"
                   onClick={() => onDrillDown('merch')}
                 >
-                  ดูออเดอร์สินค้า
+                  {tx("ดูออเดอร์สินค้า")}
                 </button>
               </div>
             </>
           ) : (
             <div className="finance-restricted-note">
-              บทบาทปัจจุบันไม่มีสิทธิ์ดูตัวเลขการเงินและยอดโอนขององค์กร (เปิดให้เฉพาะเจ้าขององค์กรและฝ่ายการเงิน)
+              {tx("บทบาทปัจจุบันไม่มีสิทธิ์ดูตัวเลขการเงินและยอดโอนขององค์กร (เปิดให้เฉพาะเจ้าขององค์กรและฝ่ายการเงิน)")}
             </div>
           )}
         </div>

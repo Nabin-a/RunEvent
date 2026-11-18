@@ -1,23 +1,30 @@
 {
-  "name": "runevent-local-mockup",
+  "name": "runevent-local-system",
   "private": true,
-  "version": "0.1.0",
-  "description": "RunEvent interactive local mockup — Public Event Directory, Multi-Tenant Demo Login, and Organizer Dashboard (synthetic demo data only)",
+  "version": "0.2.0",
+  "description": "RunEvent local full-stack system — Vite + React + TypeScript frontend with Node.js + Express + SQLite backend (seeded test users & sandbox OAuth/payment)",
   "type": "module",
   "scripts": {
-    "dev": "vite --port 5173",
+    "dev:api": "tsx server/index.ts",
+    "dev:web": "vite --port 5173",
+    "dev": "concurrently -k -n api,web \"npm run dev:api\" \"npm run dev:web\"",
     "build": "tsc -b && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview --port 4173"
   },
   "dependencies": {
+    "express": "^5.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.0",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.2",
     "typescript": "~5.7.3",
     "vite": "^6.1.0"
   }

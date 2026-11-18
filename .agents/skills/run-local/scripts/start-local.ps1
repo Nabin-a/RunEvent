@@ -1,5 +1,6 @@
 param(
   [int]$Port = 5173,
+  [int]$ApiPort = 3001,
   [switch]$CheckOnly
 )
 
@@ -12,7 +13,7 @@ Set-Location $RepoRoot
 Write-Host "==> [RunEvent Local] Project root: $RepoRoot" -ForegroundColor Cyan
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-  Write-Error "Node.js is not installed or not in PATH. Please install Node.js LTS (>=18) first."
+  Write-Error "Node.js is not installed or not in PATH. Please install Node.js (>=22.5 with node:sqlite) first."
   exit 1
 }
 
@@ -42,5 +43,7 @@ if ($CheckOnly) {
   exit $LASTEXITCODE
 }
 
-Write-Host "==> [RunEvent Local] Starting Vite dev server (preferred port: $Port)..." -ForegroundColor Cyan
-& npx vite --port $Port
+$env:API_PORT = "$ApiPort"
+$env:VITE_API_PROXY_TARGET = "http://127.0.0.1:$ApiPort"
+Write-Host "==> [RunEvent Local] Starting SQLite API (:$ApiPort) + Vite Web (:$Port)..." -ForegroundColor Cyan
+& npx concurrently -k -n api,web "npx tsx server/index.ts" "npx vite --port $Port"

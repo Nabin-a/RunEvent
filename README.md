@@ -4,17 +4,22 @@
 
 ## สถานะโปรเจกต์
 
-**มีต้นแบบโต้ตอบบนเครื่องผู้ใช้แล้ว (Interactive Local Mockup v2 — อัปเดตเมื่อ 17 พฤศจิกายน 2026)**
+**ระบบทำงานจริงบนเครื่องผู้ใช้แล้ว (Local Full-Stack System v0.2 — อัปเดตเมื่อ 18 พฤศจิกายน 2026)**
 
-- **สิ่งที่พัฒนาแล้วในระดับต้นแบบฝั่งหน้าบ้าน (Client-Side Mockup):**
-  - เว็บต้นแบบ `Vite + React + TypeScript` รันบน Local ครอบคลุมทั้งฝั่งลูกค้าทั่วไป/นักวิ่ง ระบบบัญชีจำลอง และฝั่งผู้จัดงาน:
-    1. **หน้าค้นหางานวิ่งและร้านค้าสไตล์ Modern Minimal (`CustomerPortalView`):** ค้นหาและกรองงานวิ่ง ดูราคาสุทธิตามนโยบายค่าบริการ (`runner_pays` / `organizer_absorbs` / `split_50_50`), สมัครวิ่งเป็นลำดับ 3 ขั้นตอนพร้อมเลือกซื้อของที่ระลึกเพิ่ม, **ร้านค้าเฉพาะงานสำหรับลูกค้าทั่วไป** ซื้อเสื้อ/เหรียญหรือพรีออเดอร์โดยไม่เกิดใบสมัครวิ่ง, หน้าขอใบเสนอราคาสั่งผลิตเสื้อ/เหรียญสำหรับชมรมหรือบริษัทที่ไม่มีงานวิ่ง, ดูอัลบั้มภาพหลังงาน และหน้า “ตั๋ววิ่งและคำสั่งซื้อของฉัน” ที่แยกใบสมัครวิ่งออกจากคำสั่งซื้อสินค้า
-    2. **ระบบเข้าสู่ระบบจำลอง Email / Google / LINE, URL Routing รายหน้า และเมนูตามสิทธิ์จริง (`AuthViews` + `App`):** เริ่มต้นแบบผู้เยี่ยมชมทั่วไป (`Guest`), ผูก URL จริง (`/`, `/events/:code`, `/events/:code/shop`, `/custom-production`, `/my-orders`, `/login`, `/account/security`, `/organizer`), ซ่อนปุ่ม `ระบบผู้จัดงาน` บนแถบบนเมื่อเป็นลูกค้าทั่วไปที่ไม่มี `OrganizationMembership`, กั้นหน้า `/organizer` ด้วย Route Guard (`403` สำหรับลูกค้าทั่วไป) และย้ายตัวสลับบัญชีสาธิต 6 บทบาทไปไว้ในปุ่มลอยพับเก็บได้มุมขวาล่าง (`Dev / Demo`) เพื่อไม่ปะปนกับหน้าจอผู้ใช้จริง
-    3. **Organizer Dashboard ที่อธิบายหน้าที่ทุกส่วนชัดเจน (`OrganizerDashboardView` + `BibLedgerStrip`):** แยกบริบทระดับองค์กรกับระดับงานวิ่ง พร้อมคำอธิบายทุกหน้าว่าคืออะไรและใช้ทำอะไร, คิวงานด่วน, แถบสถานะความพร้อม 4 ช่วงของงาน, แถบสมการโควตาและยอดนำส่งสุทธิ (แยกยอดขายสินค้าร้านค้าต่างหาก), สร้างงานแบบร่างและทำสำเนางานโดยไม่คัดลอก PII, จัดการร้านค้าเฉพาะงานและคำนวณยอดสั่งผลิตเสื้อไม่ซ้ำ (`สิทธิ์แพ็กเกจ + ร้านค้า + สำรอง − สต็อกเดิม`), จัดการผู้สมัคร/คืนเงิน และจุดเช็กอินบนมือถือที่แยกการรับ BIB นักวิ่งออกจากการส่งมอบสินค้าร้านค้า (รับบางส่วน/รับครบ)
+- **สิ่งที่พัฒนาและทำงานจริงบน Local แล้ว:**
+  - **Backend & Database จริงบนเครื่อง (`server/`):** `Node.js + Express + SQLite` (`node:sqlite` เก็บไฟล์ที่ `data/runevent.sqlite` สร้างและ Seed ข้อมูลผู้ใช้ทดสอบชุดเดิมอัตโนมัติเมื่อรันครั้งแรก) รองรับการแฮชรหัสผ่านด้วย `scrypt`, เซสชัน `HttpOnly` Cookie (`runevent_sid`), การตรวจสิทธิ์ RBAC ฝั่งเซิร์ฟเวอร์ (`401`/`403`), และ Atomic SQLite Transaction ป้องกันขายเกินโควตา ป้องกันเลข BIB ซ้ำในงานเดียวกัน และป้องกันรับอุปกรณ์ซ้ำ
+  - **Frontend (`src/`):** `Vite + React + TypeScript` รองรับการสลับภาษา **TH / EN** ทั้งระบบ (`src/i18n/`), เมนูซ้ายแบบ **Sticky Sidebar** ทั้งฝั่งผู้จัดและ Platform Owner, หน้าสมัครงานวิ่ง 6 ขั้นตอนพร้อมภาพปก/ภาพประกอบของงาน (`EventMediaManager`) และครอบคลุมทุกบทบาท:
+    1. **หน้าค้นหางานวิ่ง หน้ารายละเอียดงานแบบ 2 คอลัมน์ + กล่องสมัคร Sticky และร้านค้า (`CustomerPortalView` + `PublicEventView`):** ค้นหาและกรองงานวิ่ง, เปิดดูหน้ารายละเอียดงานวิ่งครบทุกหมวด (เกี่ยวกับงาน, ระยะและราคา, Race Pack & ตารางไซส์เสื้อ `XS`–`2XL`, กำหนดการ, สถานที่/กติกา/ผลแข่งขัน) คู่กับ **กล่องสรุปและปุ่มสมัครแบบ Sticky ด้านขวา**, สมัครวิ่งด้วย **Dynamic Runner Registration Wizard** ที่แสดงขั้นตอนและฟิลด์ตาม `Published Form Version` + `Conditional Logic`, ร้านค้าเฉพาะงานสำหรับลูกค้าทั่วไป และหน้าขอใบเสนอราคาสั่งผลิตเสื้อ/เหรียญสำหรับชมรมหรือบริษัท
+    2. **ระบบเข้าสู่ระบบจำลอง Email / Google / LINE, URL Routing รายหน้า และเมนูตามสิทธิ์จริง (`AuthViews` + `App`):** เริ่มต้นแบบผู้เยี่ยมชมทั่วไป (`Guest`), ผูก URL จริง (`/`, `/events/:code`, `/events/:code/shop`, `/custom-production`, `/my-orders`, `/login`, `/account/security`, `/organizer`, `/platform-admin`), กั้นหน้า `/organizer` และ `/platform-admin` ด้วย Route Guard (`403` สำหรับบัญชีที่ไม่มีสิทธิ์) และมีแถบ `Dev / Demo` พับเก็บได้มุมขวาล่าง
+    3. **Organizer Dashboard แยก `Organization Overview` กับ `Event Dashboard` พร้อมชุดกราฟวิเคราะห์ P1–P3 ครบ 10 Components (`OrganizerDashboardView` + `OrganizerAnalyticsCharts` + `BibLedgerStrip`):**
+       - **Organization Overview (`ดูภาพรวมทุกงานขององค์กร`)**: แสดงคิวงานด่วน, สมการโควตาและยอดโอนรวมทุกงาน, และกราฟ P1–P3 (`KPI Cards`, `Registration Trend`, `Registration Status`, `Revenue Trend`, `Upcoming Events`, `Distance Breakdown`, `Event Performance`, `Capacity`, `Demographics`, `Payment Method`)
+       - **Event Dashboard (`เจาะลึกงานวิ่งแต่ละงาน`)**: เจาะลึกยอดสมัคร รายได้ โควตารายระยะ รายชื่อนักวิ่งพร้อมป้ายตรวจความครบถ้วนข้อมูล & BIB, การชำระเงิน/คืนเงิน, จุด Check-in สแกน QR หน้างาน และการตั้งค่าฟอร์มรับสมัครที่ให้ผู้จัดเลือก Template ปรับฟิลด์ตามสิทธิ์ (`LOCKED` / `CONFIGURABLE` / `CUSTOMIZABLE`) และ **ส่งคำขอ (Request) เพิ่มช่องกรอกข้อมูลไปยัง Platform Owner**
+    4. **Platform Owner Console & Centralized Registration Form Builder (`PlatformAdminView` + `RegistrationFormBuilderAdmin`):** ศูนย์อนุมัติองค์กรผู้จัด (KYC/บัญชีรับเงิน), อนุมัติเผยแพร่/ระงับงานวิ่ง, ออกใบเสนอราคาผลิต, จัดการรอบโอนเงิน/คืนเงิน และ **Registration Form Builder 7 เมนูย่อย** (อนุมัติคำขอฟิลด์จากผู้จัด, จัดการ Step การสมัคร, Global Field Library 15 ชนิด Input, Field Configuration & Live Preview, Conditional Logic Builder, Form Templates 5 แม่แบบ และ Form Version Management)
   - **Workspace Skill สำหรับรันบน Local:** `.agents/skills/run-local/SKILL.md` พร้อมสคริปต์ช่วยรันและตรวจ build
-- **ข้อจำกัดสำคัญของต้นแบบ (Persistence & Truthfulness):**
-  - ข้อมูลทั้งหมดเป็น **ข้อมูลสาธิตสมมติ (Synthetic Demo Data)** เก็บสถานะไว้ในหน่วยความจำและ `localStorage` ของเบราว์เซอร์ (`runevent_v2_mock_system`) เท่านั้น
-  - **ยังไม่มีเซิร์ฟเวอร์ Backend จริง, ยังไม่มีฐานข้อมูลจริง, ยังไม่ได้เชื่อมต่อ Google/LINE OAuth จริง, ยังไม่มีการส่งอีเมลจริง, ยังไม่มีการตรวจสิทธิ์ฝั่งเซิร์ฟเวอร์ และไม่มีการรับชำระเงินจริง** อัตราค่าบริการ (`5% + ฿15`) และต้นทุนผลิตประเมินในต้นแบบเป็นตัวเลขสมมติเพื่อสาธิตกลไกการคำนวณเท่านั้น
+- **ขอบเขตและความโปร่งใสของระบบปัจจุบัน (Persistence & Sandbox Boundaries):**
+  - ข้อมูลธุรกรรม บัญชีผู้ใช้ งานวิ่ง ใบสมัคร คำสั่งซื้อ รอบโอน และ Audit Log ทั้งหมด **บันทึกลงฐานข้อมูล SQLite จริง (`data/runevent.sqlite`) ผ่าน REST API `/api/*`** (ไม่ได้เก็บใน `localStorage` แล้ว ยกเว้นค่าภาษา `TH/EN` และร่างฟอร์มผู้จัดชั่วคราวก่อนกดส่ง)
+  - บัญชีผู้ใช้ทดสอบเริ่มต้นยังคงเป็นชุดข้อมูลสมมติชุดเดิม (`USR-001` รหัสผ่าน `platform2026`, และ `USR-901`, `USR-101`..`USR-104` รหัสผ่าน `demo1234`) สามารถกดปุ่มรีเซ็ตใน `Dev / Demo` เพื่อคืนค่าฐานข้อมูล SQLite กลับสู่จุดเริ่มต้นได้ตลอดเวลา
+  - **สิ่งที่ยังเป็นโหมดจำลอง (Local Sandbox):** การเข้าสู่ระบบผ่าน Google / LINE OAuth, การส่งอีเมลออกภายนอก และการตัดบัตร/สแกน QR PromptPay จริงยังไม่ได้ต่อผู้ให้บริการภายนอก (ยังไม่มีการตัดเงินจริง และยังไม่ได้ Deploy ขึ้น Production)
 
 ## วิธีรันโปรเจกต์ต้นแบบบน Local
 
@@ -47,9 +52,9 @@ npm run build
   sh ./.agents/skills/run-local/scripts/start-local.sh
   ```
 
-## ฟีเจอร์บัญชีและการลงทะเบียนครบวงจร — แผนที่อัปเดต 17 พฤศจิกายน 2026
+## ฟีเจอร์บัญชีและการลงทะเบียนครบวงจร — อัปเดต 18 พฤศจิกายน 2026
 
-ผู้ใช้ยืนยันให้รองรับ **อีเมล + รหัสผ่าน, Google และ LINE** ภายใต้บัญชี RunEvent เดียวกัน พร้อมขยายข้อกำหนดเป็น **Complete Registration System แยกประสบการณ์ Runner และ Organizer** (บันทึกข้อกำหนดเพิ่มเติมลงเอกสารแล้วเมื่อ 17 พฤศจิกายน 2026 โดย **ยังไม่ได้ลงโค้ดส่วนขยาย Wizard ลงทะเบียนใหม่นี้** และต้นแบบปัจจุบันยังเป็นการจำลองฝั่งหน้าบ้านใน `localStorage` เท่านั้น)
+พัฒนาลงในต้นแบบ Interactive Local Mockup (`src/components/AuthViews.tsx` และ `src/components/PlatformAdminView.tsx`) ครอบคลุม **อีเมล + รหัสผ่าน, Google และ LINE** ภายใต้บัญชี RunEvent เดียวกัน พร้อม **Complete Registration System แยกประสบการณ์ Runner และ Organizer** (จำลองการทำงานฝั่งหน้าบ้านใน `localStorage` ยังไม่ได้เชื่อม OAuth หรือเซิร์ฟเวอร์จริง):
 
 - **หน้าเลือกประเภทบัญชี (`Join the Running Community`):** แยกการ์ดเลือก `Register as Runner` และ `Register as Organizer` สลับหรือเพิ่มบทบาทได้โดยไม่เสียข้อมูลบัญชีเดิม
 - **Runner Registration (Wizard 2 ขั้นตอน):** ขั้นที่ 1 ข้อมูลบัญชี + Social/Email (พร้อมตัววัดความแข็งแรงรหัสผ่าน) และขั้นที่ 2 โปรไฟล์นักวิ่ง ผู้ติดต่อฉุกเฉิน และความสนใจระยะวิ่งแบบข้ามฟิลด์ไม่บังคับได้ (**ไม่นำไซส์เสื้อหรือระยะแข่งเฉพาะงานมาปะปนกับการสมัครบัญชี**) จบด้วยหน้าต้อนรับและแถบความสมบูรณ์โปรไฟล์เข้าสู่ Runner Dashboard
@@ -89,13 +94,17 @@ RunEvent/
 │   │   ├── BibLedgerStrip.tsx
 │   │   ├── CustomerPortalView.tsx
 │   │   ├── Icons.tsx
+│   │   ├── OrganizerAnalyticsCharts.tsx
 │   │   ├── OrganizerDashboardView.tsx
 │   │   ├── PlatformAdminView.tsx
 │   │   ├── PublicEventView.tsx
+│   │   ├── RegistrationFormBuilderAdmin.tsx
 │   │   └── StatusBadges.tsx
 │   ├── data/
+│   │   ├── formBuilderData.ts
 │   │   └── mockData.ts
 │   ├── utils/
+│   │   ├── eventConfig.ts
 │   │   └── pricing.ts
 │   ├── App.tsx
 │   ├── main.tsx

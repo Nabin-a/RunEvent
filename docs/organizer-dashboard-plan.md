@@ -217,4 +217,12 @@
 2. บทบาทที่ผู้จัดใช้งานบ่อยที่สุด และต้องรับอุปกรณ์ผ่านมือถือในรุ่นแรกหรือไม่
 3. กติกาเผยแพร่ ค่าบริการ คืนเงิน และนำส่งเงินก่อนออกแบบหน้าการเงินละเอียด
 
-ขั้นต่อไปที่เสนอ: ทบทวนโครงเมนูและทำ wireframe ความละเอียดต่ำของชุดแรก โดยยังไม่เริ่มเขียนโค้ด
+## อัปเดตสถานะการพัฒนาต้นแบบ (18 พฤศจิกายน 2026)
+
+- **แยก 2 ระดับของ Dashboard ผู้จัดงานชัดเจน (`OrganizerDashboardView.tsx` + `OrganizerAnalyticsCharts.tsx`):**
+  1. **Organization Overview (`ดูภาพรวมทุกงานขององค์กร`)**: แสดงคิวงานด่วน (`Action Queue`), แถบสมการโควตาและเงินรวมทุกงาน (`BibLedgerStrip`), และชุดกราฟวิเคราะห์ครบ 10 Components แยกตาม Priority (`P1 KPI Cards`, `P1 Registration Trend`, `P1 Registration Status`, `P1 Revenue Trend`, `P1 Upcoming Events`, `P2 Distance Breakdown`, `P2 Event Performance`, `P2 Capacity`, `P3 Demographics`, `P3 Payment Method`) พร้อมปุ่มเข้าสู่ Event Dashboard รายงาน
+  2. **Event Dashboard (`เจาะลึกงานวิ่งแต่ละงาน`)**: มีแถบสลับหมวดเจาะลึก 6 ด้าน (`ภาพรวม & กราฟเจาะลึก`, `โควตา & คำถามสมัคร`, `นักวิ่ง`, `การชำระเงิน & คืนเงิน`, `Check-in & จ่าย BIB`, `ร้านค้าของที่ระลึก`) พร้อมแผง `Event Deep-Dive` แสดงหลอดความคืบหน้า Check-in หน้างานคู่กับสถานะการชำระเงินของงานนั้น
+- **การตั้งค่าฟอร์มรับสมัครและส่งคำขอหา Platform Owner (`Organizer Form Customizer & Field Request`):**
+  - ย้ายการสร้าง/แก้ไขโครงสร้างฟิลด์และลำดับขั้นตอนการสมัคร (`Steps`) ไปที่ศูนย์ควบคุมของ **Platform Owner (`Registration Form Builder` ใน `/platform-admin`)**
+  - ผู้จัดงานเลือกแม่แบบมาตรฐาน (`Fun Run`, `Mini Marathon`, `Half Marathon`, `Marathon / Trail`, `Custom Template`), ปรับแต่งเฉพาะฟิลด์ที่ได้รับสิทธิ์ (`LOCKED` / `CONFIGURABLE` / `CUSTOMIZABLE`) และ **ส่งคำขอ (Request) ผ่านแพลตฟอร์ม** เมื่อต้องการให้นักวิ่งกรอกข้อมูลเพิ่มเติม (รายละเอียดใน [docs/product-blueprint.md ข้อ 17](product-blueprint.md))
+

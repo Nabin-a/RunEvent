@@ -431,3 +431,37 @@ export const EventCoverArtwork: React.FC<{
     </svg>
   );
 };
+
+export const IconGlobe: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3Z" />
+  </svg>
+);
+
+/**
+ * รูปปกงานวิ่ง: ใช้รูปที่ผู้จัดอัปโหลด/ระบุ URL (coverImageUrl) ก่อน
+ * ถ้าไม่มีหรือโหลดไม่ได้ จะ fallback ไปเป็นปก SVG ตาม coverMotif ของงาน
+ */
+export const EventCoverMedia: React.FC<{
+  event: Pick<RaceEvent, 'coverMotif' | 'coverImageUrl' | 'coverImageAlt' | 'titleTh'>;
+  className?: string;
+  imgClassName?: string;
+}> = ({ event, className, imgClassName }) => {
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => setFailed(false), [event.coverImageUrl]);
+
+  if (event.coverImageUrl && !failed) {
+    return (
+      <img
+        src={event.coverImageUrl}
+        alt={event.coverImageAlt || event.titleTh}
+        className={imgClassName ?? className}
+        loading="lazy"
+        decoding="async"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return <EventCoverArtwork motif={event.coverMotif} className={className} />;
+};

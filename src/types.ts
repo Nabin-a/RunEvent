@@ -13,7 +13,44 @@ export type RegistrationStatus =
   | 'cancelled'
   | 'expired';
 
-export type CustomFieldType = 'text' | 'select' | 'checkbox'
+export type CustomFieldType =
+  | 'text'
+  | 'textarea'
+  | 'email'
+  | 'phone'
+  | 'number'
+  | 'date'
+  | 'select'
+  | 'radio'
+  | 'checkbox'
+  | 'multiselect'
+  | 'file'
+  | 'image_choice'
+  | 'address'
+  | 'size_selector'
+  | 'distance_selector';
+
+export type FormFieldPolicy = 'LOCKED' | 'CONFIGURABLE' | 'CUSTOMIZABLE';
+
+export interface ConditionalRule {
+  id: string;
+  sourceFieldKey: string;
+  operator: 'equals' | 'not_equals' | 'contains';
+  value: string;
+  targetType: 'field' | 'step';
+  targetKey: string;
+}
+
+export interface RegistrationStepDef {
+  id: string;
+  key: string;
+  titleTh: string;
+  descriptionTh: string;
+  order: number;
+  enabled: boolean;
+  isSystemLocked: boolean;
+  visibilityCondition?: ConditionalRule;
+}
 
 export type PaymentStatus = 'pending' | 'succeeded' | 'failed' | 'expired';
 
@@ -72,6 +109,54 @@ export interface OrganizationMembership {
   assignedEventIds?: string[];
 }
 
+export interface RunnerProfileData {
+  phone?: string;
+  dateOfBirth?: string;
+  gender?: 'ชาย' | 'หญิง' | 'ไม่ระบุ';
+  nationality?: string;
+  runningExperience?: 'Beginner' | 'Intermediate' | 'Advanced';
+  emergencyContactName?: string;
+  emergencyContactRelation?: string;
+  emergencyContactPhone?: string;
+  preferredDistances?: string[];
+}
+
+export type OrganizationType =
+  | 'Private Company'
+  | 'Government Organization'
+  | 'Sports Club / Association'
+  | 'Independent Organizer'
+  | 'Non-Profit Organization'
+  | 'Other';
+
+export type OrganizerVerificationWorkflowStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'UNDER_REVIEW'
+  | 'MORE_INFORMATION_REQUIRED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'SUSPENDED';
+
+export interface OrganizerDocumentItem {
+  id: string;
+  category: 'identity' | 'organization' | 'authorization';
+  docTypeLabel: string;
+  fileName: string;
+  fileSizeKb: number;
+  mimeType: 'application/pdf' | 'image/jpeg' | 'image/png';
+  expiryDate?: string;
+  privateStorageKey: string;
+}
+
+export interface VerificationHistoryEntry {
+  id: string;
+  status: OrganizerVerificationWorkflowStatus;
+  actorName: string;
+  note: string;
+  timestamp: string;
+}
+
 export interface UserAccount {
   id: string;
   code: string;
@@ -84,6 +169,7 @@ export interface UserAccount {
   identities: LinkedAuthIdentity[];
   sessions: DeviceSession[];
   memberships: OrganizationMembership[];
+  runnerProfile?: RunnerProfileData;
   isPlatformAdmin?: boolean;
   demoRoleSummary: string;
   isDemoPreset: boolean;
@@ -120,6 +206,32 @@ export interface Organization {
   nameEn: string;
   province: string;
   verificationStatus: 'verified' | 'pending_review' | 'suspended';
+  workflowStatus?: OrganizerVerificationWorkflowStatus;
+  referenceNumber?: string;
+  orgType?: OrganizationType;
+  businessRegNumber?: string;
+  website?: string;
+  orgPhone?: string;
+  officeAddress?: {
+    address: string;
+    province: string;
+    district: string;
+    subdistrict: string;
+    postalCode: string;
+    country: string;
+  };
+  descriptionTh?: string;
+  previousEvents?: string;
+  facebookPage?: string;
+  mainContact?: {
+    name: string;
+    position: string;
+    phone: string;
+    email: string;
+  };
+  documents?: OrganizerDocumentItem[];
+  verificationHistory?: VerificationHistoryEntry[];
+  submittedAt?: string;
   payoutBankSummary: string;
   payoutReady: boolean;
   contactEmail: string;
@@ -162,11 +274,77 @@ export interface ReadinessCheck {
 
 export interface CustomRegistrationField {
   id: string;
+  fieldKey?: string;
   label: string;
+  descriptionTh?: string;
+  placeholderTh?: string;
   type: CustomFieldType;
+  stepKey?: string;
   required: boolean;
-  options?: string[];     // ใช้เมื่อ type เป็น 'select'
+  options?: string[];     // ใช้เมื่อ type เป็น 'select' / 'radio' / 'multiselect'
   isSensitive: boolean;   // ถ้าเป็น true จะซ่อนจากเจ้าหน้าที่รับอุปกรณ์หน้างาน
+  policy?: FormFieldPolicy;
+  defaultValue?: string;
+  minLength?: number;
+  maxLength?: number;
+  minValue?: number;
+  maxValue?: number;
+  allowedFileTypes?: string;
+  maxFileSizeMb?: number;
+  regexPattern?: string;
+  validationMessageTh?: string;
+  visibilityCondition?: ConditionalRule;
+}
+
+export interface GlobalFormFieldDef extends CustomRegistrationField {
+  fieldKey: string;
+  policy: FormFieldPolicy;
+  categoryTag: 'system' | 'running_standard' | 'custom_library';
+}
+
+export interface FormTemplate {
+  id: string;
+  code: string;
+  nameTh: string;
+  descriptionTh: string;
+  status: 'draft' | 'published';
+  versionLabel: string;
+  updatedAt: string;
+  steps: RegistrationStepDef[];
+  fieldIds: string[];
+  conditionalRules: ConditionalRule[];
+}
+
+export interface EventFormVersionRecord {
+  versionId: string;
+  versionLabel: string;
+  templateId: string;
+  status: 'draft' | 'published';
+  publishedAt: string;
+  changeSummary: string;
+  steps: RegistrationStepDef[];
+  fields: CustomRegistrationField[];
+}
+
+export interface OrganizerFieldRequest {
+  id: string;
+  requestCode: string;
+  organizationId: string;
+  eventId: string;
+  requestedByName: string;
+  requestedLabelTh: string;
+  requestedFieldKey: string;
+  inputType: CustomFieldType;
+  targetStepKey: string;
+  required: boolean;
+  isSensitive: boolean;
+  options?: string[];
+  conditionHint?: string;
+  reasonNote: string;
+  status: 'pending' | 'approved' | 'rejected';
+  adminNote?: string;
+  createdAt: string;
+  resolvedAt?: string;
 }
 
 export interface CategoryQuotaPatch {
@@ -281,6 +459,9 @@ export interface RaceEvent {
   titleEn: string;
   tagline: string;
   coverMotif: 'mountain' | 'coast' | 'heritage' | 'river' | 'trail';
+  coverImageUrl?: string;
+  coverImageAlt?: string;
+  galleryImageUrls?: string[];
   province: string;
   region: 'เหนือ' | 'กลางและกรุงเทพฯ' | 'อีสาน' | 'ใต้' | 'ตะวันออก';
   venue: string;
@@ -294,11 +475,28 @@ export interface RaceEvent {
   editDeadlineDate: string;
   rulesVersion: string;
   kitPickupWindow: string;
+  registrationPeriodLabel?: string;
+  overviewParagraphs?: string[];
+  racePackItems?: {
+    title: string;
+    detail: string;
+    scope: string;
+  }[];
+  scheduleItems?: {
+    timeLabel: string;
+    title: string;
+    detail: string;
+  }[];
   highlights: string[];
   categories: RaceCategory[];
   shirtStocks: ShirtStock[];
   products: EventProduct[];
   customFields?: CustomRegistrationField[];
+  activeTemplateId?: string;
+  publishedFormVersion?: string;
+  formSteps?: RegistrationStepDef[];
+  conditionalRules?: ConditionalRule[];
+  formVersionHistory?: EventFormVersionRecord[];
   readinessChecks: ReadinessCheck[];
   officialResultsUrl?: string;
   verifiedPhotoAlbums?: {
@@ -347,6 +545,10 @@ export interface RegistrationRecord {
   snapshotTotalChargedSatang: number;
   snapshotRefundedSatang: number;
   customAnswers?: Record<string, string | boolean>;
+  formVersionUsed?: string;
+  gender?: 'ชาย' | 'หญิง' | 'ไม่ระบุ';
+  age?: number;
+  paymentMethod?: 'qr_promptpay' | 'credit_card' | 'mobile_banking';
 }
 
 export interface PayoutBatch {

@@ -5,14 +5,18 @@ import {
   CustomRegistrationField,
   EventStatus,
   FeeBearerPolicy,
+  FormTemplate,
+  GlobalFormFieldDef,
   MerchOrderRecord,
   Organization,
+  OrganizerFieldRequest,
   OrgRole,
   PayoutBatch,
   ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
   RegistrationStatus,
+  RegistrationStepDef,
   SellerServiceModel,
   SimulatedUiState,
   TeamInvitation,
@@ -29,6 +33,8 @@ import {
   sellerModelLabel,
 } from '../utils/pricing';
 import { BibLedgerStrip } from './BibLedgerStrip';
+import { EventMediaManager, EventMediaPatch } from './EventMediaManager';
+import { OrganizerAnalyticsCharts } from './OrganizerAnalyticsCharts';
 import {
   IconAlert,
   IconArrowLeft,
@@ -60,6 +66,7 @@ import {
 } from './StatusBadges';
 import { validateQuotaUpdate } from '../utils/eventConfig';
 
+import { tx, txf } from '../i18n';
 export type OrgSection =
   | 'org_overview'
   | 'org_events'
@@ -139,6 +146,18 @@ interface OrganizerDashboardViewProps {
   onUpdateEventTotalQuota: (eventId: string, newTotalQuota: number) => void;
   onUpdateCategoryQuota: (eventId: string, categoryId: string, newCategoryQuota: number) => void;
   onUpdateCustomFields: (eventId: string, nextFields: CustomRegistrationField[]) => void;
+  formTemplates?: FormTemplate[];
+  registrationSteps?: RegistrationStepDef[];
+  globalFields?: GlobalFormFieldDef[];
+  fieldRequests?: OrganizerFieldRequest[];
+  onSelectEventTemplate?: (eventId: string, templateId: string) => void;
+  onUpdateEventMedia?: (eventId: string, patch: EventMediaPatch) => void;
+  onSubmitOrganizerFieldRequest?: (
+    payload: Omit<
+      OrganizerFieldRequest,
+      'id' | 'requestCode' | 'status' | 'createdAt'
+    >
+  ) => void;
 }
 
 const roleNameMap: Record<OrgRole, string> = {
@@ -179,9 +198,9 @@ export function QuotaEditorRow({
     <div className={`quota-editor-row ${compact ? 'quota-editor-compact' : ''}`}>
       {!compact && (
         <div>
-          <strong>{categoryName}</strong>{' '}
+          <strong>{tx(categoryName)}</strong>{' '}
           <span className="muted-inline mono-num">
-            (ใช้โควตาแล้ว {registeredCount + reservedCount} / {maxQuota} คน)
+            {tx("(ใช้โควตาแล้ว ")} {registeredCount + reservedCount} / {tx(maxQuota)} {tx(" คน)")}
           </span>
         </div>
       )}
@@ -191,7 +210,7 @@ export function QuotaEditorRow({
             <input
               type="number"
               className="mono-num quota-number-input"
-              aria-label={`จำนวนรับสมัครของ ${categoryName}`}
+              aria-label={txf("จำนวนรับสมัครของ {0}", categoryName)}
               min={check.minAllowed}
               value={draftQuota}
               onChange={(e) => {
@@ -208,216 +227,553 @@ export function QuotaEditorRow({
                 setSavedNotice(true);
               }}
             >
-              บันทึกโควตา
+              {tx("บันทึกโควตา")}
             </button>
           </div>
           <div className="muted-inline mono-num">
-            ใช้แล้ว {registeredCount + reservedCount} / {maxQuota} คน
+            {tx("ใช้แล้ว ")} {registeredCount + reservedCount} / {tx(maxQuota)} {tx(" คน")}
             {savedNotice && (
-              <span className="text-forest"> · บันทึกแล้ว</span>
+              <span className="text-forest"> {tx(" · บันทึกแล้ว")}</span>
             )}
           </div>
-          {!check.valid && <p className="field-error">{check.message}</p>}
+          {!check.valid && <p className="field-error">{tx(check.message)}</p>}
         </div>
       ) : (
         <span className="mono-num">
-          {registeredCount + reservedCount} / <strong>{maxQuota}</strong> คน
+          {registeredCount + reservedCount} / <strong>{tx(maxQuota)}</strong> {tx(" คน")}
         </span>
       )}
     </div>
   );
 }
 
-// ส่วนเพิ่ม/ลบ Field กรอกข้อมูลเพิ่มเติมสำหรับผู้จัด
+// ส่วนตั้งค่าฟอร์มรับสมัครของผู้จัด (เลือกแม่แบบ ปรับตามสิทธิ์ LOCKED/CONFIGURABLE/CUSTOMIZABLE และส่งคำขอหา Platform Owner)
 export function CustomFieldsManager({
+  event,
   fields = [],
   canEdit,
+  templates = [],
+  steps = [],
+  fieldRequests = [],
+  requesterName = 'ผู้จัดงานวิ่ง',
   onChange,
+  onSelectTemplate,
+  onSubmitFieldRequest,
 }: {
+  event?: RaceEvent;
   fields?: CustomRegistrationField[];
   canEdit: boolean;
+  templates?: FormTemplate[];
+  steps?: RegistrationStepDef[];
+  fieldRequests?: OrganizerFieldRequest[];
+  requesterName?: string;
   onChange: (next: CustomRegistrationField[]) => void;
+  onSelectTemplate?: (templateId: string) => void;
+  onSubmitFieldRequest?: (
+    payload: Omit<
+      OrganizerFieldRequest,
+      'id' | 'requestCode' | 'status' | 'createdAt'
+    >
+  ) => void;
 }) {
-  const [label, setLabel] = useState('');
-  const [type, setType] = useState<CustomFieldType>('text');
-  const [optionsText, setOptionsText] = useState('');
-  const [required, setRequired] = useState(false);
-  const [isSensitive, setIsSensitive] = useState(false);
+  const [reqLabel, setReqLabel] = useState('');
+  const [reqKey, setReqKey] = useState('');
+  const [reqType, setReqType] = useState<CustomFieldType>('text');
+  const [reqStepKey, setReqStepKey] = useState<string>('step_race_specific');
+  const [reqOptionsText, setReqOptionsText] = useState('');
+  const [reqConditionHint, setReqConditionHint] = useState('');
+  const [reqReasonNote, setReqReasonNote] = useState('');
+  const [reqRequired, setReqRequired] = useState(false);
+  const [reqSensitive, setReqSensitive] = useState(false);
+  const [sentNotice, setSentNotice] = useState<string | null>(null);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
 
-  const handleAddField = () => {
-    if (!label.trim()) return;
-    if (
-      type === 'select' &&
-      optionsText
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean).length === 0
-    ) {
+  const fieldTypeLabel: Partial<Record<CustomFieldType, string>> = {
+    text: 'Text Input (ข้อความสั้น)',
+    textarea: 'Textarea (ข้อความหลายบรรทัด)',
+    email: 'Email (อีเมล)',
+    phone: 'Phone (เบอร์โทร)',
+    number: 'Number (ตัวเลข)',
+    date: 'Date Picker (วันที่)',
+    select: 'Dropdown (ตัวเลือก)',
+    radio: 'Radio Group (ปุ่มตัวเลือก)',
+    checkbox: 'Checkbox (ช่องติ๊กยืนยัน)',
+    multiselect: 'Multi-select (เลือกหลายข้อ)',
+    file: 'File Upload (อัปโหลดไฟล์)',
+    image_choice: 'Image Choice (เลือกรูปภาพ)',
+    address: 'Address (ที่อยู่)',
+    size_selector: 'Size Selector (ไซส์เสื้อ)',
+    distance_selector: 'Race Distance Selector (ระยะวิ่ง)',
+  };
+
+  const eventRequests = event
+    ? fieldRequests.filter((r) => r.eventId === event.id)
+    : fieldRequests;
+
+  const handleSendRequest = () => {
+    if (!reqLabel.trim() || !reqReasonNote.trim() || !event || !onSubmitFieldRequest) {
       return;
     }
-    const newField: CustomRegistrationField = {
-      id: `cf_${Date.now()}`,
-      label: label.trim(),
-      type,
-      required,
-      isSensitive,
+    const cleanKey = (reqKey.trim() || reqLabel.trim())
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, '_')
+      .replace(/^_+|_+$/g, '') || `req_field_${Date.now()}`;
+
+    onSubmitFieldRequest({
+      organizationId: event.organizationId,
+      eventId: event.id,
+      requestedByName: requesterName,
+      requestedLabelTh: reqLabel.trim(),
+      requestedFieldKey: cleanKey,
+      inputType: reqType,
+      targetStepKey: reqStepKey,
+      required: reqRequired,
+      isSensitive: reqSensitive,
       options:
-        type === 'select'
-          ? optionsText
+        reqType === 'select' || reqType === 'radio' || reqType === 'multiselect'
+          ? reqOptionsText
               .split(',')
               .map((s) => s.trim())
               .filter(Boolean)
           : undefined,
-    };
-    onChange([...fields, newField]);
-    setLabel('');
-    setOptionsText('');
-    setRequired(false);
-    setIsSensitive(false);
-  };
-
-  const fieldTypeLabel: Record<CustomFieldType, string> = {
-    text: 'ข้อความสั้น',
-    select: 'ตัวเลือก Dropdown',
-    checkbox: 'ช่องติ๊กยืนยัน',
+      conditionHint: reqConditionHint.trim() || undefined,
+      reasonNote: reqReasonNote.trim(),
+    });
+    setSentNotice(
+      txf("ส่งคำขอเพิ่มฟิลด์ \"{0}\" ไปยัง Platform Owner (Registration Form Builder) เรียบร้อยแล้ว", reqLabel.trim())
+    );
+    setReqLabel('');
+    setReqKey('');
+    setReqOptionsText('');
+    setReqConditionHint('');
+    setReqReasonNote('');
+    setReqRequired(false);
+    setReqSensitive(false);
   };
 
   return (
     <section className="clean-panel">
       <div className="section-title-bar">
         <div>
-          <h2>คำถามเพิ่มเติมในใบสมัคร (Custom Fields · {fields.length} ข้อ)</h2>
+          <h2>
+            {tx("ตั้งค่าฟอร์มรับสมัครและส่งคำขอข้อมูลผู้สมัคร (Organizer Form Customizer & Request)")}
+          </h2>
           <p className="muted-block">
-            เพิ่มช่องกรอกข้อมูลเฉพาะของงานนี้ (เช่น กรุ๊ปเลือด โรคประจำตัว ชมรมวิ่ง)
-            ระบบจะนำไปแสดงในขั้นตอนที่ 2 ของหน้าสมัครวิ่งทันที และซ่อนฟิลด์อ่อนไหวจากจุดเช็กอินหน้างานได้
+            {tx("ขั้นตอนการสมัคร (Steps) และคลังฟิลด์หลักถูกควบคุมจากศูนย์กลางโดย Platform Owner ผู้จัดสามารถเลือกแม่แบบมาตรฐาน ปรับฟิลด์ที่ได้รับสิทธิ์ (CONFIGURABLE / CUSTOMIZABLE) หรือส่งคำขอ (Request) ให้ Platform Owner เพิ่มช่องกรอกข้อมูลเฉพาะของงานนี้ได้")}
           </p>
+        </div>
+        <div className="cta-inline-row">
+          <span className="status-pill badge-forest">
+            <span className="mono-code">
+              {tx("เวอร์ชันฟอร์ม: ")} {event?.publishedFormVersion ?? 'v1.0-published'}
+            </span>
+          </span>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setShowPreviewModal((v) => !v)}
+          >
+            {showPreviewModal
+              ? tx("ซ่อนตัวอย่างฟอร์มสมัคร")
+              : tx("Preview ฟอร์มที่นักวิ่งจะเห็น")}
+          </button>
         </div>
       </div>
 
-      {fields.length === 0 ? (
-        <div className="subtle-empty-note">
-          งานนี้ยังไม่มีคำถามเพิ่มเติม (ใช้เฉพาะข้อมูลผู้สมัครมาตรฐาน)
-        </div>
-      ) : (
-        <div className="custom-fields-list">
-          {fields.map((f) => (
-            <div key={f.id} className="custom-field-item">
-              <div className="custom-field-meta">
-                <strong>{f.label}</strong>
-                <span className="mono-code">{fieldTypeLabel[f.type]}</span>
-                {f.options && f.options.length > 0 && (
-                  <span className="muted-inline">
-                    ตัวเลือก: {f.options.join(', ')}
-                  </span>
-                )}
-                {f.required && (
-                  <span className="status-pill badge-amber">
-                    <IconAlert size={13} />
-                    <span>บังคับกรอก</span>
-                  </span>
-                )}
-                {f.isSensitive && (
-                  <span className="status-pill badge-navy">
-                    <IconLock size={13} />
-                    <span>ซ่อนจากจุดรับอุปกรณ์ (PII)</span>
-                  </span>
+      {/* 1. Template Selection & Step Governance Summary */}
+      {templates.length > 0 && event && (
+        <div
+          className="custom-field-creator"
+          style={{ marginBottom: '0.9rem' }}
+        >
+          <div className="form-grid-2">
+            <div className="form-row">
+              <label htmlFor="org-tpl-pick">
+                {tx("เลือกแม่แบบฟอร์มรับสมัครที่ Platform Owner เผยแพร่ไว้ (Published Form Template)")}
+              </label>
+              <select
+                id="org-tpl-pick"
+                value={event.activeTemplateId ?? 'tpl-halfmarathon'}
+                disabled={!canEdit}
+                onChange={(e) => onSelectTemplate?.(e.target.value)}
+              >
+                {templates
+                  .filter((t) => t.status === 'published')
+                  .map((tpl) => (
+                    <option key={tpl.id} value={tpl.id}>
+                      [{tx(tpl.code)}] {tx(tpl.nameTh)} ({tx(tpl.versionLabel)})
+                    </option>
+                  ))}
+              </select>
+              <span className="muted-inline">
+                {tx("การปรับแต่งในงานนี้จะสร้างเวอร์ชันเฉพาะของงานโดยไม่กระทบแม่แบบกลางของแพลตฟอร์ม")}
+              </span>
+            </div>
+
+            <div className="form-row">
+              <label>{tx("ลำดับขั้นตอนการสมัครของนักวิ่ง (ควบคุมโดย Platform Owner)")}</label>
+              <div className="cta-inline-row" style={{ flexWrap: 'wrap' }}>
+                {(steps.length > 0 ? steps.filter((s) => s.enabled) : []).map(
+                  (st, i) => (
+                    <span key={st.id} className="status-pill badge-navy">
+                      {st.isSystemLocked && <IconLock size={12} />}
+                      <span>
+                        Step {i + 1}: {tx(st.titleTh)}
+                      </span>
+                    </span>
+                  )
                 )}
               </div>
-              {canEdit && (
-                <button
-                  type="button"
-                  className="btn-ghost-sm"
-                  onClick={() =>
-                    onChange(fields.filter((item) => item.id !== f.id))
-                  }
-                >
-                  ลบคำถามนี้
-                </button>
-              )}
             </div>
-          ))}
+          </div>
         </div>
       )}
 
+      {/* Optional Form Preview Box */}
+      {showPreviewModal && (
+        <div
+          className="custom-field-creator"
+          style={{ marginBottom: '0.9rem' }}
+        >
+          <h3>
+            {tx("ตัวอย่างฟอร์มรับสมัครที่นักวิ่งเห็น (")}{tx(fields.length)} {tx(" ฟิลด์เสริม + 4 ฟิลด์ระบบล็อก)")}
+          </h3>
+          <p className="muted-inline">
+            {tx("แสดงผลตามเวอร์ชัน ")} {event?.publishedFormVersion ?? 'v1.0-published'} {tx(" ที่เผยแพร่ของงานนี้")}
+          </p>
+          <div className="form-grid-2" style={{ marginTop: '0.6rem' }}>
+            {fields.map((f) => (
+              <div key={f.id} className="form-row">
+                <label>
+                  {tx(f.label)} {f.required ? '*' : tx("(ไม่บังคับ)")}
+                </label>
+                <input
+                  type="text"
+                  disabled
+                  placeholder={`[${fieldTypeLabel[f.type] ?? f.type}] ${
+                    f.options ? f.options.join(' / ') : 'ช่องกรอกสำหรับนักวิ่ง'
+                  }`}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 2. Active Event Fields with LOCKED / CONFIGURABLE / CUSTOMIZABLE enforcement */}
+      <h3 style={{ margin: '0 0 0.5rem', fontSize: '0.98rem' }}>
+        {tx("ฟิลด์คำถามที่เปิดใช้งานในงานวิ่งนี้ (")}{tx(fields.length)} {tx(" ข้อ · บังคับตามสิทธิ์ของ Platform Owner)")}
+      </h3>
+      {fields.length === 0 ? (
+        <div className="subtle-empty-note">
+          {tx("งานนี้ใช้เฉพาะฟิลด์ระบบมาตรฐาน หากต้องการเก็บข้อมูลเพิ่ม กรุณาเลือกแม่แบบหรือส่งคำขอให้ Platform Owner ด้านล่าง")}
+        </div>
+      ) : (
+        <div className="custom-fields-list">
+          {fields.map((f) => {
+            const policy = f.policy ?? 'CUSTOMIZABLE';
+            const isLocked = policy === 'LOCKED';
+            const canDelete = canEdit && policy === 'CUSTOMIZABLE';
+            const canToggleReq =
+              canEdit && (policy === 'CONFIGURABLE' || policy === 'CUSTOMIZABLE');
+
+            return (
+              <div key={f.id} className="custom-field-item">
+                <div className="custom-field-meta">
+                  <strong>{tx(f.label)}</strong>
+                  <span className="mono-code">
+                    {fieldTypeLabel[f.type] ?? f.type}
+                  </span>
+                  {f.options && f.options.length > 0 && (
+                    <span className="muted-inline">
+                      {tx("ตัวเลือก: ")} {f.options.join(', ')}
+                    </span>
+                  )}
+                  <span
+                    className={`status-pill ${
+                      isLocked
+                        ? 'badge-navy'
+                        : policy === 'CONFIGURABLE'
+                        ? 'badge-amber'
+                        : 'badge-forest'
+                    }`}
+                  >
+                    {isLocked && <IconLock size={12} />}
+                    <span>{tx("สิทธิ์:")} {tx(policy)}</span>
+                  </span>
+                  {f.required && (
+                    <span className="status-pill badge-amber">
+                      <IconAlert size={13} />
+                      <span>{tx("บังคับกรอก")}</span>
+                    </span>
+                  )}
+                  {f.isSensitive && (
+                    <span className="status-pill badge-navy">
+                      <IconLock size={13} />
+                      <span>{tx("ซ่อนจากจุดรับอุปกรณ์ (PII)")}</span>
+                    </span>
+                  )}
+                </div>
+
+                <div className="cta-inline-row">
+                  {canToggleReq && (
+                    <button
+                      type="button"
+                      className="btn-ghost-sm"
+                      onClick={() =>
+                        onChange(
+                          fields.map((item) =>
+                            item.id === f.id
+                              ? { ...item, required: !item.required }
+                              : item
+                          )
+                        )
+                      }
+                    >
+                      {f.required ? tx("เปลี่ยนเป็นไม่บังคับ") : tx("ตั้งเป็นบังคับกรอก")}
+                    </button>
+                  )}
+                  {isLocked ? (
+                    <span className="muted-inline">{tx("ล็อกโดย Platform Owner")}</span>
+                  ) : (
+                    canDelete && (
+                      <button
+                        type="button"
+                        className="btn-ghost-sm"
+                        onClick={() =>
+                          onChange(fields.filter((item) => item.id !== f.id))
+                        }
+                      >
+                        {tx("ถอดออกจากงานนี้")}
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 3. Request Form to Platform Owner */}
       {canEdit && (
-        <div className="custom-field-creator">
-          <h3>เพิ่มคำถามใหม่ในใบสมัครงานนี้</h3>
-          <div className="form-grid-2">
+        <div className="custom-field-creator" style={{ marginTop: '1rem' }}>
+          <h3>
+            {tx("ส่งคำขอให้ Platform Owner เพิ่มช่องกรอกข้อมูลหรือปรับขั้นตอนการสมัคร (Request Field to Platform Owner)")}
+          </h3>
+          <p className="muted-inline">
+            {tx("ระบุข้อมูลที่ต้องการให้นักวิ่งกรอกเพิ่มเติมในใบสมัครงานนี้ คำขอจะถูกส่งไปยังหน้า Registration Form Builder ของ Platform Owner เพื่อตรวจสอบความปลอดภัยและอนุมัติเปิดใช้")}
+          </p>
+
+          {sentNotice && (
+            <div
+              className="success-callout"
+              role="status"
+              style={{ marginTop: '0.6rem' }}
+            >
+              <IconCheckCircle size={17} />
+              <span>{tx(sentNotice)}</span>
+            </div>
+          )}
+
+          <div className="form-grid-3" style={{ marginTop: '0.65rem' }}>
             <div className="form-row">
-              <label htmlFor="cf-new-label">หัวข้อคำถามที่ต้องการให้ผู้สมัครกรอก</label>
+              <label htmlFor="cf-req-label">
+                {tx("หัวข้อข้อมูลที่ต้องการให้นักวิ่งกรอก *")}
+              </label>
               <input
-                id="cf-new-label"
+                id="cf-req-label"
                 type="text"
-                placeholder="เช่น โรคประจำตัว / ประวัติแพ้ยา หรือ ชื่อชมรมวิ่ง"
-                value={label}
-                onChange={(e) => setLabel(e.target.value)}
+                placeholder={tx("เช่น รอบรถรับส่ง Shuttle Bus หรือ เบอร์เสื้อ Finisher")}
+                value={reqLabel}
+                onChange={(e) => setReqLabel(e.target.value)}
               />
             </div>
 
             <div className="form-row">
-              <label htmlFor="cf-new-type">รูปแบบช่องกรอก</label>
+              <label htmlFor="cf-req-type">{tx("ชนิด Input ที่ต้องการ")}</label>
               <select
-                id="cf-new-type"
-                value={type}
-                onChange={(e) => setType(e.target.value as CustomFieldType)}
+                id="cf-req-type"
+                value={reqType}
+                onChange={(e) => setReqType(e.target.value as CustomFieldType)}
               >
-                <option value="text">ข้อความสั้น (Text)</option>
-                <option value="select">ตัวเลือก (Dropdown)</option>
-                <option value="checkbox">ช่องติ๊กยืนยัน (Checkbox)</option>
+                <option value="text">{tx("Text Input (ข้อความสั้น)")}</option>
+                <option value="textarea">{tx("Textarea (ข้อความหลายบรรทัด)")}</option>
+                <option value="select">{tx("Dropdown (ตัวเลือกเดียว)")}</option>
+                <option value="radio">{tx("Radio Group (ปุ่มตัวเลือก)")}</option>
+                <option value="checkbox">{tx("Checkbox (ช่องติ๊กยืนยัน)")}</option>
+                <option value="multiselect">{tx("Multi-select (เลือกหลายข้อ)")}</option>
+                <option value="number">{tx("Number (ตัวเลข)")}</option>
+                <option value="date">{tx("Date Picker (วันที่)")}</option>
+                <option value="file">{tx("File Upload (อัปโหลดเอกสาร/ใบรับรองแพทย์)")}</option>
+              </select>
+            </div>
+
+            <div className="form-row">
+              <label htmlFor="cf-req-step">{tx("ขั้นตอน (Step) ที่ต้องการให้แสดง")}</label>
+              <select
+                id="cf-req-step"
+                value={reqStepKey}
+                onChange={(e) => setReqStepKey(e.target.value)}
+              >
+                {(steps.length > 0
+                  ? steps.filter((s) => s.key !== 'step_review_payment')
+                  : [
+                      {
+                        key: 'step_race_specific',
+                        titleTh: 'Step 3: ข้อมูลสุขภาพ ชมรมวิ่ง & คำถามเฉพาะงาน',
+                      },
+                      {
+                        key: 'step_runner_info',
+                        titleTh: 'Step 2: ข้อมูลผู้เข้าแข่งขัน & ผู้ติดต่อฉุกเฉิน',
+                      },
+                    ]
+                ).map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {tx(s.titleTh)}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
 
-          {type === 'select' && (
+          {(reqType === 'select' ||
+            reqType === 'radio' ||
+            reqType === 'multiselect') && (
             <div className="form-row" style={{ marginTop: '0.6rem' }}>
-              <label htmlFor="cf-new-opts">
-                รายการตัวเลือก (คั่นแต่ละตัวเลือกด้วยเครื่องหมายจุลภาค ,)
+              <label htmlFor="cf-req-opts">
+                {tx("รายการตัวเลือกที่ต้องการ (คั่นด้วยเครื่องหมายจุลภาค ,)")}
               </label>
               <input
-                id="cf-new-opts"
+                id="cf-req-opts"
                 type="text"
-                placeholder="เช่น A, B, AB, O หรือ รถรับส่งรอบ 03:30, เดินทางเอง"
-                value={optionsText}
-                onChange={(e) => setOptionsText(e.target.value)}
+                placeholder={tx("เช่น เดินทางเอง, รถรับส่งรอบ 03:30 น., รถรับส่งรอบ 04:00 น.")}
+                value={reqOptionsText}
+                onChange={(e) => setReqOptionsText(e.target.value)}
               />
             </div>
           )}
 
-          <div className="cta-inline-row" style={{ marginTop: '0.7rem' }}>
+          <div className="form-grid-2" style={{ marginTop: '0.6rem' }}>
+            <div className="form-row">
+              <label htmlFor="cf-req-reason">
+                {tx("เหตุผลความจำเป็นในการเก็บข้อมูลนี้ (แจ้ง Platform Owner) *")}
+              </label>
+              <input
+                id="cf-req-reason"
+                type="text"
+                placeholder={tx("เช่น ใช้คำนวณจำนวนรถสองแถวรับส่งนักวิ่งขึ้นจุดปล่อยตัว")}
+                value={reqReasonNote}
+                onChange={(e) => setReqReasonNote(e.target.value)}
+              />
+            </div>
+            <div className="form-row">
+              <label htmlFor="cf-req-cond">
+                {tx("เงื่อนไขการแสดงผล (Conditional Logic ถ้ามี)")}
+              </label>
+              <input
+                id="cf-req-cond"
+                type="text"
+                placeholder={tx("เช่น แสดงเฉพาะผู้สมัครระยะ 21.1 km หรือ แสดงทุกระยะ")}
+                value={reqConditionHint}
+                onChange={(e) => setReqConditionHint(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="cta-inline-row" style={{ marginTop: '0.75rem' }}>
             <label className="checkbox-row">
               <input
                 type="checkbox"
-                checked={required}
-                onChange={(e) => setRequired(e.target.checked)}
+                checked={reqRequired}
+                onChange={(e) => setReqRequired(e.target.checked)}
               />
-              <span>บังคับกรอกก่อนส่งใบสมัคร</span>
+              <span>{tx("ขอตั้งเป็นฟิลด์บังคับกรอก (Required)")}</span>
             </label>
 
             <label className="checkbox-row">
               <input
                 type="checkbox"
-                checked={isSensitive}
-                onChange={(e) => setIsSensitive(e.target.checked)}
+                checked={reqSensitive}
+                onChange={(e) => setReqSensitive(e.target.checked)}
               />
-              <span>เป็นข้อมูลอ่อนไหว (ซ่อนจากเจ้าหน้าที่เช็กอินหน้างาน)</span>
+              <span>{tx("เป็นข้อมูลส่วนบุคคลอ่อนไหว (ซ่อนจากเจ้าหน้าที่หน้างาน)")}</span>
             </label>
 
             <button
               type="button"
               className="btn-primary"
-              disabled={
-                !label.trim() ||
-                (type === 'select' &&
-                  optionsText
-                    .split(',')
-                    .map((s) => s.trim())
-                    .filter(Boolean).length === 0)
-              }
-              onClick={handleAddField}
+              disabled={!reqLabel.trim() || !reqReasonNote.trim()}
+              onClick={handleSendRequest}
             >
               <IconPlus size={15} />
-              <span>เพิ่มฟิลด์คำถาม</span>
+              <span>{tx("ส่งคำขอให้ Platform Owner อนุมัติ")}</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 4. History of Organizer Field Requests for this Event */}
+      {eventRequests.length > 0 && (
+        <div style={{ marginTop: '1rem' }}>
+          <h3 style={{ margin: '0 0 0.5rem', fontSize: '0.96rem' }}>
+            {tx("สถานะคำขอเพิ่มช่องกรอกข้อมูลที่ส่งหา Platform Owner (")}{tx(eventRequests.length)}{' '}
+            {tx("รายการ)")}
+          </h3>
+          <div className="table-scroll">
+            <table className="ops-table">
+              <thead>
+                <tr>
+                  <th>{tx("รหัสคำขอ")}</th>
+                  <th>{tx("ข้อมูลที่ขอให้นักวิ่งกรอก")}</th>
+                  <th>{tx("ชนิด Input / ขั้นตอน")}</th>
+                  <th>{tx("เหตุผลที่แจ้ง")}</th>
+                  <th>{tx("สถานะการพิจารณาของ Platform Owner")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {eventRequests.map((r) => (
+                  <tr key={r.id}>
+                    <td className="mono-code">{tx(r.requestCode)}</td>
+                    <td>
+                      <strong>{tx(r.requestedLabelTh)}</strong>
+                      {r.options && r.options.length > 0 && (
+                        <div className="muted-inline">
+                          {tx("ตัวเลือก: ")} {r.options.join(', ')}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      {fieldTypeLabel[r.inputType] ?? r.inputType}
+                      <div className="mono-code">{tx(r.targetStepKey)}</div>
+                    </td>
+                    <td>{tx(r.reasonNote)}</td>
+                    <td>
+                      <span
+                        className={`status-pill ${
+                          r.status === 'approved'
+                            ? 'badge-forest'
+                            : r.status === 'rejected'
+                            ? 'badge-danger'
+                            : 'badge-amber'
+                        }`}
+                      >
+                        <span>
+                          {r.status === 'approved'
+                            ? tx("อนุมัติและเปิดใช้ในฟอร์มแล้ว")
+                            : r.status === 'rejected'
+                            ? tx("ปฏิเสธคำขอ")
+                            : tx("รอ Platform Owner อนุมัติ")}
+                        </span>
+                      </span>
+                      {r.adminNote && (
+                        <div className="muted-inline">{tx(r.adminNote)}</div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -458,6 +814,12 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
   onUpdateEventTotalQuota,
   onUpdateCategoryQuota,
   onUpdateCustomFields,
+  formTemplates = [],
+  registrationSteps = [],
+  fieldRequests = [],
+  onSelectEventTemplate,
+  onUpdateEventMedia,
+  onSubmitOrganizerFieldRequest,
 }) => {
   const [timeWindow, setTimeWindow] = useState<TimeWindowFilter>('all_time');
   const [eventSearch, setEventSearch] = useState('');
@@ -626,20 +988,20 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
           id: 'act-refund',
           title: (
             <>
-              มีคำขอคืนเงินจากผู้สมัครรอตรวจสอบ{' '}
-              <span className="mono-num">{refundReqs.length}</span> รายการ
+              {tx("มีคำขอคืนเงินจากผู้สมัครรอตรวจสอบ")}{' '}
+              <span className="mono-num">{tx(refundReqs.length)}</span> {tx(" รายการ")}
             </>
           ),
           whyItMatters: (
             <>
-              ยอดขอคืนรวม{' '}
+              {tx("ยอดขอคืนรวม")}{' '}
               <span className="mono-num">
                 {formatThb(
                   refundReqs.reduce((s, r) => s + r.snapshotBaseSatang, 0),
                   true
                 )}
               </span>{' '}
-              รอฝ่ายการเงินพิจารณาอนุมัติหรือปฏิเสธ
+              {tx("รอฝ่ายการเงินพิจารณาอนุมัติหรือปฏิเสธ")}
             </>
           ),
           ctaLabel: 'ตรวจคำขอคืนเงิน',
@@ -662,8 +1024,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             id: `act-draft-${draftEv.id}`,
             title: (
               <>
-                งานแบบร่าง &ldquo;{draftEv.titleTh}&rdquo; เหลือตั้งค่าอีก{' '}
-                <span className="mono-num">{failedCount}</span> หัวข้อ
+                {tx("งานแบบร่าง &ldquo;")}{tx(draftEv.titleTh)}{tx("&rdquo; เหลือตั้งค่าอีก")}{' '}
+                <span className="mono-num">{tx(failedCount)}</span> {tx(" หัวข้อ")}
               </>
             ),
             whyItMatters:
@@ -690,9 +1052,9 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
               id: `act-bib-${pubEv.id}`,
               title: (
                 <>
-                  ผู้สมัครชำระเงินแล้วยังไม่มีเลข BIB{' '}
-                  <span className="mono-num">{missingBib}</span> คน (
-                  <span className="mono-code">{pubEv.code}</span>)
+                  {tx("ผู้สมัครชำระเงินแล้วยังไม่มีเลข BIB")}{' '}
+                  <span className="mono-num">{tx(missingBib)}</span> {tx(" คน (")}
+                  <span className="mono-code">{tx(pubEv.code)}</span>)
                 </>
               ),
               whyItMatters: `ควรกำหนดเลข BIB ล่วงหน้าเพื่อให้จุดรับอุปกรณ์วันงาน ${pubEv.titleTh} ทำงานได้ทันที`,
@@ -879,11 +1241,11 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
       {/* SELF-EXPLANATORY SIDEBAR NAVIGATION */}
       <aside
         className="dashboard-rail"
-        aria-label="เมนูจัดการสำหรับผู้จัดงานวิ่ง"
+        aria-label={tx("เมนูจัดการสำหรับผู้จัดงานวิ่ง")}
       >
         <div className="rail-org-switcher">
           <label htmlFor="org-ctx-sel" className="rail-field-label">
-            องค์กรผู้จัดที่กำลังดูแล
+            {tx("องค์กรผู้จัดที่กำลังดูแล")}
           </label>
           <select
             id="org-ctx-sel"
@@ -893,7 +1255,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             {currentUser.isPlatformAdmin
               ? organizations.map((o) => (
                   <option key={o.id} value={o.id}>
-                    {o.nameTh}
+                    {tx(o.nameTh)}
                   </option>
                 ))
               : currentUser.memberships.map((m) => {
@@ -902,7 +1264,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                   );
                   return (
                     <option key={m.organizationId} value={m.organizationId}>
-                      {o?.nameTh}
+                      {tx(o?.nameTh)}
                     </option>
                   );
                 })}
@@ -911,14 +1273,16 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             <IconShield size={14} />
             <span>
               {currentUser.isPlatformAdmin
-                ? 'Platform Owner (ดูและจัดการแทนผู้จัด)'
+                ? tx("Platform Owner (ดูและจัดการแทนผู้จัด)")
                 : roleNameMap[role]}
             </span>
           </div>
         </div>
 
-        <nav className="rail-nav-group" aria-label="เมนูระดับองค์กร">
-          <div className="rail-group-heading">ระดับองค์กร (ดูรวมทุกงาน)</div>
+        <nav className="rail-nav-group" aria-label={tx("เมนูระดับองค์กร")}>
+          <div className="rail-group-heading">
+            {tx("Organization Overview (ดูภาพรวมทุกงาน)")}
+          </div>
           <button
             type="button"
             className={`rail-nav-btn ${activeSection === 'org_overview' ? 'active' : ''
@@ -929,7 +1293,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             }}
           >
             <IconBuilding size={16} />
-            <span>หน้าแรกผู้จัด (งานต้องทำ)</span>
+            <span>{tx("Organization Overview (ภาพรวมทุกงาน)")}</span>
           </button>
 
           <button
@@ -942,7 +1306,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             }}
           >
             <IconFlag size={16} />
-            <span>งานวิ่งทั้งหมด ({accessibleOrgEvents.length})</span>
+            <span>{tx("งานวิ่งทั้งหมด (")}{tx(accessibleOrgEvents.length)})</span>
           </button>
 
           <button
@@ -955,7 +1319,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             }}
           >
             <IconShirt size={16} />
-            <span>ร้านค้า & สั่งผลิตเสื้อ/เหรียญ</span>
+            <span>{tx("ร้านค้า & สั่งผลิตเสื้อ/เหรียญ")}</span>
           </button>
 
           {canViewFinance && (
@@ -969,7 +1333,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
               }}
             >
               <IconLedger size={16} />
-              <span>การเงินรวม & รอบโอน</span>
+              <span>{tx("การเงินรวม & รอบโอน")}</span>
             </button>
           )}
 
@@ -983,13 +1347,13 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             }}
           >
             <IconUsers size={16} />
-            <span>ทีมงาน & บัญชีรับเงิน</span>
+            <span>{tx("ทีมงาน & บัญชีรับเงิน")}</span>
           </button>
         </nav>
 
         <div className="rail-event-context">
           <label htmlFor="evt-ctx-sel" className="rail-field-label">
-            เลือกงานวิ่งเพื่อจัดการรายอีเวนต์
+            {tx("เลือกงานวิ่งเพื่อจัดการรายอีเวนต์")}
           </label>
           <select
             id="evt-ctx-sel"
@@ -1006,10 +1370,10 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
               }
             }}
           >
-            <option value="">-- เลือกงานวิ่งที่ต้องการจัดการ --</option>
+            <option value="">{tx("-- เลือกงานวิ่งที่ต้องการจัดการ --")}</option>
             {accessibleOrgEvents.map((ev) => (
               <option key={ev.id} value={ev.id}>
-                {ev.titleTh}
+                {tx(ev.titleTh)}
               </option>
             ))}
           </select>
@@ -1018,12 +1382,12 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
         {accessibleOrgEvents.length > 0 && (
           <nav
             className="rail-nav-group rail-event-subnav"
-            aria-label="เมนูจัดการภายในงานวิ่งที่เลือก"
+            aria-label={tx("เมนูจัดการภายในงานวิ่งที่เลือก")}
           >
             <div className="rail-group-heading">
               {selectedEvent
-                ? `เมนูของงาน: ${selectedEvent.code}`
-                : `เมนูรายงานวิ่ง (คลิกเพื่อเปิด ${accessibleOrgEvents[0].code})`}
+                ? `Event Dashboard: ${selectedEvent.code}`
+                : txf("Event Dashboard (คลิกเพื่อเจาะลึก {0})", accessibleOrgEvents[0].code)}
             </div>
             <button
               type="button"
@@ -1040,7 +1404,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
               }
             >
               <IconFlag size={16} />
-              <span>ภาพรวม & ความพร้อมงาน</span>
+              <span>{tx("Event Dashboard (ภาพรวมเจาะลึก)")}</span>
             </button>
             <button
               type="button"
@@ -1057,7 +1421,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
               }
             >
               <IconBib size={16} />
-              <span>ระยะ โควตา & คำถามสมัคร</span>
+              <span>{tx("ระยะ โควตา & คำถามสมัคร")}</span>
             </button>
             <button
               type="button"
@@ -1074,7 +1438,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
               }
             >
               <IconUsers size={16} />
-              <span>รายชื่อผู้สมัครวิ่ง</span>
+              <span>{tx("รายชื่อผู้สมัครวิ่ง")}</span>
             </button>
             <button
               type="button"
@@ -1091,7 +1455,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
               }
             >
               <IconBag size={16} />
-              <span>ร้านค้า & สินค้าของงานนี้</span>
+              <span>{tx("ร้านค้า & สินค้าของงานนี้")}</span>
             </button>
             {canCheckIn && (
               <button
@@ -1109,7 +1473,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                 }
               >
                 <IconQr size={16} />
-                <span>เช็กอิน BIB & จ่ายสินค้า</span>
+                <span>{tx("เช็กอิน BIB & จ่ายสินค้า")}</span>
               </button>
             )}
             {canViewFinance && (
@@ -1128,7 +1492,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                 }
               >
                 <IconLedger size={16} />
-                <span>รายรับ & คืนเงินงานนี้</span>
+                <span>{tx("รายรับ & คืนเงินงานนี้")}</span>
               </button>
             )}
           </nav>
@@ -1148,22 +1512,22 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                   onClick={() => onSelectEvent(null, 'org_overview')}
                 >
                   <IconArrowLeft size={14} />
-                  <span>รวมทุกงาน</span>
+                  <span>{tx("รวมทุกงาน")}</span>
                 </button>
-                <strong>{selectedEvent.titleTh}</strong>
+                <strong>{tx(selectedEvent.titleTh)}</strong>
                 <EventStatusBadge status={selectedEvent.status} />
               </>
             ) : (
               <>
-                <span className="mono-code">{activeOrg.code}</span>
-                <strong>กำลังดูภาพรวมของ: {activeOrg.nameTh}</strong>
+                <span className="mono-code">{tx(activeOrg.code)}</span>
+                <strong>{tx("กำลังดูภาพรวมของ:")} {tx(activeOrg.nameTh)}</strong>
               </>
             )}
           </div>
 
           <div className="context-toolbar">
             <label htmlFor="tw-sel" className="sr-only">
-              ช่วงเวลาคำนวณยอดเงิน
+              {tx("ช่วงเวลาคำนวณยอดเงิน")}
             </label>
             <select
               id="tw-sel"
@@ -1171,11 +1535,11 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
               onChange={(e) =>
                 setTimeWindow(e.target.value as TimeWindowFilter)
               }
-              aria-label="ช่วงเวลาคำนวณยอดเงิน"
+              aria-label={tx("ช่วงเวลาคำนวณยอดเงิน")}
             >
-              <option value="all_time">ยอดเงิน: ตลอดอายุงาน</option>
-              <option value="last_30d">ยอดเงิน: 30 วันล่าสุด</option>
-              <option value="last_7d">ยอดเงิน: 7 วันล่าสุด</option>
+              <option value="all_time">{tx("ยอดเงิน: ตลอดอายุงาน")}</option>
+              <option value="last_30d">{tx("ยอดเงิน: 30 วันล่าสุด")}</option>
+              <option value="last_7d">{tx("ยอดเงิน: 7 วันล่าสุด")}</option>
             </select>
 
             <button
@@ -1183,7 +1547,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
               className="btn-secondary"
               onClick={() => onOpenPublicPreview(selectedEvent?.id)}
             >
-              ดูหน้าเว็บฝั่งลูกค้า
+              {tx("ดูหน้าเว็บฝั่งลูกค้า")}
             </button>
 
             {canManageEventConfig && (
@@ -1197,7 +1561,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                 }}
               >
                 <IconPlus size={15} />
-                <span>สร้างงานวิ่งใหม่</span>
+                <span>{tx("สร้างงานวิ่งใหม่")}</span>
               </button>
             )}
           </div>
@@ -1208,10 +1572,10 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
           <section
             className="skeleton-stage"
             aria-busy="true"
-            aria-label="กำลังโหลดข้อมูล"
+            aria-label={tx("กำลังโหลดข้อมูล")}
           >
             <div className="skeleton-banner-note">
-              โหมดทดสอบสถานะกำลังโหลด (Skeleton): รักษาโครงสร้างหน้าจอโดยไม่แสดงตัวเลขศูนย์ปลอม
+              {tx("โหมดทดสอบสถานะกำลังโหลด (Skeleton): รักษาโครงสร้างหน้าจอโดยไม่แสดงตัวเลขศูนย์ปลอม")}
             </div>
             <div className="skeleton-block skel-lg" />
             <div className="skeleton-block skel-md" />
@@ -1221,11 +1585,10 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
           isSectionForbiddenByRole ? (
           <section className="permission-denied-panel" role="alert">
             <IconLock size={28} />
-            <h1>บัญชีของคุณไม่มีสิทธิ์เข้าถึงส่วนงานนี้</h1>
+            <h1>{tx("บัญชีของคุณไม่มีสิทธิ์เข้าถึงส่วนงานนี้")}</h1>
             <p>
-              คุณเข้าใช้งานในบทบาท <strong>{roleNameMap[role]}</strong> ของ{' '}
-              <strong>{activeOrg.nameTh}</strong> หากต้องการสิทธิ์เพิ่มเติม
-              กรุณาติดต่อเจ้าขององค์กร ({activeOrg.contactEmail})
+              {tx("คุณเข้าใช้งานในบทบาท ")} <strong>{tx(roleNameMap[role])}</strong> {tx(" ของ")}{' '}
+              <strong>{tx(activeOrg.nameTh)}</strong> {tx(" หากต้องการสิทธิ์เพิ่มเติม กรุณาติดต่อเจ้าขององค์กร (")}{tx(activeOrg.contactEmail)})
             </p>
             <div className="cta-inline-row">
               {simulatedState === 'permission_denied' && (
@@ -1234,7 +1597,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                   className="btn-primary"
                   onClick={onClearSimulatedState}
                 >
-                  กลับสู่สถานะปกติ
+                  {tx("กลับสู่สถานะปกติ")}
                 </button>
               )}
               <button
@@ -1248,7 +1611,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                   )
                 }
               >
-                ไปหน้าที่ได้รับอนุญาต
+                {tx("ไปหน้าที่ได้รับอนุญาต")}
               </button>
             </div>
           </section>
@@ -1259,15 +1622,15 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                 <IconAlert size={18} />
                 <div className="callout-flex">
                   <span>
-                    <strong>ดึงสถานะคิวส่งอีเมลแจ้งเตือนไม่สำเร็จชั่วคราว:</strong>{' '}
-                    คุณยังจัดการผู้สมัครและดูยอดเงินในส่วนอื่นของหน้านี้ได้ตามปกติ
+                    <strong>{tx("ดึงสถานะคิวส่งอีเมลแจ้งเตือนไม่สำเร็จชั่วคราว:")}</strong>{' '}
+                    {tx("คุณยังจัดการผู้สมัครและดูยอดเงินในส่วนอื่นของหน้านี้ได้ตามปกติ")}
                   </span>
                   <button
                     type="button"
                     className="btn-secondary"
                     onClick={onClearSimulatedState}
                   >
-                    ลองโหลดใหม่
+                    {tx("ลองโหลดใหม่")}
                   </button>
                 </div>
               </div>
@@ -1277,13 +1640,13 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
               <div className="success-callout" role="status">
                 <IconCheckCircle size={18} />
                 <div className="callout-flex">
-                  <span>{exportBannerText}</span>
+                  <span>{tx(exportBannerText)}</span>
                   <button
                     type="button"
                     className="btn-ghost-sm"
                     onClick={() => setExportBannerText(null)}
                   >
-                    ปิดข้อความ
+                    {tx("ปิดข้อความ")}
                   </button>
                 </div>
               </div>
@@ -1293,18 +1656,18 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             {activeSection === 'org_overview' && (
               <div className="canvas-stack">
                 <div className="page-guide-header">
-                  <h1>หน้าแรกผู้จัดงาน (ภาพรวมองค์กร)</h1>
+                  <h1>{tx("Organization Overview — ดูภาพรวมทุกงานขององค์กร")}</h1>
                   <p className="page-purpose-desc">
-                    หน้านี้ใช้ดูงานด่วนที่ต้องทำทันที ตรวจสรุปผู้สมัครและยอดโอนเงินรวมทุกงาน
-                    และกดเข้าไปจัดการงานวิ่งแต่ละรายการ
+                    {tx("ดูงานด่วนที่ต้องทำทันที ตรวจสรุปยอดสมัครและรายได้รวมทุกงานของ ")} {tx(activeOrg.nameTh)}
+                    {tx("เปรียบเทียบผลงานแต่ละอีเวนต์ และกดเข้าสู่ Event Dashboard เพื่อเจาะลึกรายงานวิ่ง")}
                   </p>
                 </div>
 
                 {accessibleOrgEvents.length === 0 ? (
                   <div className="empty-state-box">
-                    <h2>องค์กรนี้ยังไม่มีงานวิ่ง</h2>
+                    <h2>{tx("องค์กรนี้ยังไม่มีงานวิ่ง")}</h2>
                     <p>
-                      เริ่มต้นผูกบัญชีรับเงินขององค์กรให้พร้อม แล้วสร้างงานวิ่งแบบร่างแรกเพื่อกำหนดระยะทางและราคา
+                      {tx("เริ่มต้นผูกบัญชีรับเงินขององค์กรให้พร้อม แล้วสร้างงานวิ่งแบบร่างแรกเพื่อกำหนดระยะทางและราคา")}
                     </p>
                     <div className="cta-inline-row">
                       {canManageEventConfig && (
@@ -1317,7 +1680,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                           }}
                         >
                           <IconPlus size={15} />
-                          <span>สร้างงานวิ่งแรกขององค์กร</span>
+                          <span>{tx("สร้างงานวิ่งแรกขององค์กร")}</span>
                         </button>
                       )}
                       <button
@@ -1325,7 +1688,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         className="btn-secondary"
                         onClick={() => onSelectSection('org_team_settings')}
                       >
-                        ตรวจสถานะบัญชีรับเงิน
+                        {tx("ตรวจสถานะบัญชีรับเงิน")}
                       </button>
                     </div>
                   </div>
@@ -1334,26 +1697,26 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     {/* Zone 1: Action Needed */}
                     <section
                       className="action-queue-panel"
-                      aria-label="สิ่งที่ต้องจัดการด่วน"
+                      aria-label={tx("สิ่งที่ต้องจัดการด่วน")}
                     >
                       <div className="section-title-bar">
                         <div>
                           <h2>
-                            สิ่งที่ต้องจัดการก่อน (
+                            {tx("สิ่งที่ต้องจัดการก่อน (")}
                             <span className="mono-num">
-                              {urgentActionItems.length}
+                              {tx(urgentActionItems.length)}
                             </span>{' '}
-                            รายการ)
+                            {tx("รายการ)")}
                           </h2>
                           <span className="muted-inline">
-                            แสดงเฉพาะงานค้างที่บทบาทของคุณมีสิทธิ์กดดำเนินการได้ทันที
+                            {tx("แสดงเฉพาะงานค้างที่บทบาทของคุณมีสิทธิ์กดดำเนินการได้ทันที")}
                           </span>
                         </div>
                       </div>
 
                       {urgentActionItems.length === 0 ? (
                         <p className="muted-block">
-                          ไม่มีงานค้างเร่งด่วนในขณะนี้ ทุกงานอยู่ในสถานะปกติ
+                          {tx("ไม่มีงานค้างเร่งด่วนในขณะนี้ ทุกงานอยู่ในสถานะปกติ")}
                         </p>
                       ) : (
                         <div className="action-queue-rows">
@@ -1362,8 +1725,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                               <div className="action-queue-text">
                                 <IconAlert size={17} />
                                 <div>
-                                  <strong>{item.title}</strong>
-                                  <p>{item.whyItMatters}</p>
+                                  <strong>{tx(item.title)}</strong>
+                                  <p>{tx(item.whyItMatters)}</p>
                                 </div>
                               </div>
                               <button
@@ -1371,7 +1734,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                 className="btn-secondary"
                                 onClick={item.action}
                               >
-                                <span>{item.ctaLabel}</span>
+                                <span>{tx(item.ctaLabel)}</span>
                                 <IconArrowRight size={14} />
                               </button>
                             </div>
@@ -1390,6 +1753,26 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       onDrillDown={handleDrillDown}
                     />
 
+                    {/* Zone 2.5: P1 / P2 / P3 Analytics Charts Suite */}
+                    <OrganizerAnalyticsCharts
+                      scopeMode="organization"
+                      scopeTitle={`รวมทุกงานของ ${activeOrg.nameTh}`}
+                      events={accessibleOrgEvents}
+                      selectedEvent={null}
+                      registrations={orgRegistrations}
+                      merchOrders={orgMerchOrders}
+                      metrics={orgMetrics}
+                      timeWindow={timeWindow}
+                      canViewFinance={canViewFinance}
+                      canManageEventConfig={canManageEventConfig}
+                      canCheckIn={canCheckIn}
+                      onDrillDownStatus={(st) => handleDrillDown(st)}
+                      onDrillDownFinance={(t) => handleDrillDown(t)}
+                      onSelectEventAction={(evId, sec) =>
+                        onSelectEvent(evId, sec)
+                      }
+                    />
+
                     {orgDrilldownRegFilter && (
                       <section
                         id="org-drilldown-source-panel"
@@ -1397,32 +1780,32 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       >
                         <div className="section-title-bar">
                           <h2>
-                            รายชื่อผู้สมัครต้นทาง:{' '}
+                            {tx("รายชื่อผู้สมัครต้นทาง:")}{' '}
                             {orgDrilldownRegFilter === 'confirmed'
-                              ? 'ยืนยันสิทธิ์แล้ว'
-                              : 'กันที่นั่งรอจ่าย'}{' '}
+                              ? tx("ยืนยันสิทธิ์แล้ว")
+                              : tx("กันที่นั่งรอจ่าย")}{' '}
                             (<span className="mono-num">
-                              {orgScopedSourceRegistrations.length}
+                              {tx(orgScopedSourceRegistrations.length)}
                             </span>{' '}
-                            คน)
+                            {tx("คน)")}
                           </h2>
                           <button
                             type="button"
                             className="btn-ghost-sm"
                             onClick={() => setOrgDrilldownRegFilter(null)}
                           >
-                            ซ่อนตารางนี้
+                            {tx("ซ่อนตารางนี้")}
                           </button>
                         </div>
                         <div className="table-scroll">
                           <table className="ops-table">
                             <thead>
                               <tr>
-                                <th>รหัสใบสมัคร / งาน</th>
-                                <th>ผู้เข้าแข่งขัน</th>
-                                <th>สถานะสิทธิ์</th>
-                                <th>สถานะเงิน</th>
-                                <th>ทางลัด</th>
+                                <th>{tx("รหัสใบสมัคร / งาน")}</th>
+                                <th>{tx("ผู้เข้าแข่งขัน")}</th>
+                                <th>{tx("สถานะสิทธิ์")}</th>
+                                <th>{tx("สถานะเงิน")}</th>
+                                <th>{tx("ทางลัด")}</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -1434,13 +1817,13 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                   <tr key={reg.id}>
                                     <td>
                                       <span className="mono-code">
-                                        {reg.regCode}
+                                        {tx(reg.regCode)}
                                       </span>
                                       <div className="muted-inline">
-                                        {ev?.titleTh}
+                                        {tx(ev?.titleTh)}
                                       </div>
                                     </td>
-                                    <td>{reg.participantNameTh}</td>
+                                    <td>{tx(reg.participantNameTh)}</td>
                                     <td>
                                       <RegStatusBadge
                                         status={reg.registrationStatus}
@@ -1465,7 +1848,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                           );
                                         }}
                                       >
-                                        เปิดในงานนี้
+                                        {tx("เปิดในงานนี้")}
                                       </button>
                                     </td>
                                   </tr>
@@ -1481,9 +1864,9 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     <section className="clean-panel">
                       <div className="section-title-bar">
                         <div>
-                          <h2>งานวิ่งในความดูแลของคุณ</h2>
+                          <h2>{tx("งานวิ่งในความดูแลของคุณ")}</h2>
                           <span className="muted-inline">
-                            กดปุ่ม &ldquo;จัดการงานนี้&rdquo; เพื่อเข้าดูระยะราคา รายชื่อผู้สมัคร ร้านค้า หรือจุดเช็กอิน BIB
+                            {tx("กดปุ่ม &ldquo;จัดการงานนี้&rdquo; เพื่อเข้าดูระยะราคา รายชื่อผู้สมัคร ร้านค้า หรือจุดเช็กอิน BIB")}
                           </span>
                         </div>
                         <button
@@ -1491,7 +1874,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                           className="btn-ghost-sm"
                           onClick={() => onSelectSection('org_events')}
                         >
-                          ค้นหา / คัดลอกงานปีถัดไป
+                          {tx("ค้นหา / คัดลอกงานปีถัดไป")}
                         </button>
                       </div>
 
@@ -1499,12 +1882,12 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         <table className="ops-table">
                           <thead>
                             <tr>
-                              <th>ชื่องานวิ่ง</th>
-                              <th>วันจัดงาน</th>
-                              <th>สถานะปัจจุบัน</th>
-                              <th>ผู้รับภาระค่าบริการ</th>
-                              <th className="num-col">ผู้สมัครยืนยัน / โควตา</th>
-                              <th>เข้าไปจัดการ</th>
+                              <th>{tx("ชื่องานวิ่ง")}</th>
+                              <th>{tx("วันจัดงาน")}</th>
+                              <th>{tx("สถานะปัจจุบัน")}</th>
+                              <th>{tx("ผู้รับภาระค่าบริการ")}</th>
+                              <th className="num-col">{tx("ผู้สมัครยืนยัน / โควตา")}</th>
+                              <th>{tx("เข้าไปจัดการ")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1517,21 +1900,21 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                               return (
                                 <tr key={ev.id}>
                                   <td>
-                                    <strong>{ev.titleTh}</strong>
+                                    <strong>{tx(ev.titleTh)}</strong>
                                     <div className="muted-inline">
-                                      <span className="mono-code">{ev.code}</span>{' '}
-                                      · {ev.province} · ร้านค้า{' '}
-                                      {ev.products.length} รายการ
+                                      <span className="mono-code">{tx(ev.code)}</span>{' '}
+                                      · {tx(ev.province)} {tx(" · ร้านค้า")}{' '}
+                                      {tx(ev.products.length)} {tx(" รายการ")}
                                     </div>
                                   </td>
-                                  <td className="mono-num">{ev.eventDate}</td>
+                                  <td className="mono-num">{tx(ev.eventDate)}</td>
                                   <td>
                                     <EventStatusBadge status={ev.status} />
                                   </td>
                                   <td>{feePolicyLabel(ev.feeBearerPolicy)}</td>
                                   <td className="num-col mono-num">
-                                    <strong>{confirmed}</strong> /{' '}
-                                    {ev.totalEventQuota}
+                                    <strong>{tx(confirmed)}</strong> /{' '}
+                                    {tx(ev.totalEventQuota)}
                                   </td>
                                   <td>
                                     <div className="cta-inline-row">
@@ -1547,7 +1930,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                           )
                                         }
                                       >
-                                        จัดการงานนี้
+                                        {tx("จัดการงานนี้")}
                                       </button>
                                       {canManageEventConfig && (
                                         <button
@@ -1560,7 +1943,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                             )
                                           }
                                         >
-                                          โควตา & คำถามสมัคร
+                                          {tx("โควตา & คำถามสมัคร")}
                                         </button>
                                       )}
                                       {canCheckIn &&
@@ -1575,7 +1958,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                               )
                                             }
                                           >
-                                            เช็กอิน BIB
+                                            {tx("เช็กอิน BIB")}
                                           </button>
                                         )}
                                     </div>
@@ -1590,21 +1973,21 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
 
                     {/* Zone 4: Audit Log */}
                     <section className="clean-panel">
-                      <h2>ประวัติการทำรายการล่าสุดในองค์กร</h2>
+                      <h2>{tx("ประวัติการทำรายการล่าสุดในองค์กร")}</h2>
                       <div className="audit-list">
                         {auditLogs
                           .filter((l) => l.organizationId === activeOrg.id)
                           .slice(0, 5)
                           .map((log) => (
                             <div key={log.id} className="audit-row">
-                              <span className="mono-code">{log.timestamp}</span>
-                              <strong>{log.actorName}</strong>
+                              <span className="mono-code">{tx(log.timestamp)}</span>
+                              <strong>{tx(log.actorName)}</strong>
                               <span className="muted-inline">
-                                ({log.actorRole})
+                                ({tx(log.actorRole)})
                               </span>
-                              <span>{log.actionSummary}</span>
+                              <span>{tx(log.actionSummary)}</span>
                               <code className="audit-diff">
-                                {log.detailChange}
+                                {tx(log.detailChange)}
                               </code>
                             </div>
                           ))}
@@ -1620,10 +2003,9 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
               <div className="canvas-stack">
                 <div className="page-heading-row">
                   <div className="page-guide-header">
-                    <h1>รายการงานวิ่งและสร้างงานใหม่</h1>
+                    <h1>{tx("รายการงานวิ่งและสร้างงานใหม่")}</h1>
                     <p className="page-purpose-desc">
-                      ใช้สร้างงานวิ่งแบบร่างใหม่ (พร้อมแจ้งขอให้ทีมช่วยผลิตเสื้อ/เหรียญได้)
-                      หรือทำสำเนาโครงสร้างงานเดิมไปจัดปีถัดไปโดยไม่คัดลอกข้อมูลส่วนบุคคลผู้สมัคร
+                      {tx("ใช้สร้างงานวิ่งแบบร่างใหม่ (พร้อมแจ้งขอให้ทีมช่วยผลิตเสื้อ/เหรียญได้) หรือทำสำเนาโครงสร้างงานเดิมไปจัดปีถัดไปโดยไม่คัดลอกข้อมูลส่วนบุคคลผู้สมัคร")}
                     </p>
                   </div>
                   {canManageEventConfig && (
@@ -1634,7 +2016,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     >
                       <IconPlus size={15} />
                       <span>
-                        {showNewDraftForm ? 'ปิดฟอร์มสร้างงาน' : 'สร้างงานแบบร่าง'}
+                        {showNewDraftForm ? tx("ปิดฟอร์มสร้างงาน") : tx("สร้างงานแบบร่าง")}
                       </span>
                     </button>
                   )}
@@ -1657,21 +2039,21 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       setShowNewDraftForm(false);
                     }}
                   >
-                    <h2>สร้างงานวิ่งแบบร่างใหม่ (บันทึกและแก้ไขต่อได้ก่อนเปิดขาย)</h2>
+                    <h2>{tx("สร้างงานวิ่งแบบร่างใหม่ (บันทึกและแก้ไขต่อได้ก่อนเปิดขาย)")}</h2>
                     <div className="form-grid-3">
                       <div className="form-row">
-                        <label htmlFor="nd-title">ชื่องานวิ่งภาษาไทย</label>
+                        <label htmlFor="nd-title">{tx("ชื่องานวิ่งภาษาไทย")}</label>
                         <input
                           id="nd-title"
                           type="text"
                           value={newDraftTitle}
                           onChange={(e) => setNewDraftTitle(e.target.value)}
-                          placeholder="เช่น ขอนแก่น ซิตี้ รัน 2027"
+                          placeholder={tx("เช่น ขอนแก่น ซิตี้ รัน 2027")}
                           required
                         />
                       </div>
                       <div className="form-row">
-                        <label htmlFor="nd-prov">จังหวัด</label>
+                        <label htmlFor="nd-prov">{tx("จังหวัด")}</label>
                         <input
                           id="nd-prov"
                           type="text"
@@ -1681,7 +2063,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         />
                       </div>
                       <div className="form-row">
-                        <label htmlFor="nd-date">วันจัดงาน (YYYY-MM-DD)</label>
+                        <label htmlFor="nd-date">{tx("วันจัดงาน (YYYY-MM-DD)")}</label>
                         <input
                           id="nd-date"
                           type="text"
@@ -1703,19 +2085,19 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         onChange={(e) => setRequestProdHelp(e.target.checked)}
                       />
                       <span>
-                        ต้องการขอใบเสนอราคาให้ทีม RunEvent ช่วยออกแบบ/ผลิตเสื้อแข่งขันและเหรียญรางวัลสำหรับงานนี้ด้วย
+                        {tx("ต้องการขอใบเสนอราคาให้ทีม RunEvent ช่วยออกแบบ/ผลิตเสื้อแข่งขันและเหรียญรางวัลสำหรับงานนี้ด้วย")}
                       </span>
                     </label>
 
                     <button type="submit" className="btn-primary">
-                      บันทึกแบบร่างและเปิดหน้าตั้งค่างาน
+                      {tx("บันทึกแบบร่างและเปิดหน้าตั้งค่างาน")}
                     </button>
                   </form>
                 )}
 
                 <div className="filter-bar-panel">
                   <div className="filter-field filter-search">
-                    <label htmlFor="ev-q">ค้นหาชื่องานหรือรหัสงาน</label>
+                    <label htmlFor="ev-q">{tx("ค้นหาชื่องานหรือรหัสงาน")}</label>
                     <div className="input-with-icon">
                       <IconSearch size={16} />
                       <input
@@ -1723,12 +2105,12 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         type="search"
                         value={eventSearch}
                         onChange={(e) => setEventSearch(e.target.value)}
-                        placeholder="พิมพ์ชื่องาน จังหวัด หรือรหัส..."
+                        placeholder={tx("พิมพ์ชื่องาน จังหวัด หรือรหัส...")}
                       />
                     </div>
                   </div>
                   <div className="filter-field">
-                    <label htmlFor="ev-st">กรองตามสถานะ</label>
+                    <label htmlFor="ev-st">{tx("กรองตามสถานะ")}</label>
                     <select
                       id="ev-st"
                       value={eventStatusFilter}
@@ -1738,12 +2120,12 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         )
                       }
                     >
-                      <option value="all">ทุกสถานะ</option>
-                      <option value="published">กำลังเปิดรับสมัคร</option>
-                      <option value="draft">แบบร่าง</option>
-                      <option value="in_review">รอตรวจอนุมัติ</option>
-                      <option value="completed">จบงานแล้ว</option>
-                      <option value="suspended">ระงับชั่วคราว</option>
+                      <option value="all">{tx("ทุกสถานะ")}</option>
+                      <option value="published">{tx("กำลังเปิดรับสมัคร")}</option>
+                      <option value="draft">{tx("แบบร่าง")}</option>
+                      <option value="in_review">{tx("รอตรวจอนุมัติ")}</option>
+                      <option value="completed">{tx("จบงานแล้ว")}</option>
+                      <option value="suspended">{tx("ระงับชั่วคราว")}</option>
                     </select>
                   </div>
                 </div>
@@ -1753,31 +2135,31 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     <table className="ops-table">
                       <thead>
                         <tr>
-                          <th>รหัส / ชื่องานวิ่ง</th>
-                          <th>วันจัด / จังหวัด</th>
-                          <th>สถานะ</th>
-                          <th className="num-col">โควตารวม</th>
-                          <th>การจัดการ</th>
+                          <th>{tx("รหัส / ชื่องานวิ่ง")}</th>
+                          <th>{tx("วันจัด / จังหวัด")}</th>
+                          <th>{tx("สถานะ")}</th>
+                          <th className="num-col">{tx("โควตารวม")}</th>
+                          <th>{tx("การจัดการ")}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredOrgEvents.map((ev) => (
                           <tr key={ev.id}>
                             <td>
-                              <span className="mono-code">{ev.code}</span>
+                              <span className="mono-code">{tx(ev.code)}</span>
                               <div>
-                                <strong>{ev.titleTh}</strong>
+                                <strong>{tx(ev.titleTh)}</strong>
                               </div>
                             </td>
                             <td>
-                              <span className="mono-num">{ev.eventDate}</span> ·{' '}
-                              {ev.province}
+                              <span className="mono-num">{tx(ev.eventDate)}</span> ·{' '}
+                              {tx(ev.province)}
                             </td>
                             <td>
                               <EventStatusBadge status={ev.status} />
                             </td>
                             <td className="num-col mono-num">
-                              {ev.totalEventQuota} คน
+                              {tx(ev.totalEventQuota)} {tx(" คน")}
                             </td>
                             <td>
                               <div className="cta-inline-row">
@@ -1788,7 +2170,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                     onSelectEvent(ev.id, 'evt_overview')
                                   }
                                 >
-                                  เปิดจัดการ
+                                  {tx("เปิดจัดการ")}
                                 </button>
                                 {canManageEventConfig && (
                                   <button
@@ -1798,7 +2180,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                       onSelectEvent(ev.id, 'evt_pricing_quota')
                                     }
                                   >
-                                    โควตา & คำถามสมัคร
+                                    {tx("โควตา & คำถามสมัคร")}
                                   </button>
                                 )}
                                 {canManageEventConfig && (
@@ -1810,7 +2192,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                     }
                                   >
                                     <IconCopy size={14} />
-                                    <span>คัดลอกงานไปปีหน้า (ไม่คัดลอก PII)</span>
+                                    <span>{tx("คัดลอกงานไปปีหน้า (ไม่คัดลอก PII)")}</span>
                                   </button>
                                 )}
                               </div>
@@ -1828,28 +2210,26 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             {activeSection === 'org_merch_production' && (
               <div className="canvas-stack">
                 <div className="page-guide-header">
-                  <h1>ร้านค้าและคำขอใบเสนอราคาผลิตเสื้อ/เหรียญขององค์กร</h1>
+                  <h1>{tx("ร้านค้าและคำขอใบเสนอราคาผลิตเสื้อ/เหรียญขององค์กร")}</h1>
                   <p className="page-purpose-desc">
-                    ใช้ติดตามคำสั่งซื้อของที่ระลึกจากลูกค้าทั่วไปข้ามทุกงานวิ่ง
-                    และตรวจสถานะคำขอราคา/งานสั่งผลิตเสื้อและเหรียญขององค์กร
+                    {tx("ใช้ติดตามคำสั่งซื้อของที่ระลึกจากลูกค้าทั่วไปข้ามทุกงานวิ่ง และตรวจสถานะคำขอราคา/งานสั่งผลิตเสื้อและเหรียญขององค์กร")}
                   </p>
                 </div>
 
                 <section className="clean-panel">
-                  <h2>คำขอใบเสนอราคาและงานสั่งผลิตเสื้อ/เหรียญ (Production Inquiries)</h2>
+                  <h2>{tx("คำขอใบเสนอราคาและงานสั่งผลิตเสื้อ/เหรียญ (Production Inquiries)")}</h2>
                   <p className="muted-block">
-                    แยกสถานะใบเสนอราคา การอนุมัติแบบ และสถานะการผลิตออกจากกัน
-                    (คำขอราคายังไม่ใช่คำสั่งเริ่มผลิตจนกว่าจะยืนยันแบบ จำนวน และเงื่อนไขชำระ)
+                    {tx("แยกสถานะใบเสนอราคา การอนุมัติแบบ และสถานะการผลิตออกจากกัน (คำขอราคายังไม่ใช่คำสั่งเริ่มผลิตจนกว่าจะยืนยันแบบ จำนวน และเงื่อนไขชำระ)")}
                   </p>
                   <div className="table-scroll">
                     <table className="ops-table">
                       <thead>
                         <tr>
-                          <th>รหัสคำขอ</th>
-                          <th>รายการสั่งทำ / เวอร์ชันแบบ</th>
-                          <th className="num-col">สูตรคำนวณยอดผลิตสุทธิ</th>
-                          <th>กำหนดรับของ</th>
-                          <th>สถานะราคา & การผลิต</th>
+                          <th>{tx("รหัสคำขอ")}</th>
+                          <th>{tx("รายการสั่งทำ / เวอร์ชันแบบ")}</th>
+                          <th className="num-col">{tx("สูตรคำนวณยอดผลิตสุทธิ")}</th>
+                          <th>{tx("กำหนดรับของ")}</th>
+                          <th>{tx("สถานะราคา & การผลิต")}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1857,45 +2237,45 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                           .filter((q) => q.organizationId === activeOrg.id)
                           .map((rfq) => (
                             <tr key={rfq.id}>
-                              <td className="mono-code">{rfq.inquiryCode}</td>
+                              <td className="mono-code">{tx(rfq.inquiryCode)}</td>
                               <td>
-                                <strong>{rfq.itemType}</strong>
+                                <strong>{tx(rfq.itemType)}</strong>
                                 <div className="muted-inline">
-                                  {rfq.artworkVersion}
+                                  {tx(rfq.artworkVersion)}
                                 </div>
                               </td>
                               <td className="num-col mono-num">
-                                สิทธิ์สมัคร {rfq.packageEntitlementQty} + ร้านค้า{' '}
-                                {rfq.addonStoreQty} + สำรอง {rfq.organizerBufferQty}{' '}
-                                − มีอยู่ {rfq.existingStockDeductedQty} ={' '}
-                                <strong>{rfq.netQtyToProduce} ชิ้น</strong>
+                                {tx("สิทธิ์สมัคร ")} {tx(rfq.packageEntitlementQty)} {tx(" + ร้านค้า")}{' '}
+                                {tx(rfq.addonStoreQty)} {tx(" + สำรอง")} {tx(rfq.organizerBufferQty)}{' '}
+                                {tx("− มีอยู่ ")} {tx(rfq.existingStockDeductedQty)} ={' '}
+                                <strong>{tx(rfq.netQtyToProduce)} {tx(" ชิ้น")}</strong>
                               </td>
                               <td className="mono-num">
-                                {rfq.targetDeliveryDate}
+                                {tx(rfq.targetDeliveryDate)}
                               </td>
                               <td>
                                 <span className="status-pill badge-navy">
                                   <IconClock size={13} />
                                   <span>
                                     {rfq.quoteStatus === 'quoted_demo'
-                                      ? 'ส่งใบเสนอราคาแล้ว'
+                                      ? tx("ส่งใบเสนอราคาแล้ว")
                                       : rfq.quoteStatus === 'accepted'
-                                        ? 'อนุมัติราคาแล้ว'
+                                        ? tx("อนุมัติราคาแล้ว")
                                         : rfq.quoteStatus === 'submitted'
-                                          ? 'ส่งคำขอราคาแล้ว'
-                                          : 'ร่างคำขอราคา'}
+                                          ? tx("ส่งคำขอราคาแล้ว")
+                                          : tx("ร่างคำขอราคา")}
                                   </span>
                                 </span>{' '}
                                 <span className="status-pill badge-amber">
                                   <IconClock size={13} />
                                   <span>
                                     {rfq.productionStatus === 'awaiting_approval'
-                                      ? 'รออนุมัติแบบก่อนผลิต'
+                                      ? tx("รออนุมัติแบบก่อนผลิต")
                                       : rfq.productionStatus === 'ready_to_produce'
-                                        ? 'พร้อมเริ่มผลิต'
+                                        ? tx("พร้อมเริ่มผลิต")
                                         : rfq.productionStatus === 'in_production'
-                                          ? 'กำลังผลิต'
-                                          : 'ตรวจ QC ผ่านแล้ว'}
+                                          ? tx("กำลังผลิต")
+                                          : tx("ตรวจ QC ผ่านแล้ว")}
                                   </span>
                                 </span>
                               </td>
@@ -1908,41 +2288,41 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
 
                 <section className="clean-panel">
                   <h2>
-                    คำสั่งซื้อสินค้าที่ระลึกข้ามทุกงานในองค์กร (
-                    <span className="mono-num">{orgMerchOrders.length}</span>{' '}
-                    รายการ)
+                    {tx("คำสั่งซื้อสินค้าที่ระลึกข้ามทุกงานในองค์กร (")}
+                    <span className="mono-num">{tx(orgMerchOrders.length)}</span>{' '}
+                    {tx("รายการ)")}
                   </h2>
                   <div className="table-scroll">
                     <table className="ops-table">
                       <thead>
                         <tr>
-                          <th>รหัสออเดอร์</th>
-                          <th>ผู้ซื้อ</th>
-                          <th>สินค้า / ขนาด</th>
-                          <th className="num-col">จำนวน (ส่งมอบแล้ว)</th>
-                          <th className="num-col">ยอดชำระรวม</th>
-                          <th>วิธีรับของ</th>
+                          <th>{tx("รหัสออเดอร์")}</th>
+                          <th>{tx("ผู้ซื้อ")}</th>
+                          <th>{tx("สินค้า / ขนาด")}</th>
+                          <th className="num-col">{tx("จำนวน (ส่งมอบแล้ว)")}</th>
+                          <th className="num-col">{tx("ยอดชำระรวม")}</th>
+                          <th>{tx("วิธีรับของ")}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {orgMerchOrders.map((ord) => (
                           <tr key={ord.id}>
-                            <td className="mono-code">{ord.merchOrderCode}</td>
-                            <td>{ord.buyerName}</td>
+                            <td className="mono-code">{tx(ord.merchOrderCode)}</td>
+                            <td>{tx(ord.buyerName)}</td>
                             <td>
-                              <strong>{ord.productNameTh}</strong> (
-                              {ord.variantSize})
+                              <strong>{tx(ord.productNameTh)}</strong> (
+                              {tx(ord.variantSize)})
                             </td>
                             <td className="num-col mono-num">
-                              {ord.deliveredQty} / {ord.quantity} ชิ้น
+                              {tx(ord.deliveredQty)} / {tx(ord.quantity)} {tx(" ชิ้น")}
                             </td>
                             <td className="num-col mono-num">
                               {formatThb(ord.totalPaidSatang, true)}
                             </td>
                             <td>
                               {ord.deliveryMethod === 'pickup_at_expo'
-                                ? `รับหน้างาน (${ord.pickupToken})`
-                                : 'จัดส่งไปรษณีย์'}
+                                ? txf("รับหน้างาน ({0})", ord.pickupToken)
+                                : tx("จัดส่งไปรษณีย์")}
                             </td>
                           </tr>
                         ))}
@@ -1957,10 +2337,9 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             {activeSection === 'org_finance' && (
               <div className="canvas-stack">
                 <div className="page-guide-header">
-                  <h1>การเงินรวมขององค์กรและตัวจำลองค่าบริการ</h1>
+                  <h1>{tx("การเงินรวมขององค์กรและตัวจำลองค่าบริการ")}</h1>
                   <p className="page-purpose-desc">
-                    ใช้ตรวจยอดโอนเงินเข้าบัญชีองค์กร เปรียบเทียบนโยบายผู้รับภาระค่าบริการ
-                    และส่งออกรายงานกระทบยอดทางบัญชี
+                    {tx("ใช้ตรวจยอดโอนเงินเข้าบัญชีองค์กร เปรียบเทียบนโยบายผู้รับภาระค่าบริการ และส่งออกรายงานกระทบยอดทางบัญชี")}
                   </p>
                 </div>
 
@@ -1974,10 +2353,10 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                 />
 
                 <section className="clean-panel">
-                  <h2>เครื่องคำนวณเปรียบเทียบผู้รับภาระค่าบริการ (อัตราจำลอง 5% + ฿15)</h2>
+                  <h2>{tx("เครื่องคำนวณเปรียบเทียบผู้รับภาระค่าบริการ (อัตราจำลอง 5% + ฿15)")}</h2>
                   <div className="sim-input-bar">
                     <label htmlFor="sim-baht-slider">
-                      ทดลองเลื่อนราคาค่าสมัครหน้าป้ายต่อคน:{' '}
+                      {tx("ทดลองเลื่อนราคาค่าสมัครหน้าป้ายต่อคน:")}{' '}
                       <strong className="mono-num">
                         {formatThb(calcSamplePriceBaht * 100)}
                       </strong>
@@ -1998,11 +2377,11 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     <table className="ops-table">
                       <thead>
                         <tr>
-                          <th>นโยบายที่ผู้จัดเลือก</th>
-                          <th className="num-col">ราคาหน้าป้าย</th>
-                          <th className="num-col">นักวิ่งจ่ายสุทธิ</th>
-                          <th className="num-col">หักค่าบริการฝั่งผู้จัด</th>
-                          <th className="num-col">ผู้จัดได้รับสุทธิ</th>
+                          <th>{tx("นโยบายที่ผู้จัดเลือก")}</th>
+                          <th className="num-col">{tx("ราคาหน้าป้าย")}</th>
+                          <th className="num-col">{tx("นักวิ่งจ่ายสุทธิ")}</th>
+                          <th className="num-col">{tx("หักค่าบริการฝั่งผู้จัด")}</th>
+                          <th className="num-col">{tx("ผู้จัดได้รับสุทธิ")}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2048,7 +2427,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
 
                 <section id="finance-source-ledger" className="clean-panel">
                   <div className="section-title-bar">
-                    <h2>รายการธุรกรรมและรอบโอนเงินตามตัวกรอง</h2>
+                    <h2>{tx("รายการธุรกรรมและรอบโอนเงินตามตัวกรอง")}</h2>
                     <div className="cta-inline-row">
                       {(
                         [
@@ -2068,7 +2447,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                           }
                           onClick={() => setFinanceSubFilter(k)}
                         >
-                          {lbl}
+                          {tx(lbl)}
                         </button>
                       ))}
                       <button
@@ -2076,12 +2455,12 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         className="btn-secondary"
                         onClick={() =>
                           setExportBannerText(
-                            `สร้างไฟล์รายงานการเงิน CSV ของ ${activeOrg.code} เรียบร้อยแล้ว`
+                            txf("สร้างไฟล์รายงานการเงิน CSV ของ {0} เรียบร้อยแล้ว", activeOrg.code)
                           )
                         }
                       >
                         <IconDownload size={15} />
-                        <span>ส่งออกรายงาน CSV</span>
+                        <span>{tx("ส่งออกรายงาน CSV")}</span>
                       </button>
                     </div>
                   </div>
@@ -2095,11 +2474,11 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         <table className="ops-table">
                           <thead>
                             <tr>
-                              <th>คำสั่งซื้อ</th>
-                              <th>ผู้เข้าแข่งขัน</th>
-                              <th>สถานะรับเงิน</th>
-                              <th className="num-col">ยอดรับชำระ</th>
-                              <th>สถานะคืนเงิน</th>
+                              <th>{tx("คำสั่งซื้อ")}</th>
+                              <th>{tx("ผู้เข้าแข่งขัน")}</th>
+                              <th>{tx("สถานะรับเงิน")}</th>
+                              <th className="num-col">{tx("ยอดรับชำระ")}</th>
+                              <th>{tx("สถานะคืนเงิน")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2112,8 +2491,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                               )
                               .map((r) => (
                                 <tr key={r.id}>
-                                  <td className="mono-code">{r.orderCode}</td>
-                                  <td>{r.participantNameTh}</td>
+                                  <td className="mono-code">{tx(r.orderCode)}</td>
+                                  <td>{tx(r.participantNameTh)}</td>
                                   <td>
                                     <PaymentStatusBadge
                                       status={r.paymentStatus}
@@ -2141,13 +2520,13 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         <table className="ops-table">
                           <thead>
                             <tr>
-                              <th>รหัสรอบโอน</th>
-                              <th>รายละเอียดงวด</th>
-                              <th>กำหนดโอน</th>
-                              <th className="num-col">รับชำระรวม</th>
-                              <th className="num-col">หักคืนเงิน</th>
-                              <th className="num-col">ยอดโอนเข้าบัญชีสุทธิ</th>
-                              <th>สถานะ</th>
+                              <th>{tx("รหัสรอบโอน")}</th>
+                              <th>{tx("รายละเอียดงวด")}</th>
+                              <th>{tx("กำหนดโอน")}</th>
+                              <th className="num-col">{tx("รับชำระรวม")}</th>
+                              <th className="num-col">{tx("หักคืนเงิน")}</th>
+                              <th className="num-col">{tx("ยอดโอนเข้าบัญชีสุทธิ")}</th>
+                              <th>{tx("สถานะ")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2155,9 +2534,9 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                               .filter((p) => p.organizationId === activeOrg.id)
                               .map((po) => (
                                 <tr key={po.id}>
-                                  <td className="mono-code">{po.payoutCode}</td>
-                                  <td>{po.periodLabel}</td>
-                                  <td className="mono-num">{po.scheduledDate}</td>
+                                  <td className="mono-code">{tx(po.payoutCode)}</td>
+                                  <td>{tx(po.periodLabel)}</td>
+                                  <td className="mono-num">{tx(po.scheduledDate)}</td>
                                   <td className="num-col mono-num">
                                     {formatThb(po.grossSucceededSatang, true)}
                                   </td>
@@ -2186,23 +2565,23 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             {activeSection === 'org_team_settings' && (
               <div className="canvas-stack">
                 <div className="page-guide-header">
-                  <h1>ทีมงานและบัญชีรับเงินขององค์กร</h1>
+                  <h1>{tx("ทีมงานและบัญชีรับเงินขององค์กร")}</h1>
                   <p className="page-purpose-desc">
-                    ใช้ตรวจสถานะบัญชีธนาคารรับยอดนำส่ง และสร้างรหัสคำเชิญแบบใช้ครั้งเดียวเพื่อเชิญทีมงานเข้าดูแลเฉพาะบทบาท
+                    {tx("ใช้ตรวจสถานะบัญชีธนาคารรับยอดนำส่ง และสร้างรหัสคำเชิญแบบใช้ครั้งเดียวเพื่อเชิญทีมงานเข้าดูแลเฉพาะบทบาท")}
                   </p>
                 </div>
 
                 <section className="clean-panel">
-                  <h2>ข้อมูลองค์กรผู้จัดและบัญชีรับเงิน</h2>
+                  <h2>{tx("ข้อมูลองค์กรผู้จัดและบัญชีรับเงิน")}</h2>
                   <div className="org-settings-summary">
                     <div>
                       <p>
-                        <strong>องค์กร:</strong> {activeOrg.nameTh} (
-                        <span className="mono-code">{activeOrg.code}</span>)
+                        <strong>{tx("องค์กร:")}</strong> {tx(activeOrg.nameTh)} (
+                        <span className="mono-code">{tx(activeOrg.code)}</span>)
                       </p>
                       <p>
-                        <strong>บัญชีรับโอนรายได้:</strong>{' '}
-                        {activeOrg.payoutBankSummary}
+                        <strong>{tx("บัญชีรับโอนรายได้:")}</strong>{' '}
+                        {tx(activeOrg.payoutBankSummary)}
                       </p>
                     </div>
                     <span
@@ -2216,33 +2595,33 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       )}
                       <span>
                         {activeOrg.payoutReady
-                          ? 'บัญชีรับเงินพร้อมใช้งานแล้ว'
-                          : 'รอยืนยันเอกสารบัญชีรับเงิน'}
+                          ? tx("บัญชีรับเงินพร้อมใช้งานแล้ว")
+                          : tx("รอยืนยันเอกสารบัญชีรับเงิน")}
                       </span>
                     </span>
                   </div>
                   {!canManageOrgBank && (
                     <div className="finance-restricted-note">
-                      บทบาทปัจจุบันไม่อนุญาตให้แก้ไขเลขบัญชีรับเงินขององค์กร (สงวนสิทธิ์เฉพาะเจ้าขององค์กร)
+                      {tx("บทบาทปัจจุบันไม่อนุญาตให้แก้ไขเลขบัญชีรับเงินขององค์กร (สงวนสิทธิ์เฉพาะเจ้าขององค์กร)")}
                     </div>
                   )}
                 </section>
 
                 <section className="clean-panel">
                   <div className="section-title-bar">
-                    <h2>รหัสคำเชิญเข้าร่วมทีม (ใช้ได้ครั้งเดียวและมีวันหมดอายุ)</h2>
+                    <h2>{tx("รหัสคำเชิญเข้าร่วมทีม (ใช้ได้ครั้งเดียวและมีวันหมดอายุ)")}</h2>
                     {canManageOrgBank && (
                       <div className="cta-inline-row">
                         <select
-                          aria-label="เลือกบทบาทที่จะเชิญ"
+                          aria-label={tx("เลือกบทบาทที่จะเชิญ")}
                           value={inviteRolePick}
                           onChange={(e) =>
                             setInviteRolePick(e.target.value as OrgRole)
                           }
                         >
-                          <option value="staff">เจ้าหน้าที่จุดรับอุปกรณ์</option>
-                          <option value="event_manager">ผู้จัดการงาน</option>
-                          <option value="finance">ฝ่ายการเงิน</option>
+                          <option value="staff">{tx("เจ้าหน้าที่จุดรับอุปกรณ์")}</option>
+                          <option value="event_manager">{tx("ผู้จัดการงาน")}</option>
+                          <option value="finance">{tx("ฝ่ายการเงิน")}</option>
                         </select>
                         <button
                           type="button"
@@ -2255,7 +2634,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                           }
                         >
                           <IconPlus size={15} />
-                          <span>ออกรหัสคำเชิญใหม่</span>
+                          <span>{tx("ออกรหัสคำเชิญใหม่")}</span>
                         </button>
                       </div>
                     )}
@@ -2264,10 +2643,10 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     <table className="ops-table">
                       <thead>
                         <tr>
-                          <th>รหัสคำเชิญ</th>
-                          <th>บทบาทที่ได้รับ</th>
-                          <th>หมดอายุ</th>
-                          <th>สถานะการใช้งาน</th>
+                          <th>{tx("รหัสคำเชิญ")}</th>
+                          <th>{tx("บทบาทที่ได้รับ")}</th>
+                          <th>{tx("หมดอายุ")}</th>
+                          <th>{tx("สถานะการใช้งาน")}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2275,19 +2654,19 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                           .filter((i) => i.organizationId === activeOrg.id)
                           .map((inv) => (
                             <tr key={inv.id}>
-                              <td className="mono-code">{inv.inviteCode}</td>
-                              <td>{roleNameMap[inv.role]}</td>
-                              <td className="mono-num">{inv.expiresAt}</td>
+                              <td className="mono-code">{tx(inv.inviteCode)}</td>
+                              <td>{tx(roleNameMap[inv.role])}</td>
+                              <td className="mono-num">{tx(inv.expiresAt)}</td>
                               <td>
                                 {inv.usedByUserId ? (
                                   <span className="status-pill badge-neutral">
                                     <IconLock size={13} />
-                                    <span>ถูกใช้งานแล้ว ({inv.usedByUserId})</span>
+                                    <span>{tx("ถูกใช้งานแล้ว (")}{tx(inv.usedByUserId)})</span>
                                   </span>
                                 ) : (
                                   <span className="status-pill badge-forest">
                                     <IconCheckCircle size={13} />
-                                    <span>พร้อมส่งให้สมาชิกกดรับสิทธิ์</span>
+                                    <span>{tx("พร้อมส่งให้สมาชิกกดรับสิทธิ์")}</span>
                                   </span>
                                 )}
                               </td>
@@ -2301,22 +2680,116 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             )}
 
             {/* ================= 6. EVENT OVERVIEW & LIFECYCLE ================= */}
+            {selectedEvent && (
+              <nav
+                className="clean-panel"
+                aria-label={tx("แถบสลับหมวดเจาะลึกภายใน Event Dashboard")}
+                style={{ padding: '0.65rem 0.9rem' }}
+              >
+                <div
+                  className="cta-inline-row"
+                  style={{ justifyContent: 'space-between', width: '100%' }}
+                >
+                  <div className="cta-inline-row">
+                    <span className="priority-chip chip-p1">Event Dashboard</span>
+                    <strong>{tx(selectedEvent.titleTh)}</strong>
+                    <span className="mono-code">{tx(selectedEvent.code)}</span>
+                  </div>
+                  <div className="priority-pill-bar">
+                    <button
+                      type="button"
+                      className={`filter-pill ${
+                        activeSection === 'evt_overview' ? 'active' : ''
+                      }`}
+                      onClick={() => onSelectSection('evt_overview')}
+                    >
+                      {tx("ภาพรวม & กราฟเจาะลึก")}
+                    </button>
+                    <button
+                      type="button"
+                      className={`filter-pill ${
+                        activeSection === 'evt_pricing_quota' ? 'active' : ''
+                      }`}
+                      onClick={() => onSelectSection('evt_pricing_quota')}
+                    >
+                      {tx("โควตา & คำถามสมัคร")}
+                    </button>
+                    <button
+                      type="button"
+                      className={`filter-pill ${
+                        activeSection === 'evt_participants' ? 'active' : ''
+                      }`}
+                      onClick={() => onSelectSection('evt_participants')}
+                    >
+                      {tx("นักวิ่ง (")}
+                      {
+                        tx(orgRegistrations.filter(
+                          (r) => r.eventId === selectedEvent.id
+                        ).length)
+                      }
+                      )
+                    </button>
+                    {canViewFinance && (
+                      <button
+                        type="button"
+                        className={`filter-pill ${
+                          activeSection === 'evt_finance' ? 'active' : ''
+                        }`}
+                        onClick={() => onSelectSection('evt_finance')}
+                      >
+                        {tx("การชำระเงิน & คืนเงิน")}
+                      </button>
+                    )}
+                    {canCheckIn && (
+                      <button
+                        type="button"
+                        className={`filter-pill ${
+                          activeSection === 'evt_checkin_bib' ? 'active' : ''
+                        }`}
+                        onClick={() => onSelectSection('evt_checkin_bib')}
+                      >
+                        {tx("Check-in & จ่าย BIB")}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className={`filter-pill ${
+                        activeSection === 'evt_storefront' ? 'active' : ''
+                      }`}
+                      onClick={() => onSelectSection('evt_storefront')}
+                    >
+                      {tx("ร้านค้าของที่ระลึก")}
+                    </button>
+                  </div>
+                </div>
+              </nav>
+            )}
+
             {selectedEvent &&
               activeSection === 'evt_overview' &&
               eventMetrics && (
                 <div className="canvas-stack">
                   <div className="page-guide-header">
-                    <h1>{selectedEvent.titleTh}</h1>
+                    <h1>
+                      {tx("Event Dashboard — เจาะลึกงานวิ่ง: ")} {tx(selectedEvent.titleTh)}
+                    </h1>
                     <p className="page-purpose-desc">
-                      หน้านี้แสดงความคืบหน้าของงานตามลำดับช่วงชีวิตงาน ตรวจความพร้อมก่อนเปิดขาย
-                      และตั้งค่าผู้รับภาระค่าบริการ
+                      {tx("เจาะลึกข้อมูลเฉพาะงานวิ่งนี้ครบทั้งยอดสมัคร รายได้ โควตา รายชื่อนักวิ่ง การชำระเงิน และสถานะ Check-in หน้างาน")}
                     </p>
                   </div>
+
+                  <EventMediaManager
+                    event={selectedEvent}
+                    canEdit={canManageEventConfig}
+                    onSave={(patch) =>
+                      onUpdateEventMedia?.(selectedEvent.id, patch)
+                    }
+                  />
 
                   {/* Clear Lifecycle Progress Guide */}
                   <div
                     className="lifecycle-stepper"
-                    aria-label="ช่วงชีวิตของงานวิ่งนี้"
+                    aria-label={tx("ช่วงชีวิตของงานวิ่งนี้")}
                   >
                     {(
                       [
@@ -2340,7 +2813,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         className={`lifecycle-step ${isActive ? 'active' : ''
                           }`}
                       >
-                        <strong>{label}</strong>
+                        <strong>{tx(label)}</strong>
                       </div>
                     ))}
                   </div>
@@ -2348,7 +2821,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                   {selectedEvent.statusNote && (
                     <div className="status-explanation-banner">
                       <IconAlert size={17} />
-                      <span>{selectedEvent.statusNote}</span>
+                      <span>{tx(selectedEvent.statusNote)}</span>
                     </div>
                   )}
 
@@ -2361,9 +2834,28 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     onDrillDown={handleDrillDown}
                   />
 
+                  <OrganizerAnalyticsCharts
+                    scopeMode="event"
+                    scopeTitle={selectedEvent.titleTh}
+                    events={accessibleOrgEvents}
+                    selectedEvent={selectedEvent}
+                    registrations={orgRegistrations}
+                    merchOrders={orgMerchOrders}
+                    metrics={eventMetrics}
+                    timeWindow={timeWindow}
+                    canViewFinance={canViewFinance}
+                    canManageEventConfig={canManageEventConfig}
+                    canCheckIn={canCheckIn}
+                    onDrillDownStatus={(st) => handleDrillDown(st)}
+                    onDrillDownFinance={(t) => handleDrillDown(t)}
+                    onSelectEventAction={(evId, sec) =>
+                      onSelectEvent(evId, sec)
+                    }
+                  />
+
                   <div className="two-col-ops-grid">
                     <section className="clean-panel">
-                      <h2>Checklist ความพร้อมก่อนเผยแพร่งาน</h2>
+                      <h2>{tx("Checklist ความพร้อมก่อนเผยแพร่งาน")}</h2>
                       <div className="checklist-rows">
                         {selectedEvent.readinessChecks.map((chk) => (
                           <div key={chk.id} className="checklist-row">
@@ -2377,13 +2869,13 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                 <IconAlert size={14} />
                               )}
                               <span>
-                                {chk.passed ? 'พร้อมแล้ว' : 'ต้องจัดการ'}
+                                {chk.passed ? tx("พร้อมแล้ว") : tx("ต้องจัดการ")}
                               </span>
                             </span>
                             <div>
-                              <strong>{chk.label}</strong>
+                              <strong>{tx(chk.label)}</strong>
                               <div className="muted-inline">
-                                {chk.fixTargetHint}
+                                {tx(chk.fixTargetHint)}
                               </div>
                             </div>
                           </div>
@@ -2402,17 +2894,17 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                 )
                               }
                             >
-                              บันทึกข้อมูลที่ขาดและส่งตรวจอนุมัติเผยแพร่
+                              {tx("บันทึกข้อมูลที่ขาดและส่งตรวจอนุมัติเผยแพร่")}
                             </button>
                           </div>
                         )}
                     </section>
 
                     <section className="clean-panel">
-                      <h2>ผู้รับภาระค่าบริการและภาพรวมการรับของหน้างาน</h2>
+                      <h2>{tx("ผู้รับภาระค่าบริการและภาพรวมการรับของหน้างาน")}</h2>
                       <div className="form-row">
                         <label htmlFor="ev-pol-sel">
-                          ผู้รับภาระค่าบริการ (มีผลกับใบสมัครใหม่ทันที)
+                          {tx("ผู้รับภาระค่าบริการ (มีผลกับใบสมัครใหม่ทันที)")}
                         </label>
                         <select
                           id="ev-pol-sel"
@@ -2426,13 +2918,13 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                           }
                         >
                           <option value="runner_pays">
-                            นักวิ่งรับภาระค่าบริการ (แสดงราคาสุทธิก่อนจ่าย)
+                            {tx("นักวิ่งรับภาระค่าบริการ (แสดงราคาสุทธิก่อนจ่าย)")}
                           </option>
                           <option value="organizer_absorbs">
-                            ผู้จัดรับภาระค่าบริการ (นักวิ่งจ่ายตรงราคาป้าย)
+                            {tx("ผู้จัดรับภาระค่าบริการ (นักวิ่งจ่ายตรงราคาป้าย)")}
                           </option>
                           <option value="split_50_50">
-                            แบ่งรับภาระคนละครึ่ง 50 / 50
+                            {tx("แบ่งรับภาระคนละครึ่ง 50 / 50")}
                           </option>
                         </select>
                       </div>
@@ -2440,19 +2932,19 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       <div className="ops-quick-stats">
                         <div>
                           <span className="muted-inline">
-                            นักวิ่งรับเสื้อและ BIB แล้ว
+                            {tx("นักวิ่งรับเสื้อและ BIB แล้ว")}
                           </span>
                           <strong className="mono-num">
-                            {eventMetrics.kitPickedUpCount} /{' '}
-                            {eventMetrics.confirmedParticipants} คน
+                            {tx(eventMetrics.kitPickedUpCount)} /{' '}
+                            {tx(eventMetrics.confirmedParticipants)} {tx(" คน")}
                           </strong>
                         </div>
                         <div>
                           <span className="muted-inline">
-                            ยืนยันสิทธิ์แต่ยังไม่มีเลข BIB
+                            {tx("ยืนยันสิทธิ์แต่ยังไม่มีเลข BIB")}
                           </span>
                           <strong className="mono-num text-amber">
-                            {eventMetrics.unassignedBibCount} คน
+                            {tx(eventMetrics.unassignedBibCount)} {tx(" คน")}
                           </strong>
                         </div>
                       </div>
@@ -2465,16 +2957,15 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             {selectedEvent && activeSection === 'evt_pricing_quota' && (
               <div className="canvas-stack">
                 <div className="page-guide-header">
-                  <h1>ระยะแข่งขัน โควตาผู้สมัคร คำถามใบสมัคร และยอดไซส์เสื้อ</h1>
+                  <h1>{tx("ระยะแข่งขัน โควตาผู้สมัคร คำถามใบสมัคร และยอดไซส์เสื้อ")}</h1>
                   <p className="page-purpose-desc">
-                    ปรับจำนวนรับสมัครรายระยะและเพดานรวม (ห้ามต่ำกว่ายอดที่สมัครและกันโควตาแล้ว)
-                    เพิ่มคำถามเพิ่มเติมในใบสมัคร และคำนวณยอดเสื้อสุทธิเพื่อขอราคาผลิตโดยไม่นับซ้ำ
+                    {tx("ปรับจำนวนรับสมัครรายระยะและเพดานรวม (ห้ามต่ำกว่ายอดที่สมัครและกันโควตาแล้ว) เพิ่มคำถามเพิ่มเติมในใบสมัคร และคำนวณยอดเสื้อสุทธิเพื่อขอราคาผลิตโดยไม่นับซ้ำ")}
                   </p>
                 </div>
 
                 <section className="clean-panel">
                   <div className="section-title-bar">
-                    <h2>ระยะการแข่งขัน ช่วงราคา และการปรับโควตาผู้สมัคร</h2>
+                    <h2>{tx("ระยะการแข่งขัน ช่วงราคา และการปรับโควตาผู้สมัคร")}</h2>
                   </div>
 
                   <div className="total-quota-banner">
@@ -2496,12 +2987,12 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     <table className="ops-table">
                       <thead>
                         <tr>
-                          <th>ระยะแข่งขัน</th>
-                          <th>ปล่อยตัว / Cut-off</th>
-                          <th>รหัสหน้า BIB</th>
-                          <th>ช่วงราคา</th>
-                          <th className="num-col">ราคาสุทธินักวิ่ง</th>
-                          <th>โควตารายระยะ (ปรับเพิ่ม/ลดได้)</th>
+                          <th>{tx("ระยะแข่งขัน")}</th>
+                          <th>{tx("ปล่อยตัว / Cut-off")}</th>
+                          <th>{tx("รหัสหน้า BIB")}</th>
+                          <th>{tx("ช่วงราคา")}</th>
+                          <th className="num-col">{tx("ราคาสุทธินักวิ่ง")}</th>
+                          <th>{tx("โควตารายระยะ (ปรับเพิ่ม/ลดได้)")}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2526,17 +3017,17 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                           return (
                             <tr key={cat.id}>
                               <td>
-                                <strong>{cat.name}</strong>{' '}
+                                <strong>{tx(cat.name)}</strong>{' '}
                                 <span
                                   className={`category-bib-chip tone-${cat.colorTag}`}
                                 >
-                                  {cat.code}
+                                  {tx(cat.code)}
                                 </span>
                               </td>
                               <td className="mono-num">
-                                {cat.startTimeLocal} น. ({cat.cutoffHours} ชม.)
+                                {tx(cat.startTimeLocal)} {tx(" น. (")}{tx(cat.cutoffHours)} {tx(" ชม.)")}
                               </td>
-                              <td className="mono-code">{cat.bibPrefix}-xxxx</td>
+                              <td className="mono-code">{tx(cat.bibPrefix)}-xxxx</td>
                               <td>
                                 {cat.priceTiers.map((t) => (
                                   <div key={t.id} className="tier-line">
@@ -2547,14 +3038,14 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                           : 'muted-inline'
                                       }
                                     >
-                                      {t.label}:{' '}
+                                      {tx(t.label)}:{' '}
                                       <span className="mono-num">
                                         {formatThb(t.priceSatang)}
                                       </span>{' '}
-                                      (<span className="mono-num">{t.startsAt}</span>{' '}
-                                      ถึง{' '}
-                                      <span className="mono-num">{t.endsAt}</span>)
-                                      {t.isCurrent ? ' [ใช้อยู่]' : ''}
+                                      (<span className="mono-num">{tx(t.startsAt)}</span>{' '}
+                                      {tx("ถึง")}{' '}
+                                      <span className="mono-num">{tx(t.endsAt)}</span>)
+                                      {t.isCurrent ? tx(" [ใช้อยู่]") : ''}
                                     </span>
                                   </div>
                                 ))}
@@ -2590,15 +3081,26 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                 </section>
 
                 <CustomFieldsManager
+                  event={selectedEvent}
                   fields={selectedEvent.customFields}
                   canEdit={canManageEventConfig}
+                  templates={formTemplates}
+                  steps={registrationSteps}
+                  fieldRequests={fieldRequests}
+                  requesterName={currentUser.fullNameTh}
                   onChange={(nextFields) =>
                     onUpdateCustomFields(selectedEvent.id, nextFields)
+                  }
+                  onSelectTemplate={(tplId) =>
+                    onSelectEventTemplate?.(selectedEvent.id, tplId)
+                  }
+                  onSubmitFieldRequest={(payload) =>
+                    onSubmitOrganizerFieldRequest?.(payload)
                   }
                 />
 
                 <section className="clean-panel">
-                  <h2>สต็อกเสื้อตามสิทธิ์สมัครและเครื่องมือขอราคาผลิตจากยอดจริง</h2>
+                  <h2>{tx("สต็อกเสื้อตามสิทธิ์สมัครและเครื่องมือขอราคาผลิตจากยอดจริง")}</h2>
                   <div className="shirt-stock-strip">
                     {selectedEvent.shirtStocks.map((st) => {
                       const left = Math.max(
@@ -2607,12 +3109,12 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       );
                       return (
                         <div key={st.size} className="shirt-size-cell">
-                          <span className="shirt-size-tag">ไซส์ {st.size}</span>
+                          <span className="shirt-size-tag">{tx("ไซส์")} {tx(st.size)}</span>
                           <strong className="mono-num">
-                            ว่าง {left} / {st.total}
+                            {tx("ว่าง ")} {tx(left)} / {tx(st.total)}
                           </strong>
                           <span className="muted-inline mono-num">
-                            จอง/ยืนยันแล้ว {st.reservedOrConfirmed} ตัว
+                            {tx("จอง/ยืนยันแล้ว ")} {tx(st.reservedOrConfirmed)} {tx(" ตัว")}
                           </span>
                         </div>
                       );
@@ -2639,12 +3141,12 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       return (
                         <div className="production-calc-box">
                           <h3>
-                            สร้างคำขอใบเสนอราคาผลิตเสื้อจากยอดตรวจสอบแล้ว (ป้องกันการนับซ้ำ)
+                            {tx("สร้างคำขอใบเสนอราคาผลิตเสื้อจากยอดตรวจสอบแล้ว (ป้องกันการนับซ้ำ)")}
                           </h3>
                           <div className="form-grid-3">
                             <div className="form-row">
                               <label htmlFor="buf-qty">
-                                จำนวนสำรองที่ผู้จัดกำหนดเอง (ตัว)
+                                {tx("จำนวนสำรองที่ผู้จัดกำหนดเอง (ตัว)")}
                               </label>
                               <input
                                 id="buf-qty"
@@ -2660,7 +3162,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                             </div>
                             <div className="form-row">
                               <label htmlFor="ex-qty">
-                                หักสต็อกเสื้อที่มีอยู่แล้ว (ตัว)
+                                {tx("หักสต็อกเสื้อที่มีอยู่แล้ว (ตัว)")}
                               </label>
                               <input
                                 id="ex-qty"
@@ -2675,7 +3177,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                               />
                             </div>
                             <div className="form-row">
-                              <label htmlFor="rfq-dt">วันที่ต้องการรับสินค้า</label>
+                              <label htmlFor="rfq-dt">{tx("วันที่ต้องการรับสินค้า")}</label>
                               <input
                                 id="rfq-dt"
                                 type="text"
@@ -2690,25 +3192,25 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
 
                           <div className="cta-inline-row" style={{ marginTop: '0.75rem' }}>
                             <span className="muted-inline">
-                              สูตรยอดผลิตสุทธิ: สิทธิ์สมัคร{' '}
+                              {tx("สูตรยอดผลิตสุทธิ: สิทธิ์สมัคร")}{' '}
                               <strong className="mono-num">
-                                {packageShirtUsed}
+                                {tx(packageShirtUsed)}
                               </strong>{' '}
-                              + ซื้อเพิ่มหน้าร้าน{' '}
+                              {tx("+ ซื้อเพิ่มหน้าร้าน")}{' '}
                               <strong className="mono-num">
-                                {addonShirtSold}
+                                {tx(addonShirtSold)}
                               </strong>{' '}
-                              + สำรอง{' '}
+                              {tx("+ สำรอง")}{' '}
                               <strong className="mono-num">
-                                {bufferShirtQty}
+                                {tx(bufferShirtQty)}
                               </strong>{' '}
-                              − สต็อกเดิม{' '}
+                              {tx("− สต็อกเดิม")}{' '}
                               <strong className="mono-num">
-                                {existingShirtStock}
+                                {tx(existingShirtStock)}
                               </strong>{' '}
                               ={' '}
                               <strong className="mono-num text-vermilion">
-                                {netToProduce} ตัว
+                                {tx(netToProduce)} {tx(" ตัว")}
                               </strong>
                             </span>
                             <button
@@ -2728,7 +3230,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                 onSelectSection('org_merch_production');
                               }}
                             >
-                              ส่งคำขอใบเสนอราคาผลิต ({netToProduce} ตัว)
+                              {tx("ส่งคำขอใบเสนอราคาผลิต (")}{tx(netToProduce)} {tx(" ตัว)")}
                             </button>
                           </div>
                         </div>
@@ -2743,10 +3245,9 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
               <div className="canvas-stack">
                 <div className="page-heading-row">
                   <div className="page-guide-header">
-                    <h1>รายชื่อผู้สมัครวิ่ง ({selectedEvent.titleTh})</h1>
+                    <h1>{tx("รายชื่อผู้สมัครวิ่ง (")}{tx(selectedEvent.titleTh)})</h1>
                     <p className="page-purpose-desc">
-                      ค้นหาผู้สมัคร ตรวจแยกสถานะสิทธิ์/การชำระ/การรับของ ดูผู้สั่งซื้อแยกจากผู้วิ่ง
-                      และส่งออกไฟล์รายชื่อตามตัวกรอง
+                      {tx("ค้นหาผู้สมัคร ตรวจแยกสถานะสิทธิ์/การชำระ/การรับของ ดูผู้สั่งซื้อแยกจากผู้วิ่ง และส่งออกไฟล์รายชื่อตามตัวกรอง")}
                     </p>
                   </div>
                   <button
@@ -2754,13 +3255,13 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     className="btn-secondary"
                     onClick={() =>
                       setExportBannerText(
-                        `สร้างไฟล์รายชื่อผู้สมัคร CSV จำนวน ${eventParticipants.length} คน ตามตัวกรองเรียบร้อยแล้ว`
+                        txf("สร้างไฟล์รายชื่อผู้สมัคร CSV จำนวน {0} คน ตามตัวกรองเรียบร้อยแล้ว", eventParticipants.length)
                       )
                     }
                   >
                     <IconDownload size={15} />
                     <span>
-                      ส่งออกรายชื่อ ({eventParticipants.length} คน)
+                      {tx("ส่งออกรายชื่อ (")}{tx(eventParticipants.length)} {tx(" คน)")}
                     </span>
                   </button>
                 </div>
@@ -2768,7 +3269,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                 <div className="filter-bar-panel">
                   <div className="filter-field filter-search">
                     <label htmlFor="p-search">
-                      ค้นหาชื่อ รหัสใบสมัคร หรือเลข BIB
+                      {tx("ค้นหาชื่อ รหัสใบสมัคร หรือเลข BIB")}
                     </label>
                     <div className="input-with-icon">
                       <IconSearch size={16} />
@@ -2777,27 +3278,27 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         type="search"
                         value={participantSearch}
                         onChange={(e) => setParticipantSearch(e.target.value)}
-                        placeholder="เช่น กานต์พิชชา, REG-2611, A-0101..."
+                        placeholder={tx("เช่น กานต์พิชชา, REG-2611, A-0101...")}
                       />
                     </div>
                   </div>
                   <div className="filter-field">
-                    <label htmlFor="p-cat">ระยะทาง</label>
+                    <label htmlFor="p-cat">{tx("ระยะทาง")}</label>
                     <select
                       id="p-cat"
                       value={participantCatFilter}
                       onChange={(e) => setParticipantCatFilter(e.target.value)}
                     >
-                      <option value="all">ทุกระยะทาง</option>
+                      <option value="all">{tx("ทุกระยะทาง")}</option>
                       {selectedEvent.categories.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.name}
+                          {tx(c.name)}
                         </option>
                       ))}
                     </select>
                   </div>
                   <div className="filter-field">
-                    <label htmlFor="p-st">สถานะสิทธิ์</label>
+                    <label htmlFor="p-st">{tx("สถานะสิทธิ์")}</label>
                     <select
                       id="p-st"
                       value={participantRegFilter}
@@ -2807,17 +3308,17 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         )
                       }
                     >
-                      <option value="all">ทุกสถานะสิทธิ์</option>
-                      <option value="confirmed">ยืนยันสิทธิ์แล้ว</option>
-                      <option value="pending_payment">กันที่นั่งรอจ่าย</option>
-                      <option value="cancelled">ยกเลิกสิทธิ์</option>
+                      <option value="all">{tx("ทุกสถานะสิทธิ์")}</option>
+                      <option value="confirmed">{tx("ยืนยันสิทธิ์แล้ว")}</option>
+                      <option value="pending_payment">{tx("กันที่นั่งรอจ่าย")}</option>
+                      <option value="cancelled">{tx("ยกเลิกสิทธิ์")}</option>
                     </select>
                   </div>
                 </div>
 
                 {eventParticipants.length === 0 ? (
                   <div className="empty-state-box">
-                    <h2>ไม่พบผู้สมัครตามตัวกรอง</h2>
+                    <h2>{tx("ไม่พบผู้สมัครตามตัวกรอง")}</h2>
                     <button
                       type="button"
                       className="btn-secondary"
@@ -2827,7 +3328,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         setParticipantRegFilter('all');
                       }}
                     >
-                      ล้างตัวกรองทั้งหมด
+                      {tx("ล้างตัวกรองทั้งหมด")}
                     </button>
                   </div>
                 ) : (
@@ -2837,14 +3338,14 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         <table className="ops-table">
                           <thead>
                             <tr>
-                              <th>รหัสใบสมัคร</th>
-                              <th>ผู้เข้าแข่งขัน / เสื้อ</th>
-                              <th>ระยะ</th>
-                              <th>สถานะสิทธิ์</th>
-                              <th>สถานะเงิน</th>
+                              <th>{tx("รหัสใบสมัคร")}</th>
+                              <th>{tx("ผู้เข้าแข่งขัน / เสื้อ")}</th>
+                              <th>{tx("ระยะ")}</th>
+                              <th>{tx("สถานะสิทธิ์")}</th>
+                              <th>{tx("สถานะเงิน")}</th>
                               <th>BIB</th>
-                              <th>รับอุปกรณ์</th>
-                              <th>ข้อมูล</th>
+                              <th>{tx("รับอุปกรณ์")}</th>
+                              <th>{tx("ข้อมูล")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2861,14 +3362,14 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                       : ''
                                   }
                                 >
-                                  <td className="mono-code">{reg.regCode}</td>
+                                  <td className="mono-code">{tx(reg.regCode)}</td>
                                   <td>
-                                    <strong>{reg.participantNameTh}</strong>
+                                    <strong>{tx(reg.participantNameTh)}</strong>
                                     <div className="muted-inline">
-                                      เสื้อไซส์ <strong>{reg.shirtSize}</strong>
+                                      {tx("เสื้อไซส์ ")} <strong>{tx(reg.shirtSize)}</strong>
                                     </div>
                                   </td>
-                                  <td>{cat?.code}</td>
+                                  <td>{tx(cat?.code)}</td>
                                   <td>
                                     <RegStatusBadge
                                       status={reg.registrationStatus}
@@ -2888,13 +3389,32 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                     />
                                   </td>
                                   <td>
-                                    <button
-                                      type="button"
-                                      className="btn-ghost-sm"
-                                      onClick={() => setInspectedRegId(reg.id)}
-                                    >
-                                      เปิดดู
-                                    </button>
+                                    <div className="cta-inline-row">
+                                      {reg.registrationStatus === 'confirmed' ? (
+                                        reg.bibNumber ? (
+                                          <span className="status-pill badge-forest">
+                                            <IconCheckCircle size={13} />
+                                            <span>{tx("ข้อมูล & BIB ครบ")}</span>
+                                          </span>
+                                        ) : (
+                                          <span className="status-pill badge-amber">
+                                            <IconAlert size={13} />
+                                            <span>{tx("รอเลข BIB")}</span>
+                                          </span>
+                                        )
+                                      ) : (
+                                        <span className="status-pill badge-neutral">
+                                          <span>{tx("รอกระบวนการชำระ")}</span>
+                                        </span>
+                                      )}
+                                      <button
+                                        type="button"
+                                        className="btn-ghost-sm"
+                                        onClick={() => setInspectedRegId(reg.id)}
+                                      >
+                                        {tx("เปิดดู")}
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
                               );
@@ -2907,47 +3427,47 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     {inspectedReg && (
                       <aside className="participant-inspector">
                         <div className="section-title-bar">
-                          <h2>รายละเอียด {inspectedReg.regCode}</h2>
+                          <h2>{tx("รายละเอียด")} {tx(inspectedReg.regCode)}</h2>
                           <button
                             type="button"
                             className="btn-ghost-sm"
                             onClick={() => setInspectedRegId(null)}
                           >
-                            ปิด
+                            {tx("ปิด")}
                           </button>
                         </div>
                         <dl className="inspector-dl">
-                          <dt>ผู้เข้าแข่งขันจริง (Participant)</dt>
+                          <dt>{tx("ผู้เข้าแข่งขันจริง (Participant)")}</dt>
                           <dd>
-                            {inspectedReg.participantNameTh} (
-                            {inspectedReg.participantNameEn})
+                            {tx(inspectedReg.participantNameTh)} (
+                            {tx(inspectedReg.participantNameEn)})
                           </dd>
-                          <dt>ผู้สั่งซื้อ/จ่ายเงิน (Buyer)</dt>
-                          <dd>{inspectedReg.buyerName}</dd>
-                          <dt>ช่องทางติดต่อ</dt>
+                          <dt>{tx("ผู้สั่งซื้อ/จ่ายเงิน (Buyer)")}</dt>
+                          <dd>{tx(inspectedReg.buyerName)}</dd>
+                          <dt>{tx("ช่องทางติดต่อ")}</dt>
                           <dd>
                             {role === 'staff' ? (
                               <span className="muted-inline">
-                                ซ่อนอีเมลและเบอร์ติดต่อฉุกเฉินตามสิทธิ์เจ้าหน้าที่หน้างาน
+                                {tx("ซ่อนอีเมลและเบอร์ติดต่อฉุกเฉินตามสิทธิ์เจ้าหน้าที่หน้างาน")}
                               </span>
                             ) : (
                               <>
-                                {inspectedReg.email} · {inspectedReg.phoneMasked}
-                                <div>ฉุกเฉิน: {inspectedReg.emergencyContact}</div>
+                                {tx(inspectedReg.email)} · {tx(inspectedReg.phoneMasked)}
+                                <div>{tx("ฉุกเฉิน:")} {tx(inspectedReg.emergencyContact)}</div>
                               </>
                             )}
                           </dd>
-                          <dt>กติกาที่ยอมรับ</dt>
+                          <dt>{tx("กติกาที่ยอมรับ")}</dt>
                           <dd>
-                            ฉบับ <code>{inspectedReg.acceptedRulesVersion}</code>{' '}
-                            · การตลาด:{' '}
+                            {tx("ฉบับ ")} <code>{tx(inspectedReg.acceptedRulesVersion)}</code>{' '}
+                            {tx("· การตลาด:")}{' '}
                             {inspectedReg.marketingConsent
-                              ? 'ยินยอม'
-                              : 'ไม่ยินยอม'}
+                              ? tx("ยินยอม")
+                              : tx("ไม่ยินยอม")}
                           </dd>
                           {(selectedEvent.customFields ?? []).length > 0 && (
                             <>
-                              <dt>คำตอบเพิ่มเติม (Custom Fields)</dt>
+                              <dt>{tx("คำตอบเพิ่มเติม (Custom Fields)")}</dt>
                               <dd>
                                 <div className="custom-answers-stack">
                                   {(selectedEvent.customFields ?? []).map(
@@ -2968,14 +3488,14 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                           className="custom-answer-line"
                                         >
                                           <span className="muted-inline">
-                                            {cf.label}:
+                                            {tx(cf.label)}:
                                           </span>{' '}
                                           {role === 'staff' && cf.isSensitive ? (
                                             <span className="muted-inline">
-                                              [ซ่อนข้อมูลอ่อนไหวตามสิทธิ์เจ้าหน้าที่หน้างาน]
+                                              {tx("[ซ่อนข้อมูลอ่อนไหวตามสิทธิ์เจ้าหน้าที่หน้างาน]")}
                                             </span>
                                           ) : (
-                                            <strong>{formatted}</strong>
+                                            <strong>{tx(formatted)}</strong>
                                           )}
                                         </div>
                                       );
@@ -2989,7 +3509,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         {inspectedReg.registrationStatus ===
                           'pending_payment' && (
                             <div className="subtle-empty-note">
-                              รายการอยู่ระหว่างกันโควตารอผู้สมัครชำระเงิน ระบบจะเปลี่ยนเป็นยืนยันสิทธิ์อัตโนมัติเมื่อผู้ให้บริการรับชำระยืนยันยอด
+                              {tx("รายการอยู่ระหว่างกันโควตารอผู้สมัครชำระเงิน ระบบจะเปลี่ยนเป็นยืนยันสิทธิ์อัตโนมัติเมื่อผู้ให้บริการรับชำระยืนยันยอด")}
                             </div>
                           )}
                       </aside>
@@ -3004,10 +3524,9 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
               <div className="canvas-stack">
                 <div className="page-heading-row">
                   <div className="page-guide-header">
-                    <h1>ร้านค้าและสินค้าที่ระลึกของงาน ({selectedEvent.code})</h1>
+                    <h1>{tx("ร้านค้าและสินค้าที่ระลึกของงาน (")}{tx(selectedEvent.code)})</h1>
                     <p className="page-purpose-desc">
-                      จัดการเสื้อ/เหรียญที่ระลึกสำหรับขายให้นักวิ่งและลูกค้าทั่วไป
-                      โดยระบุรูปแบบผู้ขายและผู้รับผิดชอบจัดส่งอย่างชัดเจน
+                      {tx("จัดการเสื้อ/เหรียญที่ระลึกสำหรับขายให้นักวิ่งและลูกค้าทั่วไป โดยระบุรูปแบบผู้ขายและผู้รับผิดชอบจัดส่งอย่างชัดเจน")}
                     </p>
                   </div>
                   {canManageEventConfig && (
@@ -3019,8 +3538,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       <IconPlus size={15} />
                       <span>
                         {showAddProductForm
-                          ? 'ปิดฟอร์มเพิ่มสินค้า'
-                          : 'เพิ่มสินค้าหน้าร้าน'}
+                          ? tx("ปิดฟอร์มเพิ่มสินค้า")
+                          : tx("เพิ่มสินค้าหน้าร้าน")}
                       </span>
                     </button>
                   )}
@@ -3045,21 +3564,21 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       setShowAddProductForm(false);
                     }}
                   >
-                    <h2>เพิ่มรายการสินค้าลงหน้าร้านเฉพาะงาน</h2>
+                    <h2>{tx("เพิ่มรายการสินค้าลงหน้าร้านเฉพาะงาน")}</h2>
                     <div className="form-grid-2">
                       <div className="form-row">
-                        <label htmlFor="np-name">ชื่อสินค้าภาษาไทย</label>
+                        <label htmlFor="np-name">{tx("ชื่อสินค้าภาษาไทย")}</label>
                         <input
                           id="np-name"
                           type="text"
                           value={newProdName}
                           onChange={(e) => setNewProdName(e.target.value)}
-                          placeholder="เช่น หมวกวิ่งระบายอากาศรุ่นที่ระลึก"
+                          placeholder={tx("เช่น หมวกวิ่งระบายอากาศรุ่นที่ระลึก")}
                           required
                         />
                       </div>
                       <div className="form-row">
-                        <label htmlFor="np-svc">รูปแบบบริการและผู้รับผิดชอบ</label>
+                        <label htmlFor="np-svc">{tx("รูปแบบบริการและผู้รับผิดชอบ")}</label>
                         <select
                           id="np-svc"
                           value={newProdService}
@@ -3070,13 +3589,13 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                           }
                         >
                           <option value="organizer_self_sell">
-                            ผู้จัดมีสินค้าและจัดส่งเอง
+                            {tx("ผู้จัดมีสินค้าและจัดส่งเอง")}
                           </option>
                           <option value="runevent_produce_bulk">
-                            ให้ RunEvent ผลิตส่งล็อตใหญ่ให้ผู้จัด
+                            {tx("ให้ RunEvent ผลิตส่งล็อตใหญ่ให้ผู้จัด")}
                           </option>
                           <option value="runevent_full_service">
-                            ให้ RunEvent ดูแลครบ (พรีออเดอร์ + ผลิต + จัดส่ง)
+                            {tx("ให้ RunEvent ดูแลครบ (พรีออเดอร์ + ผลิต + จัดส่ง)")}
                           </option>
                         </select>
                       </div>
@@ -3087,7 +3606,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       style={{ marginTop: '0.65rem' }}
                     >
                       <div className="form-row">
-                        <label htmlFor="np-cat">หมวดสินค้า</label>
+                        <label htmlFor="np-cat">{tx("หมวดสินค้า")}</label>
                         <select
                           id="np-cat"
                           value={newProdCat}
@@ -3100,13 +3619,13 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                             )
                           }
                         >
-                          <option value="เสื้อที่ระลึก">เสื้อที่ระลึก</option>
-                          <option value="เหรียญที่ระลึก">เหรียญที่ระลึก</option>
-                          <option value="อุปกรณ์เสริม">อุปกรณ์เสริม</option>
+                          <option value="เสื้อที่ระลึก">{tx("เสื้อที่ระลึก")}</option>
+                          <option value="เหรียญที่ระลึก">{tx("เหรียญที่ระลึก")}</option>
+                          <option value="อุปกรณ์เสริม">{tx("อุปกรณ์เสริม")}</option>
                         </select>
                       </div>
                       <div className="form-row">
-                        <label htmlFor="np-mode">รูปแบบการขาย</label>
+                        <label htmlFor="np-mode">{tx("รูปแบบการขาย")}</label>
                         <select
                           id="np-mode"
                           value={newProdSaleMode}
@@ -3116,12 +3635,12 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                             )
                           }
                         >
-                          <option value="preorder">เปิดรับพรีออเดอร์</option>
-                          <option value="ready_stock">สินค้าพร้อมขาย</option>
+                          <option value="preorder">{tx("เปิดรับพรีออเดอร์")}</option>
+                          <option value="ready_stock">{tx("สินค้าพร้อมขาย")}</option>
                         </select>
                       </div>
                       <div className="form-row">
-                        <label htmlFor="np-price">ราคาต่อชิ้น (บาท)</label>
+                        <label htmlFor="np-price">{tx("ราคาต่อชิ้น (บาท)")}</label>
                         <input
                           id="np-price"
                           type="text"
@@ -3139,7 +3658,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       style={{ marginTop: '0.85rem' }}
                     >
                       <label htmlFor="np-cap" className="muted-inline">
-                        เพดานจำนวนขาย:
+                        {tx("เพดานจำนวนขาย:")}
                       </label>
                       <input
                         id="np-cap"
@@ -3151,51 +3670,51 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         }
                       />
                       <button type="submit" className="btn-primary">
-                        บันทึกเปิดขายในหน้าร้านงานนี้
+                        {tx("บันทึกเปิดขายในหน้าร้านงานนี้")}
                       </button>
                     </div>
                   </form>
                 )}
 
                 <section className="clean-panel">
-                  <h2>รายการสินค้าที่เปิดขายในหน้าร้านงานนี้</h2>
+                  <h2>{tx("รายการสินค้าที่เปิดขายในหน้าร้านงานนี้")}</h2>
                   {selectedEvent.products.length === 0 ? (
                     <p className="muted-block">
-                      ยังไม่มีสินค้าหน้าร้านสำหรับงานนี้ กดปุ่มเพิ่มสินค้าด้านบนเพื่อเปิดขายได้ทันที
+                      {tx("ยังไม่มีสินค้าหน้าร้านสำหรับงานนี้ กดปุ่มเพิ่มสินค้าด้านบนเพื่อเปิดขายได้ทันที")}
                     </p>
                   ) : (
                     <div className="table-scroll">
                       <table className="ops-table">
                         <thead>
                           <tr>
-                            <th>SKU / ชื่อสินค้า</th>
-                            <th>รูปแบบบริการ</th>
-                            <th>สถานะขาย</th>
-                            <th className="num-col">ราคา</th>
-                            <th className="num-col">ขายแล้ว / เพดาน</th>
+                            <th>{tx("SKU / ชื่อสินค้า")}</th>
+                            <th>{tx("รูปแบบบริการ")}</th>
+                            <th>{tx("สถานะขาย")}</th>
+                            <th className="num-col">{tx("ราคา")}</th>
+                            <th className="num-col">{tx("ขายแล้ว / เพดาน")}</th>
                           </tr>
                         </thead>
                         <tbody>
                           {selectedEvent.products.map((p) => (
                             <tr key={p.id}>
                               <td>
-                                <span className="mono-code">{p.sku}</span>
+                                <span className="mono-code">{tx(p.sku)}</span>
                                 <div>
-                                  <strong>{p.nameTh}</strong>
+                                  <strong>{tx(p.nameTh)}</strong>
                                 </div>
                               </td>
                               <td>{sellerModelLabel(p.serviceModel)}</td>
                               <td>
                                 {p.saleMode === 'ready_stock'
-                                  ? 'พร้อมขาย'
-                                  : `พรีออเดอร์ (ขั้นต่ำ ${p.preorderMinQty ?? 20})`}
+                                  ? tx("พร้อมขาย")
+                                  : txf("พรีออเดอร์ (ขั้นต่ำ {0})", p.preorderMinQty ?? 20)}
                               </td>
                               <td className="num-col mono-num">
                                 {formatThb(p.priceSatang)}
                               </td>
                               <td className="num-col mono-num">
-                                <strong>{p.soldCount}</strong> /{' '}
-                                {p.stockOrCeiling}
+                                <strong>{tx(p.soldCount)}</strong> /{' '}
+                                {tx(p.stockOrCeiling)}
                               </td>
                             </tr>
                           ))}
@@ -3211,17 +3730,16 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             {selectedEvent && activeSection === 'evt_checkin_bib' && (
               <div className="canvas-stack">
                 <div className="page-guide-header">
-                  <h1>จุดเช็กอินรับ BIB และส่งมอบสินค้าหน้างาน (รองรับมือถือ)</h1>
+                  <h1>{tx("จุดเช็กอินรับ BIB และส่งมอบสินค้าหน้างาน (รองรับมือถือ)")}</h1>
                   <p className="page-purpose-desc">
-                    แยกการเช็กอินรับเสื้อ+BIB ตามสิทธิ์ผู้สมัคร ออกจากจุดส่งมอบสินค้าซื้อเพิ่ม/ลูกค้าทั่วไป
-                    พร้อมป้องกันการกดรับซ้ำ
+                    {tx("แยกการเช็กอินรับเสื้อ+BIB ตามสิทธิ์ผู้สมัคร ออกจากจุดส่งมอบสินค้าซื้อเพิ่ม/ลูกค้าทั่วไป พร้อมป้องกันการกดรับซ้ำ")}
                   </p>
                 </div>
 
                 <div
                   className="pill-tabs-bar"
                   role="tablist"
-                  aria-label="เลือกประเภทการส่งมอบหน้างาน"
+                  aria-label={tx("เลือกประเภทการส่งมอบหน้างาน")}
                 >
                   <button
                     type="button"
@@ -3234,7 +3752,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       setCheckinFeedback(null);
                     }}
                   >
-                    1. จ่าย BIB & เสื้อตามสิทธิ์สมัคร ({checkinCandidates.length})
+                    {tx("1. จ่าย BIB & เสื้อตามสิทธิ์สมัคร (")}{tx(checkinCandidates.length)})
                   </button>
                   <button
                     type="button"
@@ -3247,7 +3765,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       setCheckinFeedback(null);
                     }}
                   >
-                    2. จ่ายสินค้าหน้าร้าน / รับบางส่วน ({eventMerchOrders.length})
+                    {tx("2. จ่ายสินค้าหน้าร้าน / รับบางส่วน (")}{tx(eventMerchOrders.length)})
                   </button>
                 </div>
 
@@ -3255,8 +3773,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                   <div className="filter-field filter-search">
                     <label htmlFor="scan-box">
                       {handoverTab === 'race_bib'
-                        ? 'สแกน/พิมพ์รหัส QR Token นักวิ่ง หรือเลข BIB / ชื่อ'
-                        : 'สแกน/พิมพ์รหัสรับสินค้าหน้าร้าน (PICK-SHP-...) หรือชื่อผู้ซื้อ'}
+                        ? tx("สแกน/พิมพ์รหัส QR Token นักวิ่ง หรือเลข BIB / ชื่อ")
+                        : tx("สแกน/พิมพ์รหัสรับสินค้าหน้าร้าน (PICK-SHP-...) หรือชื่อผู้ซื้อ")}
                     </label>
                     <div className="input-with-icon">
                       <IconQr size={16} />
@@ -3267,8 +3785,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         onChange={(e) => setCheckinQuery(e.target.value)}
                         placeholder={
                           handoverTab === 'race_bib'
-                            ? 'เช่น TKN-DS26-9F3A1C หรือ A-0101...'
-                            : 'เช่น PICK-SHP-501 หรือ ปรมินทร์...'
+                            ? tx("เช่น TKN-DS26-9F3A1C หรือ A-0101...")
+                            : tx("เช่น PICK-SHP-501 หรือ ปรมินทร์...")
                         }
                       />
                     </div>
@@ -3289,7 +3807,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     ) : (
                       <IconAlert size={17} />
                     )}
-                    <span>{checkinFeedback.text}</span>
+                    <span>{tx(checkinFeedback.text)}</span>
                   </div>
                 )}
 
@@ -3311,7 +3829,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         <article key={reg.id} className="checkin-card-row">
                           <div className="checkin-row-top">
                             <span className="mono-code">
-                              {reg.qrCheckInToken}
+                              {tx(reg.qrCheckInToken)}
                             </span>
                             <RegStatusBadge status={reg.registrationStatus} />
                             <FulfillmentStatusBadge
@@ -3321,24 +3839,24 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
 
                           <div className="checkin-row-body">
                             <div>
-                              <h2>{reg.participantNameTh}</h2>
+                              <h2>{tx(reg.participantNameTh)}</h2>
                               <p className="muted-block">
-                                ระยะ{' '}
+                                {tx("ระยะ")}{' '}
                                 <span
                                   className={`category-bib-chip tone-${cat?.colorTag ?? 'navy'
                                     }`}
                                 >
-                                  <strong>{cat?.code}</strong>
+                                  <strong>{tx(cat?.code)}</strong>
                                 </span>{' '}
-                                · เสื้อสิทธิ์สมัครไซส์{' '}
+                                {tx("· เสื้อสิทธิ์สมัครไซส์")}{' '}
                                 <strong className="shirt-highlight">
-                                  {reg.shirtSize}
+                                  {tx(reg.shirtSize)}
                                 </strong>
                               </p>
                               {reg.fulfillmentUpdatedBy && (
                                 <p className="muted-inline">
-                                  ส่งมอบโดย {reg.fulfillmentUpdatedBy} เมื่อ{' '}
-                                  {reg.fulfillmentUpdatedAt}
+                                  {tx("ส่งมอบโดย ")} {tx(reg.fulfillmentUpdatedBy)} {tx(" เมื่อ")}{' '}
+                                  {tx(reg.fulfillmentUpdatedAt)}
                                 </p>
                               )}
                             </div>
@@ -3346,7 +3864,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                             <div className="checkin-controls">
                               <div className="bib-assign-inline">
                                 <label htmlFor={`bib-${reg.id}`}>
-                                  เลข BIB (ห้ามซ้ำในงานนี้):
+                                  {tx("เลข BIB (ห้ามซ้ำในงานนี้):")}
                                 </label>
                                 <div className="cta-inline-row">
                                   <input
@@ -3374,12 +3892,12 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                       setCheckinFeedback({
                                         tone: res.ok ? 'ok' : 'err',
                                         text: res.ok
-                                          ? `บันทึกเลข BIB ${draftBib} สำเร็จ`
-                                          : res.error ?? 'กำหนด BIB ไม่สำเร็จ',
+                                          ? txf("บันทึกเลข BIB {0} สำเร็จ", draftBib)
+                                          : res.error ?? tx("กำหนด BIB ไม่สำเร็จ"),
                                       });
                                     }}
                                   >
-                                    บันทึก BIB
+                                    {tx("บันทึก BIB")}
                                   </button>
                                 </div>
                               </div>
@@ -3393,16 +3911,16 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                   setCheckinFeedback({
                                     tone: res.ok ? 'ok' : 'err',
                                     text: res.ok
-                                      ? `ยืนยันจ่ายเสื้อ ${reg.shirtSize} + BIB ${reg.bibNumber} ให้ ${reg.participantNameTh} สำเร็จ`
-                                      : res.error ?? 'ป้องกันการรับซ้ำ',
+                                      ? txf("ยืนยันจ่ายเสื้อ {0} + BIB {1} ให้ {2} สำเร็จ", reg.shirtSize, reg.bibNumber, reg.participantNameTh)
+                                      : res.error ?? tx("ป้องกันการรับซ้ำ"),
                                   });
                                 }}
                               >
                                 {alreadyPicked
-                                  ? 'รับแล้ว (กดเพื่อทดสอบป้องกันรับซ้ำ)'
+                                  ? tx("รับแล้ว (กดเพื่อทดสอบป้องกันรับซ้ำ)")
                                   : !reg.bibNumber
-                                    ? 'กรุณาบันทึกเลข BIB ก่อนส่งมอบ'
-                                    : `ยืนยันจ่ายเสื้อ ${reg.shirtSize} + BIB ${reg.bibNumber}`}
+                                    ? tx("กรุณาบันทึกเลข BIB ก่อนส่งมอบ")
+                                    : txf("ยืนยันจ่ายเสื้อ {0} + BIB {1}", reg.shirtSize, reg.bibNumber)}
                               </button>
                             </div>
                           </div>
@@ -3415,27 +3933,27 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     {eventMerchOrders.map((ord) => (
                       <article key={ord.id} className="checkin-card-row">
                         <div className="checkin-row-top">
-                          <span className="mono-code">{ord.pickupToken}</span>
+                          <span className="mono-code">{tx(ord.pickupToken)}</span>
                           <span className="mono-code">
-                            {ord.merchOrderCode}
+                            {tx(ord.merchOrderCode)}
                           </span>
                           <span className="status-pill badge-navy">
                             <IconBag size={13} />
                             <span>
-                              ส่งมอบแล้ว{' '}
+                              {tx("ส่งมอบแล้ว")}{' '}
                               <span className="mono-num">
-                                {ord.deliveredQty}/{ord.quantity}
+                                {tx(ord.deliveredQty)}/{tx(ord.quantity)}
                               </span>{' '}
-                              ชิ้น
+                              {tx("ชิ้น")}
                             </span>
                           </span>
                         </div>
                         <div className="checkin-row-body">
                           <div>
-                            <h2>{ord.buyerName}</h2>
+                            <h2>{tx(ord.buyerName)}</h2>
                             <p className="muted-block">
-                              {ord.productNameTh} · ขนาด{' '}
-                              <strong>{ord.variantSize}</strong> (ไม่สร้างสถานะเช็กอินวิ่ง)
+                              {tx(ord.productNameTh)} {tx(" · ขนาด")}{' '}
+                              <strong>{tx(ord.variantSize)}</strong> {tx(" (ไม่สร้างสถานะเช็กอินวิ่ง)")}
                             </p>
                           </div>
                           <div className="cta-inline-row">
@@ -3455,7 +3973,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                     });
                                   }}
                                 >
-                                  บันทึกรับบางส่วน (+1 ชิ้น)
+                                  {tx("บันทึกรับบางส่วน (+1 ชิ้น)")}
                                 </button>
                               )}
                             <button
@@ -3473,8 +3991,8 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                               }}
                             >
                               {ord.deliveredQty >= ord.quantity
-                                ? 'รับสินค้าครบแล้ว (ทดสอบป้องกันจ่ายซ้ำ)'
-                                : 'ยืนยันส่งมอบสินค้าครบจำนวน'}
+                                ? tx("รับสินค้าครบแล้ว (ทดสอบป้องกันจ่ายซ้ำ)")
+                                : tx("ยืนยันส่งมอบสินค้าครบจำนวน")}
                             </button>
                           </div>
                         </div>
@@ -3491,9 +4009,9 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
               eventMetrics && (
                 <div className="canvas-stack">
                   <div className="page-guide-header">
-                    <h1>รายรับและคำขอคืนเงินของงาน ({selectedEvent.code})</h1>
+                    <h1>{tx("รายรับและคำขอคืนเงินของงาน (")}{tx(selectedEvent.code)})</h1>
                     <p className="page-purpose-desc">
-                      ตรวจรายการชำระระดับคำสั่งซื้อ และอนุมัติหรือปฏิเสธคำขอคืนเงินโดยเก็บเหตุผลไว้ตรวจสอบย้อนหลังเสมอ
+                      {tx("ตรวจรายการชำระระดับคำสั่งซื้อ และอนุมัติหรือปฏิเสธคำขอคืนเงินโดยเก็บเหตุผลไว้ตรวจสอบย้อนหลังเสมอ")}
                     </p>
                   </div>
 
@@ -3508,7 +4026,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
 
                   <section id="finance-source-ledger" className="clean-panel">
                     <div className="section-title-bar">
-                      <h2>รายการธุรกรรมค่าสมัครและคำขอคืนเงิน</h2>
+                      <h2>{tx("รายการธุรกรรมค่าสมัครและคำขอคืนเงิน")}</h2>
                       <div className="cta-inline-row">
                         {(
                           [
@@ -3528,7 +4046,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                             }
                             onClick={() => setFinanceSubFilter(k)}
                           >
-                            {lbl}
+                            {tx(lbl)}
                           </button>
                         ))}
                       </div>
@@ -3538,13 +4056,13 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                       <table className="ops-table">
                         <thead>
                           <tr>
-                            <th>คำสั่งซื้อ / ใบสมัคร</th>
-                            <th>ผู้เข้าแข่งขัน</th>
-                            <th>สถานะเงิน</th>
-                            <th className="num-col">ยอดชำระสุทธิ</th>
-                            <th className="num-col">ค่าบริการระบบ</th>
-                            <th>สถานะคืนเงิน & เหตุผล</th>
-                            <th>การอนุมัติ</th>
+                            <th>{tx("คำสั่งซื้อ / ใบสมัคร")}</th>
+                            <th>{tx("ผู้เข้าแข่งขัน")}</th>
+                            <th>{tx("สถานะเงิน")}</th>
+                            <th className="num-col">{tx("ยอดชำระสุทธิ")}</th>
+                            <th className="num-col">{tx("ค่าบริการระบบ")}</th>
+                            <th>{tx("สถานะคืนเงิน & เหตุผล")}</th>
+                            <th>{tx("การอนุมัติ")}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -3572,13 +4090,13 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                               <tr key={reg.id}>
                                 <td>
                                   <div className="mono-code">
-                                    {reg.orderCode}
+                                    {tx(reg.orderCode)}
                                   </div>
                                   <small className="mono-code">
-                                    {reg.regCode}
+                                    {tx(reg.regCode)}
                                   </small>
                                 </td>
-                                <td>{reg.participantNameTh}</td>
+                                <td>{tx(reg.participantNameTh)}</td>
                                 <td>
                                   <PaymentStatusBadge
                                     status={reg.paymentStatus}
@@ -3602,7 +4120,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                   />
                                   {reg.refundReason && (
                                     <div className="muted-inline">
-                                      {reg.refundReason}
+                                      {tx(reg.refundReason)}
                                     </div>
                                   )}
                                 </td>
@@ -3620,7 +4138,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                           )
                                         }
                                       >
-                                        อนุมัติคืน ({formatThb(reg.snapshotBaseSatang)})
+                                        {tx("อนุมัติคืน (")}{formatThb(reg.snapshotBaseSatang)})
                                       </button>
                                       <button
                                         type="button"
@@ -3633,7 +4151,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                           )
                                         }
                                       >
-                                        ปฏิเสธ
+                                        {tx("ปฏิเสธ")}
                                       </button>
                                     </div>
                                   ) : (

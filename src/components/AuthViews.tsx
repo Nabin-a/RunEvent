@@ -1,24 +1,150 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   AuthProviderType,
   Organization,
+  OrganizationType,
+  OrganizerDocumentItem,
   ReturnIntent,
+  RunnerProfileData,
   TeamInvitation,
   UserAccount,
 } from '../types';
 import {
   IconAlert,
+  IconArrowLeft,
   IconArrowRight,
   IconBuilding,
   IconCheckCircle,
   IconDevice,
   IconEye,
   IconEyeOff,
+  IconFlag,
   IconGoogleMark,
   IconLineMark,
   IconLock,
   IconMail,
+  IconShield,
+  IconUsers,
 } from './Icons';
+
+import { tx, txf } from '../i18n';
+// ชุดข้อมูลที่อยู่ไทยแบบเชื่อมโยง (Dependent Thai Address Dataset)
+const THAI_ADDRESS_DATASET: Record<
+  string,
+  Record<string, { subdistricts: string[]; postalCode: string }>
+> = {
+  เชียงใหม่: {
+    เมืองเชียงใหม่: {
+      subdistricts: ['ศรีภูมิ', 'พระสิงห์', 'สุเทพ', 'ช้างเผือก'],
+      postalCode: '50200',
+    },
+    แม่ริม: {
+      subdistricts: ['ริมใต้', 'ดอนแก้ว', 'แม่แรม'],
+      postalCode: '50180',
+    },
+    หางดง: {
+      subdistricts: ['หางดง', 'หนองควาย', 'บ้านแหวน'],
+      postalCode: '50230',
+    },
+  },
+  กรุงเทพมหานคร: {
+    ปทุมวัน: {
+      subdistricts: ['ลุมพินี', 'ปทุมวัน', 'รองเมือง'],
+      postalCode: '10330',
+    },
+    จตุจักร: {
+      subdistricts: ['จตุจักร', 'จอมพล', 'ลาดยาว'],
+      postalCode: '10900',
+    },
+    บางรัก: {
+      subdistricts: ['สีลม', 'สุริยวงศ์', 'บางรัก'],
+      postalCode: '10500',
+    },
+  },
+  ภูเก็ต: {
+    เมืองภูเก็ต: {
+      subdistricts: ['ตลาดใหญ่', 'ตลาดเหนือ', 'ราไวย์', 'ฉลอง'],
+      postalCode: '83000',
+    },
+    กะทู้: {
+      subdistricts: ['ป่าตอง', 'กะทู้', 'กมลา'],
+      postalCode: '83150',
+    },
+  },
+  นครราชสีมา: {
+    เมืองนครราชสีมา: {
+      subdistricts: ['ในเมือง', 'โพธิ์กลาง', 'หนองไผ่ล้อม'],
+      postalCode: '30000',
+    },
+    ปากช่อง: {
+      subdistricts: ['ปากช่อง', 'หมูสี', 'ขนงพระ'],
+      postalCode: '30130',
+    },
+  },
+  ขอนแก่น: {
+    เมืองขอนแก่น: {
+      subdistricts: ['ในเมือง', 'เมืองเก่า', 'ศิลา'],
+      postalCode: '40000',
+    },
+  },
+};
+
+function computePasswordStrength(pw: string): {
+  score: number;
+  label: string;
+  toneClass: string;
+} {
+  if (!pw) return { score: 0, label: 'ยังไม่ได้กรอกรหัสผ่าน', toneClass: 'badge-neutral' };
+  let score = 0;
+  if (pw.length >= 8) score += 1;
+  if (pw.length >= 12) score += 1;
+  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score += 1;
+  if (/[0-9]/.test(pw)) score += 1;
+  if (/[^A-Za-z0-9]/.test(pw)) score += 1;
+
+  if (score <= 2) {
+    return {
+      score: Math.max(1, score),
+      label: 'ความแข็งแรง: อ่อน (ควรมีอย่างน้อย 8 ตัว ผสมตัวเลข/ตัวพิมพ์ใหญ่)',
+      toneClass: 'badge-amber',
+    };
+  }
+  if (score === 3) {
+    return {
+      score,
+      label: 'ความแข็งแรง: ปานกลาง (ปลอดภัยตามเกณฑ์มาตรฐาน)',
+      toneClass: 'badge-navy',
+    };
+  }
+  return {
+    score,
+    label: 'ความแข็งแรง: สูงมาก (ปลอดภัยสูง)',
+    toneClass: 'badge-forest',
+  };
+}
+
+export function computeRunnerProfileCompletion(
+  user: UserAccount
+): { pct: number; completedItems: number; totalItems: number } {
+  const p = user.runnerProfile;
+  const checks = [
+    Boolean(user.fullNameTh),
+    Boolean(user.contactEmail && user.emailVerified),
+    Boolean(p?.phone),
+    Boolean(p?.dateOfBirth),
+    Boolean(p?.gender),
+    Boolean(p?.runningExperience),
+    Boolean(p?.emergencyContactName && p?.emergencyContactPhone),
+    Boolean(p?.preferredDistances && p.preferredDistances.length > 0),
+  ];
+  const completedItems = checks.filter(Boolean).length;
+  const totalItems = checks.length;
+  return {
+    pct: Math.round((completedItems / totalItems) * 100),
+    completedItems,
+    totalItems,
+  };
+}
 
 interface AuthScreenProps {
   users: UserAccount[];
@@ -31,19 +157,61 @@ interface AuthScreenProps {
     scenario: 'new_no_email' | 'collision' | 'cancelled';
   } | null;
   onAuthenticated: (user: UserAccount, preferredOrgId?: string) => void;
+  onPasswordLogin?: (
+    email: string,
+    password: string
+  ) => Promise<{ ok: boolean; error?: string; user?: UserAccount }>;
   onRegisterEmailUser: (payload: {
     fullNameTh: string;
+    fullNameEn?: string;
     email: string;
+    password?: string;
     marketingConsent: boolean;
+    runnerProfile?: RunnerProfileData;
   }) => { ok: boolean; error?: string; user?: UserAccount };
   onRegisterSocialUser: (payload: {
     provider: 'google' | 'line';
     fullNameTh: string;
     email: string | null;
     marketingConsent: boolean;
+    runnerProfile?: RunnerProfileData;
   }) => UserAccount;
+  onSubmitOrganizerOnboarding?: (payload: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    password?: string;
+    phone: string;
+    position: string;
+    orgNameTh: string;
+    orgNameEn: string;
+    orgType: OrganizationType;
+    businessRegNumber: string;
+    website: string;
+    orgEmail: string;
+    orgPhone: string;
+    address: string;
+    province: string;
+    district: string;
+    subdistrict: string;
+    postalCode: string;
+    descriptionTh: string;
+    previousEvents: string;
+    facebookPage: string;
+    mainContactName: string;
+    mainContactPosition: string;
+    mainContactPhone: string;
+    mainContactEmail: string;
+    documents: OrganizerDocumentItem[];
+    marketingConsent: boolean;
+  }) => { user: UserAccount; organization: Organization };
+  onNavigateExploreEvents?: () => void;
+  onNavigateRunnerDashboard?: () => void;
+  onNavigateOrganizerWorkspace?: (orgId: string) => void;
   onLogout: () => void;
 }
+
+const ORG_DRAFT_STORAGE_KEY = 'runevent_v2_org_onboarding_draft';
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({
   users,
@@ -52,8 +220,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   initialTab = 'signin',
   externalSocialScenario,
   onAuthenticated,
+  onPasswordLogin,
   onRegisterEmailUser,
   onRegisterSocialUser,
+  onSubmitOrganizerOnboarding,
+  onNavigateExploreEvents,
+  onNavigateRunnerDashboard,
+  onNavigateOrganizerWorkspace,
   onLogout,
 }) => {
   const [authTab, setAuthTab] = useState<'signin' | 'signup' | 'forgot'>(
@@ -63,18 +236,117 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  // Sign up fields
-  const [regName, setRegName] = useState('');
+  // Registration Flow Mode: Account Type Selection -> Runner 2-Step -> Organizer 3-Step
+  const [signupFlowMode, setSignupFlowMode] = useState<
+    | 'select_type'
+    | 'runner_wizard'
+    | 'runner_completed'
+    | 'organizer_wizard'
+    | 'organizer_completed'
+  >('select_type');
+
+  // Shared Account Step 1 State (Preserved when switching between Runner and Organizer)
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [regEmail, setRegEmail] = useState('');
+  const [regPhone, setRegPhone] = useState('');
   const [regPass, setRegPass] = useState('');
-  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [regConfirmPass, setRegConfirmPass] = useState('');
+  const [socialAuthPrepopulated, setSocialAuthPrepopulated] = useState<
+    null | 'google' | 'line'
+  >(null);
   const [marketingOptIn, setMarketingOptIn] = useState(false);
+
+  // Runner Wizard State (2 Steps)
+  const [runnerStep, setRunnerStep] = useState<1 | 2>(1);
+  const [runnerDob, setRunnerDob] = useState('');
+  const [runnerGender, setRunnerGender] = useState<'ชาย' | 'หญิง' | 'ไม่ระบุ'>(
+    'ไม่ระบุ'
+  );
+  const [runnerNationality, setRunnerNationality] = useState('Thailand');
+  const [runnerExp, setRunnerExp] = useState<
+    'Beginner' | 'Intermediate' | 'Advanced'
+  >('Beginner');
+  const [emergName, setEmergName] = useState('');
+  const [emergRelation, setEmergRelation] = useState('คู่สมรส / ครอบครัว');
+  const [emergPhone, setEmergPhone] = useState('');
+  const [preferredDistances, setPreferredDistances] = useState<string[]>([
+    '10 km',
+  ]);
+  const [completedRunnerUser, setCompletedRunnerUser] =
+    useState<UserAccount | null>(null);
+
+  // Organizer Wizard State (3 Steps + Save Draft)
+  const [orgStep, setOrgStep] = useState<1 | 2 | 3>(1);
+  const [jobTitle, setJobTitle] = useState('ผู้อำนวยการจัดการแข่งขัน (Race Director)');
+  const [orgNameTh, setOrgNameTh] = useState('');
+  const [orgNameEn, setOrgNameEn] = useState('');
+  const [orgType, setOrgType] = useState<OrganizationType>('Private Company');
+  const [businessRegNo, setBusinessRegNo] = useState('');
+  const [orgWebsite, setOrgWebsite] = useState('');
+  const [orgEmail, setOrgEmail] = useState('');
+  const [orgPhone, setOrgPhone] = useState('');
+  const [officeAddress, setOfficeAddress] = useState('');
+  const [officeProvince, setOfficeProvince] = useState<string>('เชียงใหม่');
+  const [officeDistrict, setOfficeDistrict] = useState<string>('เมืองเชียงใหม่');
+  const [officeSubdistrict, setOfficeSubdistrict] = useState<string>('สุเทพ');
+  const [officePostalCode, setOfficePostalCode] = useState<string>('50200');
+  const [orgDescription, setOrgDescription] = useState('');
+  const [previousEvents, setPreviousEvents] = useState('');
+  const [facebookPage, setFacebookPage] = useState('');
+  const [sameAsAccountContact, setSameAsAccountContact] = useState(true);
+  const [mainContactName, setMainContactName] = useState('');
+  const [mainContactPos, setMainContactPos] = useState('');
+  const [mainContactPhone, setMainContactPhone] = useState('');
+  const [mainContactEmail, setMainContactEmail] = useState('');
+
+  // Step 3 Organizer Verification Documents
+  const [idDocType, setIdDocType] = useState('บัตรประจำตัวประชาชน');
+  const [idDocExpiry, setIdDocExpiry] = useState('2030-12-31');
+  const [isAuthorizedRep, setIsAuthorizedRep] = useState(false);
+  const [uploadedDocs, setUploadedDocs] = useState<OrganizerDocumentItem[]>([
+    {
+      id: 'doc-init-id',
+      category: 'identity',
+      docTypeLabel: 'สำเนาบัตรประจำตัวประชาชนผู้ยื่นคำขอ',
+      fileName: 'thai_national_id_verified.pdf',
+      fileSizeKb: 840,
+      mimeType: 'application/pdf',
+      expiryDate: '2030-12-31',
+      privateStorageKey: 'priv://kyc-vault/2026/id-doc-sample.pdf',
+    },
+    {
+      id: 'doc-init-org',
+      category: 'organization',
+      docTypeLabel: 'หนังสือรับรองนิติบุคคล / ทะเบียนชมรม',
+      fileName: 'dbd_company_certificate_2026.pdf',
+      fileSizeKb: 1420,
+      mimeType: 'application/pdf',
+      privateStorageKey: 'priv://kyc-vault/2026/org-cert-sample.pdf',
+    },
+  ]);
+  const [consentAccurate, setConsentAccurate] = useState(false);
+  const [consentVerification, setConsentVerification] = useState(false);
+  const [consentPrivacy, setConsentPrivacy] = useState(false);
+  const [draftSavedNotice, setDraftSavedNotice] = useState<string | null>(null);
+  const [completedOrgResult, setCompletedOrgResult] = useState<{
+    user: UserAccount;
+    organization: Organization;
+  } | null>(null);
+
+  // Unsaved changes confirmation modal state
+  const [pendingSwitchTarget, setPendingSwitchTarget] = useState<
+    null | 'select_type' | 'runner_wizard' | 'organizer_wizard'
+  >(null);
 
   // Social OAuth simulation flow state
   const [socialPendingStep, setSocialPendingStep] = useState<
     | null
     | {
-        mode: 'new_line_no_email' | 'email_collision_verify' | 'provider_cancelled';
+        mode:
+          | 'new_line_no_email'
+          | 'email_collision_verify'
+          | 'provider_cancelled';
         provider: 'google' | 'line';
         tempName: string;
         collisionUser?: UserAccount;
@@ -94,57 +366,317 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     text: string;
   } | null>(null);
 
-  const handleEmailSignIn = (e: React.FormEvent) => {
+  const pwStrength = useMemo(
+    () => computePasswordStrength(regPass),
+    [regPass]
+  );
+
+  const hasUnsavedWizardData =
+    Boolean(firstName.trim()) ||
+    Boolean(lastName.trim()) ||
+    Boolean(regEmail.trim()) ||
+    Boolean(orgNameTh.trim());
+
+  const availableDistricts = useMemo(
+    () => Object.keys(THAI_ADDRESS_DATASET[officeProvince] ?? {}),
+    [officeProvince]
+  );
+
+  const availableSubdistricts = useMemo(
+    () =>
+      THAI_ADDRESS_DATASET[officeProvince]?.[officeDistrict]?.subdistricts ?? [
+        'ในเมือง',
+      ],
+    [officeProvince, officeDistrict]
+  );
+
+  const handleProvinceChange = (nextProv: string) => {
+    setOfficeProvince(nextProv);
+    const firstDist = Object.keys(THAI_ADDRESS_DATASET[nextProv] ?? {})[0] ?? '';
+    setOfficeDistrict(firstDist);
+    const distObj = THAI_ADDRESS_DATASET[nextProv]?.[firstDist];
+    setOfficeSubdistrict(distObj?.subdistricts[0] ?? '');
+    setOfficePostalCode(distObj?.postalCode ?? '10110');
+  };
+
+  const handleDistrictChange = (nextDist: string) => {
+    setOfficeDistrict(nextDist);
+    const distObj = THAI_ADDRESS_DATASET[officeProvince]?.[nextDist];
+    setOfficeSubdistrict(distObj?.subdistricts[0] ?? '');
+    setOfficePostalCode(distObj?.postalCode ?? officePostalCode);
+  };
+
+  const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setSocialPendingStep(null);
     const normalized = email.trim().toLowerCase();
+    if (!password.trim()) {
+      setStatusAlert({ tone: 'err', text: tx("กรุณากรอกรหัสผ่าน") });
+      return;
+    }
+    if (onPasswordLogin) {
+      const res = await onPasswordLogin(normalized, password);
+      if (!res.ok || !res.user) {
+        setStatusAlert({
+          tone: 'err',
+          text: tx(
+            res.error ??
+              "อีเมลหรือรหัสผ่านไม่ถูกต้อง (หากสมัครไว้ด้วย LINE หรือ Google อย่างเดียว กรุณาเข้าสู่ระบบด้วยปุ่มช่องทางนั้น)"
+          ),
+        });
+        return;
+      }
+      setStatusAlert(null);
+      onAuthenticated(res.user, res.user.memberships[0]?.organizationId);
+      return;
+    }
     const matched = users.find(
       (u) => (u.contactEmail ?? '').toLowerCase() === normalized
     );
     if (!matched || !matched.hasPassword) {
       setStatusAlert({
         tone: 'err',
-        text: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง (หากสมัครไว้ด้วย LINE หรือ Google อย่างเดียว กรุณาเข้าสู่ระบบด้วยปุ่มช่องทางนั้น)',
+        text: tx("อีเมลหรือรหัสผ่านไม่ถูกต้อง (หากสมัครไว้ด้วย LINE หรือ Google อย่างเดียว กรุณาเข้าสู่ระบบด้วยปุ่มช่องทางนั้น)"),
       });
-      return;
-    }
-    if (!password.trim()) {
-      setStatusAlert({ tone: 'err', text: 'กรุณากรอกรหัสผ่าน' });
       return;
     }
     setStatusAlert(null);
     onAuthenticated(matched, matched.memberships[0]?.organizationId);
   };
 
-  const handleEmailSignUp = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!acceptTerms) {
+  const validateStep1AccountFields = (requirePhone: boolean): boolean => {
+    if (!firstName.trim() || !lastName.trim()) {
       setStatusAlert({
         tone: 'err',
-        text: 'ต้องยอมรับข้อกำหนดการใช้งานและนโยบายความเป็นส่วนตัวก่อนสร้างบัญชี',
+        text: tx("กรุณากรอกชื่อจริง (First Name) และนามสกุล (Last Name) ให้ครบถ้วน"),
       });
-      return;
+      return false;
     }
-    if (regPass.length < 8) {
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(regEmail.trim())) {
       setStatusAlert({
         tone: 'err',
-        text: 'รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร',
+        text: tx("รูปแบบอีเมลไม่ถูกต้อง (ตัวอย่าง: runner@example.com)"),
       });
+      return false;
+    }
+    if (requirePhone && regPhone.trim().replace(/\D/g, '').length < 9) {
+      setStatusAlert({
+        tone: 'err',
+        text: tx("กรุณากรอกเบอร์โทรศัพท์ที่ติดต่อได้ (9–10 หลัก)"),
+      });
+      return false;
+    }
+    if (!socialAuthPrepopulated) {
+      if (regPass.length < 8) {
+        setStatusAlert({
+          tone: 'err',
+          text: tx("รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร"),
+        });
+        return false;
+      }
+      if (regPass !== regConfirmPass) {
+        setStatusAlert({
+          tone: 'err',
+          text: tx("รหัสผ่านและยืนยันรหัสผ่านไม่ตรงกัน"),
+        });
+        return false;
+      }
+    }
+    setStatusAlert(null);
+    return true;
+  };
+
+  const handleCompleteRunnerRegistration = (skipOptionalProfile: boolean) => {
+    const fullNameTh = `${firstName.trim()} ${lastName.trim()}`.trim();
+    const profilePayload: RunnerProfileData = skipOptionalProfile
+      ? {
+          phone: regPhone.trim() || undefined,
+          nationality: 'Thailand',
+        }
+      : {
+          phone: regPhone.trim() || undefined,
+          dateOfBirth: runnerDob || undefined,
+          gender: runnerGender,
+          nationality: runnerNationality.trim() || 'Thailand',
+          runningExperience: runnerExp,
+          emergencyContactName: emergName.trim() || undefined,
+          emergencyContactRelation: emergRelation.trim() || undefined,
+          emergencyContactPhone: emergPhone.trim() || undefined,
+          preferredDistances,
+        };
+
+    if (socialAuthPrepopulated) {
+      const created = onRegisterSocialUser({
+        provider: socialAuthPrepopulated,
+        fullNameTh,
+        email: regEmail.trim(),
+        marketingConsent: marketingOptIn,
+        runnerProfile: profilePayload,
+      });
+      setCompletedRunnerUser(created);
+      setSignupFlowMode('runner_completed');
       return;
     }
+
     const res = onRegisterEmailUser({
-      fullNameTh: regName.trim(),
+      fullNameTh,
       email: regEmail.trim(),
+      password: regPass,
       marketingConsent: marketingOptIn,
+      runnerProfile: profilePayload,
     });
     if (!res.ok || !res.user) {
       setStatusAlert({
         tone: 'err',
-        text: res.error ?? 'ไม่สามารถสร้างบัญชีได้',
+        text: res.error ?? tx("ไม่สามารถสร้างบัญชีได้ (อีเมลอาจซ้ำกับบัญชีเดิม)"),
+      });
+      setRunnerStep(1);
+      return;
+    }
+    setCompletedRunnerUser(res.user);
+    setSignupFlowMode('runner_completed');
+  };
+
+  const handleSaveOrganizerDraft = () => {
+    const draftPayload = {
+      firstName,
+      lastName,
+      regEmail,
+      regPhone,
+      jobTitle,
+      orgNameTh,
+      orgNameEn,
+      orgType,
+      businessRegNo,
+      orgWebsite,
+      orgEmail,
+      orgPhone,
+      officeAddress,
+      officeProvince,
+      officeDistrict,
+      officeSubdistrict,
+      officePostalCode,
+      orgDescription,
+      previousEvents,
+      facebookPage,
+      savedAt: '2026-11-18 09:30',
+    };
+    try {
+      window.localStorage.setItem(
+        ORG_DRAFT_STORAGE_KEY,
+        JSON.stringify(draftPayload)
+      );
+      setDraftSavedNotice(
+        tx("บันทึกแบบร่างคำขอขึ้นทะเบียนผู้จัด (สถานะ DRAFT) ลงในเครื่องเรียบร้อยแล้ว สามารถกลับมาทำต่อได้ทุกเมื่อ")
+      );
+    } catch {
+      // ignore storage error
+    }
+  };
+
+  const handleLoadOrganizerDraft = () => {
+    try {
+      const raw = window.localStorage.getItem(ORG_DRAFT_STORAGE_KEY);
+      if (!raw) {
+        setStatusAlert({
+          tone: 'warn',
+          text: tx("ยังไม่มีแบบร่างที่บันทึกไว้ก่อนหน้า"),
+        });
+        return;
+      }
+      const d = JSON.parse(raw);
+      setFirstName(d.firstName ?? '');
+      setLastName(d.lastName ?? '');
+      setRegEmail(d.regEmail ?? '');
+      setRegPhone(d.regPhone ?? '');
+      setJobTitle(d.jobTitle ?? '');
+      setOrgNameTh(d.orgNameTh ?? '');
+      setOrgNameEn(d.orgNameEn ?? '');
+      setOrgType(d.orgType ?? 'Private Company');
+      setBusinessRegNo(d.businessRegNo ?? '');
+      setOrgWebsite(d.orgWebsite ?? '');
+      setOrgEmail(d.orgEmail ?? '');
+      setOrgPhone(d.orgPhone ?? '');
+      setOfficeAddress(d.officeAddress ?? '');
+      setOfficeProvince(d.officeProvince ?? 'เชียงใหม่');
+      setOfficeDistrict(d.officeDistrict ?? 'เมืองเชียงใหม่');
+      setOfficeSubdistrict(d.officeSubdistrict ?? 'สุเทพ');
+      setOfficePostalCode(d.officePostalCode ?? '50200');
+      setOrgDescription(d.orgDescription ?? '');
+      setPreviousEvents(d.previousEvents ?? '');
+      setFacebookPage(d.facebookPage ?? '');
+      setDraftSavedNotice(txf("โหลดข้อมูลแบบร่างที่บันทึกเมื่อ {0} เรียบร้อยแล้ว", d.savedAt));
+    } catch {
+      // ignore parse error
+    }
+  };
+
+  const handleFinalSubmitOrganizerWizard = () => {
+    if (!consentAccurate || !consentVerification || !consentPrivacy) {
+      setStatusAlert({
+        tone: 'err',
+        text: tx("กรุณาติ๊กยืนยันความถูกต้องของข้อมูล ยอมรับกระบวนการตรวจสอบ และรับทราบประกาศความเป็นส่วนตัวให้ครบทั้ง 3 ข้อ"),
       });
       return;
     }
-    onAuthenticated(res.user);
+    if (uploadedDocs.length < 2) {
+      setStatusAlert({
+        tone: 'err',
+        text: tx("กรุณาอัปโหลดเอกสารยืนยันตัวตนและเอกสารรับรององค์กรอย่างน้อย 2 รายการ"),
+      });
+      return;
+    }
+    if (isAuthorizedRep && !uploadedDocs.some((d) => d.category === 'authorization')) {
+      setStatusAlert({
+        tone: 'err',
+        text: tx("กรณีผู้ยื่นคำขอเป็นผู้รับมอบอำนาจ กรุณาแนบหนังสือมอบอำนาจ (Power of Attorney)"),
+      });
+      return;
+    }
+    if (!onSubmitOrganizerOnboarding) return;
+
+    const fullContactName = sameAsAccountContact
+      ? `${firstName.trim()} ${lastName.trim()}`.trim()
+      : mainContactName.trim();
+
+    const res = onSubmitOrganizerOnboarding({
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: regEmail.trim(),
+      password: regPass || undefined,
+      phone: regPhone.trim(),
+      position: jobTitle.trim(),
+      orgNameTh: orgNameTh.trim(),
+      orgNameEn: orgNameEn.trim() || orgNameTh.trim(),
+      orgType,
+      businessRegNumber: businessRegNo.trim(),
+      website: orgWebsite.trim(),
+      orgEmail: orgEmail.trim() || regEmail.trim(),
+      orgPhone: orgPhone.trim() || regPhone.trim(),
+      address: officeAddress.trim(),
+      province: officeProvince,
+      district: officeDistrict,
+      subdistrict: officeSubdistrict,
+      postalCode: officePostalCode,
+      descriptionTh: orgDescription.trim(),
+      previousEvents: previousEvents.trim(),
+      facebookPage: facebookPage.trim(),
+      mainContactName: fullContactName,
+      mainContactPosition: sameAsAccountContact
+        ? jobTitle.trim()
+        : mainContactPos.trim(),
+      mainContactPhone: sameAsAccountContact
+        ? regPhone.trim()
+        : mainContactPhone.trim(),
+      mainContactEmail: sameAsAccountContact
+        ? regEmail.trim()
+        : mainContactEmail.trim(),
+      documents: uploadedDocs,
+      marketingConsent: marketingOptIn,
+    });
+    setCompletedOrgResult(res);
+    setSignupFlowMode('organizer_completed');
   };
 
   const handleSocialButton = (
@@ -218,20 +750,32 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         <div className="intent-return-banner" role="status">
           <IconArrowRight size={16} />
           <span>
-            กรุณาเข้าสู่ระบบเพื่อดำเนินการต่อ: <strong>{returnIntent.label}</strong>
+            {tx("กรุณาเข้าสู่ระบบเพื่อดำเนินการต่อ: ")} <strong>{tx(returnIntent.label)}</strong>
           </span>
         </div>
       )}
 
-      <div className="auth-centered-wrap">
+      <div
+        className="auth-centered-wrap"
+        style={{
+          maxWidth:
+            authTab === 'signup' ? '56rem' : undefined,
+        }}
+      >
         <section
           className="clean-panel auth-primary-card"
-          aria-label="เข้าสู่ระบบหรือสมัครสมาชิก RunEvent"
+          aria-label={tx("เข้าสู่ระบบหรือลงทะเบียนสมาชิก RunEvent")}
         >
           <div className="auth-card-head">
-            <h1>เข้าสู่ระบบ RunEvent</h1>
+            <h1>
+              {authTab === 'signup'
+                ? tx("Join the Running Community — ลงทะเบียนใช้งาน RunEvent")
+                : tx("เข้าสู่ระบบ RunEvent")}
+            </h1>
             <p className="muted-block">
-              บัญชีเดียวใช้งานได้ครบทั้งสมัครงานวิ่ง ซื้อสินค้าที่ระลึก และจัดการงานสำหรับทีมผู้จัดที่ได้รับสิทธิ์
+              {authTab === 'signup'
+                ? tx("Choose how you want to use the platform. เลือกสมัครเป็นนักวิ่ง (Runner 2 ขั้นตอน) หรือขึ้นทะเบียนองค์กรผู้จัดงานวิ่ง (Organizer 3 ขั้นตอน) ภายใต้บัญชีเดียว")
+                : tx("บัญชีเดียวใช้งานได้ครบทั้งสมัครงานวิ่ง ซื้อสินค้าที่ระลึก และจัดการงานสำหรับทีมผู้จัดที่ได้รับสิทธิ์")}
             </p>
           </div>
 
@@ -240,10 +784,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               <div className="session-box-row">
                 <IconCheckCircle size={18} />
                 <div>
-                  <strong>เข้าสู่ระบบอยู่: {currentUser.fullNameTh}</strong>
+                  <strong>{tx("เข้าสู่ระบบอยู่:")} {tx(currentUser.fullNameTh)}</strong>
                   <div className="muted-inline">
                     {currentUser.contactEmail ??
-                      'ยังไม่ได้เพิ่มอีเมลติดต่อ (เข้าผ่าน LINE)'}
+                      tx("ยังไม่ได้เพิ่มอีเมลติดต่อ (เข้าผ่าน LINE)")}
                   </div>
                 </div>
               </div>
@@ -252,12 +796,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 className="btn-secondary"
                 onClick={onLogout}
               >
-                ออกจากระบบ
+                {tx("ออกจากระบบ")}
               </button>
             </div>
           )}
 
-          <div className="pill-tabs-bar" role="tablist" aria-label="โหมดการเข้าใช้งาน">
+          <div
+            className="pill-tabs-bar"
+            role="tablist"
+            aria-label={tx("โหมดการเข้าใช้งาน")}
+          >
             <button
               type="button"
               role="tab"
@@ -268,7 +816,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 setStatusAlert(null);
               }}
             >
-              เข้าสู่ระบบ
+              {tx("เข้าสู่ระบบ (Sign In)")}
             </button>
             <button
               type="button"
@@ -280,7 +828,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 setStatusAlert(null);
               }}
             >
-              สมัครสมาชิกใหม่
+              {tx("สมัครสมาชิกใหม่ (Register)")}
             </button>
             <button
               type="button"
@@ -292,7 +840,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 setStatusAlert(null);
               }}
             >
-              ลืมรหัสผ่าน
+              {tx("ลืมรหัสผ่าน")}
             </button>
           </div>
 
@@ -306,10 +854,46 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               role="alert"
             >
               <IconAlert size={16} />
-              <span>{statusAlert.text}</span>
+              <span>{tx(statusAlert.text)}</span>
             </div>
           )}
 
+          {/* Unsaved Changes Confirmation Banner */}
+          {pendingSwitchTarget && (
+            <div className="error-callout" role="alert">
+              <IconAlert size={18} />
+              <div className="callout-flex">
+                <span>
+                  <strong>{tx("มีข้อมูลที่กรอกค้างไว้ในฟอร์ม:")}</strong>{' '}
+                  {tx("ระบบจะเก็บชื่อ อีเมล และเบอร์โทรพื้นฐานไว้ให้ ยืนยันการสลับประเภทการสมัครหรือไม่?")}
+                </span>
+                <div className="cta-inline-row">
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => {
+                      setSignupFlowMode(pendingSwitchTarget);
+                      setPendingSwitchTarget(null);
+                      setStatusAlert(null);
+                    }}
+                  >
+                    {tx("ยืนยันการสลับ")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost-sm"
+                    onClick={() => setPendingSwitchTarget(null)}
+                  >
+                    {tx("ทำรายการเดิมต่อ")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
+              TAB 1: SIGN IN
+             ================================================================= */}
           {authTab === 'signin' && (
             <>
               <div className="social-buttons-stack">
@@ -319,7 +903,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   onClick={() => handleSocialButton('google', 'existing')}
                 >
                   <IconGoogleMark size={18} />
-                  <span>ดำเนินการต่อด้วย Google</span>
+                  <span>{tx("ดำเนินการต่อด้วย Google")}</span>
                 </button>
 
                 <button
@@ -328,7 +912,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   onClick={() => handleSocialButton('line', 'existing')}
                 >
                   <IconLineMark size={18} />
-                  <span>ดำเนินการต่อด้วย LINE</span>
+                  <span>{tx("ดำเนินการต่อด้วย LINE")}</span>
                 </button>
               </div>
 
@@ -336,23 +920,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 <div className="status-explanation-banner" role="alert">
                   <IconAlert size={16} />
                   <span>
-                    การยืนยันตัวตนผ่าน {socialPendingStep.provider.toUpperCase()}{' '}
-                    ถูกยกเลิกหรือหมดเวลา (Callback State Expired) —
-                    ยังไม่มีการสร้างหรือเปลี่ยนสถานะบัญชี กรุณาเลือกวิธีเข้าสู่ระบบอีกครั้ง
+                    {tx("การยืนยันตัวตนผ่าน ")} {socialPendingStep.provider.toUpperCase()}{' '}
+                    {tx("ถูกยกเลิกหรือหมดเวลา (Callback State Expired) — ยังไม่มีการสร้างหรือเปลี่ยนสถานะบัญชี กรุณาเลือกวิธีเข้าสู่ระบบอีกครั้ง")}
                   </span>
                 </div>
               )}
 
               {socialPendingStep?.mode === 'new_line_no_email' && (
                 <div className="social-onboarding-box">
-                  <h2>ตั้งค่าบัญชีใหม่จาก LINE (กรณี LINE ไม่ส่งอีเมล)</h2>
+                  <h2>{tx("ตั้งค่าบัญชีใหม่จาก LINE (กรณี LINE ไม่ส่งอีเมล)")}</h2>
                   <p className="muted-block">
-                    ระบบสร้างบัญชีจากรหัสตัวตน LINE ที่ตรวจสอบแล้วโดยไม่สร้างอีเมลสมมติแทน
-                    คุณสามารถเพิ่มและยืนยันอีเมลภายหลังเมื่อต้องการรับใบเสร็จหรือคำเชิญทีม
+                    {tx("ระบบสร้างบัญชีจากรหัสตัวตน LINE ที่ตรวจสอบแล้วโดยไม่สร้างอีเมลสมมติแทน คุณสามารถเพิ่มและยืนยันอีเมลภายหลังเมื่อต้องการรับใบเสร็จหรือคำเชิญทีม")}
                   </p>
                   <div className="form-row">
                     <label htmlFor="line-new-name">
-                      ชื่อที่ใช้แสดงในบัญชี (ชื่อจริงสำหรับแข่งขันจะถามแยกเมื่อสมัครงานวิ่ง)
+                      {tx("ชื่อที่ใช้แสดงในบัญชี (ชื่อจริงสำหรับแข่งขันจะถามแยกเมื่อสมัครงานวิ่ง)")}
                     </label>
                     <input
                       id="line-new-name"
@@ -372,7 +954,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       checked={socialTermsAccepted}
                       onChange={(e) => setSocialTermsAccepted(e.target.checked)}
                     />
-                    <span>ยอมรับข้อกำหนดการใช้งานแพลตฟอร์ม (v1.0)</span>
+                    <span>{tx("ยอมรับข้อกำหนดการใช้งานแพลตฟอร์ม (v1.0)")}</span>
                   </label>
                   <button
                     type="button"
@@ -390,7 +972,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       onAuthenticated(created);
                     }}
                   >
-                    ยืนยันสร้างบัญชีและเข้าใช้งาน
+                    {tx("ยืนยันสร้างบัญชีและเข้าใช้งาน")}
                   </button>
                 </div>
               )}
@@ -398,18 +980,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               {socialPendingStep?.mode === 'email_collision_verify' &&
                 socialPendingStep.collisionUser && (
                   <div className="social-onboarding-box">
-                    <h2>พบอีเมลตรงกับบัญชีเดิม — ต้องยืนยันเจ้าของก่อนเชื่อม</h2>
+                    <h2>{tx("พบอีเมลตรงกับบัญชีเดิม — ต้องยืนยันเจ้าของก่อนเชื่อม")}</h2>
                     <p className="muted-block">
-                      อีเมล{' '}
+                      {tx("อีเมล")}{' '}
                       <strong>
-                        {socialPendingStep.collisionUser.contactEmail}
+                        {tx(socialPendingStep.collisionUser.contactEmail)}
                       </strong>{' '}
-                      มีบัญชีอยู่แล้ว ระบบจะ<strong>ไม่รวมบัญชีอัตโนมัติ</strong>{' '}
-                      กรุณากรอกรหัสผ่านของบัญชีเดิมเพื่อยืนยันความเป็นเจ้าของก่อนผูก Google
+                      {tx("มีบัญชีอยู่แล้ว ระบบจะ")}<strong>{tx("ไม่รวมบัญชีอัตโนมัติ")}</strong>{' '}
+                      {tx("กรุณากรอกรหัสผ่านของบัญชีเดิมเพื่อยืนยันความเป็นเจ้าของก่อนผูก Google")}
                     </p>
                     <div className="form-row">
                       <label htmlFor="collision-pass">
-                        รหัสผ่านบัญชีเดิม (ทดสอบใช้รหัส <code>demo1234</code>)
+                        {tx("รหัสผ่านบัญชีเดิม (ทดสอบใช้รหัส ")} <code>demo1234</code>)
                       </label>
                       <input
                         id="collision-pass"
@@ -434,26 +1016,26 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           );
                         }}
                       >
-                        ยืนยันรหัสผ่านและเข้าสู่บัญชีเดิม
+                        {tx("ยืนยันรหัสผ่านและเข้าสู่บัญชีเดิม")}
                       </button>
                       <button
                         type="button"
                         className="btn-ghost-sm"
                         onClick={() => setSocialPendingStep(null)}
                       >
-                        ยกเลิก
+                        {tx("ยกเลิก")}
                       </button>
                     </div>
                   </div>
                 )}
 
               <div className="divider-line-text">
-                <span>หรือใช้อีเมลและรหัสผ่าน</span>
+                <span>{tx("หรือใช้อีเมลและรหัสผ่าน")}</span>
               </div>
 
               <form onSubmit={handleEmailSignIn} className="auth-cred-form">
                 <div className="form-row">
-                  <label htmlFor="signin-email">อีเมล</label>
+                  <label htmlFor="signin-email">{tx("อีเมล")}</label>
                   <input
                     id="signin-email"
                     type="email"
@@ -466,14 +1048,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 </div>
 
                 <div className="form-row">
-                  <label htmlFor="signin-pass">รหัสผ่าน</label>
+                  <label htmlFor="signin-pass">{tx("รหัสผ่าน")}</label>
                   <div className="password-field-wrap">
                     <input
                       id="signin-pass"
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="กรอกรหัสผ่านของคุณ"
+                      placeholder={tx("กรอกรหัสผ่านของคุณ")}
                       autoComplete="current-password"
                       required
                     />
@@ -482,7 +1064,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       className="password-eye-btn"
                       onClick={() => setShowPassword((v) => !v)}
                       aria-label={
-                        showPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'
+                        showPassword ? tx("ซ่อนรหัสผ่าน") : tx("แสดงรหัสผ่าน")
                       }
                     >
                       {showPassword ? (
@@ -490,94 +1072,1449 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       ) : (
                         <IconEye size={17} />
                       )}
-                      <span>{showPassword ? 'ซ่อน' : 'แสดง'}</span>
+                      <span>{showPassword ? tx("ซ่อน") : tx("แสดง")}</span>
                     </button>
                   </div>
                 </div>
 
                 <button type="submit" className="btn-primary btn-full">
                   <IconLock size={16} />
-                  <span>เข้าสู่ระบบด้วยอีเมล</span>
+                  <span>{tx("เข้าสู่ระบบด้วยอีเมล")}</span>
                 </button>
               </form>
             </>
           )}
 
+          {/* =================================================================
+              TAB 2: COMPLETE REGISTRATION SYSTEM (ACCOUNT SELECTION + WIZARDS)
+             ================================================================= */}
           {authTab === 'signup' && (
-            <form onSubmit={handleEmailSignUp} className="auth-cred-form">
-              <div className="form-row">
-                <label htmlFor="reg-name">ชื่อ-นามสกุลผู้ใช้งาน</label>
-                <input
-                  id="reg-name"
-                  type="text"
-                  value={regName}
-                  onChange={(e) => setRegName(e.target.value)}
-                  placeholder="เช่น ณัฐธิดา เจริญสุข"
-                  required
-                />
-              </div>
+            <div className="canvas-stack">
+              {/* 1. ACCOUNT TYPE SELECTION ENTRY POINT */}
+              {signupFlowMode === 'select_type' && (
+                <div className="canvas-stack">
+                  <div className="two-col-ops-grid">
+                    {/* Runner Card */}
+                    <article
+                      className="clean-panel"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        gap: '0.85rem',
+                      }}
+                    >
+                      <div>
+                        <div className="cta-inline-row" style={{ marginBottom: '0.5rem' }}>
+                          <span className="status-pill badge-forest">
+                            <IconUsers size={15} />
+                            <span>Runner Account · 2 Steps</span>
+                          </span>
+                        </div>
+                        <h2>{tx("Runner (นักวิ่งและผู้ใช้งานทั่วไป)")}</h2>
+                        <p className="muted-block">
+                          {tx("Discover running events, register for races, and manage your running activities. ค้นหางานวิ่งทั่วไทย สมัครเข้าร่วมแข่งขัน ซื้อเสื้อที่ระลึก และจัดการประวัติการวิ่งของคุณอย่างรวดเร็ว")}
+                        </p>
+                        <ul className="feature-bullet-list" style={{ marginTop: '0.6rem' }}>
+                          <li>{tx("สมัครง่ายใน 2 ขั้นตอน (ข้ามฟิลด์โปรไฟล์ไม่บังคับไปเติมภายหลังได้)")}</li>
+                          <li>{tx("ไม่บังคับเลือกไซส์เสื้อหรือระยะวิ่งตอนเปิดบัญชี (เลือกแยกตามแต่ละงานวิ่ง)")}</li>
+                          <li>{tx("รองรับ Google Login, LINE Login และ Email Registration")}</li>
+                        </ul>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-primary btn-full"
+                        onClick={() => {
+                          setRunnerStep(1);
+                          setSignupFlowMode('runner_wizard');
+                        }}
+                      >
+                        <span>{tx("Register as Runner (สมัครเป็นนักวิ่ง)")}</span>
+                        <IconArrowRight size={15} />
+                      </button>
+                    </article>
 
-              <div className="form-row">
-                <label htmlFor="reg-email">อีเมลสำหรับยืนยันบัญชี</label>
-                <input
-                  id="reg-email"
-                  type="email"
-                  value={regEmail}
-                  onChange={(e) => setRegEmail(e.target.value)}
-                  placeholder="name@example.com"
-                  required
-                />
-              </div>
+                    {/* Organizer Card */}
+                    <article
+                      className="clean-panel"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        gap: '0.85rem',
+                      }}
+                    >
+                      <div>
+                        <div className="cta-inline-row" style={{ marginBottom: '0.5rem' }}>
+                          <span className="status-pill badge-navy">
+                            <IconBuilding size={15} />
+                            <span>Organizer Verification · 3 Steps</span>
+                          </span>
+                        </div>
+                        <h2>{tx("Organizer (องค์กรและผู้จัดงานวิ่ง)")}</h2>
+                        <p className="muted-block">
+                          {tx("Create running events, manage registrations, and monitor event performance. สำหรับบริษัท หน่วยงานรัฐ ชมรมวิ่ง หรือผู้จัดอิสระที่ต้องการเปิดรับสมัครงานวิ่งและบริหารจัดการครบวงจร")}
+                        </p>
+                        <ul className="feature-bullet-list" style={{ marginTop: '0.6rem' }}>
+                          <li>{tx("กรอกข้อมูลผู้ติดต่อ ข้อมูลองค์กร/ที่อยู่ และอัปโหลดเอกสารยืนยันตัวตน (KYC)")}</li>
+                          <li>{tx("รองรับการบันทึกแบบร่าง (Save Draft) เพื่อกลับมาทำต่อ")}</li>
+                          <li>{tx("เข้าสู่กระบวนการตรวจสอบ 7 สถานะโดย Platform Owner ก่อนเปิดขายจริง")}</li>
+                        </ul>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-secondary btn-full"
+                        onClick={() => {
+                          setOrgStep(1);
+                          setSignupFlowMode('organizer_wizard');
+                        }}
+                      >
+                        <IconBuilding size={15} />
+                        <span>{tx("Register as Organizer (ขึ้นทะเบียนผู้จัดงาน)")}</span>
+                      </button>
+                    </article>
+                  </div>
+                </div>
+              )}
 
-              <div className="form-row">
-                <label htmlFor="reg-pass">ตั้งรหัสผ่าน (อย่างน้อย 8 ตัวอักษร)</label>
-                <input
-                  id="reg-pass"
-                  type={showPassword ? 'text' : 'password'}
-                  value={regPass}
-                  onChange={(e) => setRegPass(e.target.value)}
-                  required
-                />
-              </div>
+              {/* 2. RUNNER 2-STEP REGISTRATION WIZARD */}
+              {signupFlowMode === 'runner_wizard' && (
+                <div className="canvas-stack">
+                  <div
+                    className="cta-inline-row"
+                    style={{ justifyContent: 'space-between' }}
+                  >
+                    <button
+                      type="button"
+                      className="btn-ghost-sm"
+                      onClick={() => {
+                        if (hasUnsavedWizardData) {
+                          setPendingSwitchTarget('select_type');
+                        } else {
+                          setSignupFlowMode('select_type');
+                        }
+                      }}
+                    >
+                      <IconArrowLeft size={14} />
+                      <span>{tx("กลับหน้าเลือกประเภทบัญชี")}</span>
+                    </button>
 
-              <div className="consent-group">
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={acceptTerms}
-                    onChange={(e) => setAcceptTerms(e.target.checked)}
-                  />
-                  <span>
-                    <strong>[จำเป็น]</strong> ยอมรับข้อกำหนดการใช้งานและนโยบายข้อมูลส่วนบุคคล (v1.0)
-                  </span>
-                </label>
+                    <button
+                      type="button"
+                      className="btn-ghost-sm"
+                      onClick={() => {
+                        if (hasUnsavedWizardData) {
+                          setPendingSwitchTarget('organizer_wizard');
+                        } else {
+                          setSignupFlowMode('organizer_wizard');
+                        }
+                      }}
+                    >
+                      <span>{tx("สลับไปสมัครเป็น Organizer (รักษาข้อมูลที่กรอกไว้)")}</span>
+                      <IconArrowRight size={13} />
+                    </button>
+                  </div>
 
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={marketingOptIn}
-                    onChange={(e) => setMarketingOptIn(e.target.checked)}
-                  />
-                  <span>
-                    [ไม่บังคับ — แยกจากข้อกำหนดหลัก] รับข่าวสารงานวิ่งและโปรโมชันจากแพลตฟอร์ม
-                  </span>
-                </label>
-              </div>
+                  {/* Progress Stepper */}
+                  <div className="wizard-steps-indicator">
+                    <button
+                      type="button"
+                      className={`step-pill ${
+                        runnerStep === 1 ? 'current' : 'done'
+                      }`}
+                      onClick={() => setRunnerStep(1)}
+                    >
+                      {tx("Step 1: Account Registration (ข้อมูลบัญชี)")}
+                    </button>
+                    <button
+                      type="button"
+                      className={`step-pill ${
+                        runnerStep === 2 ? 'current' : ''
+                      }`}
+                      onClick={() => {
+                        if (validateStep1AccountFields(false)) {
+                          setRunnerStep(2);
+                        }
+                      }}
+                    >
+                      {tx("Step 2: Runner Profile (โปรไฟล์นักวิ่ง · ข้ามได้)")}
+                    </button>
+                  </div>
 
-              <button type="submit" className="btn-primary btn-full">
-                สร้างบัญชีใหม่ (ต้องยืนยันอีเมลในหน้าถัดไป)
-              </button>
-            </form>
+                  {runnerStep === 1 && (
+                    <div className="custom-field-creator">
+                      <h2>{tx("Step 1 — Account Registration (สร้างบัญชีนักวิ่ง)")}</h2>
+                      <p className="muted-block">
+                        {tx("เลือกดึงข้อมูลอัตโนมัติจาก Google / LINE หรือกรอกข้อมูลสมัครด้วยอีเมล")}
+                      </p>
+
+                      <div className="cta-inline-row" style={{ margin: '0.7rem 0' }}>
+                        <button
+                          type="button"
+                          className="btn-social btn-social-google"
+                          onClick={() => {
+                            setFirstName('กิตติพงศ์');
+                            setLastName('เจริญรัตน์');
+                            setRegEmail('kittipong.runner@gmail.demo.local');
+                            setSocialAuthPrepopulated('google');
+                            setStatusAlert({
+                              tone: 'ok',
+                              text: tx("ดึงชื่อและอีเมลจาก Google Account เรียบร้อยแล้ว คุณสามารถแก้ไขข้อมูลก่อนกดถัดไปได้"),
+                            });
+                          }}
+                        >
+                          <IconGoogleMark size={17} />
+                          <span>Continue with Google</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-social btn-social-line"
+                          onClick={() => {
+                            setFirstName('ปาริชาติ');
+                            setLastName('สายลมเหนือ');
+                            setRegEmail('parichat.line@demo.local');
+                            setSocialAuthPrepopulated('line');
+                            setStatusAlert({
+                              tone: 'ok',
+                              text: tx("ดึงข้อมูลโปรไฟล์จาก LINE เรียบร้อยแล้ว คุณสามารถแก้ไขข้อมูลก่อนกดถัดไปได้"),
+                            });
+                          }}
+                        >
+                          <IconLineMark size={17} />
+                          <span>Continue with LINE</span>
+                        </button>
+                      </div>
+
+                      <div className="form-grid-2">
+                        <div className="form-row">
+                          <label htmlFor="rn-fname">{tx("First Name (ชื่อจริง) *")}</label>
+                          <input
+                            id="rn-fname"
+                            type="text"
+                            value={firstName}
+                            onChange={(e) => setFirstName(e.target.value)}
+                            placeholder={tx("เช่น กานต์พิชชา")}
+                            required
+                          />
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="rn-lname">{tx("Last Name (นามสกุล) *")}</label>
+                          <input
+                            id="rn-lname"
+                            type="text"
+                            value={lastName}
+                            onChange={(e) => setLastName(e.target.value)}
+                            placeholder={tx("เช่น วัฒนากูล")}
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="form-grid-2" style={{ marginTop: '0.6rem' }}>
+                        <div className="form-row">
+                          <label htmlFor="rn-email">{tx("Email Address (อีเมล) *")}</label>
+                          <input
+                            id="rn-email"
+                            type="email"
+                            value={regEmail}
+                            onChange={(e) => setRegEmail(e.target.value)}
+                            placeholder="runner@example.com"
+                            required
+                          />
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="rn-phone">
+                            {tx("Phone Number (เบอร์โทรศัพท์ · ไม่บังคับ)")}
+                          </label>
+                          <input
+                            id="rn-phone"
+                            type="tel"
+                            value={regPhone}
+                            onChange={(e) => setRegPhone(e.target.value)}
+                            placeholder="081-234-5678"
+                          />
+                        </div>
+                      </div>
+
+                      {!socialAuthPrepopulated && (
+                        <>
+                          <div
+                            className="form-grid-2"
+                            style={{ marginTop: '0.6rem' }}
+                          >
+                            <div className="form-row">
+                              <label htmlFor="rn-pass">
+                                {tx("Password (รหัสผ่านอย่างน้อย 8 ตัวอักษร) *")}
+                              </label>
+                              <input
+                                id="rn-pass"
+                                type={showPassword ? 'text' : 'password'}
+                                value={regPass}
+                                onChange={(e) => setRegPass(e.target.value)}
+                                required
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="rn-cpass">
+                                {tx("Confirm Password (ยืนยันรหัสผ่าน) *")}
+                              </label>
+                              <input
+                                id="rn-cpass"
+                                type={showPassword ? 'text' : 'password'}
+                                value={regConfirmPass}
+                                onChange={(e) =>
+                                  setRegConfirmPass(e.target.value)
+                                }
+                                required
+                              />
+                            </div>
+                          </div>
+
+                          <div
+                            className="cta-inline-row"
+                            style={{ marginTop: '0.5rem' }}
+                          >
+                            <span
+                              className={`status-pill ${pwStrength.toneClass}`}
+                            >
+                              <span>{tx(pwStrength.label)}</span>
+                            </span>
+                          </div>
+                        </>
+                      )}
+
+                      <div className="cta-inline-row" style={{ marginTop: '0.9rem' }}>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          onClick={() => {
+                            if (validateStep1AccountFields(false)) {
+                              setRunnerStep(2);
+                            }
+                          }}
+                        >
+                          <span>{tx("ถัดไป: Step 2 โปรไฟล์นักวิ่ง")}</span>
+                          <IconArrowRight size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {runnerStep === 2 && (
+                    <div className="custom-field-creator">
+                      <h2>{tx("Step 2 — Runner Profile (ข้อมูลโปรไฟล์นักวิ่ง · ข้ามไปเติมภายหลังได้)")}</h2>
+                      <div className="status-explanation-banner">
+                        <IconShield size={16} />
+                        <span>
+                          <strong>{tx("แยกโมดูลบัญชีออกจากโมดูลสมัครงานวิ่ง:")}</strong>{' '}
+                          {tx("ขั้นตอนนี้ไม่บังคับเลือกไซส์เสื้อ (T-shirt size) และไม่บังคับเลือกระยะแข่งขันจริง ข้อมูลเฉพาะของแต่ละสนามจะถามแยกเมื่อคุณกดสมัครงานวิ่งนั้น")}
+                        </span>
+                      </div>
+
+                      <div className="form-grid-3" style={{ marginTop: '0.75rem' }}>
+                        <div className="form-row">
+                          <label htmlFor="rn-dob">{tx("Date of Birth (วันเกิด · ไม่บังคับ)")}</label>
+                          <input
+                            id="rn-dob"
+                            type="date"
+                            value={runnerDob}
+                            onChange={(e) => setRunnerDob(e.target.value)}
+                          />
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="rn-gen">{tx("Gender (เพศ · ไม่บังคับ)")}</label>
+                          <select
+                            id="rn-gen"
+                            value={runnerGender}
+                            onChange={(e) =>
+                              setRunnerGender(
+                                e.target.value as 'ชาย' | 'หญิง' | 'ไม่ระบุ'
+                              )
+                            }
+                          >
+                            <option value="ไม่ระบุ">{tx("ไม่ระบุ")}</option>
+                            <option value="ชาย">{tx("ชาย (Male)")}</option>
+                            <option value="หญิง">{tx("หญิง (Female)")}</option>
+                          </select>
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="rn-nat">{tx("Nationality (สัญชาติ)")}</label>
+                          <input
+                            id="rn-nat"
+                            type="text"
+                            value={runnerNationality}
+                            onChange={(e) => setRunnerNationality(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="form-row" style={{ marginTop: '0.6rem' }}>
+                        <label htmlFor="rn-exp">
+                          {tx("Running Experience (ระดับประสบการณ์การวิ่ง)")}
+                        </label>
+                        <select
+                          id="rn-exp"
+                          value={runnerExp}
+                          onChange={(e) =>
+                            setRunnerExp(
+                              e.target.value as
+                                | 'Beginner'
+                                | 'Intermediate'
+                                | 'Advanced'
+                            )
+                          }
+                        >
+                          <option value="Beginner">
+                            {tx("Beginner (เริ่มต้นวิ่งเพื่อสุขภาพ)")}
+                          </option>
+                          <option value="Intermediate">
+                            {tx("Intermediate (วิ่งสม่ำเสมอ 10 km – 21.1 km)")}
+                          </option>
+                          <option value="Advanced">
+                            {tx("Advanced (นักวิ่ง Half / Full Marathon / Trail)")}
+                          </option>
+                        </select>
+                      </div>
+
+                      <h3 style={{ margin: '0.9rem 0 0.45rem', fontSize: '0.95rem' }}>
+                        {tx("ผู้ติดต่อฉุกเฉินเริ่มต้น (Emergency Contact · ใช้เติมอัตโนมัติเวลาสมัครงานวิ่ง)")}
+                      </h3>
+                      <div className="form-grid-3">
+                        <div className="form-row">
+                          <label htmlFor="rn-em-name">Emergency Contact Name</label>
+                          <input
+                            id="rn-em-name"
+                            type="text"
+                            placeholder={tx("ชื่อ-นามสกุลผู้ติดต่อฉุกเฉิน")}
+                            value={emergName}
+                            onChange={(e) => setEmergName(e.target.value)}
+                          />
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="rn-em-rel">{tx("Relationship (ความสัมพันธ์)")}</label>
+                          <input
+                            id="rn-em-rel"
+                            type="text"
+                            placeholder={tx("เช่น บิดา / มารดา / คู่สมรส")}
+                            value={emergRelation}
+                            onChange={(e) => setEmergRelation(e.target.value)}
+                          />
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="rn-em-ph">Emergency Contact Phone</label>
+                          <input
+                            id="rn-em-ph"
+                            type="tel"
+                            placeholder="089-xxx-xxxx"
+                            value={emergPhone}
+                            onChange={(e) => setEmergPhone(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="form-row" style={{ marginTop: '0.7rem' }}>
+                        <label>
+                          {tx("Preferred Running Distance (ระยะทางที่สนใจ · เลือกได้หลายข้อ)")}
+                        </label>
+                        <div className="cta-inline-row" style={{ flexWrap: 'wrap' }}>
+                          {[
+                            '3 km',
+                            '5 km',
+                            '10 km',
+                            'Half Marathon (21.1 km)',
+                            'Marathon (42.195 km)',
+                            'Other',
+                          ].map((dist) => {
+                            const checked = preferredDistances.includes(dist);
+                            return (
+                              <button
+                                key={dist}
+                                type="button"
+                                className={`filter-pill ${checked ? 'active' : ''}`}
+                                onClick={() =>
+                                  setPreferredDistances((prev) =>
+                                    checked
+                                      ? prev.filter((x) => x !== dist)
+                                      : [...prev, dist]
+                                  )
+                                }
+                              >
+                                {tx(dist)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <label
+                        className="checkbox-row"
+                        style={{ marginTop: '0.75rem' }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={marketingOptIn}
+                          onChange={(e) => setMarketingOptIn(e.target.checked)}
+                        />
+                        <span>
+                          {tx("[ไม่บังคับ] รับข่าวสารงานวิ่งเปิดใหม่และสิทธิพิเศษจาก RunEvent")}
+                        </span>
+                      </label>
+
+                      <div className="cta-inline-row" style={{ marginTop: '0.9rem' }}>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => setRunnerStep(1)}
+                        >
+                          {tx("ย้อนกลับ Step 1")}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-ghost-sm"
+                          onClick={() => handleCompleteRunnerRegistration(true)}
+                        >
+                          {tx("ข้ามข้อมูลไม่บังคับและสร้างบัญชีทันที")}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          onClick={() => handleCompleteRunnerRegistration(false)}
+                        >
+                          <IconCheckCircle size={15} />
+                          <span>{tx("บันทึกโปรไฟล์และสร้างบัญชีนักวิ่ง")}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 2B. RUNNER REGISTRATION COMPLETION SCREEN */}
+              {signupFlowMode === 'runner_completed' && completedRunnerUser && (
+                <div className="receipt-success-panel">
+                  <div className="receipt-head">
+                    <IconCheckCircle size={24} />
+                    <div>
+                      <h2>
+                        {tx("ยินดีต้อนรับสู่ RunEvent, ")} {tx(completedRunnerUser.fullNameTh)}!
+                      </h2>
+                      <p className="muted-inline">
+                        {tx("สร้างบัญชีนักวิ่งเรียบร้อยแล้ว สามารถค้นหางานวิ่งหรือเข้าไปจัดการโปรไฟล์ใน Runner Dashboard ได้ทันที")}
+                      </p>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const comp = computeRunnerProfileCompletion(
+                      completedRunnerUser
+                    );
+                    return (
+                      <div className="custom-field-creator">
+                        <div
+                          className="cta-inline-row"
+                          style={{ justifyContent: 'space-between' }}
+                        >
+                          <strong>
+                            {tx("ความสมบูรณ์ของโปรไฟล์นักวิ่ง (Profile Completion Indicator)")}
+                          </strong>
+                          <strong className="mono-num text-forest">
+                            {tx(comp.pct)}% ({tx(comp.completedItems)}/{tx(comp.totalItems)}{' '}
+                            {tx("รายการ)")}
+                          </strong>
+                        </div>
+                        <div
+                          className="hbar-track"
+                          style={{ marginTop: '0.45rem' }}
+                        >
+                          <div
+                            className="hbar-fill fill-forest"
+                            style={{ width: `${Math.max(10, comp.pct)}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  <div className="cta-inline-row">
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => {
+                        onAuthenticated(completedRunnerUser);
+                        onNavigateRunnerDashboard?.();
+                      }}
+                    >
+                      <span>{tx("ไปที่ Runner Dashboard ของฉัน")}</span>
+                      <IconArrowRight size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => {
+                        onAuthenticated(completedRunnerUser);
+                        onNavigateExploreEvents?.();
+                      }}
+                    >
+                      <IconFlag size={15} />
+                      <span>{tx("สำรวจงานวิ่งทั้งหมด (Explore Running Events)")}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 3. ORGANIZER 3-STEP REGISTRATION WIZARD */}
+              {signupFlowMode === 'organizer_wizard' && (
+                <div className="canvas-stack">
+                  <div
+                    className="cta-inline-row"
+                    style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}
+                  >
+                    <button
+                      type="button"
+                      className="btn-ghost-sm"
+                      onClick={() => {
+                        if (hasUnsavedWizardData) {
+                          setPendingSwitchTarget('select_type');
+                        } else {
+                          setSignupFlowMode('select_type');
+                        }
+                      }}
+                    >
+                      <IconArrowLeft size={14} />
+                      <span>{tx("กลับหน้าเลือกประเภทบัญชี")}</span>
+                    </button>
+
+                    <div className="cta-inline-row">
+                      <button
+                        type="button"
+                        className="btn-ghost-sm"
+                        onClick={handleLoadOrganizerDraft}
+                      >
+                        {tx("โหลดแบบร่างเดิม")}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={handleSaveOrganizerDraft}
+                      >
+                        {tx("บันทึกแบบร่าง (Save Draft)")}
+                      </button>
+                    </div>
+                  </div>
+
+                  {draftSavedNotice && (
+                    <div className="success-callout" role="status">
+                      <IconCheckCircle size={17} />
+                      <span>{tx(draftSavedNotice)}</span>
+                    </div>
+                  )}
+
+                  {/* 3-Step Progress Stepper */}
+                  <div className="wizard-steps-indicator">
+                    <button
+                      type="button"
+                      className={`step-pill ${
+                        orgStep === 1 ? 'current' : 'done'
+                      }`}
+                      onClick={() => setOrgStep(1)}
+                    >
+                      Step 1: Account & Contact
+                    </button>
+                    <button
+                      type="button"
+                      className={`step-pill ${
+                        orgStep === 2
+                          ? 'current'
+                          : orgStep > 2
+                          ? 'done'
+                          : ''
+                      }`}
+                      onClick={() => {
+                        if (validateStep1AccountFields(true)) {
+                          setOrgStep(2);
+                        }
+                      }}
+                    >
+                      Step 2: Organization Details
+                    </button>
+                    <button
+                      type="button"
+                      className={`step-pill ${orgStep === 3 ? 'current' : ''}`}
+                      onClick={() => {
+                        if (
+                          validateStep1AccountFields(true) &&
+                          orgNameTh.trim() &&
+                          officeAddress.trim()
+                        ) {
+                          setOrgStep(3);
+                        } else {
+                          setStatusAlert({
+                            tone: 'err',
+                            text: tx("กรุณากรอกข้อมูลใน Step 1 และ Step 2 (ชื่อองค์กรและที่อยู่สำนักงาน) ให้ครบก่อนไปขั้นตอนที่ 3"),
+                          });
+                        }
+                      }}
+                    >
+                      Step 3: Identity & Verification
+                    </button>
+                  </div>
+
+                  {/* STEP 1: ACCOUNT & CONTACT INFORMATION */}
+                  {orgStep === 1 && (
+                    <div className="custom-field-creator">
+                      <h2>
+                        {tx("Step 1 — Account & Contact Information (ข้อมูลบัญชีและผู้ยื่นคำขอ)")}
+                      </h2>
+                      <div className="form-grid-3">
+                        <div className="form-row">
+                          <label htmlFor="og-fn">{tx("First Name (ชื่อจริง) *")}</label>
+                          <input
+                            id="og-fn"
+                            type="text"
+                            value={firstName}
+                            onChange={(e) => setFirstName(e.target.value)}
+                            placeholder={tx("เช่น ทานตะวัน")}
+                            required
+                          />
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="og-ln">{tx("Last Name (นามสกุล) *")}</label>
+                          <input
+                            id="og-ln"
+                            type="text"
+                            value={lastName}
+                            onChange={(e) => setLastName(e.target.value)}
+                            placeholder={tx("เช่น วงศ์เจริญ")}
+                            required
+                          />
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="og-pos">
+                            {tx("Position / Job Title (ตำแหน่งในองค์กร) *")}
+                          </label>
+                          <input
+                            id="og-pos"
+                            type="text"
+                            value={jobTitle}
+                            onChange={(e) => setJobTitle(e.target.value)}
+                            placeholder={tx("เช่น Race Director / กรรมการผู้จัดการ")}
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div
+                        className="form-grid-2"
+                        style={{ marginTop: '0.6rem' }}
+                      >
+                        <div className="form-row">
+                          <label htmlFor="og-em">{tx("Email (อีเมลติดต่อหลัก) *")}</label>
+                          <input
+                            id="og-em"
+                            type="email"
+                            value={regEmail}
+                            onChange={(e) => setRegEmail(e.target.value)}
+                            placeholder="director@organization.co.th"
+                            required
+                          />
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="og-ph">{tx("Phone Number (เบอร์โทรศัพท์) *")}</label>
+                          <input
+                            id="og-ph"
+                            type="tel"
+                            value={regPhone}
+                            onChange={(e) => setRegPhone(e.target.value)}
+                            placeholder="081-999-8888"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      {!socialAuthPrepopulated && (
+                        <>
+                          <div
+                            className="form-grid-2"
+                            style={{ marginTop: '0.6rem' }}
+                          >
+                            <div className="form-row">
+                              <label htmlFor="og-pw">
+                                {tx("Password (รหัสผ่านอย่างน้อย 8 ตัวอักษร) *")}
+                              </label>
+                              <input
+                                id="og-pw"
+                                type="password"
+                                value={regPass}
+                                onChange={(e) => setRegPass(e.target.value)}
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="og-cpw">
+                                {tx("Confirm Password (ยืนยันรหัสผ่าน) *")}
+                              </label>
+                              <input
+                                id="og-cpw"
+                                type="password"
+                                value={regConfirmPass}
+                                onChange={(e) =>
+                                  setRegConfirmPass(e.target.value)
+                                }
+                              />
+                            </div>
+                          </div>
+                          <div
+                            className="cta-inline-row"
+                            style={{ marginTop: '0.45rem' }}
+                          >
+                            <span
+                              className={`status-pill ${pwStrength.toneClass}`}
+                            >
+                              <span>{tx(pwStrength.label)}</span>
+                            </span>
+                          </div>
+                        </>
+                      )}
+
+                      <div className="cta-inline-row" style={{ marginTop: '0.9rem' }}>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          onClick={() => {
+                            if (validateStep1AccountFields(true)) {
+                              setOrgStep(2);
+                            }
+                          }}
+                        >
+                          <span>{tx("ถัดไป: Step 2 ข้อมูลองค์กรและที่อยู่")}</span>
+                          <IconArrowRight size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* STEP 2: ORGANIZATION DETAILS (SECTIONS A, B, C, D) */}
+                  {orgStep === 2 && (
+                    <div className="custom-field-creator">
+                      <h2>{tx("Step 2 — Organization Details (ข้อมูลองค์กรผู้จัดงานวิ่ง)")}</h2>
+
+                      {/* Section A */}
+                      <h3 style={{ margin: '0.6rem 0 0.45rem', fontSize: '0.96rem' }}>
+                        {tx("Section A — Organization Profile (ข้อมูลพื้นฐานองค์กร)")}
+                      </h3>
+                      <div className="form-grid-3">
+                        <div className="form-row">
+                          <label htmlFor="og-nameth">
+                            Organization Name (Thai) *
+                          </label>
+                          <input
+                            id="og-nameth"
+                            type="text"
+                            value={orgNameTh}
+                            onChange={(e) => setOrgNameTh(e.target.value)}
+                            placeholder={tx("เช่น บริษัท สยาม เทรล สปอร์ต จำกัด")}
+                            required
+                          />
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="og-nameen">
+                            {tx("Organization Name (English · ไม่บังคับ)")}
+                          </label>
+                          <input
+                            id="og-nameen"
+                            type="text"
+                            value={orgNameEn}
+                            onChange={(e) => setOrgNameEn(e.target.value)}
+                            placeholder={tx("เช่น Siam Trail Sports Co., Ltd.")}
+                          />
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="og-type">Organization Type *</label>
+                          <select
+                            id="og-type"
+                            value={orgType}
+                            onChange={(e) =>
+                              setOrgType(e.target.value as OrganizationType)
+                            }
+                          >
+                            <option value="Private Company">
+                              {tx("Private Company (บริษัทเอกชน / นิติบุคคล)")}
+                            </option>
+                            <option value="Government Organization">
+                              {tx("Government Organization (หน่วยงานราชการ / ท้องถิ่น)")}
+                            </option>
+                            <option value="Sports Club / Association">
+                              {tx("Sports Club / Association (ชมรมวิ่ง / สมาคมกีฬา)")}
+                            </option>
+                            <option value="Independent Organizer">
+                              {tx("Independent Organizer (ผู้จัดงานอิสระ)")}
+                            </option>
+                            <option value="Non-Profit Organization">
+                              {tx("Non-Profit Organization (มูลนิธิ / องค์กรการกุศล)")}
+                            </option>
+                            <option value="Other">{tx("Other (อื่น ๆ)")}</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div
+                        className="form-grid-3"
+                        style={{ marginTop: '0.6rem' }}
+                      >
+                        <div className="form-row">
+                          <label htmlFor="og-regno">
+                            Business Registration Number{' '}
+                            {orgType === 'Private Company' ||
+                            orgType === 'Non-Profit Organization'
+                              ? tx("(บังคับตามประเภทองค์กร) *")
+                              : tx("(เลขทะเบียนนิติบุคคล/ชมรม ถ้ามี)")}
+                          </label>
+                          <input
+                            id="og-regno"
+                            type="text"
+                            className="mono-code"
+                            value={businessRegNo}
+                            onChange={(e) => setBusinessRegNo(e.target.value)}
+                            placeholder={tx("เช่น 0505569001234")}
+                          />
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="og-oem">Organization Email *</label>
+                          <input
+                            id="og-oem"
+                            type="email"
+                            value={orgEmail || regEmail}
+                            onChange={(e) => setOrgEmail(e.target.value)}
+                          />
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="og-oph">Organization Phone *</label>
+                          <input
+                            id="og-oph"
+                            type="tel"
+                            value={orgPhone || regPhone}
+                            onChange={(e) => setOrgPhone(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Section B: Dependent Thai Address */}
+                      <h3 style={{ margin: '0.95rem 0 0.45rem', fontSize: '0.96rem' }}>
+                        {tx("Section B — Office Address (ที่อยู่สำนักงานแบบเชื่อมโยงจังหวัด-อำเภอ-ตำบล-รหัสไปรษณีย์)")}
+                      </h3>
+                      <div className="form-row">
+                        <label htmlFor="og-addr">
+                          {tx("Address (เลขที่ อาคาร ถนน) *")}
+                        </label>
+                        <input
+                          id="og-addr"
+                          type="text"
+                          value={officeAddress}
+                          onChange={(e) => setOfficeAddress(e.target.value)}
+                          placeholder={tx("เช่น 199/8 ถนนห้วยแก้ว")}
+                          required
+                        />
+                      </div>
+
+                      <div
+                        className="form-grid-3"
+                        style={{ marginTop: '0.6rem' }}
+                      >
+                        <div className="form-row">
+                          <label htmlFor="og-prov">{tx("Province (จังหวัด) *")}</label>
+                          <select
+                            id="og-prov"
+                            value={officeProvince}
+                            onChange={(e) => handleProvinceChange(e.target.value)}
+                          >
+                            {Object.keys(THAI_ADDRESS_DATASET).map((p) => (
+                              <option key={p} value={p}>
+                                {tx(p)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="og-dist">
+                            {tx("District (อำเภอ / เขต) *")}
+                          </label>
+                          <select
+                            id="og-dist"
+                            value={officeDistrict}
+                            onChange={(e) => handleDistrictChange(e.target.value)}
+                          >
+                            {availableDistricts.map((d) => (
+                              <option key={d} value={d}>
+                                {tx(d)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="og-subd">
+                            {tx("Subdistrict (ตำบล / แขวง) & รหัสไปรษณีย์ *")}
+                          </label>
+                          <div className="cta-inline-row">
+                            <select
+                              id="og-subd"
+                              value={officeSubdistrict}
+                              onChange={(e) =>
+                                setOfficeSubdistrict(e.target.value)
+                              }
+                            >
+                              {availableSubdistricts.map((s) => (
+                                <option key={s} value={s}>
+                                  {tx(s)}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              type="text"
+                              className="mono-code"
+                              aria-label={tx("รหัสไปรษณีย์")}
+                              style={{ maxWidth: '6.5rem' }}
+                              value={officePostalCode}
+                              onChange={(e) =>
+                                setOfficePostalCode(e.target.value)
+                              }
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Section C: Organization Description */}
+                      <h3 style={{ margin: '0.95rem 0 0.45rem', fontSize: '0.96rem' }}>
+                        Section C — Organization Description & Previous Events
+                      </h3>
+                      <div className="form-grid-2">
+                        <div className="form-row">
+                          <label htmlFor="og-desc">
+                            {tx("คำอธิบายองค์กรและประสบการณ์จัดงาน *")}
+                          </label>
+                          <textarea
+                            id="og-desc"
+                            rows={2}
+                            value={orgDescription}
+                            onChange={(e) => setOrgDescription(e.target.value)}
+                            placeholder={tx("ระบุประสบการณ์ของทีมงานและรูปแบบงานวิ่งที่จัด...")}
+                          />
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="og-prev">
+                            {tx("ผลงานการจัดงานวิ่งที่ผ่านมา & ลิงก์เพจ Facebook")}
+                          </label>
+                          <textarea
+                            id="og-prev"
+                            rows={2}
+                            value={previousEvents}
+                            onChange={(e) => setPreviousEvents(e.target.value)}
+                            placeholder={tx("เช่น งานวิ่ง Chiang Mai City Run 2024–2025, fb.com/...")}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Section D: Main Contact Person */}
+                      <h3 style={{ margin: '0.95rem 0 0.45rem', fontSize: '0.96rem' }}>
+                        {tx("Section D — Main Contact Person (ผู้ประสานงานหลัก)")}
+                      </h3>
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={sameAsAccountContact}
+                          onChange={(e) =>
+                            setSameAsAccountContact(e.target.checked)
+                          }
+                        />
+                        <span>
+                          {tx("Same as account contact (ใช้ข้อมูลเดียวกับผู้ติดต่อในขั้นตอนที่ 1:")}{' '}
+                          {tx(firstName)} {tx(lastName)})
+                        </span>
+                      </label>
+
+                      {!sameAsAccountContact && (
+                        <div
+                          className="form-grid-2"
+                          style={{ marginTop: '0.5rem' }}
+                        >
+                          <div className="form-row">
+                            <label htmlFor="og-mc-n">Contact Person Name *</label>
+                            <input
+                              id="og-mc-n"
+                              type="text"
+                              value={mainContactName}
+                              onChange={(e) =>
+                                setMainContactName(e.target.value)
+                              }
+                            />
+                          </div>
+                          <div className="form-row">
+                            <label htmlFor="og-mc-pos">{tx("Position (ตำแหน่ง) *")}</label>
+                            <input
+                              id="og-mc-pos"
+                              type="text"
+                              value={mainContactPos}
+                              onChange={(e) =>
+                                setMainContactPos(e.target.value)
+                              }
+                            />
+                          </div>
+                          <div className="form-row">
+                            <label htmlFor="og-mc-p">Contact Phone *</label>
+                            <input
+                              id="og-mc-p"
+                              type="tel"
+                              value={mainContactPhone}
+                              onChange={(e) =>
+                                setMainContactPhone(e.target.value)
+                              }
+                            />
+                          </div>
+                          <div className="form-row">
+                            <label htmlFor="og-mc-em">Contact Email *</label>
+                            <input
+                              id="og-mc-em"
+                              type="email"
+                              value={mainContactEmail}
+                              onChange={(e) =>
+                                setMainContactEmail(e.target.value)
+                              }
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="cta-inline-row" style={{ marginTop: '0.9rem' }}>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => setOrgStep(1)}
+                        >
+                          {tx("ย้อนกลับ Step 1")}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          onClick={() => {
+                            if (!orgNameTh.trim() || !officeAddress.trim()) {
+                              setStatusAlert({
+                                tone: 'err',
+                                text: tx("กรุณาระบุชื่อองค์กร (ภาษาไทย) และที่อยู่สำนักงานให้ครบถ้วน"),
+                              });
+                              return;
+                            }
+                            if (
+                              (orgType === 'Private Company' ||
+                                orgType === 'Non-Profit Organization') &&
+                              !businessRegNo.trim()
+                            ) {
+                              setStatusAlert({
+                                tone: 'err',
+                                text: txf("ประเภทองค์กร \"{0}\" ต้องระบุเลขทะเบียนนิติบุคคล (Business Registration Number)", orgType),
+                              });
+                              return;
+                            }
+                            setStatusAlert(null);
+                            setOrgStep(3);
+                          }}
+                        >
+                          <span>{tx("ถัดไป: Step 3 ยืนยันตัวตนและอัปโหลดเอกสาร")}</span>
+                          <IconArrowRight size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* STEP 3: IDENTITY & ORGANIZATION VERIFICATION */}
+                  {orgStep === 3 && (
+                    <div className="custom-field-creator">
+                      <h2>
+                        {tx("Step 3 — Identity & Organization Verification (อัปโหลดเอกสารยืนยันตัวตนใน Private Storage)")}
+                      </h2>
+                      <p className="muted-block">
+                        {tx("รองรับไฟล์ PDF, JPG, JPEG, PNG ขนาดไม่เกิน 10 MB ต่อไฟล์ เอกสารทั้งหมดถูกจัดเก็บใน Private Storage และไม่เปิดเผยผ่าน Public URL")}
+                      </p>
+
+                      <div className="form-grid-2" style={{ marginTop: '0.6rem' }}>
+                        <div className="form-row">
+                          <label htmlFor="og-iddoc">
+                            {tx("Section B — ประเภทเอกสารยืนยันตัวตนบุคคล")}
+                          </label>
+                          <select
+                            id="og-iddoc"
+                            value={idDocType}
+                            onChange={(e) => setIdDocType(e.target.value)}
+                          >
+                            <option value="บัตรประจำตัวประชาชน">
+                              {tx("บัตรประจำตัวประชาชน (Thai National ID)")}
+                            </option>
+                            <option value="หนังสือเดินทาง (Passport)">
+                              {tx("หนังสือเดินทาง (Passport)")}
+                            </option>
+                          </select>
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="og-idexp">
+                            {tx("วันหมดอายุเอกสาร (Document Expiry Date)")}
+                          </label>
+                          <input
+                            id="og-idexp"
+                            type="date"
+                            value={idDocExpiry}
+                            onChange={(e) => setIdDocExpiry(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      <label
+                        className="checkbox-row"
+                        style={{ marginTop: '0.65rem' }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isAuthorizedRep}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setIsAuthorizedRep(checked);
+                            if (
+                              checked &&
+                              !uploadedDocs.some(
+                                (d) => d.category === 'authorization'
+                              )
+                            ) {
+                              setUploadedDocs((prev) => [
+                                ...prev,
+                                {
+                                  id: `doc-auth-${Date.now()}`,
+                                  category: 'authorization',
+                                  docTypeLabel:
+                                    'หนังสือมอบอำนาจแต่งตั้งตัวแทนผู้จัดงาน (Power of Attorney)',
+                                  fileName: 'power_of_attorney_signed.pdf',
+                                  fileSizeKb: 620,
+                                  mimeType: 'application/pdf',
+                                  privateStorageKey:
+                                    'priv://kyc-vault/2026/poa-signed.pdf',
+                                },
+                              ]);
+                            }
+                          }}
+                        />
+                        <span>
+                          {tx("Section D (ตามเงื่อนไข) — ผู้ยื่นคำขอเป็นผู้รับมอบอำนาจ (ต้องแนบหนังสือมอบอำนาจ Power of Attorney)")}
+                        </span>
+                      </label>
+
+                      {/* Document Upload List */}
+                      <div
+                        className="custom-fields-list"
+                        style={{ marginTop: '0.75rem' }}
+                      >
+                        {uploadedDocs.map((doc) => (
+                          <div key={doc.id} className="custom-field-item">
+                            <div className="custom-field-meta">
+                              <IconLock size={14} />
+                              <strong>{tx(doc.docTypeLabel)}</strong>
+                              <span className="mono-code">{tx(doc.fileName)}</span>
+                              <span className="muted-inline mono-num">
+                                ({tx(doc.fileSizeKb)} KB · {tx(doc.mimeType)})
+                              </span>
+                              <span className="status-pill badge-forest">
+                                <span>{tx("อัปโหลดเข้า Private Vault 100%")}</span>
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn-ghost-sm"
+                              onClick={() =>
+                                setUploadedDocs((prev) =>
+                                  prev.filter((x) => x.id !== doc.id)
+                                )
+                              }
+                            >
+                              {tx("ลบ / เปลี่ยนไฟล์")}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="cta-inline-row" style={{ marginTop: '0.6rem' }}>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() =>
+                            setUploadedDocs((prev) => [
+                              ...prev,
+                              {
+                                id: `doc-extra-${Date.now()}`,
+                                category: 'organization',
+                                docTypeLabel:
+                                  'เอกสารรับรององค์กร / หนังสืออนุญาตจัดงานเพิ่มเติม',
+                                fileName: `org_supporting_doc_${
+                                  prev.length + 1
+                                }.pdf`,
+                                fileSizeKb: 950,
+                                mimeType: 'application/pdf',
+                                privateStorageKey: `priv://kyc-vault/2026/doc-${Date.now()}.pdf`,
+                              },
+                            ])
+                          }
+                        >
+                          {tx("+ แนบไฟล์เอกสารยืนยันเพิ่มเติม (PDF / JPG / PNG)")}
+                        </button>
+                      </div>
+
+                      {/* Section E: Consent */}
+                      <div
+                        className="consent-group"
+                        style={{ marginTop: '0.9rem' }}
+                      >
+                        <label className="checkbox-row">
+                          <input
+                            type="checkbox"
+                            checked={consentAccurate}
+                            onChange={(e) =>
+                              setConsentAccurate(e.target.checked)
+                            }
+                          />
+                          <span>
+                            <strong>{tx("[จำเป็น]")}</strong> {tx(" ยืนยันว่าข้อมูลองค์กรและเอกสารที่ยื่นทั้งหมดถูกต้องเป็นความจริง")}
+                          </span>
+                        </label>
+                        <label className="checkbox-row">
+                          <input
+                            type="checkbox"
+                            checked={consentVerification}
+                            onChange={(e) =>
+                              setConsentVerification(e.target.checked)
+                            }
+                          />
+                          <span>
+                            <strong>{tx("[จำเป็น]")}</strong> {tx(" ยินยอมให้แพลตฟอร์มตรวจสอบสถานะองค์กรและประวัติผู้จัดงานตามขั้นตอน KYC")}
+                          </span>
+                        </label>
+                        <label className="checkbox-row">
+                          <input
+                            type="checkbox"
+                            checked={consentPrivacy}
+                            onChange={(e) => setConsentPrivacy(e.target.checked)}
+                          />
+                          <span>
+                            <strong>{tx("[จำเป็น]")}</strong> {tx(" รับทราบประกาศความเป็นส่วนตัวสำหรับผู้จัดงาน (Privacy Notice v2.1)")}
+                          </span>
+                        </label>
+                        <label className="checkbox-row">
+                          <input
+                            type="checkbox"
+                            checked={marketingOptIn}
+                            onChange={(e) => setMarketingOptIn(e.target.checked)}
+                          />
+                          <span>
+                            {tx("[ไม่บังคับ — แยกจากความยินยอมหลัก] รับข่าวสารและสิทธิประโยชน์สำหรับผู้จัดงานจาก RunEvent")}
+                          </span>
+                        </label>
+                      </div>
+
+                      <div className="cta-inline-row" style={{ marginTop: '0.9rem' }}>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => setOrgStep(2)}
+                        >
+                          {tx("ย้อนกลับ Step 2")}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          onClick={handleFinalSubmitOrganizerWizard}
+                        >
+                          <IconCheckCircle size={15} />
+                          <span>{tx("ส่งคำขอขึ้นทะเบียนผู้จัดงาน (สถานะ SUBMITTED)")}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 3B. ORGANIZER REGISTRATION COMPLETION SCREEN */}
+              {signupFlowMode === 'organizer_completed' && completedOrgResult && (
+                <div className="receipt-success-panel">
+                  <div className="receipt-head">
+                    <IconCheckCircle size={24} />
+                    <div>
+                      <h2>
+                        {tx("ส่งคำขอขึ้นทะเบียนองค์กรผู้จัดงานสำเร็จ!")}
+                      </h2>
+                      <p className="muted-inline">
+                        {tx("ระบบบันทึกคำขอของคุณในสถานะ SUBMITTED (PENDING_REVIEW) เรียบร้อยแล้ว โดยจะไม่อนุมัติอัตโนมัติจนกว่า Platform Owner จะตรวจสอบเอกสารครบถ้วน")}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="receipt-grid">
+                    <div>
+                      <span className="muted-inline">{tx("ชื่อองค์กรผู้จัด")}</span>
+                      <strong>{tx(completedOrgResult.organization.nameTh)}</strong>
+                    </div>
+                    <div>
+                      <span className="muted-inline">
+                        {tx("หมายเลขอ้างอิงคำขอ (Reference Number)")}
+                      </span>
+                      <strong className="mono-code">
+                        {completedOrgResult.organization.referenceNumber ??
+                          'ORG-REF-2026-8841'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="muted-inline">{tx("วันที่ส่งคำขอ")}</span>
+                      <strong className="mono-num">
+                        {completedOrgResult.organization.submittedAt ??
+                          '2026-11-18 09:30'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="muted-inline">{tx("สถานะการตรวจสอบเริ่มต้น")}</span>
+                      <span className="status-pill badge-amber">
+                        <span>SUBMITTED / PENDING_REVIEW</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="status-explanation-banner">
+                    <IconShield size={16} />
+                    <span>
+                      <strong>{tx("ขั้นตอนถัดไป (Next Steps):")}</strong> {tx(" ทีม Platform Owner จะตรวจสอบเอกสารนิติบุคคลและบัญชีรับเงินภายใน 1–2 วันทำการ (ผ่านสถานะ SUBMITTED &rarr; UNDER_REVIEW &rarr; APPROVED) ระหว่างนี้คุณสามารถเข้าสู่ Organizer Dashboard เพื่อเตรียมงานวิ่งแบบร่างไว้ล่วงหน้าได้ทันที")}
+                    </span>
+                  </div>
+
+                  <div className="cta-inline-row">
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => {
+                        onAuthenticated(
+                          completedOrgResult.user,
+                          completedOrgResult.organization.id
+                        );
+                        onNavigateOrganizerWorkspace?.(
+                          completedOrgResult.organization.id
+                        );
+                      }}
+                    >
+                      <IconBuilding size={15} />
+                      <span>{tx("เข้าสู่ Organizer Dashboard ขององค์กรนี้")}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {authTab === 'forgot' && (
             <form onSubmit={handleForgotSubmit} className="auth-cred-form">
               <p className="muted-block">
-                กรอกอีเมลของคุณเพื่อรับลิงก์ตั้งรหัสผ่านใหม่แบบใช้ครั้งเดียว
-                (ระบบตอบข้อความเดียวกันเสมอเพื่อไม่เปิดเผยว่าอีเมลใดมีอยู่ในระบบ)
+                {tx("กรอกอีเมลของคุณเพื่อรับลิงก์ตั้งรหัสผ่านใหม่แบบใช้ครั้งเดียว (ระบบตอบข้อความเดียวกันเสมอเพื่อไม่เปิดเผยว่าอีเมลใดมีอยู่ในระบบ)")}
               </p>
               <div className="form-row">
-                <label htmlFor="forgot-email">อีเมลที่ลงทะเบียน</label>
+                <label htmlFor="forgot-email">{tx("อีเมลที่ลงทะเบียน")}</label>
                 <input
                   id="forgot-email"
                   type="email"
@@ -588,15 +2525,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               </div>
               <button type="submit" className="btn-primary btn-full">
                 <IconMail size={16} />
-                <span>ส่งลิงก์รีเซ็ตรหัสผ่าน</span>
+                <span>{tx("ส่งลิงก์รีเซ็ตรหัสผ่าน")}</span>
               </button>
 
               {resetRequestedEmail && !resetDoneBanner && (
                 <div className="status-explanation-banner" role="status">
                   <div>
                     <strong>
-                      หากอีเมล {resetRequestedEmail} มีอยู่ในระบบ
-                      เราได้ส่งลิงก์รีเซ็ตที่มีอายุ 15 นาทีไปให้แล้ว
+                      {tx("หากอีเมล ")} {tx(resetRequestedEmail)} {tx(" มีอยู่ในระบบ เราได้ส่งลิงก์รีเซ็ตที่มีอายุ 15 นาทีไปให้แล้ว")}
                     </strong>
                     <div style={{ marginTop: '0.45rem' }}>
                       <button
@@ -604,7 +2540,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         className="btn-secondary"
                         onClick={() => setResetDoneBanner(true)}
                       >
-                        เปิดลิงก์ยืนยันตั้งรหัสผ่านใหม่จากอีเมล
+                        {tx("เปิดลิงก์ยืนยันตั้งรหัสผ่านใหม่จากอีเมล")}
                       </button>
                     </div>
                   </div>
@@ -615,8 +2551,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 <div className="success-callout" role="status">
                   <IconCheckCircle size={17} />
                   <span>
-                    ตั้งรหัสผ่านใหม่สำเร็จ และเพิกถอนลิงก์รีเซ็ตเดิมเรียบร้อยแล้ว
-                    สามารถกลับไปแท็บเข้าสู่ระบบได้ทันที
+                    {tx("ตั้งรหัสผ่านใหม่สำเร็จ และเพิกถอนลิงก์รีเซ็ตเดิมเรียบร้อยแล้ว สามารถกลับไปแท็บเข้าสู่ระบบได้ทันที")}
                   </span>
                 </div>
               )}
@@ -628,7 +2563,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   );
 };
 
-/* ================= ACCOUNT & SECURITY VIEW (SECTION 16.3) ================= */
+/* ================= ACCOUNT & SECURITY + RUNNER PROFILE VIEW ================= */
 
 interface AccountSecurityViewProps {
   user: UserAccount;
@@ -649,6 +2584,9 @@ interface AccountSecurityViewProps {
     province: string
   ) => Organization;
   onEnterOrganizerOrg: (orgId: string) => void;
+  onUpdateRunnerProfile?: (profile: RunnerProfileData) => void;
+  onNavigateDiscoverEvents?: () => void;
+  onNavigateMyOrders?: () => void;
 }
 
 export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
@@ -663,6 +2601,9 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
   onAcceptTeamInvitation,
   onApplyNewOrganizerOrg,
   onEnterOrganizerOrg,
+  onUpdateRunnerProfile,
+  onNavigateDiscoverEvents,
+  onNavigateMyOrders,
 }) => {
   const [emailDraft, setEmailDraft] = useState(user.contactEmail ?? '');
   const [inviteInput, setInviteInput] = useState('INV-LANNA-STAFF26');
@@ -673,21 +2614,61 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
     text: string;
   } | null>(null);
 
+  // Runner profile editor state
+  const [profPhone, setProfPhone] = useState(user.runnerProfile?.phone ?? '081-442-9910');
+  const [profDob, setProfDob] = useState(user.runnerProfile?.dateOfBirth ?? '1994-05-14');
+  const [profGender, setProfGender] = useState<'ชาย' | 'หญิง' | 'ไม่ระบุ'>(
+    user.runnerProfile?.gender ?? 'หญิง'
+  );
+  const [profExp, setProfExp] = useState<
+    'Beginner' | 'Intermediate' | 'Advanced'
+  >(user.runnerProfile?.runningExperience ?? 'Intermediate');
+  const [profEmergName, setProfEmergName] = useState(
+    user.runnerProfile?.emergencyContactName ?? 'วีระ วัฒนากูล'
+  );
+  const [profEmergPhone, setProfEmergPhone] = useState(
+    user.runnerProfile?.emergencyContactPhone ?? '089-110-2211'
+  );
+
   const hasGoogle = user.identities.some((i) => i.provider === 'google');
   const hasLine = user.identities.some((i) => i.provider === 'line');
   const otherSessionsCount = user.sessions.filter(
     (s) => !s.isCurrentDevice
   ).length;
+  const profileCompletion = computeRunnerProfileCompletion(user);
 
   return (
     <main className="customer-container">
       <div className="hub-header-bar">
         <div>
-          <h1>บัญชีและความปลอดภัย ({user.fullNameTh})</h1>
+          <h1>
+            {tx("Runner Dashboard & ความปลอดภัยบัญชี (")}{tx(user.fullNameTh)})
+          </h1>
           <p className="muted-block">
-            จัดการอีเมลติดต่อ รหัสผ่าน ช่องทางเข้าสู่ระบบที่เชื่อมไว้ (Google / LINE)
-            รายการอุปกรณ์ที่เข้าสู่ระบบ และการเข้าร่วมทีมผู้จัดงานด้วยบัญชีเดียว
+            {tx("จัดการโปรไฟล์นักวิ่ง (Runner Profile), ผู้ติดต่อฉุกเฉิน, ช่องทางเข้าสู่ระบบที่เชื่อมไว้ (Google / LINE), อุปกรณ์ที่ใช้งาน และการสลับบทบาทเข้าสู่ทีมผู้จัดงานด้วยบัญชีเดียว")}
           </p>
+        </div>
+        <div className="cta-inline-row">
+          {onNavigateDiscoverEvents && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={onNavigateDiscoverEvents}
+            >
+              <IconFlag size={15} />
+              <span>{tx("Discover Events (ค้นหางานวิ่ง)")}</span>
+            </button>
+          )}
+          {onNavigateMyOrders && (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={onNavigateMyOrders}
+            >
+              <span>My Registrations & Payment History</span>
+              <IconArrowRight size={15} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -703,42 +2684,164 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
           ) : (
             <IconAlert size={17} />
           )}
-          <span>{feedback.text}</span>
+          <span>{tx(feedback.text)}</span>
         </div>
       )}
+
+      {/* Runner Profile & Completion Strip */}
+      <section className="clean-panel" style={{ marginBottom: '1rem' }}>
+        <div className="section-title-bar">
+          <div>
+            <h2>
+              {tx("Runner Profile & Emergency Contact (ความสมบูรณ์โปรไฟล์:")}{' '}
+              <span className="mono-num text-forest">
+                {tx(profileCompletion.pct)}%
+              </span>
+              )
+            </h2>
+            <p className="muted-inline">
+              {tx("ข้อมูลโปรไฟล์ทั่วไปของนักวิ่ง (ไซส์เสื้อและระยะแข่งขันจะเลือกแยกตามแต่ละงานวิ่งตอนกดสมัคร)")}
+            </p>
+          </div>
+        </div>
+
+        <div className="hbar-track" style={{ marginBottom: '0.85rem' }}>
+          <div
+            className="hbar-fill fill-forest"
+            style={{ width: `${Math.max(12, profileCompletion.pct)}%` }}
+          />
+        </div>
+
+        <div className="form-grid-3">
+          <div className="form-row">
+            <label htmlFor="rp-ph">{tx("เบอร์โทรศัพท์นักวิ่ง")}</label>
+            <input
+              id="rp-ph"
+              type="tel"
+              value={profPhone}
+              onChange={(e) => setProfPhone(e.target.value)}
+            />
+          </div>
+          <div className="form-row">
+            <label htmlFor="rp-dob">{tx("วันเกิด (Date of Birth)")}</label>
+            <input
+              id="rp-dob"
+              type="date"
+              value={profDob}
+              onChange={(e) => setProfDob(e.target.value)}
+            />
+          </div>
+          <div className="form-row">
+            <label htmlFor="rp-exp">{tx("ประสบการณ์การวิ่ง (Running Experience)")}</label>
+            <select
+              id="rp-exp"
+              value={profExp}
+              onChange={(e) =>
+                setProfExp(
+                  e.target.value as 'Beginner' | 'Intermediate' | 'Advanced'
+                )
+              }
+            >
+              <option value="Beginner">Beginner</option>
+              <option value="Intermediate">Intermediate</option>
+              <option value="Advanced">Advanced</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="form-grid-3" style={{ marginTop: '0.6rem' }}>
+          <div className="form-row">
+            <label htmlFor="rp-gen">{tx("เพศ (Gender)")}</label>
+            <select
+              id="rp-gen"
+              value={profGender}
+              onChange={(e) =>
+                setProfGender(e.target.value as 'ชาย' | 'หญิง' | 'ไม่ระบุ')
+              }
+            >
+              <option value="หญิง">{tx("หญิง")}</option>
+              <option value="ชาย">{tx("ชาย")}</option>
+              <option value="ไม่ระบุ">{tx("ไม่ระบุ")}</option>
+            </select>
+          </div>
+          <div className="form-row">
+            <label htmlFor="rp-emn">{tx("ชื่อผู้ติดต่อฉุกเฉินเริ่มต้น")}</label>
+            <input
+              id="rp-emn"
+              type="text"
+              value={profEmergName}
+              onChange={(e) => setProfEmergName(e.target.value)}
+            />
+          </div>
+          <div className="form-row">
+            <label htmlFor="rp-emp">{tx("เบอร์โทรผู้ติดต่อฉุกเฉิน")}</label>
+            <input
+              id="rp-emp"
+              type="tel"
+              value={profEmergPhone}
+              onChange={(e) => setProfEmergPhone(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="cta-inline-row" style={{ marginTop: '0.75rem' }}>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => {
+              onUpdateRunnerProfile?.({
+                phone: profPhone,
+                dateOfBirth: profDob,
+                gender: profGender,
+                nationality: 'Thailand',
+                runningExperience: profExp,
+                emergencyContactName: profEmergName,
+                emergencyContactPhone: profEmergPhone,
+                preferredDistances: ['10 km', 'Half Marathon (21.1 km)'],
+              });
+              setFeedback({
+                tone: 'ok',
+                text: tx("บันทึกข้อมูล Runner Profile และผู้ติดต่อฉุกเฉินเรียบร้อยแล้ว (ความสมบูรณ์โปรไฟล์ 100%)"),
+              });
+            }}
+          >
+            {tx("บันทึกโปรไฟล์นักวิ่ง")}
+          </button>
+        </div>
+      </section>
 
       <div className="security-grid">
         {/* Contact Email & Password */}
         <section className="clean-panel">
-          <h2>อีเมลติดต่อและรหัสผ่าน</h2>
+          <h2>{tx("อีเมลติดต่อและรหัสผ่าน")}</h2>
           <p className="muted-inline">
-            สถานะปัจจุบัน:{' '}
+            {tx("สถานะปัจจุบัน:")}{' '}
             {user.contactEmail ? (
               user.emailVerified ? (
                 <strong className="text-forest">
-                  ยืนยันอีเมลแล้ว ({user.contactEmail})
+                  {tx("ยืนยันอีเมลแล้ว (")}{tx(user.contactEmail)})
                 </strong>
               ) : (
                 <strong className="text-amber">
-                  รอยืนยันลิงก์ในอีเมล ({user.contactEmail})
+                  {tx("รอยืนยันลิงก์ในอีเมล (")}{tx(user.contactEmail)})
                 </strong>
               )
             ) : (
               <strong className="text-amber">
-                ยังไม่มีอีเมลติดต่อ (เข้าผ่าน LINE — กรุณาเพิ่มอีเมลเพื่อรับใบเสร็จ)
+                {tx("ยังไม่มีอีเมลติดต่อ (เข้าผ่าน LINE — กรุณาเพิ่มอีเมลเพื่อรับใบเสร็จ)")}
               </strong>
             )}
           </p>
 
           <div className="form-row" style={{ marginTop: '0.75rem' }}>
-            <label htmlFor="sec-email">อีเมลติดต่อสำหรับรับใบยืนยันและใบเสร็จ</label>
+            <label htmlFor="sec-email">{tx("อีเมลติดต่อสำหรับรับใบยืนยันและใบเสร็จ")}</label>
             <div className="cta-inline-row">
               <input
                 id="sec-email"
                 type="email"
                 value={emailDraft}
                 onChange={(e) => setEmailDraft(e.target.value)}
-                placeholder="ระบุอีเมลของคุณ..."
+                placeholder={tx("ระบุอีเมลของคุณ...")}
               />
               <button
                 type="button"
@@ -748,22 +2851,22 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                   onVerifyContactEmail(emailDraft.trim());
                   setFeedback({
                     tone: 'ok',
-                    text: `บันทึกและยืนยันอีเมล ${emailDraft.trim()} สำเร็จ`,
+                    text: txf("บันทึกและยืนยันอีเมล {0} สำเร็จ", emailDraft.trim()),
                   });
                 }}
               >
-                บันทึกและยืนยันอีเมล
+                {tx("บันทึกและยืนยันอีเมล")}
               </button>
             </div>
           </div>
 
           <div className="security-subblock">
             <div>
-              <strong>รหัสผ่านของบัญชี</strong>
+              <strong>{tx("รหัสผ่านของบัญชี")}</strong>
               <div className="muted-inline">
                 {user.hasPassword
-                  ? 'ตั้งรหัสผ่านไว้แล้ว สามารถเปลี่ยนรหัสผ่านใหม่ได้'
-                  : 'ยังไม่ได้ตั้งรหัสผ่าน (สมัครผ่าน Social Login)'}
+                  ? tx("ตั้งรหัสผ่านไว้แล้ว สามารถเปลี่ยนรหัสผ่านใหม่ได้")
+                  : tx("ยังไม่ได้ตั้งรหัสผ่าน (สมัครผ่าน Social Login)")}
               </div>
             </div>
             <button
@@ -774,21 +2877,21 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                 setFeedback({
                   tone: 'ok',
                   text: user.hasPassword
-                    ? 'เปลี่ยนรหัสผ่านและส่งแจ้งเตือนความปลอดภัยเรียบร้อยแล้ว'
-                    : 'เพิ่มรหัสผ่านให้บัญชีสำเร็จ ตอนนี้เข้าสู่ระบบด้วยอีเมล+รหัสผ่านได้แล้ว',
+                    ? tx("เปลี่ยนรหัสผ่านและส่งแจ้งเตือนความปลอดภัยเรียบร้อยแล้ว")
+                    : tx("เพิ่มรหัสผ่านให้บัญชีสำเร็จ ตอนนี้เข้าสู่ระบบด้วยอีเมล+รหัสผ่านได้แล้ว"),
                 });
               }}
             >
-              {user.hasPassword ? 'เปลี่ยนรหัสผ่าน' : 'ตั้งรหัสผ่านเพิ่มเติม'}
+              {user.hasPassword ? tx("เปลี่ยนรหัสผ่าน") : tx("ตั้งรหัสผ่านเพิ่มเติม")}
             </button>
           </div>
         </section>
 
         {/* Linked Login Methods */}
         <section className="clean-panel">
-          <h2>วิธีเข้าสู่ระบบที่เชื่อมอยู่กับบัญชีนี้</h2>
+          <h2>{tx("วิธีเข้าสู่ระบบที่เชื่อมอยู่กับบัญชีนี้")}</h2>
           <p className="muted-block">
-            ระบบไม่อนุญาตให้ถอดช่องทางสุดท้ายที่ใช้เข้าสู่ระบบได้ เพื่อป้องกันบัญชีถูกล็อกถาวร
+            {tx("ระบบไม่อนุญาตให้ถอดช่องทางสุดท้ายที่ใช้เข้าสู่ระบบได้ เพื่อป้องกันบัญชีถูกล็อกถาวร")}
           </p>
 
           <div className="linked-provider-list">
@@ -798,7 +2901,7 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                 <div>
                   <strong>Google Account</strong>
                   <div className="muted-inline">
-                    {hasGoogle ? 'เชื่อมต่อกับบัญชีนี้แล้ว' : 'ยังไม่ได้เชื่อมต่อ'}
+                    {hasGoogle ? tx("เชื่อมต่อกับบัญชีนี้แล้ว") : tx("ยังไม่ได้เชื่อมต่อ")}
                   </div>
                 </div>
               </div>
@@ -811,12 +2914,12 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                     setFeedback({
                       tone: res.ok ? 'ok' : 'err',
                       text: res.ok
-                        ? 'ถอดการเชื่อมบัญชี Google เรียบร้อยแล้ว'
-                        : res.error ?? 'ไม่สามารถถอดช่องทางสุดท้ายได้',
+                        ? tx("ถอดการเชื่อมบัญชี Google เรียบร้อยแล้ว")
+                        : res.error ?? tx("ไม่สามารถถอดช่องทางสุดท้ายได้"),
                     });
                   }}
                 >
-                  ถอดการเชื่อม
+                  {tx("ถอดการเชื่อม")}
                 </button>
               ) : (
                 <button
@@ -826,11 +2929,11 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                     onLinkProvider('google');
                     setFeedback({
                       tone: 'ok',
-                      text: 'เชื่อมบัญชี Google เข้ากับบัญชี RunEvent เดิมสำเร็จ',
+                      text: tx("เชื่อมบัญชี Google เข้ากับบัญชี RunEvent เดิมสำเร็จ"),
                     });
                   }}
                 >
-                  เชื่อม Google เพิ่ม
+                  {tx("เชื่อม Google เพิ่ม")}
                 </button>
               )}
             </div>
@@ -841,7 +2944,7 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                 <div>
                   <strong>LINE Login</strong>
                   <div className="muted-inline">
-                    {hasLine ? 'เชื่อมต่อกับบัญชีนี้แล้ว' : 'ยังไม่ได้เชื่อมต่อ'}
+                    {hasLine ? tx("เชื่อมต่อกับบัญชีนี้แล้ว") : tx("ยังไม่ได้เชื่อมต่อ")}
                   </div>
                 </div>
               </div>
@@ -854,12 +2957,12 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                     setFeedback({
                       tone: res.ok ? 'ok' : 'err',
                       text: res.ok
-                        ? 'ถอดการเชื่อมบัญชี LINE เรียบร้อยแล้ว'
-                        : res.error ?? 'ไม่สามารถถอดช่องทางสุดท้ายได้',
+                        ? tx("ถอดการเชื่อมบัญชี LINE เรียบร้อยแล้ว")
+                        : res.error ?? tx("ไม่สามารถถอดช่องทางสุดท้ายได้"),
                     });
                   }}
                 >
-                  ถอดการเชื่อม
+                  {tx("ถอดการเชื่อม")}
                 </button>
               ) : (
                 <button
@@ -869,11 +2972,11 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                     onLinkProvider('line');
                     setFeedback({
                       tone: 'ok',
-                      text: 'เชื่อมบัญชี LINE เข้ากับบัญชี RunEvent เดิมสำเร็จ',
+                      text: tx("เชื่อมบัญชี LINE เข้ากับบัญชี RunEvent เดิมสำเร็จ"),
                     });
                   }}
                 >
-                  เชื่อม LINE เพิ่ม
+                  {tx("เชื่อม LINE เพิ่ม")}
                 </button>
               )}
             </div>
@@ -883,7 +2986,7 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
         {/* Active Device Sessions */}
         <section className="clean-panel">
           <div className="section-title-bar">
-            <h2>อุปกรณ์ที่เข้าสู่ระบบอยู่ ({user.sessions.length})</h2>
+            <h2>{tx("อุปกรณ์ที่เข้าสู่ระบบอยู่ (")}{tx(user.sessions.length)})</h2>
             {otherSessionsCount > 0 && (
               <button
                 type="button"
@@ -892,11 +2995,11 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                   onRevokeOtherSessions();
                   setFeedback({
                     tone: 'ok',
-                    text: 'ออกจากระบบอุปกรณ์อื่นทั้งหมดเรียบร้อยแล้ว',
+                    text: tx("ออกจากระบบอุปกรณ์อื่นทั้งหมดเรียบร้อยแล้ว"),
                   });
                 }}
               >
-                ออกจากระบบอุปกรณ์อื่น ({otherSessionsCount})
+                {tx("ออกจากระบบอุปกรณ์อื่น (")}{tx(otherSessionsCount)})
               </button>
             )}
           </div>
@@ -907,16 +3010,16 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                 <div className="persona-identity">
                   <IconDevice size={18} />
                   <div>
-                    <strong>{ses.deviceLabel}</strong>
+                    <strong>{tx(ses.deviceLabel)}</strong>
                     <div className="muted-inline">
-                      {ses.locationHint} · ใช้งานล่าสุด: {ses.lastActiveAt}
+                      {tx(ses.locationHint)} {tx(" · ใช้งานล่าสุด:")} {tx(ses.lastActiveAt)}
                     </div>
                   </div>
                 </div>
                 {ses.isCurrentDevice && (
                   <span className="status-pill badge-forest">
                     <IconCheckCircle size={13} />
-                    <span>เครื่องนี้</span>
+                    <span>{tx("เครื่องนี้")}</span>
                   </span>
                 )}
               </div>
@@ -926,13 +3029,16 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
 
         {/* Organizer Memberships, Single-Use Team Invites & New Organizer Onboarding */}
         <section className="clean-panel">
-          <h2>สิทธิ์ทีมผู้จัดงานและคำเชิญเข้าร่วมองค์กร</h2>
+          <h2>{tx("สิทธิ์ทีมผู้จัดงานและคำเชิญเข้าร่วมองค์กร")}</h2>
           <p className="muted-block">
-            บัญชีนักวิ่งเดิมสามารถรับคำเชิญเข้าทีมงานวิ่ง หรือขอเปิดองค์กรผู้จัดใหม่ได้โดยไม่ต้องสมัครบัญชีแยก
+            {tx("บัญชีนักวิ่งเดิมสามารถรับคำเชิญเข้าทีมงานวิ่ง หรือขอเปิดองค์กรผู้จัดใหม่ได้โดยไม่ต้องสมัครบัญชีแยก")}
           </p>
 
           {user.memberships.length > 0 && (
-            <div className="membership-action-list" style={{ marginBottom: '0.9rem' }}>
+            <div
+              className="membership-action-list"
+              style={{ marginBottom: '0.9rem' }}
+            >
               {user.memberships.map((m) => {
                 const org = organizations.find(
                   (o) => o.id === m.organizationId
@@ -946,15 +3052,22 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                   >
                     <IconBuilding size={15} />
                     <span>
-                      เปิดจัดการ <strong>{org?.nameTh}</strong> (สิทธิ์:{' '}
+                      {tx("เปิดจัดการ ")} <strong>{tx(org?.nameTh)}</strong> {tx(" (สถานะ:")}{' '}
+                      <code>
+                        {org?.workflowStatus ??
+                          (org?.verificationStatus === 'verified'
+                            ? 'APPROVED'
+                            : 'SUBMITTED')}
+                      </code>{' '}
+                      {tx("· สิทธิ์:")}{' '}
                       <strong>
                         {m.role === 'owner'
-                          ? 'เจ้าขององค์กร'
+                          ? tx("เจ้าขององค์กร")
                           : m.role === 'event_manager'
-                          ? 'ผู้จัดการงานวิ่ง'
+                          ? tx("ผู้จัดการงานวิ่ง")
                           : m.role === 'finance'
-                          ? 'ฝ่ายการเงิน'
-                          : 'เจ้าหน้าที่หน้างาน'}
+                          ? tx("ฝ่ายการเงิน")
+                          : tx("เจ้าหน้าที่หน้างาน")}
                       </strong>
                       )
                     </span>
@@ -967,7 +3080,7 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
 
           <div className="form-row">
             <label htmlFor="inv-code-input">
-              ตอบรับคำเชิญเข้าทีมผู้จัด (รหัสใช้ครั้งเดียว เช่น{' '}
+              {tx("ตอบรับคำเชิญเข้าทีมผู้จัด (รหัสใช้ครั้งเดียว เช่น")}{' '}
               <code>
                 {invitations.find((i) => !i.usedByUserId)?.inviteCode ??
                   'INV-LANNA-STAFF26'}
@@ -993,7 +3106,7 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                   });
                 }}
               >
-                ยืนยันรับคำเชิญ
+                {tx("ยืนยันรับคำเชิญ")}
               </button>
             </div>
           </div>
@@ -1010,33 +3123,33 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
               setNewOrgName('');
               setFeedback({
                 tone: 'ok',
-                text: `สร้างองค์กรผู้จัดใหม่ "${createdOrg.nameTh}" ในสถานะรอตรวจสอบผู้จัดและบัญชีรับเงินแล้ว`,
+                text: txf("สร้างองค์กรผู้จัดใหม่ \"{0}\" (รหัสอ้างอิง {1}) ในสถานะ SUBMITTED รอตรวจสอบผู้จัดแล้ว", createdOrg.nameTh, createdOrg.referenceNumber ?? createdOrg.code),
               });
             }}
           >
             <div style={{ flex: 1 }}>
-              <strong>สมัครเปิดองค์กรผู้จัดงานวิ่งใหม่</strong>
+              <strong>{tx("สมัครเปิดองค์กรผู้จัดงานวิ่งใหม่")}</strong>
               <div className="form-grid-2" style={{ marginTop: '0.45rem' }}>
                 <input
                   type="text"
                   value={newOrgName}
                   onChange={(e) => setNewOrgName(e.target.value)}
-                  placeholder="ชื่อองค์กร/ชมรมผู้จัดงาน..."
-                  aria-label="ชื่อองค์กรผู้จัดใหม่"
+                  placeholder={tx("ชื่อองค์กร/ชมรมผู้จัดงาน...")}
+                  aria-label={tx("ชื่อองค์กรผู้จัดใหม่")}
                   required
                 />
                 <input
                   type="text"
                   value={newOrgProv}
                   onChange={(e) => setNewOrgProv(e.target.value)}
-                  placeholder="จังหวัด..."
-                  aria-label="จังหวัดขององค์กร"
+                  placeholder={tx("จังหวัด...")}
+                  aria-label={tx("จังหวัดขององค์กร")}
                   required
                 />
               </div>
             </div>
             <button type="submit" className="btn-primary">
-              ส่งคำขอเปิดองค์กร
+              {tx("ส่งคำขอเปิดองค์กร")}
             </button>
           </form>
         </section>

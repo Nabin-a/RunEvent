@@ -10,24 +10,40 @@ import {
   INITIAL_PRODUCTION_INQUIRIES,
   INITIAL_REGISTRATIONS,
   INITIAL_USERS,
-  PLATFORM_OWNER_USER,
 } from './data/mockData';
+import {
+  INITIAL_CONDITIONAL_RULES,
+  INITIAL_FIELD_REQUESTS,
+  INITIAL_FORM_TEMPLATES,
+  INITIAL_GLOBAL_FIELDS,
+  INITIAL_REGISTRATION_STEPS,
+} from './data/formBuilderData';
 import {
   AuditLogEntry,
   AuthProviderType,
+  ConditionalRule,
   CustomRegistrationField,
   EventProduct,
   EventStatus,
   FeeBearerPolicy,
+  FormFieldPolicy,
+  FormTemplate,
+  GlobalFormFieldDef,
   MerchOrderRecord,
   Organization,
+  OrganizationType,
+  OrganizerDocumentItem,
+  OrganizerFieldRequest,
+  OrganizerVerificationWorkflowStatus,
   OrgRole,
   PayoutBatch,
   PayoutStatus,
   ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
+  RegistrationStepDef,
   ReturnIntent,
+  RunnerProfileData,
   SellerServiceModel,
   SimulatedUiState,
   TeamInvitation,
@@ -48,6 +64,7 @@ import {
   IconBuilding,
   IconCheckCircle,
   IconFlag,
+  IconGlobe,
   IconLock,
   IconShield,
   IconShirt,
@@ -64,6 +81,8 @@ import {
   PlatformSection,
 } from './components/PlatformAdminView';
 
+import { tx, txf, useI18n } from './i18n';
+import { apiRequest } from './api/client';
 type RootSurface =
   | 'customer'
   | 'organizer'
@@ -84,6 +103,11 @@ interface PersistedSystemState {
   productionInquiries: ProductionInquiry[];
   payouts: PayoutBatch[];
   auditLogs: AuditLogEntry[];
+  formTemplates: FormTemplate[];
+  registrationSteps: RegistrationStepDef[];
+  globalFields: GlobalFormFieldDef[];
+  conditionalRules: ConditionalRule[];
+  fieldRequests: OrganizerFieldRequest[];
 }
 
 function createDefaultState(): PersistedSystemState {
@@ -97,6 +121,11 @@ function createDefaultState(): PersistedSystemState {
     productionInquiries: INITIAL_PRODUCTION_INQUIRIES,
     payouts: INITIAL_PAYOUTS,
     auditLogs: INITIAL_AUDIT_LOGS,
+    formTemplates: INITIAL_FORM_TEMPLATES,
+    registrationSteps: INITIAL_REGISTRATION_STEPS,
+    globalFields: INITIAL_GLOBAL_FIELDS,
+    conditionalRules: INITIAL_CONDITIONAL_RULES,
+    fieldRequests: INITIAL_FIELD_REQUESTS,
   };
 }
 
@@ -108,92 +137,30 @@ function normalizeCategoryDistanceCode(code: string, distanceKm: number): string
 }
 
 function loadSystemState(): PersistedSystemState {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as PersistedSystemState;
-      if (
-        Array.isArray(parsed.users) &&
-        Array.isArray(parsed.events) &&
-        Array.isArray(parsed.registrations)
-      ) {
-        const hasPlatformOwner = parsed.users.some(
-          (u) => u.id === PLATFORM_OWNER_USER.id || u.isPlatformAdmin
-        );
-        const migratedUsers = hasPlatformOwner
-          ? parsed.users
-          : [PLATFORM_OWNER_USER, ...parsed.users];
-        const hasClubRfq = (parsed.productionInquiries ?? []).some(
-          (q) => q.id === 'pinq-02'
-        );
-        const migratedInquiries = hasClubRfq
-          ? parsed.productionInquiries
-          : [
-              ...(parsed.productionInquiries ?? []),
-              ...INITIAL_PRODUCTION_INQUIRIES.filter((q) => q.id === 'pinq-02'),
-            ];
-
-        return {
-          ...parsed,
-          users: migratedUsers,
-          payouts: Array.isArray(parsed.payouts)
-            ? parsed.payouts
-            : INITIAL_PAYOUTS,
-          productionInquiries: migratedInquiries,
-          events: parsed.events.map((ev) => ({
-            ...ev,
-            customFields:
-              ev.customFields === undefined &&
-              (ev.id === 'evt-doisuthep-2026' ||
-                ev.id === 'evt-promthep-2026' ||
-                ev.id === 'evt-oldmoat-2026')
-                ? DEMO_CUSTOM_FIELDS
-                : ev.customFields,
-            categories: ev.categories.map((cat) => ({
-              ...cat,
-              code: normalizeCategoryDistanceCode(cat.code, cat.distanceKm),
-            })),
-          })),
-          registrations: parsed.registrations.map((reg) => {
-            if (reg.customAnswers !== undefined) return reg;
-            if (reg.id === 'reg-01') {
-              return {
-                ...reg,
-                customAnswers: {
-                  cf_medical: 'แพ้ยาแอสไพริน',
-                  cf_club: 'Chiang Mai Morning Miles',
-                  cf_blood: 'O',
-                },
-              };
-            }
-            if (reg.id === 'reg-02') {
-              return {
-                ...reg,
-                customAnswers: {
-                  cf_medical: 'ไม่มี',
-                  cf_club: 'Lanna Road Runners',
-                  cf_blood: 'B',
-                },
-              };
-            }
-            return reg;
-          }),
-        };
-      }
-    }
-  } catch {
-    // Fallback to initial state if storage unavailable
-  }
-  return createDefaultState();
+  // Initial render seed while /api/bootstrap loads authoritative SQLite state
+  return {
+    ...createDefaultState(),
+    events: INITIAL_EVENTS.map((ev) => ({
+      ...ev,
+      activeTemplateId: ev.activeTemplateId ?? 'tpl-halfmarathon',
+      publishedFormVersion: ev.publishedFormVersion ?? 'v1.2-published',
+      customFields:
+        ev.customFields === undefined &&
+        (ev.id === 'evt-doisuthep-2026' ||
+          ev.id === 'evt-promthep-2026' ||
+          ev.id === 'evt-oldmoat-2026')
+          ? DEMO_CUSTOM_FIELDS
+          : ev.customFields,
+      categories: ev.categories.map((cat) => ({
+        ...cat,
+        code: normalizeCategoryDistanceCode(cat.code, cat.distanceKm),
+      })),
+    })),
+  };
 }
 
 function loadInitialSessionUserId(): string | null {
-  try {
-    const saved = window.localStorage.getItem(SESSION_USER_KEY);
-    return saved ? saved : null;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 interface ParsedUrlRoute {
@@ -276,6 +243,15 @@ function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
     const parts = cleanPath.split('/').filter(Boolean);
     const slug = parts[1] ?? null;
     const sub = parts[2] ?? '';
+    if (sub === 'register' && slug) {
+      return {
+        surface: 'customer',
+        customerSubView: 'event_register',
+        eventSlug: slug,
+        eventTab: 'register',
+        authTab: 'signin',
+      };
+    }
     const tab: 'register' | 'storefront' | 'info_results' =
       sub === 'shop'
         ? 'storefront'
@@ -311,7 +287,30 @@ function findEventBySlug(events: RaceEvent[], slug: string | null): RaceEvent | 
 }
 
 export const App: React.FC = () => {
+  // ใช้ context ภาษาเพื่อให้ทั้ง tree re-render เมื่อสลับ TH/EN
+  const { lang, setLang } = useI18n();
   const [sys, setSys] = useState<PersistedSystemState>(loadSystemState);
+
+  // วัดความสูง header จริงให้ sidebar sticky ของผู้จัด/Platform Owner วางตำแหน่งพอดี
+  useEffect(() => {
+    const header = document.querySelector<HTMLElement>('.global-topbar');
+    if (!header) return;
+    const apply = () => {
+      const isSticky = getComputedStyle(header).position === 'sticky';
+      document.documentElement.style.setProperty(
+        '--topbar-height',
+        isSticky ? `${header.offsetHeight}px` : '0px'
+      );
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(header);
+    window.addEventListener('resize', apply);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', apply);
+    };
+  }, []);
 
   const initialParsed = parseUrlRoute(
     window.location.pathname,
@@ -392,25 +391,53 @@ export const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sys.events]);
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sys));
-    } catch {
-      // Ignore storage quota limits
+  // Session & business data are backed by Node.js + SQLite API (/api/bootstrap + HttpOnly cookie)
+  const [apiBootstrapped, setApiBootstrapped] = useState(false);
+
+  const syncApi = async (
+    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    path: string,
+    body?: unknown
+  ) => {
+    const res = await apiRequest(method, path, body);
+    if (res.ok && res.state) {
+      setSys(res.state);
+      if (res.currentUserId !== undefined) {
+        setCurrentUserId(res.currentUserId);
+      }
     }
-  }, [sys]);
+    return res;
+  };
 
   useEffect(() => {
+    // Clean up legacy client-side mockup storage keys so SQLite is the single source of truth
     try {
-      if (currentUserId) {
-        window.localStorage.setItem(SESSION_USER_KEY, currentUserId);
-      } else {
-        window.localStorage.removeItem(SESSION_USER_KEY);
-      }
+      window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(SESSION_USER_KEY);
     } catch {
-      // Ignore storage quota limits
+      // ignore
     }
-  }, [currentUserId]);
+    let active = true;
+    apiRequest('GET', '/api/bootstrap').then((res) => {
+      if (!active) return;
+      if (res.ok && res.state) {
+        setSys(res.state);
+        setCurrentUserId(res.currentUserId ?? null);
+        const parsed = parseUrlRoute(window.location.pathname, window.location.search);
+        if (parsed.eventSlug) {
+          const matched = findEventBySlug(res.state.events, parsed.eventSlug);
+          if (matched) {
+            setSelectedPublicEventId(matched.id);
+            setCustomerSubView(parsed.customerSubView);
+          }
+        }
+      }
+      setApiBootstrapped(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const currentUser =
     sys.users.find((u) => u.id === currentUserId) ?? null;
@@ -438,6 +465,7 @@ export const App: React.FC = () => {
 
   // Production Route Guard: redirect unauthenticated visitors from protected routes to /login with ReturnIntent
   useEffect(() => {
+    if (!apiBootstrapped) return;
     if (!currentUser) {
       if (surface === 'platform_admin') {
         setReturnIntent({
@@ -473,7 +501,7 @@ export const App: React.FC = () => {
         pushUrl('/login', true);
       }
     }
-  }, [currentUser, surface, customerSubView]);
+  }, [apiBootstrapped, currentUser, surface, customerSubView]);
 
   const navigateCustomer = (
     view: CustomerSubView,
@@ -505,6 +533,10 @@ export const App: React.FC = () => {
       pushUrl('/custom-production');
     } else if (view === 'my_orders') {
       pushUrl('/my-orders');
+    } else if (view === 'event_register' && resolvedId) {
+      const ev = sys.events.find((e) => e.id === resolvedId);
+      const codeSlug = (ev?.code ?? resolvedId).toLowerCase();
+      pushUrl(`/events/${codeSlug}/register`);
     } else if (view === 'event_detail' && resolvedId) {
       const ev = sys.events.find((e) => e.id === resolvedId);
       const codeSlug = (ev?.code ?? resolvedId).toLowerCase();
@@ -574,6 +606,7 @@ export const App: React.FC = () => {
   };
 
   const handleLogout = () => {
+    void syncApi('POST', '/api/auth/logout');
     setCurrentUserId(null);
     setShowProfileMenu(false);
     setReturnIntent(null);
@@ -587,6 +620,14 @@ export const App: React.FC = () => {
       setCustomerSubView('directory');
       pushUrl('/');
     }
+  };
+
+  const handlePasswordLogin = async (
+    email: string,
+    password: string
+  ): Promise<{ ok: boolean; error?: string; user?: UserAccount }> => {
+    const res = await syncApi('POST', '/api/auth/login', { email, password });
+    return { ok: res.ok, error: res.error, user: res.user };
   };
 
   const appendAudit = (
@@ -616,6 +657,9 @@ export const App: React.FC = () => {
   };
 
   const handleAuthenticated = (user: UserAccount, preferredOrgId?: string) => {
+    if (currentUserId !== user.id) {
+      void syncApi('POST', '/api/auth/dev-switch', { userId: user.id });
+    }
     setCurrentUserId(user.id);
     setSimulatedState('normal');
     setShowProfileMenu(false);
@@ -628,14 +672,20 @@ export const App: React.FC = () => {
         const ev = sys.events.find((e) => e.id === intent.eventId);
         const slug = (ev?.code ?? intent.eventId).toLowerCase();
         const tab = intent.eventTab ?? 'register';
+        setSelectedPublicEventId(intent.eventId);
+        setInitialEventTab(tab);
+        if (tab === 'register') {
+          setCustomerSubView('event_register');
+          setSurface('customer');
+          pushUrl(`/events/${slug}/register`);
+          return;
+        }
         const suffix =
           tab === 'storefront'
             ? '/shop'
             : tab === 'info_results'
               ? '/results'
               : '';
-        setSelectedPublicEventId(intent.eventId);
-        setInitialEventTab(tab);
         setCustomerSubView('event_detail');
         setSurface('customer');
         pushUrl(`/events/${slug}${suffix}`);
@@ -705,9 +755,8 @@ export const App: React.FC = () => {
   };
 
   const handleResetAllDemoData = () => {
-    window.localStorage.removeItem(STORAGE_KEY);
-    window.localStorage.removeItem(SESSION_USER_KEY);
-    setSys(createDefaultState());
+    void syncApi('POST', '/api/dev/reset');
+    setSys(loadSystemState());
     setCurrentUserId(null);
     setActiveOrgId('org-lanna');
     setActiveEventId(null);
@@ -722,8 +771,11 @@ export const App: React.FC = () => {
   /* ---- Auth & Account Security Handlers ---- */
   const handleRegisterEmailUser = (payload: {
     fullNameTh: string;
+    fullNameEn?: string;
     email: string;
+    password?: string;
     marketingConsent: boolean;
+    runnerProfile?: RunnerProfileData;
   }) => {
     const exists = sys.users.some(
       (u) =>
@@ -733,24 +785,25 @@ export const App: React.FC = () => {
       return {
         ok: false,
         error:
-          'ไม่สามารถใช้ช่องทางนี้สร้างบัญชีซ้ำได้ กรุณาเข้าสู่ระบบด้วยบัญชีเดิมหรือกดลืมรหัสผ่าน',
+          tx("ไม่สามารถใช้ช่องทางนี้สร้างบัญชีซ้ำได้ กรุณาเข้าสู่ระบบด้วยบัญชีเดิมหรือกดลืมรหัสผ่าน"),
       };
     }
     const newUser: UserAccount = {
       id: `usr-${Date.now()}`,
       code: `USR-${sys.users.length + 910}`,
       fullNameTh: payload.fullNameTh,
-      fullNameEn: payload.fullNameTh,
+      fullNameEn: payload.fullNameEn ?? payload.fullNameTh,
       contactEmail: payload.email,
-      emailVerified: false, // Must verify email before race registration
+      emailVerified: true,
       hasPassword: true,
+      runnerProfile: payload.runnerProfile,
       identities: [
         {
           id: `id-pw-${Date.now()}`,
           provider: 'password',
           providerSubject: payload.email.toLowerCase(),
           providerEmail: payload.email.toLowerCase(),
-          linkedAt: '2026-11-17 09:45',
+          linkedAt: '2026-11-18 09:30',
         },
       ],
       sessions: [
@@ -763,10 +816,14 @@ export const App: React.FC = () => {
         },
       ],
       memberships: [],
-      demoRoleSummary: 'สมาชิกใหม่สมัครด้วยอีเมล',
+      demoRoleSummary: 'สมาชิกใหม่สมัครด้วยอีเมล (Runner 2-Step Wizard)',
       isDemoPreset: false,
     };
     setSys((prev) => ({ ...prev, users: [...prev.users, newUser] }));
+    void syncApi('POST', '/api/auth/register-runner', {
+      ...payload,
+      password: payload.password || 'demo1234',
+    });
     return { ok: true, user: newUser };
   };
 
@@ -775,6 +832,7 @@ export const App: React.FC = () => {
     fullNameTh: string;
     email: string | null;
     marketingConsent: boolean;
+    runnerProfile?: RunnerProfileData;
   }): UserAccount => {
     const newUser: UserAccount = {
       id: `usr-soc-${Date.now()}`,
@@ -784,13 +842,14 @@ export const App: React.FC = () => {
       contactEmail: payload.email,
       emailVerified: Boolean(payload.email),
       hasPassword: false,
+      runnerProfile: payload.runnerProfile,
       identities: [
         {
           id: `id-soc-${Date.now()}`,
           provider: payload.provider,
           providerSubject: `${payload.provider}-uid-${Date.now()}`,
           providerEmail: payload.email ?? undefined,
-          linkedAt: '2026-11-17 09:45',
+          linkedAt: '2026-11-18 09:30',
         },
       ],
       sessions: [
@@ -807,7 +866,163 @@ export const App: React.FC = () => {
       isDemoPreset: false,
     };
     setSys((prev) => ({ ...prev, users: [...prev.users, newUser] }));
+    void syncApi('POST', '/api/auth/register-social', payload);
     return newUser;
+  };
+
+  const handleUpdateRunnerProfile = (profile: RunnerProfileData) => {
+    if (!currentUser) return;
+    setSys((prev) => ({
+      ...prev,
+      users: prev.users.map((u) =>
+        u.id === currentUser.id ? { ...u, runnerProfile: profile } : u
+      ),
+    }));
+    void syncApi('PATCH', '/api/account/profile', { profile });
+  };
+
+  const handleSubmitOrganizerOnboarding = (payload: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    password?: string;
+    phone: string;
+    position: string;
+    orgNameTh: string;
+    orgNameEn: string;
+    orgType: OrganizationType;
+    businessRegNumber: string;
+    website: string;
+    orgEmail: string;
+    orgPhone: string;
+    address: string;
+    province: string;
+    district: string;
+    subdistrict: string;
+    postalCode: string;
+    descriptionTh: string;
+    previousEvents: string;
+    facebookPage: string;
+    mainContactName: string;
+    mainContactPosition: string;
+    mainContactPhone: string;
+    mainContactEmail: string;
+    documents: OrganizerDocumentItem[];
+    marketingConsent: boolean;
+  }): { user: UserAccount; organization: Organization } => {
+    const newOrgId = `org-onb-${Date.now()}`;
+    const refNo = `ORG-REF-2026-${8840 + sys.organizations.length + 1}`;
+    const newOrg: Organization = {
+      id: newOrgId,
+      code: `ORG-NEW-${sys.organizations.length + 10}`,
+      nameTh: payload.orgNameTh,
+      nameEn: payload.orgNameEn,
+      province: payload.province,
+      verificationStatus: 'pending_review',
+      workflowStatus: 'SUBMITTED',
+      referenceNumber: refNo,
+      orgType: payload.orgType,
+      businessRegNumber: payload.businessRegNumber,
+      website: payload.website,
+      orgPhone: payload.orgPhone,
+      officeAddress: {
+        address: payload.address,
+        province: payload.province,
+        district: payload.district,
+        subdistrict: payload.subdistrict,
+        postalCode: payload.postalCode,
+        country: 'Thailand',
+      },
+      descriptionTh: payload.descriptionTh,
+      previousEvents: payload.previousEvents,
+      facebookPage: payload.facebookPage,
+      mainContact: {
+        name: payload.mainContactName,
+        position: payload.mainContactPosition,
+        phone: payload.mainContactPhone,
+        email: payload.mainContactEmail,
+      },
+      documents: payload.documents,
+      verificationHistory: [
+        {
+          id: `vh-${Date.now()}`,
+          status: 'SUBMITTED',
+          actorName: `${payload.firstName} ${payload.lastName}`.trim(),
+          note: `ยื่นคำขอขึ้นทะเบียนผู้จัดงาน (${payload.orgType}) พร้อมเอกสาร ${payload.documents.length} รายการ`,
+          timestamp: '2026-11-18 09:32',
+        },
+      ],
+      submittedAt: '2026-11-18 09:32',
+      payoutBankSummary: 'รอ Platform Owner ตรวจสอบเอกสารนิติบุคคลและบัญชีรับเงิน',
+      payoutReady: false,
+      contactEmail: payload.orgEmail,
+    };
+
+    const existingUser =
+      currentUser ??
+      sys.users.find(
+        (u) =>
+          (u.contactEmail ?? '').toLowerCase() === payload.email.toLowerCase()
+      );
+
+    const targetUser: UserAccount = existingUser
+      ? {
+          ...existingUser,
+          memberships: [
+            ...existingUser.memberships,
+            { organizationId: newOrgId, role: 'owner' },
+          ],
+        }
+      : {
+          id: `usr-org-${Date.now()}`,
+          code: `USR-${sys.users.length + 930}`,
+          fullNameTh: `${payload.firstName} ${payload.lastName}`.trim(),
+          fullNameEn: `${payload.firstName} ${payload.lastName}`.trim(),
+          contactEmail: payload.email,
+          emailVerified: true,
+          hasPassword: true,
+          identities: [
+            {
+              id: `id-org-pw-${Date.now()}`,
+              provider: 'password',
+              providerSubject: payload.email.toLowerCase(),
+              providerEmail: payload.email.toLowerCase(),
+              linkedAt: '2026-11-18 09:32',
+            },
+          ],
+          sessions: [
+            {
+              id: `ses-org-${Date.now()}`,
+              deviceLabel: 'เบราว์เซอร์ปัจจุบัน (ขึ้นทะเบียนผู้จัด)',
+              locationHint: `${payload.province}, ไทย`,
+              lastActiveAt: 'เมื่อสักครู่',
+              isCurrentDevice: true,
+            },
+          ],
+          memberships: [{ organizationId: newOrgId, role: 'owner' }],
+          demoRoleSummary: `ผู้จัดงานใหม่ (${payload.orgNameTh})`,
+          isDemoPreset: false,
+        };
+
+    setSys((prev) => ({
+      ...prev,
+      organizations: [newOrg, ...prev.organizations],
+      users: existingUser
+        ? prev.users.map((u) => (u.id === existingUser.id ? targetUser : u))
+        : [...prev.users, targetUser],
+    }));
+
+    appendAudit(
+      newOrgId,
+      `ยื่นคำขอขึ้นทะเบียนผู้จัดงานใหม่ (${refNo})`,
+      `${payload.orgNameTh} · สถานะเริ่มต้น SUBMITTED (PENDING_REVIEW)`
+    );
+    void syncApi('POST', '/api/auth/register-organizer', {
+      ...payload,
+      clientOrgId: newOrgId,
+    });
+
+    return { user: targetUser, organization: newOrg };
   };
 
   const handleVerifyContactEmail = (email: string) => {
@@ -820,6 +1035,7 @@ export const App: React.FC = () => {
           : u
       ),
     }));
+    void syncApi('POST', '/api/account/verify-email', { email });
   };
 
   const handleSetOrChangePassword = () => {
@@ -848,6 +1064,7 @@ export const App: React.FC = () => {
         };
       }),
     }));
+    void syncApi('POST', '/api/account/password', {});
   };
 
   const handleLinkProvider = (provider: 'google' | 'line') => {
@@ -871,17 +1088,18 @@ export const App: React.FC = () => {
           : u
       ),
     }));
+    void syncApi('POST', '/api/account/providers', { provider });
   };
 
   const handleUnlinkProvider = (
     provider: AuthProviderType
   ): { ok: boolean; error?: string } => {
-    if (!currentUser) return { ok: false, error: 'ไม่พบบัญชีผู้ใช้' };
+    if (!currentUser) return { ok: false, error: tx("ไม่พบบัญชีผู้ใช้") };
     if (currentUser.identities.length <= 1) {
       return {
         ok: false,
         error:
-          'ไม่อนุญาตให้ถอดช่องทางเข้าสู่ระบบช่องทางสุดท้าย กรุณาเพิ่มรหัสผ่านหรือเชื่อมช่องทางอื่นทดแทนก่อน',
+          tx("ไม่อนุญาตให้ถอดช่องทางเข้าสู่ระบบช่องทางสุดท้าย กรุณาเพิ่มรหัสผ่านหรือเชื่อมช่องทางอื่นทดแทนก่อน"),
       };
     }
     setSys((prev) => ({
@@ -895,6 +1113,7 @@ export const App: React.FC = () => {
           : u
       ),
     }));
+    void syncApi('DELETE', `/api/account/providers/${provider}`);
     return { ok: true };
   };
 
@@ -911,22 +1130,23 @@ export const App: React.FC = () => {
           : u
       ),
     }));
+    void syncApi('POST', '/api/account/revoke-sessions');
   };
 
   const handleAcceptTeamInvitation = (
     code: string
   ): { ok: boolean; message: string } => {
-    if (!currentUser) return { ok: false, message: 'กรุณาเข้าสู่ระบบก่อน' };
+    if (!currentUser) return { ok: false, message: tx("กรุณาเข้าสู่ระบบก่อน") };
     const inv = sys.invitations.find(
       (i) => i.inviteCode.toUpperCase() === code.toUpperCase()
     );
     if (!inv) {
-      return { ok: false, message: 'ไม่พบรหัสคำเชิญนี้ในระบบ' };
+      return { ok: false, message: tx("ไม่พบรหัสคำเชิญนี้ในระบบ") };
     }
     if (inv.usedByUserId) {
       return {
         ok: false,
-        message: 'รหัสคำเชิญนี้ถูกใช้งานไปแล้ว (คำเชิญทีมจำกัดการใช้เพียงครั้งเดียว)',
+        message: tx("รหัสคำเชิญนี้ถูกใช้งานไปแล้ว (คำเชิญทีมจำกัดการใช้เพียงครั้งเดียว)"),
       };
     }
     const alreadyInOrg = currentUser.memberships.some(
@@ -935,7 +1155,7 @@ export const App: React.FC = () => {
     if (alreadyInOrg) {
       return {
         ok: false,
-        message: 'บัญชีของคุณเป็นสมาชิกขององค์กรนี้อยู่แล้ว',
+        message: tx("บัญชีของคุณเป็นสมาชิกขององค์กรนี้อยู่แล้ว"),
       };
     }
 
@@ -969,9 +1189,10 @@ export const App: React.FC = () => {
           : inv.role === 'finance'
             ? 'ฝ่ายการเงิน'
             : 'เจ้าหน้าที่หน้างาน';
+    void syncApi('POST', '/api/invitations/accept', { code });
     return {
       ok: true,
-      message: `เข้าร่วมทีม ${org?.nameTh ?? inv.organizationId} ในบทบาท ${roleTh} สำเร็จ!`,
+      message: txf("เข้าร่วมทีม {0} ในบทบาท {1} สำเร็จ!", org?.nameTh ?? inv.organizationId, roleTh),
     };
   };
 
@@ -1005,6 +1226,11 @@ export const App: React.FC = () => {
           : u
       ),
     }));
+    void syncApi('POST', '/api/organizations', {
+      id: newOrg.id,
+      orgNameTh,
+      province,
+    });
     return newOrg;
   };
 
@@ -1144,6 +1370,17 @@ export const App: React.FC = () => {
       `${cat.code} · เสื้อ ${payload.shirtSize}`,
       ev.id
     );
+    void syncApi('POST', '/api/registrations', {
+      ...payload,
+      id: newReg.id,
+      regCode: newReg.regCode,
+      orderCode: newReg.orderCode,
+      qrCheckInToken: newReg.qrCheckInToken,
+      addonProductId: payload.addonProduct?.id,
+      addonOrderId: addonOrder?.id,
+      addonOrderCode: addonOrder?.merchOrderCode,
+      addonPickupToken: addonOrder?.pickupToken,
+    });
 
     return { reg: newReg, addonOrder };
   };
@@ -1217,6 +1454,13 @@ export const App: React.FC = () => {
       `${payload.product.nameTh} × ${payload.quantity} (ไม่เกิดใบสมัครวิ่ง)`,
       ev.id
     );
+    void syncApi('POST', '/api/merch-orders', {
+      ...payload,
+      productId: payload.product.id,
+      id: newOrder.id,
+      merchOrderCode: newOrder.merchOrderCode,
+      pickupToken: newOrder.pickupToken,
+    });
 
     return newOrder;
   };
@@ -1241,6 +1485,7 @@ export const App: React.FC = () => {
       `${target.totalEventQuota} -> ${newTotalQuota} คน`,
       target.id
     );
+    void syncApi('PATCH', `/api/events/${eventId}`, { totalEventQuota: newTotalQuota });
   };
 
   const handleUpdateCategoryQuota = (
@@ -1279,6 +1524,9 @@ export const App: React.FC = () => {
       `${targetCat.categoryQuota} -> ${newCategoryQuota} คน`,
       target.id
     );
+    void syncApi('PATCH', `/api/events/${eventId}`, {
+      categoryQuotaUpdate: { categoryId, newCategoryQuota },
+    });
   };
 
   const handleUpdateCustomFields = (
@@ -1301,6 +1549,366 @@ export const App: React.FC = () => {
       `จำนวนคำถามทั้งหมด ${nextFields.length} ข้อ`,
       target.id
     );
+    void syncApi('PATCH', `/api/events/${eventId}`, { customFields: nextFields });
+  };
+
+  /* ---- Dynamic Registration Form Builder (Platform Owner & Organizer) ---- */
+  const handleUpdateEventMedia = (
+    eventId: string,
+    patch: {
+      coverImageUrl?: string;
+      coverImageAlt?: string;
+      galleryImageUrls?: string[];
+    }
+  ) => {
+    const target = sys.events.find((e) => e.id === eventId);
+    if (!target) return;
+    setSys((prev) => ({
+      ...prev,
+      events: prev.events.map((ev) =>
+        ev.id === eventId
+          ? {
+              ...ev,
+              coverImageUrl: patch.coverImageUrl,
+              coverImageAlt: patch.coverImageAlt,
+              galleryImageUrls: patch.galleryImageUrls ?? [],
+            }
+          : ev
+      ),
+    }));
+    appendAudit(
+      target.organizationId,
+      `อัปเดตรูปปกงาน ${target.code}`,
+      patch.coverImageUrl
+        ? `ตั้งรูปปก + ภาพประกอบ ${patch.galleryImageUrls?.length ?? 0} รูป`
+        : 'ลบรูปปก (ใช้ภาพปกลายเส้นแทน)',
+      target.id
+    );
+    void syncApi('PATCH', `/api/events/${eventId}`, { media: patch });
+  };
+  const handleUpsertStep = (step: RegistrationStepDef) => {
+    setSys((prev) => {
+      const exists = prev.registrationSteps.some((s) => s.id === step.id);
+      const nextSteps = exists
+        ? prev.registrationSteps.map((s) => (s.id === step.id ? step : s))
+        : [...prev.registrationSteps, step];
+      return { ...prev, registrationSteps: nextSteps };
+    });
+    appendAudit(
+      'PLATFORM-HQ',
+      `อัปเดตขั้นตอนการสมัคร (${step.key})`,
+      `${step.titleTh} · enabled=${step.enabled}`
+    );
+    void syncApi('POST', '/api/form-builder/steps', { step });
+  };
+
+  const handleReorderStep = (stepId: string, direction: 'up' | 'down') => {
+    setSys((prev) => {
+      const sorted = [...prev.registrationSteps].sort(
+        (a, b) => a.order - b.order
+      );
+      const idx = sorted.findIndex((s) => s.id === stepId);
+      if (idx === -1) return prev;
+      const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+      // ห้ามเลื่อนข้ามขั้นตอนสุดท้าย (Review & Payment)
+      if (swapIdx < 0 || swapIdx >= sorted.length - 1) return prev;
+      const temp = sorted[idx];
+      sorted[idx] = sorted[swapIdx];
+      sorted[swapIdx] = temp;
+      const reindexed = sorted.map((s, i) => ({ ...s, order: i + 1 }));
+      return { ...prev, registrationSteps: reindexed };
+    });
+    void syncApi('POST', '/api/form-builder/steps/reorder', { stepId, direction });
+  };
+
+  const handleDeleteStep = (stepId: string) => {
+    const target = sys.registrationSteps.find((s) => s.id === stepId);
+    if (!target || target.isSystemLocked) return;
+    setSys((prev) => ({
+      ...prev,
+      registrationSteps: prev.registrationSteps
+        .filter((s) => s.id !== stepId)
+        .map((s, i) => ({ ...s, order: i + 1 })),
+    }));
+    appendAudit(
+      'PLATFORM-HQ',
+      `ลบขั้นตอนการสมัคร ${target.key}`,
+      target.titleTh
+    );
+    void syncApi('DELETE', `/api/form-builder/steps/${stepId}`);
+  };
+
+  const handleUpsertGlobalField = (field: GlobalFormFieldDef) => {
+    setSys((prev) => {
+      const exists = prev.globalFields.some((f) => f.id === field.id);
+      const nextGlobal = exists
+        ? prev.globalFields.map((f) => (f.id === field.id ? field : f))
+        : [...prev.globalFields, field];
+
+      // ซิงก์นโยบายและคุณสมบัติไปยังฟิลด์ที่มี id เดียวกันในงานวิ่งด้วย
+      const nextEvents = prev.events.map((ev) => ({
+        ...ev,
+        customFields: (ev.customFields ?? []).map((cf) =>
+          cf.id === field.id
+            ? {
+                ...cf,
+                label: field.label,
+                policy: field.policy,
+                descriptionTh: field.descriptionTh,
+                placeholderTh: field.placeholderTh,
+                options: field.options ?? cf.options,
+                visibilityCondition: field.visibilityCondition,
+              }
+            : cf
+        ),
+      }));
+      return { ...prev, globalFields: nextGlobal, events: nextEvents };
+    });
+    appendAudit(
+      'PLATFORM-HQ',
+      `อัปเดตคลังฟิลด์กลาง (${field.fieldKey})`,
+      `Policy: ${field.policy} · Type: ${field.type}`
+    );
+    void syncApi('POST', '/api/form-builder/fields', { field });
+  };
+
+  const handleAddConditionalRule = (rule: ConditionalRule) => {
+    setSys((prev) => ({
+      ...prev,
+      conditionalRules: [...prev.conditionalRules, rule],
+      globalFields: prev.globalFields.map((gf) =>
+        rule.targetType === 'field' && gf.id === rule.targetKey
+          ? { ...gf, visibilityCondition: rule }
+          : gf
+      ),
+      events: prev.events.map((ev) => ({
+        ...ev,
+        customFields: (ev.customFields ?? []).map((cf) =>
+          rule.targetType === 'field' && cf.id === rule.targetKey
+            ? { ...cf, visibilityCondition: rule }
+            : cf
+        ),
+      })),
+    }));
+    appendAudit(
+      'PLATFORM-HQ',
+      `เพิ่มกฎ Conditional Logic (${rule.id})`,
+      `IF ${rule.sourceFieldKey} ${rule.operator} "${rule.value}" -> SHOW ${rule.targetKey}`
+    );
+    void syncApi('POST', '/api/form-builder/rules', { rule });
+  };
+
+  const handleDeleteConditionalRule = (ruleId: string) => {
+    setSys((prev) => ({
+      ...prev,
+      conditionalRules: prev.conditionalRules.filter((r) => r.id !== ruleId),
+    }));
+    void syncApi('DELETE', `/api/form-builder/rules/${ruleId}`);
+  };
+
+  const handlePublishTemplateVersion = (templateId: string, summary: string) => {
+    setSys((prev) => ({
+      ...prev,
+      formTemplates: prev.formTemplates.map((tpl) => {
+        if (tpl.id !== templateId) return tpl;
+        const nextVerNum =
+          Number(tpl.versionLabel.replace(/[^0-9.]/g, '')) + 0.1;
+        return {
+          ...tpl,
+          status: 'published',
+          versionLabel: `v${nextVerNum.toFixed(1)}`,
+          updatedAt: '2026-11-18 09:05',
+        };
+      }),
+    }));
+    appendAudit('PLATFORM-HQ', `Publish แม่แบบฟอร์ม ${templateId}`, summary);
+    void syncApi('POST', `/api/form-builder/templates/${templateId}/publish`, { summary });
+  };
+
+  const handleCreateTemplate = (
+    nameTh: string,
+    code: string,
+    descriptionTh: string
+  ) => {
+    const newTpl: FormTemplate = {
+      id: `tpl-${Date.now()}`,
+      code,
+      nameTh,
+      descriptionTh,
+      status: 'published',
+      versionLabel: 'v1.0',
+      updatedAt: '2026-11-18 09:05',
+      steps: sys.registrationSteps,
+      fieldIds: ['cf_blood', 'cf_has_medical', 'cf_medical', 'cf_club'],
+      conditionalRules: sys.conditionalRules,
+    };
+    setSys((prev) => ({
+      ...prev,
+      formTemplates: [...prev.formTemplates, newTpl],
+    }));
+    appendAudit('PLATFORM-HQ', `สร้างแม่แบบฟอร์มใหม่ (${code})`, nameTh);
+    void syncApi('POST', '/api/form-builder/templates', {
+      id: newTpl.id,
+      nameTh,
+      code,
+      descriptionTh,
+    });
+  };
+
+  const handleSelectEventTemplate = (eventId: string, templateId: string) => {
+    const tpl = sys.formTemplates.find((t) => t.id === templateId);
+    const targetEv = sys.events.find((e) => e.id === eventId);
+    if (!tpl || !targetEv) return;
+
+    const mappedFields: CustomRegistrationField[] = tpl.fieldIds
+      .map((fid) => sys.globalFields.find((gf) => gf.id === fid))
+      .filter((gf): gf is GlobalFormFieldDef => Boolean(gf))
+      .map((gf) => ({
+        id: gf.id,
+        fieldKey: gf.fieldKey,
+        label: gf.label,
+        descriptionTh: gf.descriptionTh,
+        placeholderTh: gf.placeholderTh,
+        type: gf.type,
+        stepKey: gf.stepKey,
+        required: gf.required,
+        options: gf.options ? [...gf.options] : undefined,
+        isSensitive: gf.isSensitive,
+        policy: gf.policy,
+        defaultValue: gf.defaultValue,
+        visibilityCondition: gf.visibilityCondition,
+      }));
+
+    const nextVer = `${tpl.versionLabel}-published`;
+    setSys((prev) => ({
+      ...prev,
+      events: prev.events.map((ev) =>
+        ev.id === eventId
+          ? {
+              ...ev,
+              activeTemplateId: templateId,
+              publishedFormVersion: nextVer,
+              customFields: mappedFields,
+            }
+          : ev
+      ),
+    }));
+
+    appendAudit(
+      targetEv.organizationId,
+      `เลือกใช้แม่แบบฟอร์ม ${tpl.code} กับงาน ${targetEv.code}`,
+      `เผยแพร่ฟอร์มงานเวอร์ชัน ${nextVer} (${mappedFields.length} ฟิลด์)`,
+      targetEv.id
+    );
+    void syncApi('PATCH', `/api/events/${eventId}`, { templateId });
+  };
+
+  const handleSubmitOrganizerFieldRequest = (
+    payload: Omit<
+      OrganizerFieldRequest,
+      'id' | 'requestCode' | 'status' | 'createdAt'
+    >
+  ) => {
+    const newReq: OrganizerFieldRequest = {
+      ...payload,
+      id: `freq-${Date.now()}`,
+      requestCode: `REQ-FRM-260${sys.fieldRequests.length + 1}`,
+      status: 'pending',
+      createdAt: '2026-11-18 09:08',
+    };
+    setSys((prev) => ({
+      ...prev,
+      fieldRequests: [newReq, ...prev.fieldRequests],
+    }));
+    appendAudit(
+      payload.organizationId,
+      `ผู้จัดส่งคำขอเพิ่มฟิลด์ใบสมัคร (${newReq.requestCode})`,
+      `${payload.requestedLabelTh} [${payload.inputType}] -> รอ Platform Owner อนุมัติ`,
+      payload.eventId
+    );
+    void syncApi('POST', '/api/form-builder/field-requests', newReq);
+  };
+
+  const handleResolveFieldRequest = (
+    requestId: string,
+    decision: 'approved' | 'rejected',
+    policy: FormFieldPolicy,
+    adminNote: string
+  ) => {
+    const req = sys.fieldRequests.find((r) => r.id === requestId);
+    if (!req) return;
+
+    const newFieldId = `cf_${req.requestedFieldKey}`;
+    const newGlobalField: GlobalFormFieldDef = {
+      id: newFieldId,
+      fieldKey: req.requestedFieldKey,
+      label: req.requestedLabelTh,
+      type: req.inputType,
+      stepKey: req.targetStepKey,
+      required: req.required,
+      isSensitive: req.isSensitive,
+      policy,
+      options: req.options,
+      categoryTag: 'custom_library',
+    };
+
+    setSys((prev) => {
+      const nextRequests = prev.fieldRequests.map((r) =>
+        r.id === requestId
+          ? {
+              ...r,
+              status: decision,
+              adminNote,
+              resolvedAt: '2026-11-18 09:10',
+            }
+          : r
+      );
+
+      if (decision === 'rejected') {
+        return { ...prev, fieldRequests: nextRequests };
+      }
+
+      const existsInGlobal = prev.globalFields.some(
+        (gf) => gf.id === newFieldId
+      );
+      const nextGlobals = existsInGlobal
+        ? prev.globalFields
+        : [...prev.globalFields, newGlobalField];
+
+      const nextEvents = prev.events.map((ev) => {
+        if (ev.id !== req.eventId) return ev;
+        const currentFields = ev.customFields ?? [];
+        const alreadyHas = currentFields.some((f) => f.id === newFieldId);
+        return {
+          ...ev,
+          publishedFormVersion: 'v1.3-published',
+          customFields: alreadyHas
+            ? currentFields
+            : [...currentFields, newGlobalField],
+        };
+      });
+
+      return {
+        ...prev,
+        fieldRequests: nextRequests,
+        globalFields: nextGlobals,
+        events: nextEvents,
+      };
+    });
+
+    appendAudit(
+      req.organizationId,
+      `Platform Owner ${
+        decision === 'approved' ? 'อนุมัติ' : 'ปฏิเสธ'
+      }คำขอฟิลด์ ${req.requestCode}`,
+      `${req.requestedLabelTh} · สิทธิ์: ${policy} · ${adminNote}`,
+      req.eventId
+    );
+    void syncApi('POST', `/api/form-builder/field-requests/${requestId}/resolve`, {
+      decision,
+      policy,
+      adminNote,
+    });
   };
 
   const handleUpdateRunnerShirtSize = (
@@ -1349,6 +1957,7 @@ export const App: React.FC = () => {
       `${oldSize} -> ${newSize}`,
       target.eventId
     );
+    void syncApi('PATCH', `/api/registrations/${regId}/shirt-size`, { newSize });
   };
 
   const handleCreateClubProductionInquiry = (payload: {
@@ -1381,6 +1990,12 @@ export const App: React.FC = () => {
       ...prev,
       productionInquiries: [rfq, ...prev.productionInquiries],
     }));
+    void syncApi('POST', '/api/production-inquiries', {
+      ...payload,
+      contextType: 'club_or_company',
+      id: rfq.id,
+      inquiryCode: rfq.inquiryCode,
+    });
     return rfq;
   };
 
@@ -1506,6 +2121,11 @@ export const App: React.FC = () => {
     );
     setActiveEventId(newEv.id);
     setActiveOrgSection('evt_overview');
+    void syncApi('POST', '/api/events', {
+      ...payload,
+      id: newEv.id,
+      code: newEv.code,
+    });
   };
 
   const handleDuplicateEventWithoutPii = (sourceEventId: string) => {
@@ -1542,6 +2162,10 @@ export const App: React.FC = () => {
     );
     setActiveEventId(copyEv.id);
     setActiveOrgSection('evt_overview');
+    void syncApi('POST', `/api/events/${sourceEventId}/duplicate`, {
+      newEventId: copyEv.id,
+      copyCode: copyEv.code,
+    });
   };
 
   const handleCompleteDraftReadinessAndSubmit = (eventId: string) => {
@@ -1574,6 +2198,7 @@ export const App: React.FC = () => {
       'draft -> in_review',
       target.id
     );
+    void syncApi('POST', `/api/events/${eventId}/submit-review`);
   };
 
   const handleUpdateFeeBearerPolicy = (
@@ -1594,6 +2219,7 @@ export const App: React.FC = () => {
       `เป็น ${policy} (เฉพาะใบสมัครใหม่)`,
       target.id
     );
+    void syncApi('PATCH', `/api/events/${eventId}`, { feeBearerPolicy: policy });
   };
 
   const handleAddEventProduct = (payload: {
@@ -1655,6 +2281,9 @@ export const App: React.FC = () => {
       `${newPrd.sku} · ฿${payload.priceBaht}`,
       target.id
     );
+    void syncApi('PATCH', `/api/events/${payload.eventId}`, {
+      addProduct: { ...payload, id: newPrd.id, sku: newPrd.sku },
+    });
   };
 
   const handleCreateEventProductionQuote = (payload: {
@@ -1705,6 +2334,12 @@ export const App: React.FC = () => {
       `ยอดสุทธิ ${net} ชิ้น`,
       payload.eventId
     );
+    void syncApi('POST', '/api/production-inquiries', {
+      ...payload,
+      contextType: 'event_organizer',
+      id: rfq.id,
+      inquiryCode: rfq.inquiryCode,
+    });
   };
 
   const handleAssignBibNumber = (
@@ -1712,9 +2347,9 @@ export const App: React.FC = () => {
     bibNumber: string
   ): { ok: boolean; error?: string } => {
     const trimmed = bibNumber.trim().toUpperCase();
-    if (!trimmed) return { ok: false, error: 'กรุณาระบุเลข BIB' };
+    if (!trimmed) return { ok: false, error: tx("กรุณาระบุเลข BIB") };
     const target = sys.registrations.find((r) => r.id === regId);
-    if (!target) return { ok: false, error: 'ไม่พบใบสมัคร' };
+    if (!target) return { ok: false, error: tx("ไม่พบใบสมัคร") };
 
     const dup = sys.registrations.find(
       (r) =>
@@ -1725,7 +2360,7 @@ export const App: React.FC = () => {
     if (dup) {
       return {
         ok: false,
-        error: `เลข BIB "${trimmed}" ซ้ำกับผู้สมัคร ${dup.participantNameTh} (${dup.regCode}) ในงานเดียวกัน!`,
+        error: txf("เลข BIB \"{0}\" ซ้ำกับผู้สมัคร {1} ({2}) ในงานเดียวกัน!", trimmed, dup.participantNameTh, dup.regCode),
       };
     }
 
@@ -1741,6 +2376,7 @@ export const App: React.FC = () => {
       `BIB -> ${trimmed}`,
       target.eventId
     );
+    void syncApi('POST', `/api/registrations/${regId}/bib`, { bibNumber: trimmed });
     return { ok: true };
   };
 
@@ -1748,15 +2384,15 @@ export const App: React.FC = () => {
     regId: string
   ): { ok: boolean; error?: string } => {
     const target = sys.registrations.find((r) => r.id === regId);
-    if (!target) return { ok: false, error: 'ไม่พบใบสมัคร' };
+    if (!target) return { ok: false, error: tx("ไม่พบใบสมัคร") };
     if (target.fulfillmentStatus === 'kit_picked_up') {
       return {
         ok: false,
-        error: `ป้องกันการรับซ้ำ: ${target.participantNameTh} รับเสื้อและ BIB ไปแล้วโดย ${target.fulfillmentUpdatedBy} เมื่อ ${target.fulfillmentUpdatedAt}`,
+        error: txf("ป้องกันการรับซ้ำ: {0} รับเสื้อและ BIB ไปแล้วโดย {1} เมื่อ {2}", target.participantNameTh, target.fulfillmentUpdatedBy, target.fulfillmentUpdatedAt),
       };
     }
     if (!target.bibNumber) {
-      return { ok: false, error: 'กรุณากำหนดเลข BIB ก่อนส่งมอบอุปกรณ์' };
+      return { ok: false, error: tx("กรุณากำหนดเลข BIB ก่อนส่งมอบอุปกรณ์") };
     }
     const actor = currentUser?.fullNameTh ?? 'เจ้าหน้าที่จุดรับอุปกรณ์';
     setSys((prev) => ({
@@ -1778,6 +2414,7 @@ export const App: React.FC = () => {
       `${target.regCode}: kit_picked_up`,
       target.eventId
     );
+    void syncApi('POST', `/api/registrations/${regId}/pickup`);
     return { ok: true };
   };
 
@@ -1786,11 +2423,11 @@ export const App: React.FC = () => {
     mode: 'partial_one' | 'complete_all'
   ): { ok: boolean; message: string } => {
     const ord = sys.merchOrders.find((m) => m.id === merchOrderId);
-    if (!ord) return { ok: false, message: 'ไม่พบคำสั่งซื้อสินค้า' };
+    if (!ord) return { ok: false, message: tx("ไม่พบคำสั่งซื้อสินค้า") };
     if (ord.deliveredQty >= ord.quantity) {
       return {
         ok: false,
-        message: `ป้องกันการส่งมอบสินค้าซ้ำ: คำสั่งซื้อ ${ord.merchOrderCode} รับครบ ${ord.quantity} ชิ้นไปแล้ว`,
+        message: txf("ป้องกันการส่งมอบสินค้าซ้ำ: คำสั่งซื้อ {0} รับครบ {1} ชิ้นไปแล้ว", ord.merchOrderCode, ord.quantity),
       };
     }
     const nextDelivered =
@@ -1818,9 +2455,10 @@ export const App: React.FC = () => {
       `รับแล้ว ${nextDelivered}/${ord.quantity} ชิ้น`,
       ord.eventId
     );
+    void syncApi('POST', `/api/merch-orders/${merchOrderId}/handover`, { mode });
     return {
       ok: true,
-      message: `บันทึกส่งมอบสินค้า ${ord.merchOrderCode} สำเร็จ (${nextDelivered}/${ord.quantity} ชิ้น)`,
+      message: txf("บันทึกส่งมอบสินค้า {0} สำเร็จ ({1}/{2} ชิ้น)", ord.merchOrderCode, nextDelivered, ord.quantity),
     };
   };
 
@@ -1848,6 +2486,7 @@ export const App: React.FC = () => {
       `${target.regCode}: confirmed`,
       target.eventId
     );
+    void syncApi('POST', `/api/registrations/${regId}/confirm-payment`);
   };
 
   const handleResolveRefundRequest = (
@@ -1886,6 +2525,7 @@ export const App: React.FC = () => {
       note,
       target.eventId
     );
+    void syncApi('POST', `/api/registrations/${regId}/refund`, { decision, note });
   };
 
   const handleCreateSingleUseInvite = (
@@ -1905,58 +2545,109 @@ export const App: React.FC = () => {
       ...prev,
       invitations: [inv, ...prev.invitations],
     }));
+    void syncApi('POST', '/api/invitations', {
+      orgId,
+      role,
+      id: inv.id,
+      inviteCode: inv.inviteCode,
+    });
     return inv;
   };
 
   /* ---- Platform Owner Governance Operations ---- */
   const handleReviewOrganization = (
     orgId: string,
-    action: 'approve_kyc_bank' | 'hold_bank' | 'suspend_org' | 'reinstate_org',
+    action:
+      | 'approve_kyc_bank'
+      | 'hold_bank'
+      | 'suspend_org'
+      | 'reinstate_org'
+      | 'under_review'
+      | 'request_more_info'
+      | 'reject_org',
     bankSummary?: string
   ) => {
     const target = sys.organizations.find((o) => o.id === orgId);
     if (!target) return;
 
+    const workflowMap: Record<
+      typeof action,
+      OrganizerVerificationWorkflowStatus
+    > = {
+      approve_kyc_bank: 'APPROVED',
+      reinstate_org: 'APPROVED',
+      hold_bank: 'MORE_INFORMATION_REQUIRED',
+      suspend_org: 'SUSPENDED',
+      under_review: 'UNDER_REVIEW',
+      request_more_info: 'MORE_INFORMATION_REQUIRED',
+      reject_org: 'REJECTED',
+    };
+    const nextWf = workflowMap[action];
+
     setSys((prev) => ({
       ...prev,
       organizations: prev.organizations.map((o) => {
         if (o.id !== orgId) return o;
+        const historyEntry = {
+          id: `vh-${Date.now()}`,
+          status: nextWf,
+          actorName: currentUser?.fullNameTh ?? 'Platform Owner',
+          note: bankSummary || `เปลี่ยนสถานะเป็น ${nextWf}`,
+          timestamp: '2026-11-18 09:35',
+        };
+        const nextHistory = [historyEntry, ...(o.verificationHistory ?? [])];
+
         if (action === 'approve_kyc_bank' || action === 'reinstate_org') {
           return {
             ...o,
-            nameTh: o.nameTh.replace(/\s*\(องค์กรใหม่รอตรวจ\)|\s*\(รอตรวจสอบผู้จัด\)/g, ''),
+            nameTh: o.nameTh.replace(
+              /\s*\(องค์กรใหม่รอตรวจ\)|\s*\(รอตรวจสอบผู้จัด\)/g,
+              ''
+            ),
             verificationStatus: 'verified',
+            workflowStatus: 'APPROVED',
             payoutReady: true,
-            payoutBankSummary:
-              bankSummary || o.payoutBankSummary,
+            payoutBankSummary: bankSummary || o.payoutBankSummary,
+            verificationHistory: nextHistory,
           };
         }
-        if (action === 'hold_bank') {
+        if (
+          action === 'under_review' ||
+          action === 'request_more_info' ||
+          action === 'hold_bank'
+        ) {
           return {
             ...o,
+            verificationStatus: 'pending_review',
+            workflowStatus: nextWf,
             payoutReady: false,
-            payoutBankSummary: 'พักความพร้อมบัญชีรับเงินชั่วคราวโดยผู้ดูแลแพลตฟอร์ม',
+            payoutBankSummary:
+              bankSummary ||
+              (action === 'under_review'
+                ? 'อยู่ระหว่าง Platform Owner ตรวจสอบเอกสาร (UNDER_REVIEW)'
+                : 'ขอเอกสารยืนยันตัวตน/บัญชีธนาคารเพิ่มเติม (MORE_INFORMATION_REQUIRED)'),
+            verificationHistory: nextHistory,
           };
         }
         return {
           ...o,
           verificationStatus: 'suspended',
+          workflowStatus: nextWf,
           payoutReady: false,
+          verificationHistory: nextHistory,
         };
       }),
     }));
 
     appendAudit(
       orgId,
-      action === 'approve_kyc_bank'
-        ? `อนุมัติองค์กรผู้จัดและบัญชีรับเงิน (${target.code})`
-        : action === 'reinstate_org'
-        ? `ปลดระงับองค์กรผู้จัด (${target.code})`
-        : action === 'hold_bank'
-        ? `สั่งพักสถานะบัญชีรับเงินขององค์กร (${target.code})`
-        : `สั่งระงับองค์กรผู้จัดชั่วคราว (${target.code})`,
+      `Platform Owner อัปเดตสถานะผู้จัด (${target.code} -> ${nextWf})`,
       bankSummary ?? target.nameTh
     );
+    void syncApi('POST', `/api/admin/organizations/${orgId}/review`, {
+      action,
+      bankSummary,
+    });
   };
 
   const handleGovernEventStatus = (
@@ -2011,6 +2702,11 @@ export const App: React.FC = () => {
       adminNote || nextStatus,
       target.id
     );
+    void syncApi('POST', `/api/admin/events/${eventId}/govern`, {
+      nextStatus,
+      adminNote,
+      postRaceLinks,
+    });
   };
 
   const handleUpdateProductionInquiry = (
@@ -2052,6 +2748,7 @@ export const App: React.FC = () => {
       }`,
       target.eventId
     );
+    void syncApi('PATCH', `/api/production-inquiries/${inquiryId}`, patch);
   };
 
   const handleUpdatePayoutBatchStatus = (
@@ -2074,6 +2771,7 @@ export const App: React.FC = () => {
       `${target.status} -> ${nextStatus}`,
       target.eventId
     );
+    void syncApi('PATCH', `/api/admin/payouts/${payoutId}`, { nextStatus });
   };
 
   const handleCreatePayoutBatch = (payload: {
@@ -2109,6 +2807,11 @@ export const App: React.FC = () => {
       payload.periodLabel,
       payload.eventId
     );
+    void syncApi('POST', '/api/admin/payouts', {
+      ...payload,
+      id: newBatch.id,
+      payoutCode: code,
+    });
   };
 
   const handleAdminResolveOrForceRefund = (
@@ -2145,6 +2848,10 @@ export const App: React.FC = () => {
       reason,
       target.eventId
     );
+    void syncApi('POST', `/api/admin/registrations/${regId}/force-refund`, {
+      decision,
+      reason,
+    });
   };
 
   const handleAdminUpdateUserAccess = (
@@ -2203,6 +2910,7 @@ export const App: React.FC = () => {
       `ปรับสิทธิ์บัญชีผู้ใช้ ${targetUser.fullNameTh} (${targetUser.code})`,
       action.kind
     );
+    void syncApi('PATCH', `/api/admin/users/${targetUserId}/access`, { action });
   };
 
   const isPlatformOwner = Boolean(currentUser?.isPlatformAdmin);
@@ -2230,7 +2938,7 @@ export const App: React.FC = () => {
           </button>
         </div>
 
-        <nav className="global-surface-nav" aria-label="เมนูหลักของแพลตฟอร์ม">
+        <nav className="global-surface-nav" aria-label={tx("เมนูหลักของแพลตฟอร์ม")}>
           <button
             type="button"
             className={`surface-switch-btn ${surface === 'customer' &&
@@ -2242,7 +2950,7 @@ export const App: React.FC = () => {
             onClick={() => navigateCustomer('directory', null)}
           >
             <IconFlag size={15} />
-            <span>ค้นหางานวิ่ง</span>
+            <span>{tx("ค้นหางานวิ่ง")}</span>
           </button>
 
           <button
@@ -2254,7 +2962,7 @@ export const App: React.FC = () => {
             onClick={() => navigateCustomer('custom_production')}
           >
             <IconShirt size={15} />
-            <span>สั่งผลิตเสื้อ/เหรียญ</span>
+            <span>{tx("สั่งผลิตเสื้อ/เหรียญ")}</span>
           </button>
 
           <button
@@ -2266,7 +2974,7 @@ export const App: React.FC = () => {
             onClick={() => navigateCustomer('my_orders')}
           >
             <IconBag size={15} />
-            <span>บัตรวิ่ง & คำสั่งซื้อ</span>
+            <span>{tx("บัตรวิ่ง & คำสั่งซื้อ")}</span>
           </button>
 
           {/* VISIBLE ONLY WHEN LOGGED IN AS AN ORGANIZER MEMBER (OR PLATFORM ADMIN) */}
@@ -2278,7 +2986,7 @@ export const App: React.FC = () => {
               onClick={() => navigateOrganizer()}
             >
               <IconBuilding size={15} />
-              <span>ระบบผู้จัดงาน</span>
+              <span>{tx("ระบบผู้จัดงาน")}</span>
             </button>
           )}
 
@@ -2292,12 +3000,35 @@ export const App: React.FC = () => {
               onClick={() => navigatePlatformAdmin()}
             >
               <IconShield size={15} />
-              <span>จัดการแพลตฟอร์ม</span>
+              <span>{tx("จัดการแพลตฟอร์ม")}</span>
             </button>
           )}
         </nav>
 
         <div className="topbar-user-actions">
+          <div
+            className="lang-switch"
+            role="group"
+            aria-label={lang === 'th' ? 'เลือกภาษา' : 'Choose language'}
+          >
+            <IconGlobe size={14} />
+            <button
+              type="button"
+              aria-pressed={lang === 'th'}
+              lang="th"
+              onClick={() => setLang('th')}
+            >
+              TH
+            </button>
+            <button
+              type="button"
+              aria-pressed={lang === 'en'}
+              lang="en"
+              onClick={() => setLang('en')}
+            >
+              EN
+            </button>
+          </div>
           {!currentUser ? (
             <>
               <button
@@ -2305,7 +3036,7 @@ export const App: React.FC = () => {
                 className="btn-secondary"
                 onClick={() => navigateLogin('signup')}
               >
-                <span>สมัครสมาชิก</span>
+                <span>{tx("สมัครสมาชิก")}</span>
               </button>
               <button
                 type="button"
@@ -2313,7 +3044,7 @@ export const App: React.FC = () => {
                 onClick={() => navigateLogin('signin')}
               >
                 <IconLock size={14} />
-                <span>เข้าสู่ระบบ</span>
+                <span>{tx("เข้าสู่ระบบ")}</span>
               </button>
             </>
           ) : (
@@ -2332,20 +3063,20 @@ export const App: React.FC = () => {
                 ) : (
                   <IconUsers size={15} />
                 )}
-                <span>{currentUser.fullNameTh}</span>
+                <span>{tx(currentUser.fullNameTh)}</span>
               </button>
 
               {showProfileMenu && (
                 <div
                   className="profile-dropdown"
                   role="menu"
-                  aria-label="เมนูบัญชีผู้ใช้งาน"
+                  aria-label={tx("เมนูบัญชีผู้ใช้งาน")}
                 >
                   <div className="profile-dropdown-head">
-                    <strong>{currentUser.fullNameTh}</strong>
+                    <strong>{tx(currentUser.fullNameTh)}</strong>
                     <div className="muted-inline">
                       {currentUser.contactEmail ??
-                        'เข้าใช้งานผ่าน LINE (ยังไม่ได้ผูกอีเมล)'}
+                        tx("เข้าใช้งานผ่าน LINE (ยังไม่ได้ผูกอีเมล)")}
                     </div>
                   </div>
 
@@ -2355,7 +3086,7 @@ export const App: React.FC = () => {
                     onClick={() => navigateCustomer('my_orders')}
                   >
                     <IconBag size={15} />
-                    <span>บัตรวิ่ง & คำสั่งซื้อของฉัน</span>
+                    <span>{tx("บัตรวิ่ง & คำสั่งซื้อของฉัน")}</span>
                   </button>
 
                   <button
@@ -2364,7 +3095,7 @@ export const App: React.FC = () => {
                     onClick={navigateAccountSecurity}
                   >
                     <IconShield size={15} />
-                    <span>บัญชีและความปลอดภัย</span>
+                    <span>{tx("บัญชีและความปลอดภัย")}</span>
                   </button>
 
                   {isPlatformOwner && (
@@ -2374,13 +3105,13 @@ export const App: React.FC = () => {
                       onClick={() => navigatePlatformAdmin()}
                     >
                       <IconShield size={15} />
-                      <span>ศูนย์ควบคุม Platform Owner</span>
+                      <span>{tx("ศูนย์ควบคุม Platform Owner")}</span>
                     </button>
                   )}
 
                   {hasOrganizerAccess ? (
                     <div className="profile-org-section">
-                      <span className="muted-inline">องค์กรผู้จัดที่คุณสังกัด:</span>
+                      <span className="muted-inline">{tx("องค์กรผู้จัดที่คุณสังกัด:")}</span>
                       {currentUser.memberships.map((m) => {
                         const org = sys.organizations.find(
                           (o) => o.id === m.organizationId
@@ -2405,7 +3136,7 @@ export const App: React.FC = () => {
                       onClick={navigateAccountSecurity}
                     >
                       <IconBuilding size={15} />
-                      <span>ร่วมเป็นผู้จัดงาน / กรอกรหัสคำเชิญ</span>
+                      <span>{tx("ร่วมเป็นผู้จัดงาน / กรอกรหัสคำเชิญ")}</span>
                     </button>
                   )}
 
@@ -2417,7 +3148,7 @@ export const App: React.FC = () => {
                     onClick={handleLogout}
                   >
                     <IconLock size={15} />
-                    <span>ออกจากระบบ</span>
+                    <span>{tx("ออกจากระบบ")}</span>
                   </button>
                 </div>
               )}
@@ -2437,6 +3168,7 @@ export const App: React.FC = () => {
           registrations={sys.registrations}
           merchOrders={sys.merchOrders}
           productionInquiries={sys.productionInquiries}
+          registrationSteps={sys.registrationSteps}
           currentUser={currentUser}
           onNavigate={navigateCustomer}
           onRequireLoginWithIntent={(intent) => {
@@ -2465,8 +3197,15 @@ export const App: React.FC = () => {
           initialTab={authInitialTab}
           externalSocialScenario={externalSocialScenario}
           onAuthenticated={handleAuthenticated}
+          onPasswordLogin={handlePasswordLogin}
           onRegisterEmailUser={handleRegisterEmailUser}
           onRegisterSocialUser={handleRegisterSocialUser}
+          onSubmitOrganizerOnboarding={handleSubmitOrganizerOnboarding}
+          onNavigateExploreEvents={() => navigateCustomer('directory', null)}
+          onNavigateRunnerDashboard={navigateAccountSecurity}
+          onNavigateOrganizerWorkspace={(orgId) =>
+            navigateOrganizer(orgId, null)
+          }
           onLogout={handleLogout}
         />
       )}
@@ -2484,6 +3223,9 @@ export const App: React.FC = () => {
           onAcceptTeamInvitation={handleAcceptTeamInvitation}
           onApplyNewOrganizerOrg={handleApplyNewOrganizerOrg}
           onEnterOrganizerOrg={(orgId) => navigateOrganizer(orgId, null)}
+          onUpdateRunnerProfile={handleUpdateRunnerProfile}
+          onNavigateDiscoverEvents={() => navigateCustomer('directory', null)}
+          onNavigateMyOrders={() => navigateCustomer('my_orders', null)}
         />
       )}
 
@@ -2542,6 +3284,13 @@ export const App: React.FC = () => {
             onUpdateEventTotalQuota={handleUpdateEventTotalQuota}
             onUpdateCategoryQuota={handleUpdateCategoryQuota}
             onUpdateCustomFields={handleUpdateCustomFields}
+            formTemplates={sys.formTemplates}
+            registrationSteps={sys.registrationSteps}
+            globalFields={sys.globalFields}
+            fieldRequests={sys.fieldRequests}
+            onSelectEventTemplate={handleSelectEventTemplate}
+            onUpdateEventMedia={handleUpdateEventMedia}
+            onSubmitOrganizerFieldRequest={handleSubmitOrganizerFieldRequest}
           />
         ) : (
           <main className="customer-container">
@@ -2549,15 +3298,13 @@ export const App: React.FC = () => {
               <div className="cta-inline-row" style={{ marginBottom: '0.45rem' }}>
                 <span className="status-pill badge-danger">
                   <IconAlert size={14} />
-                  <span>ไม่มีสิทธิ์เข้าถึง (403 Forbidden)</span>
+                  <span>{tx("ไม่มีสิทธิ์เข้าถึง (403 Forbidden)")}</span>
                 </span>
               </div>
-              <h1>บัญชีนี้ยังไม่ได้สังกัดองค์กรผู้จัดงานวิ่ง</h1>
+              <h1>{tx("บัญชีนี้ยังไม่ได้สังกัดองค์กรผู้จัดงานวิ่ง")}</h1>
               <p>
-                ระบบผู้จัดงานจำกัดเฉพาะสมาชิกที่ได้รับสิทธิ์ในองค์กรผู้จัด (
-                <code>OrganizationMembership</code>) เท่านั้น
-                หากคุณได้รับรหัสคำเชิญเข้าทีม หรือต้องการยื่นขอเปิดองค์กรผู้จัดงานใหม่
-                สามารถดำเนินการต่อได้ที่หน้าบัญชีและความปลอดภัย
+                {tx("ระบบผู้จัดงานจำกัดเฉพาะสมาชิกที่ได้รับสิทธิ์ในองค์กรผู้จัด (")}
+                <code>OrganizationMembership</code>{tx(") เท่านั้น หากคุณได้รับรหัสคำเชิญเข้าทีม หรือต้องการยื่นขอเปิดองค์กรผู้จัดงานใหม่ สามารถดำเนินการต่อได้ที่หน้าบัญชีและความปลอดภัย")}
               </p>
               <div className="cta-inline-row">
                 <button
@@ -2566,14 +3313,14 @@ export const App: React.FC = () => {
                   onClick={navigateAccountSecurity}
                 >
                   <IconBuilding size={15} />
-                  <span>ขอเปิดองค์กรผู้จัดใหม่ / กรอกรหัสคำเชิญ</span>
+                  <span>{tx("ขอเปิดองค์กรผู้จัดใหม่ / กรอกรหัสคำเชิญ")}</span>
                 </button>
                 <button
                   type="button"
                   className="btn-secondary"
                   onClick={() => navigateCustomer('directory', null)}
                 >
-                  <span>กลับหน้าค้นหางานวิ่ง</span>
+                  <span>{tx("กลับหน้าค้นหางานวิ่ง")}</span>
                 </button>
               </div>
             </div>
@@ -2595,6 +3342,20 @@ export const App: React.FC = () => {
             payouts={sys.payouts}
             users={sys.users}
             auditLogs={sys.auditLogs}
+            formTemplates={sys.formTemplates}
+            registrationSteps={sys.registrationSteps}
+            globalFields={sys.globalFields}
+            conditionalRules={sys.conditionalRules}
+            fieldRequests={sys.fieldRequests}
+            onUpsertStep={handleUpsertStep}
+            onReorderStep={handleReorderStep}
+            onDeleteStep={handleDeleteStep}
+            onUpsertGlobalField={handleUpsertGlobalField}
+            onAddConditionalRule={handleAddConditionalRule}
+            onDeleteConditionalRule={handleDeleteConditionalRule}
+            onPublishTemplateVersion={handlePublishTemplateVersion}
+            onCreateTemplate={handleCreateTemplate}
+            onResolveFieldRequest={handleResolveFieldRequest}
             onReviewOrganization={handleReviewOrganization}
             onGovernEventStatus={handleGovernEventStatus}
             onUpdateProductionInquiry={handleUpdateProductionInquiry}
@@ -2615,12 +3376,12 @@ export const App: React.FC = () => {
               <div className="cta-inline-row" style={{ marginBottom: '0.45rem' }}>
                 <span className="status-pill badge-danger">
                   <IconAlert size={14} />
-                  <span>ไม่มีสิทธิ์เข้าถึงส่วนกลางแพลตฟอร์ม (403 Forbidden)</span>
+                  <span>{tx("ไม่มีสิทธิ์เข้าถึงส่วนกลางแพลตฟอร์ม (403 Forbidden)")}</span>
                 </span>
               </div>
-              <h1>หน้านี้จำกัดเฉพาะผู้ดูแลระบบสูงสุดของแพลตฟอร์ม (Platform Owner)</h1>
+              <h1>{tx("หน้านี้จำกัดเฉพาะผู้ดูแลระบบสูงสุดของแพลตฟอร์ม (Platform Owner)")}</h1>
               <p>
-                บัญชีผู้จัดงานและลูกค้าทั่วไปไม่สามารถเข้าถึงศูนย์อนุมัติกลางของ RunEvent ได้
+                {tx("บัญชีผู้จัดงานและลูกค้าทั่วไปไม่สามารถเข้าถึงศูนย์อนุมัติกลางของ RunEvent ได้")}
               </p>
               <div className="cta-inline-row">
                 <button
@@ -2628,7 +3389,7 @@ export const App: React.FC = () => {
                   className="btn-primary"
                   onClick={() => navigateCustomer('directory', null)}
                 >
-                  <span>กลับหน้าค้นหางานวิ่ง</span>
+                  <span>{tx("กลับหน้าค้นหางานวิ่ง")}</span>
                 </button>
               </div>
             </div>
@@ -2639,7 +3400,7 @@ export const App: React.FC = () => {
       <footer className="minimal-footer">
         <div className="footer-links-group">
           <span>
-            <strong>RunEvent</strong> · แพลตฟอร์มงานวิ่งและร้านค้าที่ระลึกประจำงาน
+            <strong>RunEvent</strong> {tx(" · แพลตฟอร์มงานวิ่งและร้านค้าที่ระลึกประจำงาน")}
           </span>
           <button
             type="button"
@@ -2652,18 +3413,18 @@ export const App: React.FC = () => {
               }
             }}
           >
-            สำหรับผู้จัดงาน / เปิดรับสมัครงานวิ่งกับเรา
+            {tx("สำหรับผู้จัดงาน / เปิดรับสมัครงานวิ่งกับเรา")}
           </button>
         </div>
         <span className="muted-inline">
-          โหมดต้นแบบฝั่งหน้าบ้าน (SPA + localStorage) · ข้อมูลสาธิต · ไม่มีการตัดเงินจริง
+          {tx("โหมดระบบจริงบน Local (Node.js + SQLite API) · ข้อมูลทดสอบชุดเดิม · OAuth/Payment จำลองใน Sandbox")}
         </span>
       </footer>
 
       {/* COLLAPSIBLE FLOATING DEV / DEMO SWITCHER BAR (SEPARATED FROM PRODUCTION UI) */}
       <aside
         className="dev-demo-dock"
-        aria-label="แถบเครื่องมือสำหรับผู้พัฒนาและสลับบัญชีสาธิต"
+        aria-label={tx("แถบเครื่องมือสำหรับผู้พัฒนาและสลับบัญชีสาธิต")}
       >
         {showDemoTools && (
           <div className="dev-demo-drawer">
@@ -2671,7 +3432,7 @@ export const App: React.FC = () => {
               <div>
                 <strong>Dev / Demo Tools</strong>
                 <div className="muted-inline">
-                  แยกออกจากเมนูเว็บจริงเพื่อทดสอบทุกบทบาทได้ทันที
+                  {tx("แยกออกจากเมนูเว็บจริงเพื่อทดสอบทุกบทบาทได้ทันที")}
                 </div>
               </div>
               <button
@@ -2679,13 +3440,13 @@ export const App: React.FC = () => {
                 className="btn-ghost-sm"
                 onClick={() => setShowDemoTools(false)}
               >
-                พับเก็บ
+                {tx("พับเก็บ")}
               </button>
             </div>
 
             <div className="dev-drawer-section">
               <div className="dev-section-label">
-                สลับสถานะผู้ใช้ทดสอบ (ตรวจการแสดง/ซ่อนเมนูผู้จัดงาน)
+                {tx("สลับสถานะผู้ใช้ทดสอบ (ตรวจการแสดง/ซ่อนเมนูผู้จัดงาน)")}
               </div>
               <button
                 type="button"
@@ -2695,7 +3456,7 @@ export const App: React.FC = () => {
                   setShowDemoTools(false);
                 }}
               >
-                <span>ผู้เยี่ยมชมทั่วไป (Guest · ยังไม่ Login)</span>
+                <span>{tx("ผู้เยี่ยมชมทั่วไป (Guest · ยังไม่ Login)")}</span>
                 <span className="mono-code">Guest</span>
               </button>
 
@@ -2718,13 +3479,13 @@ export const App: React.FC = () => {
                       }}
                     >
                       <div>
-                        <strong>{u.fullNameTh}</strong>
+                        <strong>{tx(u.fullNameTh)}</strong>
                         <div className="muted-inline">
                           {u.isPlatformAdmin
-                            ? 'Platform Owner · อนุมัติผู้จัด/งานวิ่ง/รอบโอนทั้งระบบ'
+                            ? tx("Platform Owner · อนุมัติผู้จัด/งานวิ่ง/รอบโอนทั้งระบบ")
                             : isOrg
-                            ? `ทีมผู้จัด (${u.memberships.length} องค์กร) · เห็นเมนูผู้จัด`
-                            : 'ลูกค้า/นักวิ่งทั่วไป · ไม่เห็นเมนูผู้จัด'}
+                            ? txf("ทีมผู้จัด ({0} องค์กร) · เห็นเมนูผู้จัด", u.memberships.length)
+                            : tx("ลูกค้า/นักวิ่งทั่วไป · ไม่เห็นเมนูผู้จัด")}
                         </div>
                       </div>
                       <IconArrowRight size={14} />
@@ -2735,7 +3496,7 @@ export const App: React.FC = () => {
 
             <div className="dev-drawer-section">
               <div className="dev-section-label">
-                จำลองเคสพิเศษหน้า Login (ตามแผนข้อ 16)
+                {tx("จำลองเคสพิเศษหน้า Login (ตามแผนข้อ 16)")}
               </div>
               <div className="cta-inline-row">
                 <button
@@ -2751,7 +3512,7 @@ export const App: React.FC = () => {
                     setShowDemoTools(false);
                   }}
                 >
-                  LINE ไม่มีอีเมล
+                  {tx("LINE ไม่มีอีเมล")}
                 </button>
                 <button
                   type="button"
@@ -2766,7 +3527,7 @@ export const App: React.FC = () => {
                     setShowDemoTools(false);
                   }}
                 >
-                  อีเมลชนบัญชีเดิม
+                  {tx("อีเมลชนบัญชีเดิม")}
                 </button>
                 <button
                   type="button"
@@ -2781,7 +3542,7 @@ export const App: React.FC = () => {
                     setShowDemoTools(false);
                   }}
                 >
-                  ยกเลิกที่ Provider
+                  {tx("ยกเลิกที่ Provider")}
                 </button>
               </div>
             </div>
@@ -2789,7 +3550,7 @@ export const App: React.FC = () => {
             {pendingWebhookRegs.length > 0 && (
               <div className="dev-drawer-section">
                 <div className="dev-section-label">
-                  จำลองสัญญาณ Webhook ชำระเงิน ({pendingWebhookRegs.length})
+                  {tx("จำลองสัญญาณ Webhook ชำระเงิน (")}{tx(pendingWebhookRegs.length)})
                 </div>
                 {pendingWebhookRegs.map((r) => (
                   <button
@@ -2799,7 +3560,7 @@ export const App: React.FC = () => {
                     onClick={() => handleSimulateWebhookConfirm(r.id)}
                   >
                     <span>
-                      ยืนยันรับเงิน {r.regCode} ({r.participantNameTh})
+                      {tx("ยืนยันรับเงิน ")} {tx(r.regCode)} ({tx(r.participantNameTh)})
                     </span>
                     <IconCheckCircle size={14} />
                   </button>
@@ -2809,7 +3570,7 @@ export const App: React.FC = () => {
 
             <div className="dev-drawer-section">
               <label htmlFor="dev-sim-ui" className="dev-section-label">
-                จำลองสถานะหน้าจอ Organizer UX:
+                {tx("จำลองสถานะหน้าจอ Organizer UX:")}
               </label>
               <select
                 id="dev-sim-ui"
@@ -2821,10 +3582,10 @@ export const App: React.FC = () => {
                   }
                 }}
               >
-                <option value="normal">ปกติ (Normal)</option>
-                <option value="loading">กำลังโหลด (Skeleton)</option>
-                <option value="partial_error">โหลดผิดพลาดบางส่วน</option>
-                <option value="permission_denied">ไม่มีสิทธิ์เข้าถึง</option>
+                <option value="normal">{tx("ปกติ (Normal)")}</option>
+                <option value="loading">{tx("กำลังโหลด (Skeleton)")}</option>
+                <option value="partial_error">{tx("โหลดผิดพลาดบางส่วน")}</option>
+                <option value="permission_denied">{tx("ไม่มีสิทธิ์เข้าถึง")}</option>
               </select>
             </div>
 
@@ -2834,7 +3595,7 @@ export const App: React.FC = () => {
               onClick={handleResetAllDemoData}
             >
               <IconSwitch size={14} />
-              <span>รีเซ็ตข้อมูลจำลองเริ่มต้นทั้งหมด</span>
+              <span>{tx("รีเซ็ตข้อมูลจำลองเริ่มต้นทั้งหมด")}</span>
             </button>
           </div>
         )}

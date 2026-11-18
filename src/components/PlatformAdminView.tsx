@@ -1,20 +1,27 @@
 import React, { useMemo, useState } from 'react';
 import {
   AuditLogEntry,
+  ConditionalRule,
   EventStatus,
+  FormFieldPolicy,
+  FormTemplate,
+  GlobalFormFieldDef,
   MerchOrderRecord,
   Organization,
+  OrganizerFieldRequest,
   OrgRole,
   PayoutBatch,
   PayoutStatus,
   ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
+  RegistrationStepDef,
   TimeWindowFilter,
   UserAccount,
 } from '../types';
 import { computeMetrics, feePolicyLabel, formatThb } from '../utils/pricing';
 import { BibLedgerStrip } from './BibLedgerStrip';
+import { RegistrationFormBuilderAdmin } from './RegistrationFormBuilderAdmin';
 import {
   IconAlert,
   IconArrowRight,
@@ -39,10 +46,12 @@ import {
   RegStatusBadge,
 } from './StatusBadges';
 
+import { tx, txf } from '../i18n';
 export type PlatformSection =
   | 'plat_overview'
   | 'plat_orgs'
   | 'plat_events'
+  | 'plat_form_builder'
   | 'plat_merch_rfq'
   | 'plat_finance'
   | 'plat_users_audit';
@@ -59,9 +68,35 @@ interface PlatformAdminViewProps {
   payouts: PayoutBatch[];
   users: UserAccount[];
   auditLogs: AuditLogEntry[];
+  formTemplates: FormTemplate[];
+  registrationSteps: RegistrationStepDef[];
+  globalFields: GlobalFormFieldDef[];
+  conditionalRules: ConditionalRule[];
+  fieldRequests: OrganizerFieldRequest[];
+  onUpsertStep: (step: RegistrationStepDef) => void;
+  onReorderStep: (stepId: string, direction: 'up' | 'down') => void;
+  onDeleteStep: (stepId: string) => void;
+  onUpsertGlobalField: (field: GlobalFormFieldDef) => void;
+  onAddConditionalRule: (rule: ConditionalRule) => void;
+  onDeleteConditionalRule: (ruleId: string) => void;
+  onPublishTemplateVersion: (templateId: string, summary: string) => void;
+  onCreateTemplate: (nameTh: string, code: string, descriptionTh: string) => void;
+  onResolveFieldRequest: (
+    requestId: string,
+    decision: 'approved' | 'rejected',
+    policy: FormFieldPolicy,
+    adminNote: string
+  ) => void;
   onReviewOrganization: (
     orgId: string,
-    action: 'approve_kyc_bank' | 'hold_bank' | 'suspend_org' | 'reinstate_org',
+    action:
+      | 'approve_kyc_bank'
+      | 'hold_bank'
+      | 'suspend_org'
+      | 'reinstate_org'
+      | 'under_review'
+      | 'request_more_info'
+      | 'reject_org',
     bankSummary?: string
   ) => void;
   onGovernEventStatus: (
@@ -123,6 +158,20 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
   payouts,
   users,
   auditLogs,
+  formTemplates,
+  registrationSteps,
+  globalFields,
+  conditionalRules,
+  fieldRequests,
+  onUpsertStep,
+  onReorderStep,
+  onDeleteStep,
+  onUpsertGlobalField,
+  onAddConditionalRule,
+  onDeleteConditionalRule,
+  onPublishTemplateVersion,
+  onCreateTemplate,
+  onResolveFieldRequest,
   onReviewOrganization,
   onGovernEventStatus,
   onUpdateProductionInquiry,
@@ -282,17 +331,17 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
   return (
     <div className="dashboard-workspace">
       {/* LEFT PLATFORM OWNER NAVIGATION RAIL */}
-      <aside className="dashboard-rail" aria-label="เมนูผู้ดูแลแพลตฟอร์มส่วนกลาง">
+      <aside className="dashboard-rail" aria-label={tx("เมนูผู้ดูแลแพลตฟอร์มส่วนกลาง")}>
         <div className="rail-org-switcher">
-          <div className="rail-field-label">โหมดการกำกับดูแลสูงสุด</div>
+          <div className="rail-field-label">{tx("โหมดการกำกับดูแลสูงสุด")}</div>
           <div className="rail-role-badge">
             <IconShield size={14} />
-            <span>Platform Owner · {currentUser.fullNameTh}</span>
+            <span>Platform Owner · {tx(currentUser.fullNameTh)}</span>
           </div>
         </div>
 
-        <nav className="rail-nav-group" aria-label="เมนูบริหารแพลตฟอร์ม RunEvent">
-          <div className="rail-group-heading">ระบบส่วนกลาง (Platform HQ)</div>
+        <nav className="rail-nav-group" aria-label={tx("เมนูบริหารแพลตฟอร์ม RunEvent")}>
+          <div className="rail-group-heading">{tx("ระบบส่วนกลาง (Platform HQ)")}</div>
 
           <button
             type="button"
@@ -302,7 +351,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
             onClick={() => onSelectSection('plat_overview')}
           >
             <IconShield size={16} />
-            <span>ภาพรวม & คิวรออนุมัติ</span>
+            <span>{tx("ภาพรวม & คิวรออนุมัติ")}</span>
           </button>
 
           <button
@@ -314,7 +363,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
           >
             <IconBuilding size={16} />
             <span>
-              องค์กรผู้จัด & บัญชีรับเงิน ({pendingOrgs.length} รอตรวจ)
+              {tx("องค์กรผู้จัด & บัญชีรับเงิน (")}{tx(pendingOrgs.length)} {tx(" รอตรวจ)")}
             </span>
           </button>
 
@@ -327,7 +376,22 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
           >
             <IconFlag size={16} />
             <span>
-              อนุมัติ & กำกับงานวิ่ง ({inReviewEvents.length} รออนุมัติ)
+              {tx("อนุมัติ & กำกับงานวิ่ง (")}{tx(inReviewEvents.length)} {tx(" รออนุมัติ)")}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`rail-nav-btn ${
+              activeSection === 'plat_form_builder' ? 'active' : ''
+            }`}
+            onClick={() => onSelectSection('plat_form_builder')}
+          >
+            <IconCheckCircle size={16} />
+            <span>
+              Registration Form Builder (
+              {tx(fieldRequests.filter((r) => r.status === 'pending').length)}{' '}
+              {tx("คำขอฟิลด์)")}
             </span>
           </button>
 
@@ -339,7 +403,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
             onClick={() => onSelectSection('plat_merch_rfq')}
           >
             <IconShirt size={16} />
-            <span>ใบเสนอราคาผลิต & ร้านค้า ({productionInquiries.length})</span>
+            <span>{tx("ใบเสนอราคาผลิต & ร้านค้า (")}{tx(productionInquiries.length)})</span>
           </button>
 
           <button
@@ -350,7 +414,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
             onClick={() => onSelectSection('plat_finance')}
           >
             <IconLedger size={16} />
-            <span>รายได้ รอบโอน & ข้อพิพาทเงินคืน</span>
+            <span>{tx("รายได้ รอบโอน & ข้อพิพาทเงินคืน")}</span>
           </button>
 
           <button
@@ -361,7 +425,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
             onClick={() => onSelectSection('plat_users_audit')}
           >
             <IconUsers size={16} />
-            <span>ผู้ใช้งาน สิทธิ์ & Audit ทั้งระบบ</span>
+            <span>{tx("ผู้ใช้งาน สิทธิ์ & Audit ทั้งระบบ")}</span>
           </button>
         </nav>
       </aside>
@@ -372,14 +436,14 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
           <div className="breadcrumb-trail">
             <span className="mono-code">PLT-HQ-01</span>
             <strong>
-              ศูนย์ควบคุมแพลตฟอร์มกลาง RunEvent (ครอบคลุม {organizations.length}{' '}
-              องค์กรผู้จัด · {events.length} งานวิ่ง)
+              {tx("ศูนย์ควบคุมแพลตฟอร์มกลาง RunEvent (ครอบคลุม ")} {tx(organizations.length)}{' '}
+              {tx("องค์กรผู้จัด · ")} {tx(events.length)} {tx(" งานวิ่ง)")}
             </strong>
           </div>
 
           <div className="context-toolbar">
             <label htmlFor="plat-tw-sel" className="sr-only">
-              ช่วงเวลาคำนวณยอดเงินทั้งแพลตฟอร์ม
+              {tx("ช่วงเวลาคำนวณยอดเงินทั้งแพลตฟอร์ม")}
             </label>
             <select
               id="plat-tw-sel"
@@ -388,9 +452,9 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                 setTimeWindow(e.target.value as TimeWindowFilter)
               }
             >
-              <option value="all_time">ยอดเงิน: ตลอดอายุแพลตฟอร์ม</option>
-              <option value="last_30d">ยอดเงิน: 30 วันล่าสุด</option>
-              <option value="last_7d">ยอดเงิน: 7 วันล่าสุด</option>
+              <option value="all_time">{tx("ยอดเงิน: ตลอดอายุแพลตฟอร์ม")}</option>
+              <option value="last_30d">{tx("ยอดเงิน: 30 วันล่าสุด")}</option>
+              <option value="last_7d">{tx("ยอดเงิน: 7 วันล่าสุด")}</option>
             </select>
           </div>
         </header>
@@ -399,13 +463,13 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
           <div className="success-callout" role="status">
             <IconCheckCircle size={17} />
             <div className="callout-flex">
-              <span>{feedbackBanner}</span>
+              <span>{tx(feedbackBanner)}</span>
               <button
                 type="button"
                 className="btn-ghost-sm"
                 onClick={() => setFeedbackBanner(null)}
               >
-                ปิดแจ้งเตือน
+                {tx("ปิดแจ้งเตือน")}
               </button>
             </div>
           </div>
@@ -415,21 +479,20 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
         {activeSection === 'plat_overview' && (
           <div className="canvas-stack">
             <div className="page-guide-header">
-              <h1>ศูนย์ควบคุมและอนุมัติระดับแพลตฟอร์ม (Platform Owner Console)</h1>
+              <h1>{tx("ศูนย์ควบคุมและอนุมัติระดับแพลตฟอร์ม (Platform Owner Console)")}</h1>
               <p className="page-purpose-desc">
-                หน้านี้ใช้ตรวจและอนุมัติองค์กรผู้จัดใหม่ อนุมัติเผยแพร่งานวิ่ง ควบคุมรอบโอนยอดนำส่ง
-                ประสานใบเสนอราคาสั่งผลิตเสื้อ/เหรียญ และจัดการข้อยกเว้นข้ามทุกองค์กรในที่เดียว
+                {tx("หน้านี้ใช้ตรวจและอนุมัติองค์กรผู้จัดใหม่ อนุมัติเผยแพร่งานวิ่ง ควบคุมรอบโอนยอดนำส่ง ประสานใบเสนอราคาสั่งผลิตเสื้อ/เหรียญ และจัดการข้อยกเว้นข้ามทุกองค์กรในที่เดียว")}
               </p>
             </div>
 
             <section
               className="action-queue-panel"
-              aria-label="คิวรออนุมัติและข้อยกเว้นระดับแพลตฟอร์ม"
+              aria-label={tx("คิวรออนุมัติและข้อยกเว้นระดับแพลตฟอร์ม")}
             >
               <div className="section-title-bar">
                 <div>
                   <h2>
-                    คิวงานรออนุมัติและรายการต้องตรวจสอบของแพลตฟอร์ม (
+                    {tx("คิวงานรออนุมัติและรายการต้องตรวจสอบของแพลตฟอร์ม (")}
                     <span className="mono-num">
                       {pendingOrgs.length +
                         inReviewEvents.length +
@@ -437,10 +500,10 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                         pendingRefundRegs.length +
                         actionableRfqs.length}
                     </span>{' '}
-                    รายการ)
+                    {tx("รายการ)")}
                   </h2>
                   <span className="muted-inline">
-                    เรียงลำดับตามผลกระทบต่อการเปิดรับสมัครและความถูกต้องทางการเงิน
+                    {tx("เรียงลำดับตามผลกระทบต่อการเปิดรับสมัครและความถูกต้องทางการเงิน")}
                   </span>
                 </div>
               </div>
@@ -452,11 +515,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                       <IconBuilding size={17} />
                       <div>
                         <strong>
-                          องค์กรผู้จัดรอตรวจอนุมัติ / บัญชีรับเงิน: {org.nameTh} (
-                          <span className="mono-code">{org.code}</span>)
+                          {tx("องค์กรผู้จัดรอตรวจอนุมัติ / บัญชีรับเงิน: ")} {tx(org.nameTh)} (
+                          <span className="mono-code">{tx(org.code)}</span>)
                         </strong>
                         <p>
-                          สถานะปัจจุบัน: {org.payoutBankSummary} — ต้องอนุมัติก่อนจึงจะเปิดขายงานวิ่งขององค์กรนี้ได้
+                          {tx("สถานะปัจจุบัน: ")} {tx(org.payoutBankSummary)} {tx(" — ต้องอนุมัติก่อนจึงจะเปิดขายงานวิ่งขององค์กรนี้ได้")}
                         </p>
                       </div>
                     </div>
@@ -468,7 +531,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                         onSelectSection('plat_orgs');
                       }}
                     >
-                      <span>ตรวจและอนุมัติองค์กร</span>
+                      <span>{tx("ตรวจและอนุมัติองค์กร")}</span>
                       <IconArrowRight size={14} />
                     </button>
                   </div>
@@ -480,12 +543,12 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                       <IconFlag size={17} />
                       <div>
                         <strong>
-                          งานวิ่งส่งตรวจขออนุมัติเผยแพร่: {ev.titleTh} (
-                          <span className="mono-code">{ev.code}</span>)
+                          {tx("งานวิ่งส่งตรวจขออนุมัติเผยแพร่: ")} {tx(ev.titleTh)} (
+                          <span className="mono-code">{tx(ev.code)}</span>)
                         </strong>
                         <p>
-                          วันจัดงาน {ev.eventDate} · จ.{ev.province} · โควตา{' '}
-                          {ev.totalEventQuota} คน — รอ Platform Owner กดอนุมัติขึ้นหน้ารวมงานวิ่งสาธารณะ
+                          {tx("วันจัดงาน ")} {tx(ev.eventDate)} {tx(" · จ.")}{tx(ev.province)} {tx(" · โควตา")}{' '}
+                          {tx(ev.totalEventQuota)} {tx(" คน — รอ Platform Owner กดอนุมัติขึ้นหน้ารวมงานวิ่งสาธารณะ")}
                         </p>
                       </div>
                     </div>
@@ -497,7 +560,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                         onSelectSection('plat_events');
                       }}
                     >
-                      <span>ตรวจและอนุมัติงานนี้</span>
+                      <span>{tx("ตรวจและอนุมัติงานนี้")}</span>
                       <IconArrowRight size={14} />
                     </button>
                   </div>
@@ -509,10 +572,10 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                       <IconAlert size={17} />
                       <div>
                         <strong>
-                          งานวิ่งที่ถูกระงับชั่วคราว: {ev.titleTh} (
-                          <span className="mono-code">{ev.code}</span>)
+                          {tx("งานวิ่งที่ถูกระงับชั่วคราว: ")} {tx(ev.titleTh)} (
+                          <span className="mono-code">{tx(ev.code)}</span>)
                         </strong>
-                        <p>{ev.statusNote ?? 'รอตรวจเอกสารเพิ่มเติมก่อนปลดระงับ'}</p>
+                        <p>{ev.statusNote ?? tx("รอตรวจเอกสารเพิ่มเติมก่อนปลดระงับ")}</p>
                       </div>
                     </div>
                     <button
@@ -523,7 +586,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                         onSelectSection('plat_events');
                       }}
                     >
-                      <span>จัดการสถานะระงับ</span>
+                      <span>{tx("จัดการสถานะระงับ")}</span>
                       <IconArrowRight size={14} />
                     </button>
                   </div>
@@ -535,11 +598,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                       <IconLedger size={17} />
                       <div>
                         <strong>
-                          มีคำขอคืนเงินค้างพิจารณาในระบบ {pendingRefundRegs.length}{' '}
-                          รายการ
+                          {tx("มีคำขอคืนเงินค้างพิจารณาในระบบ ")} {tx(pendingRefundRegs.length)}{' '}
+                          {tx("รายการ")}
                         </strong>
                         <p>
-                          ตรวจสอบเหตุผลและอนุมัติคืนเงินหรือปฏิเสธพร้อมบันทึกผู้ดำเนินการได้จากศูนย์การเงินกลาง
+                          {tx("ตรวจสอบเหตุผลและอนุมัติคืนเงินหรือปฏิเสธพร้อมบันทึกผู้ดำเนินการได้จากศูนย์การเงินกลาง")}
                         </p>
                       </div>
                     </div>
@@ -551,7 +614,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                         onSelectSection('plat_finance');
                       }}
                     >
-                      <span>ไปหน้าพิจารณาเงินคืน</span>
+                      <span>{tx("ไปหน้าพิจารณาเงินคืน")}</span>
                       <IconArrowRight size={14} />
                     </button>
                   </div>
@@ -563,11 +626,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                       <IconShirt size={17} />
                       <div>
                         <strong>
-                          คำขอใบเสนอราคาผลิตเสื้อ/เหรียญรอดำเนินการ{' '}
-                          {actionableRfqs.length} รายการ
+                          {tx("คำขอใบเสนอราคาผลิตเสื้อ/เหรียญรอดำเนินการ")}{' '}
+                          {tx(actionableRfqs.length)} {tx(" รายการ")}
                         </strong>
                         <p>
-                          ประเมินราคาต้นทุน ส่งใบเสนอราคาให้ผู้จัด/ชมรม และอัปเดตสถานะการผลิตของโรงงาน
+                          {tx("ประเมินราคาต้นทุน ส่งใบเสนอราคาให้ผู้จัด/ชมรม และอัปเดตสถานะการผลิตของโรงงาน")}
                         </p>
                       </div>
                     </div>
@@ -576,7 +639,37 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                       className="btn-secondary"
                       onClick={() => onSelectSection('plat_merch_rfq')}
                     >
-                      <span>จัดการใบเสนอราคาผลิต</span>
+                      <span>{tx("จัดการใบเสนอราคาผลิต")}</span>
+                      <IconArrowRight size={14} />
+                    </button>
+                  </div>
+                )}
+
+                {fieldRequests.filter((r) => r.status === 'pending').length >
+                  0 && (
+                  <div className="action-queue-item">
+                    <div className="action-queue-text">
+                      <IconCheckCircle size={17} />
+                      <div>
+                        <strong>
+                          {tx("มีคำขอเพิ่มฟิลด์คำถามในใบสมัครจากผู้จัดงานรออนุมัติ")}{' '}
+                          {
+                            tx(fieldRequests.filter((r) => r.status === 'pending')
+                              .length)
+                          }{' '}
+                          {tx("รายการ")}
+                        </strong>
+                        <p>
+                          {tx("ตรวจอนุมัติคำขอข้อมูลผู้สมัคร กำหนดสิทธิ์ (LOCKED / CONFIGURABLE / CUSTOMIZABLE) และจัดการ Step การสมัคร")}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => onSelectSection('plat_form_builder')}
+                    >
+                      <span>{tx("เปิด Registration Form Builder")}</span>
                       <IconArrowRight size={14} />
                     </button>
                   </div>
@@ -607,11 +700,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
 
             <div className="two-col-ops-grid">
               <section className="clean-panel">
-                <h2>สรุปสุขภาพระบบและรายได้แพลตฟอร์ม</h2>
+                <h2>{tx("สรุปสุขภาพระบบและรายได้แพลตฟอร์ม")}</h2>
                 <div className="ops-quick-stats">
                   <div>
                     <span className="muted-inline">
-                      รายได้ค่าบริการแพลตฟอร์มสุทธิ (จากค่าสมัครวิ่ง)
+                      {tx("รายได้ค่าบริการแพลตฟอร์มสุทธิ (จากค่าสมัครวิ่ง)")}
                     </span>
                     <strong className="mono-num text-vermilion">
                       {formatThb(platformMetrics.platformRevenueSatang, true)}
@@ -619,33 +712,33 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                   </div>
                   <div>
                     <span className="muted-inline">
-                      มูลค่าขายสินค้าร้านค้าเฉพาะงานรวม (แยกจากค่าสมัคร)
+                      {tx("มูลค่าขายสินค้าร้านค้าเฉพาะงานรวม (แยกจากค่าสมัคร)")}
                     </span>
                     <strong className="mono-num">
                       {formatThb(platformMetrics.merchGrossSalesSatang, true)} (
-                      {platformMetrics.merchOrderCount} ออเดอร์)
+                      {tx(platformMetrics.merchOrderCount)} {tx(" ออเดอร์)")}
                     </strong>
                   </div>
                   <div>
                     <span className="muted-inline">
-                      องค์กรผู้จัดที่พร้อมรับเงินแล้ว / ทั้งหมด
+                      {tx("องค์กรผู้จัดที่พร้อมรับเงินแล้ว / ทั้งหมด")}
                     </span>
                     <strong className="mono-num text-forest">
                       {
-                        organizations.filter(
+                        tx(organizations.filter(
                           (o) =>
                             o.verificationStatus === 'verified' && o.payoutReady
-                        ).length
+                        ).length)
                       }{' '}
-                      / {organizations.length} องค์กร
+                      / {tx(organizations.length)} {tx(" องค์กร")}
                     </strong>
                   </div>
                   <div>
                     <span className="muted-inline">
-                      รอบโอนยอดนำส่งที่รอดำเนินการหรือพักยอดไว้
+                      {tx("รอบโอนยอดนำส่งที่รอดำเนินการหรือพักยอดไว้")}
                     </span>
                     <strong className="mono-num text-amber">
-                      {actionablePayouts.length} รอบโอน
+                      {tx(actionablePayouts.length)} {tx(" รอบโอน")}
                     </strong>
                   </div>
                 </div>
@@ -653,22 +746,22 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
 
               <section className="clean-panel">
                 <div className="section-title-bar">
-                  <h2>ประวัติการดำเนินการล่าสุดทั้งแพลตฟอร์ม</h2>
+                  <h2>{tx("ประวัติการดำเนินการล่าสุดทั้งแพลตฟอร์ม")}</h2>
                   <button
                     type="button"
                     className="btn-ghost-sm"
                     onClick={() => onSelectSection('plat_users_audit')}
                   >
-                    ดูทั้งหมด
+                    {tx("ดูทั้งหมด")}
                   </button>
                 </div>
                 <div className="audit-list">
                   {auditLogs.slice(0, 5).map((log) => (
                     <div key={log.id} className="audit-row">
-                      <span className="mono-code">{log.timestamp}</span>
-                      <strong>{log.actorName}</strong>
-                      <span className="muted-inline">({log.actorRole})</span>
-                      <span>{log.actionSummary}</span>
+                      <span className="mono-code">{tx(log.timestamp)}</span>
+                      <strong>{tx(log.actorName)}</strong>
+                      <span className="muted-inline">({tx(log.actorRole)})</span>
+                      <span>{tx(log.actionSummary)}</span>
                     </div>
                   ))}
                 </div>
@@ -681,10 +774,9 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
         {activeSection === 'plat_orgs' && (
           <div className="canvas-stack">
             <div className="page-guide-header">
-              <h1>อนุมัติองค์กรผู้จัดงานและตรวจสอบบัญชีรับยอดนำส่ง</h1>
+              <h1>{tx("อนุมัติองค์กรผู้จัดงานและตรวจสอบบัญชีรับยอดนำส่ง")}</h1>
               <p className="page-purpose-desc">
-                ตรวจสอบความน่าเชื่อถือของผู้จัดและผูกบัญชีธนาคารรับโอนก่อนอนุญาตให้เปิดขายงานวิ่ง
-                รวมถึงระงับองค์กรที่มีข้อร้องเรียนโดยไม่ลบข้อมูลธุรกรรมย้อนหลัง
+                {tx("ตรวจสอบความน่าเชื่อถือของผู้จัดและผูกบัญชีธนาคารรับโอนก่อนอนุญาตให้เปิดขายงานวิ่ง รวมถึงระงับองค์กรที่มีข้อร้องเรียนโดยไม่ลบข้อมูลธุรกรรมย้อนหลัง")}
               </p>
             </div>
 
@@ -719,7 +811,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                   className={`pill-tab ${orgFilter === key ? 'active' : ''}`}
                   onClick={() => setOrgFilter(key)}
                 >
-                  {label}
+                  {tx(label)}
                 </button>
               ))}
             </div>
@@ -739,23 +831,23 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                   <article key={org.id} className="clean-panel">
                     <div className="section-title-bar">
                       <div className="cta-inline-row">
-                        <span className="mono-code">{org.code}</span>
-                        <h2>{org.nameTh}</h2>
+                        <span className="mono-code">{tx(org.code)}</span>
+                        <h2>{tx(org.nameTh)}</h2>
                         {org.verificationStatus === 'verified' &&
                         org.payoutReady ? (
                           <span className="status-pill badge-forest">
                             <IconCheckCircle size={13} />
-                            <span>อนุมัติแล้ว · พร้อมรับยอดนำส่ง</span>
+                            <span>{tx("อนุมัติแล้ว · พร้อมรับยอดนำส่ง")}</span>
                           </span>
                         ) : org.verificationStatus === 'suspended' ? (
                           <span className="status-pill badge-danger">
                             <IconLock size={13} />
-                            <span>ระงับองค์กรชั่วคราว</span>
+                            <span>{tx("ระงับองค์กรชั่วคราว")}</span>
                           </span>
                         ) : (
                           <span className="status-pill badge-amber">
                             <IconClock size={13} />
-                            <span>รอตรวจอนุมัติผู้จัด / บัญชีธนาคาร</span>
+                            <span>{tx("รอตรวจอนุมัติผู้จัด / บัญชีธนาคาร")}</span>
                           </span>
                         )}
                       </div>
@@ -767,21 +859,46 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                           onInspectOrganizerWorkspace(org.id, null)
                         }
                       >
-                        เปิดดูหน้าผู้จัดขององค์กรนี้
+                        {tx("เปิดดูหน้าผู้จัดขององค์กรนี้")}
                       </button>
                     </div>
 
                     <p className="muted-block">
-                      จังหวัด: <strong>{org.province}</strong> · อีเมลประสานงาน:{' '}
-                      <code>{org.contactEmail}</code> · งานวิ่งในสังกัด:{' '}
-                      <strong className="mono-num">{orgEvCount}</strong> งาน ·
-                      บัญชีปัจจุบัน: <strong>{org.payoutBankSummary}</strong>
+                      {tx("รหัสอ้างอิง: ")} <span className="mono-code">{org.referenceNumber ?? org.code}</span> {tx(" · สถานะ Workflow:")}{' '}
+                      <span className="mono-code">
+                        {org.workflowStatus ??
+                          (org.verificationStatus === 'verified'
+                            ? 'APPROVED'
+                            : org.verificationStatus === 'suspended'
+                            ? 'SUSPENDED'
+                            : 'SUBMITTED')}
+                      </span>{' '}
+                      {tx("· ประเภท: ")} <strong>{org.orgType ?? 'Private Company'}</strong> {tx(" · จังหวัด: ")} <strong>{tx(org.province)}</strong> {tx(" · อีเมลประสานงาน:")}{' '}
+                      <code>{tx(org.contactEmail)}</code> {tx(" · งานวิ่งในสังกัด:")}{' '}
+                      <strong className="mono-num">{tx(orgEvCount)}</strong> {tx(" งาน · บัญชีปัจจุบัน: ")} <strong>{tx(org.payoutBankSummary)}</strong>
                     </p>
+
+                    {org.documents && org.documents.length > 0 && (
+                      <div className="custom-fields-list" style={{ marginTop: '0.5rem' }}>
+                        {org.documents.map((doc) => (
+                          <div key={doc.id} className="custom-field-item">
+                            <div className="custom-field-meta">
+                              <IconLock size={13} />
+                              <strong>{tx(doc.docTypeLabel)}</strong>
+                              <span className="mono-code">{tx(doc.fileName)}</span>
+                              <span className="muted-inline mono-num">
+                                ({tx(doc.fileSizeKb)} KB · Private Storage: {tx(doc.privateStorageKey)})
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
                     <div className="form-grid-2" style={{ marginTop: '0.75rem' }}>
                       <div className="form-row">
                         <label htmlFor={`org-bank-${org.id}`}>
-                          บันทึกข้อมูลบัญชีธนาคารที่ตรวจสอบแล้วสำหรับโอนยอดนำส่ง
+                          {tx("บันทึกข้อมูลบัญชีธนาคาร / หมายเหตุผู้ตรวจ (Reviewer Note)")}
                         </label>
                         <input
                           id={`org-bank-${org.id}`}
@@ -796,7 +913,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                         />
                       </div>
 
-                      <div className="cta-inline-row" style={{ alignItems: 'flex-end' }}>
+                      <div className="cta-inline-row" style={{ alignItems: 'flex-end', flexWrap: 'wrap' }}>
                         <button
                           type="button"
                           className="btn-primary"
@@ -807,12 +924,63 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                               bankVal.trim()
                             );
                             notifyAction(
-                              `อนุมัติองค์กร ${org.nameTh} และเปิดสถานะบัญชีรับเงินเรียบร้อยแล้ว`
+                              txf("อนุมัติองค์กร {0} (สถานะ APPROVED) และเปิดสถานะบัญชีรับเงินเรียบร้อยแล้ว", org.nameTh)
                             );
                           }}
                         >
                           <IconCheckCircle size={15} />
-                          <span>อนุมัติผู้จัด & ยืนยันบัญชีรับเงิน</span>
+                          <span>Approve (APPROVED)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => {
+                            onReviewOrganization(
+                              org.id,
+                              'under_review',
+                              bankVal.trim()
+                            );
+                            notifyAction(
+                              txf("เปลี่ยนสถานะของ {0} เป็น UNDER_REVIEW (กำลังตรวจเอกสาร) แล้ว", org.nameTh)
+                            );
+                          }}
+                        >
+                          {tx("รับเรื่องตรวจ (UNDER_REVIEW)")}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => {
+                            onReviewOrganization(
+                              org.id,
+                              'request_more_info',
+                              bankVal.trim()
+                            );
+                            notifyAction(
+                              txf("ส่งแจ้งขอเอกสารเพิ่มเติม (MORE_INFORMATION_REQUIRED) ไปยัง {0} แล้ว", org.nameTh)
+                            );
+                          }}
+                        >
+                          {tx("ขอเอกสารเพิ่ม (MORE_INFO)")}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn-ghost-sm"
+                          onClick={() => {
+                            onReviewOrganization(
+                              org.id,
+                              'reject_org',
+                              bankVal.trim()
+                            );
+                            notifyAction(
+                              txf("ปฏิเสธคำขอขึ้นทะเบียนของ {0} (สถานะ REJECTED) เรียบร้อยแล้ว", org.nameTh)
+                            );
+                          }}
+                        >
+                          {tx("Reject (ปฏิเสธ)")}
                         </button>
 
                         {org.payoutReady && (
@@ -822,11 +990,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                             onClick={() => {
                               onReviewOrganization(org.id, 'hold_bank');
                               notifyAction(
-                                `พักความพร้อมบัญชีรับเงินของ ${org.nameTh} ชั่วคราวแล้ว`
+                                txf("พักความพร้อมบัญชีรับเงินของ {0} ชั่วคราวแล้ว", org.nameTh)
                               );
                             }}
                           >
-                            พักบัญชีรับเงิน
+                            {tx("พักบัญชีรับเงิน")}
                           </button>
                         )}
 
@@ -837,11 +1005,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                             onClick={() => {
                               onReviewOrganization(org.id, 'suspend_org');
                               notifyAction(
-                                `ระงับองค์กร ${org.nameTh} ชั่วคราวแล้ว (คงประวัติธุรกรรมและใบสมัครเดิมครบถ้วน)`
+                                txf("ระงับองค์กร {0} ชั่วคราวแล้ว (สถานะ SUSPENDED)", org.nameTh)
                               );
                             }}
                           >
-                            ระงับองค์กรชั่วคราว
+                            {tx("ระงับองค์กร (SUSPENDED)")}
                           </button>
                         ) : (
                           <button
@@ -853,14 +1021,28 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                 'reinstate_org',
                                 bankVal.trim()
                               );
-                              notifyAction(`ปลดระงับองค์กร ${org.nameTh} แล้ว`);
+                              notifyAction(txf("ปลดระงับองค์กร {0} แล้ว", org.nameTh));
                             }}
                           >
-                            ปลดระงับองค์กร
+                            {tx("ปลดระงับองค์กร")}
                           </button>
                         )}
                       </div>
                     </div>
+
+                    {org.verificationHistory &&
+                      org.verificationHistory.length > 0 && (
+                        <div className="audit-list" style={{ marginTop: '0.65rem' }}>
+                          {org.verificationHistory.map((vh) => (
+                            <div key={vh.id} className="audit-row">
+                              <span className="mono-code">{tx(vh.timestamp)}</span>
+                              <span className="mono-code">[{tx(vh.status)}]</span>
+                              <strong>{tx(vh.actorName)}</strong>
+                              <span>{tx(vh.note)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                   </article>
                 );
               })}
@@ -872,17 +1054,16 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
         {activeSection === 'plat_events' && (
           <div className="canvas-stack">
             <div className="page-guide-header">
-              <h1>อนุมัติเผยแพร่งานวิ่งและกำกับดูแลทุกอีเวนต์บนแพลตฟอร์ม</h1>
+              <h1>{tx("อนุมัติเผยแพร่งานวิ่งและกำกับดูแลทุกอีเวนต์บนแพลตฟอร์ม")}</h1>
               <p className="page-purpose-desc">
-                ตรวจสอบความพร้อมก่อนอนุมัติขึ้นหน้ารวมงานวิ่งสาธารณะ ตีกลับงานที่ข้อมูลไม่ครบ
-                ระงับ/ปลดระงับงานชั่วคราว หรือปิดงานพร้อมประกาศลิงก์ผลการแข่งขันและอัลบั้มภาพหลังงาน
+                {tx("ตรวจสอบความพร้อมก่อนอนุมัติขึ้นหน้ารวมงานวิ่งสาธารณะ ตีกลับงานที่ข้อมูลไม่ครบ ระงับ/ปลดระงับงานชั่วคราว หรือปิดงานพร้อมประกาศลิงก์ผลการแข่งขันและอัลบั้มภาพหลังงาน")}
               </p>
             </div>
 
             <div className="filter-bar-panel">
               <div className="filter-field filter-search">
                 <label htmlFor="plat-ev-q">
-                  ค้นหาชื่องาน รหัสงาน จังหวัด หรือชื่อองค์กรผู้จัด
+                  {tx("ค้นหาชื่องาน รหัสงาน จังหวัด หรือชื่อองค์กรผู้จัด")}
                 </label>
                 <div className="input-with-icon">
                   <IconSearch size={16} />
@@ -891,13 +1072,13 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                     type="search"
                     value={eventQuery}
                     onChange={(e) => setEventQuery(e.target.value)}
-                    placeholder="เช่น ดอยสุเทพ, ภูเก็ต, EVT-PKT..."
+                    placeholder={tx("เช่น ดอยสุเทพ, ภูเก็ต, EVT-PKT...")}
                   />
                 </div>
               </div>
 
               <div className="filter-field">
-                <label htmlFor="plat-ev-st">กรองตามสถานะงาน</label>
+                <label htmlFor="plat-ev-st">{tx("กรองตามสถานะงาน")}</label>
                 <select
                   id="plat-ev-st"
                   value={eventStatusFilter}
@@ -905,16 +1086,16 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                     setEventStatusFilter(e.target.value as 'all' | EventStatus)
                   }
                 >
-                  <option value="all">ทุกสถานะ ({events.length})</option>
+                  <option value="all">{tx("ทุกสถานะ (")}{tx(events.length)})</option>
                   <option value="in_review">
-                    รอตรวจอนุมัติเผยแพร่ ({inReviewEvents.length})
+                    {tx("รอตรวจอนุมัติเผยแพร่ (")}{tx(inReviewEvents.length)})
                   </option>
-                  <option value="published">เปิดรับสมัคร (Published)</option>
-                  <option value="suspended">ระงับชั่วคราว (Suspended)</option>
-                  <option value="draft">แบบร่าง (Draft)</option>
-                  <option value="closed">ปิดรับสมัคร (Closed)</option>
-                  <option value="completed">จบงานแล้ว (Completed)</option>
-                  <option value="cancelled">ยกเลิกงาน (Cancelled)</option>
+                  <option value="published">{tx("เปิดรับสมัคร (Published)")}</option>
+                  <option value="suspended">{tx("ระงับชั่วคราว (Suspended)")}</option>
+                  <option value="draft">{tx("แบบร่าง (Draft)")}</option>
+                  <option value="closed">{tx("ปิดรับสมัคร (Closed)")}</option>
+                  <option value="completed">{tx("จบงานแล้ว (Completed)")}</option>
+                  <option value="cancelled">{tx("ยกเลิกงาน (Cancelled)")}</option>
                 </select>
               </div>
             </div>
@@ -947,8 +1128,8 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                   <article key={ev.id} className="clean-panel">
                     <div className="section-title-bar">
                       <div className="cta-inline-row">
-                        <span className="mono-code">{ev.code}</span>
-                        <h2>{ev.titleTh}</h2>
+                        <span className="mono-code">{tx(ev.code)}</span>
+                        <h2>{tx(ev.titleTh)}</h2>
                         <EventStatusBadge status={ev.status} />
                       </div>
 
@@ -963,7 +1144,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                             )
                           }
                         >
-                          เข้าตั้งค่างานนี้ในมุมมองผู้จัด
+                          {tx("เข้าตั้งค่างานนี้ในมุมมองผู้จัด")}
                         </button>
                         {ev.status !== 'draft' &&
                           ev.status !== 'in_review' && (
@@ -972,26 +1153,25 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                               className="btn-secondary"
                               onClick={() => onOpenPublicEvent(ev.id)}
                             >
-                              ดูหน้าลูกค้าสาธารณะ
+                              {tx("ดูหน้าลูกค้าสาธารณะ")}
                             </button>
                           )}
                       </div>
                     </div>
 
                     <p className="muted-block">
-                      องค์กรผู้จัด: <strong>{org?.nameTh ?? ev.organizationId}</strong>{' '}
-                      · วันแข่ง: <span className="mono-num">{ev.eventDate}</span>{' '}
-                      · จ.{ev.province} · นโยบายค่าบริการ:{' '}
-                      <strong>{feePolicyLabel(ev.feeBearerPolicy)}</strong> ·
-                      ผู้สมัครยืนยันแล้ว:{' '}
+                      {tx("องค์กรผู้จัด: ")} <strong>{org?.nameTh ?? ev.organizationId}</strong>{' '}
+                      {tx("· วันแข่ง: ")} <span className="mono-num">{tx(ev.eventDate)}</span>{' '}
+                      {tx("· จ.")}{tx(ev.province)} {tx(" · นโยบายค่าบริการ:")}{' '}
+                      <strong>{feePolicyLabel(ev.feeBearerPolicy)}</strong> {tx(" · ผู้สมัครยืนยันแล้ว:")}{' '}
                       <strong className="mono-num">
-                        {confirmedCount} / {ev.totalEventQuota}
+                        {tx(confirmedCount)} / {tx(ev.totalEventQuota)}
                       </strong>{' '}
-                      คน · คำถามเพิ่มเติม:{' '}
+                      {tx("คน · คำถามเพิ่มเติม:")}{' '}
                       <strong className="mono-num">
-                        {(ev.customFields ?? []).length}
+                        {tx((ev.customFields ?? []).length)}
                       </strong>{' '}
-                      ข้อ
+                      {tx("ข้อ")}
                     </p>
 
                     {!orgReadyForPublish && (
@@ -999,15 +1179,14 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                         <IconAlert size={16} />
                         <div className="callout-flex">
                           <span>
-                            องค์กรผู้จัด ({org?.nameTh}) ยังไม่ผ่านการอนุมัติบัญชีรับเงินหรือถูกระงับอยู่
-                            ต้องอนุมัติองค์กรก่อนเปิดรับสมัครจริง
+                            {tx("องค์กรผู้จัด (")}{tx(org?.nameTh)}{tx(") ยังไม่ผ่านการอนุมัติบัญชีรับเงินหรือถูกระงับอยู่ ต้องอนุมัติองค์กรก่อนเปิดรับสมัครจริง")}
                           </span>
                           <button
                             type="button"
                             className="btn-secondary"
                             onClick={() => onSelectSection('plat_orgs')}
                           >
-                            ไปหน้าอนุมัติองค์กร
+                            {tx("ไปหน้าอนุมัติองค์กร")}
                           </button>
                         </div>
                       </div>
@@ -1016,7 +1195,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                     <div className="form-grid-3" style={{ marginTop: '0.7rem' }}>
                       <div className="form-row">
                         <label htmlFor={`ev-adm-note-${ev.id}`}>
-                          หมายเหตุผู้ดูแลแพลตฟอร์ม (แสดงให้ผู้จัด/ลูกค้าทราบเมื่อตีกลับหรือระงับ)
+                          {tx("หมายเหตุผู้ดูแลแพลตฟอร์ม (แสดงให้ผู้จัด/ลูกค้าทราบเมื่อตีกลับหรือระงับ)")}
                         </label>
                         <input
                           id={`ev-adm-note-${ev.id}`}
@@ -1028,13 +1207,13 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                               [ev.id]: e.target.value,
                             }))
                           }
-                          placeholder="ระบุผลการตรวจเอกสาร หรือเหตุผลการระงับ/ตีกลับ..."
+                          placeholder={tx("ระบุผลการตรวจเอกสาร หรือเหตุผลการระงับ/ตีกลับ...")}
                         />
                       </div>
 
                       <div className="form-row">
                         <label htmlFor={`ev-res-url-${ev.id}`}>
-                          ลิงก์ผลการแข่งขันทางการ (เมื่อปิดงาน Completed)
+                          {tx("ลิงก์ผลการแข่งขันทางการ (เมื่อปิดงาน Completed)")}
                         </label>
                         <input
                           id={`ev-res-url-${ev.id}`}
@@ -1051,7 +1230,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
 
                       <div className="form-row">
                         <label htmlFor={`ev-alb-title-${ev.id}`}>
-                          ชื่ออัลบั้มภาพหลังงานที่ตรวจสอบแล้ว
+                          {tx("ชื่ออัลบั้มภาพหลังงานที่ตรวจสอบแล้ว")}
                         </label>
                         <input
                           id={`ev-alb-title-${ev.id}`}
@@ -1081,15 +1260,15 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                 'ผ่านการอนุมัติจากผู้ดูแลแพลตฟอร์มและเปิดรับสมัครแล้ว'
                             );
                             notifyAction(
-                              `อนุมัติเผยแพร่งาน "${ev.titleTh}" ขึ้นหน้ารวมงานวิ่งสาธารณะเรียบร้อยแล้ว`
+                              txf("อนุมัติเผยแพร่งาน \"{0}\" ขึ้นหน้ารวมงานวิ่งสาธารณะเรียบร้อยแล้ว", ev.titleTh)
                             );
                           }}
                         >
                           <IconCheckCircle size={15} />
                           <span>
                             {ev.status === 'suspended'
-                              ? 'ปลดระงับ & เปิดรับสมัครต่อ'
-                              : 'อนุมัติเผยแพร่เปิดรับสมัคร'}
+                              ? tx("ปลดระงับ & เปิดรับสมัครต่อ")
+                              : tx("อนุมัติเผยแพร่เปิดรับสมัคร")}
                           </span>
                         </button>
                       )}
@@ -1107,11 +1286,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                 'ผู้ดูแลแพลตฟอร์มส่งกลับให้ผู้จัดตรวจสอบรายละเอียดเพิ่มเติมก่อนเปิดขาย'
                             );
                             notifyAction(
-                              `ตีกลับงาน "${ev.titleTh}" เป็นแบบร่างพร้อมแจ้งหมายเหตุให้ผู้จัดแล้ว`
+                              txf("ตีกลับงาน \"{0}\" เป็นแบบร่างพร้อมแจ้งหมายเหตุให้ผู้จัดแล้ว", ev.titleTh)
                             );
                           }}
                         >
-                          ตีกลับให้ผู้จัดแก้ไข (Draft)
+                          {tx("ตีกลับให้ผู้จัดแก้ไข (Draft)")}
                         </button>
                       )}
 
@@ -1129,12 +1308,12 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                   'ระงับการรับสมัครชั่วคราวโดยผู้ดูแลแพลตฟอร์ม (ข้อมูลผู้สมัครและหลักฐานการชำระเงินเดิมยังอยู่ครบถ้วน)'
                               );
                               notifyAction(
-                                `ระงับการรับสมัครงาน "${ev.titleTh}" ชั่วคราวแล้ว`
+                                txf("ระงับการรับสมัครงาน \"{0}\" ชั่วคราวแล้ว", ev.titleTh)
                               );
                             }}
                           >
                             <IconAlert size={14} />
-                            <span>ระงับงานชั่วคราว</span>
+                            <span>{tx("ระงับงานชั่วคราว")}</span>
                           </button>
                         )}
 
@@ -1148,10 +1327,10 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                               'closed',
                               noteVal.trim() || 'ปิดรับสมัครตามกำหนดเวลา'
                             );
-                            notifyAction(`ปิดรับสมัครงาน "${ev.titleTh}" แล้ว`);
+                            notifyAction(txf("ปิดรับสมัครงาน \"{0}\" แล้ว", ev.titleTh));
                           }}
                         >
-                          ปิดรับสมัคร (Closed)
+                          {tx("ปิดรับสมัคร (Closed)")}
                         </button>
                       )}
 
@@ -1166,12 +1345,12 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                               albumUrl: `#verified-album-${ev.code.toLowerCase()}`,
                             });
                             notifyAction(
-                              `ปิดงาน "${ev.titleTh}" เป็นจบการแข่งขัน พร้อมเผยแพร่ลิงก์ผลแข่งและอัลบั้มภาพแล้ว`
+                              txf("ปิดงาน \"{0}\" เป็นจบการแข่งขัน พร้อมเผยแพร่ลิงก์ผลแข่งและอัลบั้มภาพแล้ว", ev.titleTh)
                             );
                           }}
                         >
                           <IconCamera size={14} />
-                          <span>จบงาน & ประกาศลิงก์ผล/อัลบั้มภาพ</span>
+                          <span>{tx("จบงาน & ประกาศลิงก์ผล/อัลบั้มภาพ")}</span>
                         </button>
                       )}
 
@@ -1186,10 +1365,10 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                               noteVal.trim() ||
                                 'ยกเลิกการจัดงานตามมติผู้ดูแลแพลตฟอร์มและเข้าสู่ขั้นตอนคืนเงินตามนโยบาย'
                             );
-                            notifyAction(`เปลี่ยนสถานะงาน "${ev.titleTh}" เป็นยกเลิกงานแล้ว`);
+                            notifyAction(txf("เปลี่ยนสถานะงาน \"{0}\" เป็นยกเลิกงานแล้ว", ev.titleTh));
                           }}
                         >
-                          ยกเลิกงาน (Cancelled)
+                          {tx("ยกเลิกงาน (Cancelled)")}
                         </button>
                       )}
                     </div>
@@ -1204,18 +1383,17 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
         {activeSection === 'plat_merch_rfq' && (
           <div className="canvas-stack">
             <div className="page-guide-header">
-              <h1>บริหารคำขอใบเสนอราคาผลิตเสื้อ/เหรียญ และกำกับร้านค้าทั้งแพลตฟอร์ม</h1>
+              <h1>{tx("บริหารคำขอใบเสนอราคาผลิตเสื้อ/เหรียญ และกำกับร้านค้าทั้งแพลตฟอร์ม")}</h1>
               <p className="page-purpose-desc">
-                ทีมหลังบ้าน RunEvent ใช้ประเมินราคา ส่งใบเสนอราคาให้ผู้จัดงานหรือชมรมทั่วไป
-                และอัปเดตสถานะการผลิตของโรงงานแยกจากสถานะใบเสนอราคาอย่างชัดเจน
+                {tx("ทีมหลังบ้าน RunEvent ใช้ประเมินราคา ส่งใบเสนอราคาให้ผู้จัดงานหรือชมรมทั่วไป และอัปเดตสถานะการผลิตของโรงงานแยกจากสถานะใบเสนอราคาอย่างชัดเจน")}
               </p>
             </div>
 
             <section className="clean-panel">
               <h2>
-                คำขอราคาและงานสั่งผลิตเสื้อ/เหรียญทั้งหมด (
-                <span className="mono-num">{productionInquiries.length}</span>{' '}
-                รายการ)
+                {tx("คำขอราคาและงานสั่งผลิตเสื้อ/เหรียญทั้งหมด (")}
+                <span className="mono-num">{tx(productionInquiries.length)}</span>{' '}
+                {tx("รายการ)")}
               </h2>
 
               <div className="checkin-mobile-list" style={{ marginTop: '0.75rem' }}>
@@ -1234,52 +1412,52 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                       <div style={{ width: '100%' }}>
                         <div className="section-title-bar">
                           <div className="cta-inline-row">
-                            <span className="mono-code">{rfq.inquiryCode}</span>
-                            <strong>{rfq.itemType}</strong>
+                            <span className="mono-code">{tx(rfq.inquiryCode)}</span>
+                            <strong>{tx(rfq.itemType)}</strong>
                             <span className="status-pill badge-navy">
                               <IconClock size={13} />
                               <span>
-                                ใบเสนอราคา:{' '}
+                                {tx("ใบเสนอราคา:")}{' '}
                                 {rfq.quoteStatus === 'accepted'
-                                  ? 'ลูกค้าอนุมัติราคาแล้ว'
+                                  ? tx("ลูกค้าอนุมัติราคาแล้ว")
                                   : rfq.quoteStatus === 'quoted_demo'
-                                  ? 'ส่งใบเสนอราคาแล้ว'
+                                  ? tx("ส่งใบเสนอราคาแล้ว")
                                   : rfq.quoteStatus === 'submitted'
-                                  ? 'รอทีมแพลตฟอร์มเสนอราคา'
-                                  : 'ร่างคำขอ'}
+                                  ? tx("รอทีมแพลตฟอร์มเสนอราคา")
+                                  : tx("ร่างคำขอ")}
                               </span>
                             </span>
                             <span className="status-pill badge-amber">
                               <IconShirt size={13} />
                               <span>
-                                การผลิต:{' '}
+                                {tx("การผลิต:")}{' '}
                                 {rfq.productionStatus === 'qc_passed'
-                                  ? 'ตรวจ QC ผ่านพร้อมส่ง'
+                                  ? tx("ตรวจ QC ผ่านพร้อมส่ง")
                                   : rfq.productionStatus === 'in_production'
-                                  ? 'กำลังเดินสายการผลิต'
+                                  ? tx("กำลังเดินสายการผลิต")
                                   : rfq.productionStatus === 'ready_to_produce'
-                                  ? 'ยืนยันแบบแล้ว · พร้อมผลิต'
-                                  : 'รออนุมัติแบบและเงื่อนไข'}
+                                  ? tx("ยืนยันแบบแล้ว · พร้อมผลิต")
+                                  : tx("รออนุมัติแบบและเงื่อนไข")}
                               </span>
                             </span>
                           </div>
                           <span className="mono-num">
-                            ยอดผลิตสุทธิ: <strong>{rfq.netQtyToProduce}</strong>{' '}
-                            ชิ้น · กำหนดส่ง {rfq.targetDeliveryDate}
+                            {tx("ยอดผลิตสุทธิ: ")} <strong>{tx(rfq.netQtyToProduce)}</strong>{' '}
+                            {tx("ชิ้น · กำหนดส่ง ")} {tx(rfq.targetDeliveryDate)}
                           </span>
                         </div>
 
                         <p className="muted-inline" style={{ marginTop: '0.3rem' }}>
-                          ผู้ขอราคา: <strong>{rfq.requesterName}</strong> (
+                          {tx("ผู้ขอราคา: ")} <strong>{tx(rfq.requesterName)}</strong> (
                           {rfq.contextType === 'event_organizer'
-                            ? 'ผู้จัดงานวิ่งบนแพลตฟอร์ม'
-                            : 'ชมรม / บริษัททั่วไปไม่มีอีเวนต์'}
-                          ) · ติดต่อ: {rfq.requesterContact} · แบบ:{' '}
-                          {rfq.artworkVersion}
+                            ? tx("ผู้จัดงานวิ่งบนแพลตฟอร์ม")
+                            : tx("ชมรม / บริษัททั่วไปไม่มีอีเวนต์")}
+                          {tx(") · ติดต่อ: ")} {tx(rfq.requesterContact)} {tx(" · แบบ:")}{' '}
+                          {tx(rfq.artworkVersion)}
                           {rfq.quotedTotalSatang !== undefined && (
                             <>
                               {' '}
-                              · ยอดเสนอราคาล่าสุด:{' '}
+                              {tx("· ยอดเสนอราคาล่าสุด:")}{' '}
                               <strong className="mono-num text-vermilion">
                                 {formatThb(rfq.quotedTotalSatang, true)}
                               </strong>
@@ -1290,7 +1468,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                         <div className="form-grid-2" style={{ marginTop: '0.6rem' }}>
                           <div className="form-row">
                             <label htmlFor={`rfq-thb-${rfq.id}`}>
-                              ยอดใบเสนอราคารวม (บาท THB)
+                              {tx("ยอดใบเสนอราคารวม (บาท THB)")}
                             </label>
                             <input
                               id={`rfq-thb-${rfq.id}`}
@@ -1307,7 +1485,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                           </div>
                           <div className="form-row">
                             <label htmlFor={`rfq-note-${rfq.id}`}>
-                              เงื่อนไขการผลิต / หมายเหตุใบเสนอราคา
+                              {tx("เงื่อนไขการผลิต / หมายเหตุใบเสนอราคา")}
                             </label>
                             <input
                               id={`rfq-note-${rfq.id}`}
@@ -1336,14 +1514,14 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                 adminNote: noteInput.trim(),
                               });
                               notifyAction(
-                                `ส่งใบเสนอราคา ${rfq.inquiryCode} ยอด ${formatThb(
+                                txf("ส่งใบเสนอราคา {0} ยอด {1} เรียบร้อยแล้ว", rfq.inquiryCode, formatThb(
                                   satang,
                                   true
-                                )} เรียบร้อยแล้ว`
+                                ))
                               );
                             }}
                           >
-                            ส่ง/อัปเดตใบเสนอราคา
+                            {tx("ส่ง/อัปเดตใบเสนอราคา")}
                           </button>
 
                           <button
@@ -1359,11 +1537,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                 adminNote: noteInput.trim(),
                               });
                               notifyAction(
-                                `บันทึกการอนุมัติแบบและราคาของ ${rfq.inquiryCode} -> พร้อมเริ่มผลิต`
+                                txf("บันทึกการอนุมัติแบบและราคาของ {0} -> พร้อมเริ่มผลิต", rfq.inquiryCode)
                               );
                             }}
                           >
-                            ยืนยันอนุมัติแบบ & พร้อมเริ่มผลิต
+                            {tx("ยืนยันอนุมัติแบบ & พร้อมเริ่มผลิต")}
                           </button>
 
                           <button
@@ -1374,11 +1552,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                 productionStatus: 'in_production',
                               });
                               notifyAction(
-                                `อัปเดตสถานะ ${rfq.inquiryCode} เป็น "กำลังเดินสายการผลิต"`
+                                txf("อัปเดตสถานะ {0} เป็น \"กำลังเดินสายการผลิต\"", rfq.inquiryCode)
                               );
                             }}
                           >
-                            เริ่มผลิตในโรงงาน
+                            {tx("เริ่มผลิตในโรงงาน")}
                           </button>
 
                           <button
@@ -1389,11 +1567,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                 productionStatus: 'qc_passed',
                               });
                               notifyAction(
-                                `อัปเดตสถานะ ${rfq.inquiryCode} เป็น "ตรวจ QC ผ่านพร้อมส่งมอบ"`
+                                txf("อัปเดตสถานะ {0} เป็น \"ตรวจ QC ผ่านพร้อมส่งมอบ\"", rfq.inquiryCode)
                               );
                             }}
                           >
-                            ตรวจ QC ผ่านพร้อมส่ง
+                            {tx("ตรวจ QC ผ่านพร้อมส่ง")}
                           </button>
                         </div>
                       </div>
@@ -1405,22 +1583,22 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
 
             <section className="clean-panel">
               <h2>
-                รายการสินค้าในหน้าร้านเฉพาะงานทั้งแพลตฟอร์ม (
+                {tx("รายการสินค้าในหน้าร้านเฉพาะงานทั้งแพลตฟอร์ม (")}
                 <span className="mono-num">
                   {events.reduce((s, e) => s + e.products.length, 0)}
                 </span>{' '}
-                SKU · คำสั่งซื้อรวม{' '}
-                <span className="mono-num">{merchOrders.length}</span> รายการ)
+                {tx("SKU · คำสั่งซื้อรวม")}{' '}
+                <span className="mono-num">{tx(merchOrders.length)}</span> {tx(" รายการ)")}
               </h2>
               <div className="table-scroll">
                 <table className="ops-table">
                   <thead>
                     <tr>
-                      <th>SKU / สินค้า</th>
-                      <th>งานวิ่ง</th>
-                      <th>รูปแบบบริการ / ผู้ขาย</th>
-                      <th className="num-col">ราคา</th>
-                      <th className="num-col">ขายแล้ว / เพดาน</th>
+                      <th>{tx("SKU / สินค้า")}</th>
+                      <th>{tx("งานวิ่ง")}</th>
+                      <th>{tx("รูปแบบบริการ / ผู้ขาย")}</th>
+                      <th className="num-col">{tx("ราคา")}</th>
+                      <th className="num-col">{tx("ขายแล้ว / เพดาน")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1428,17 +1606,17 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                       ev.products.map((prd) => (
                         <tr key={prd.id}>
                           <td>
-                            <span className="mono-code">{prd.sku}</span>{' '}
-                            <strong>{prd.nameTh}</strong>
+                            <span className="mono-code">{tx(prd.sku)}</span>{' '}
+                            <strong>{tx(prd.nameTh)}</strong>
                           </td>
-                          <td>{ev.titleTh}</td>
-                          <td>{prd.sellerLabel}</td>
+                          <td>{tx(ev.titleTh)}</td>
+                          <td>{tx(prd.sellerLabel)}</td>
                           <td className="num-col mono-num">
                             {formatThb(prd.priceSatang, true)}
                           </td>
                           <td className="num-col mono-num">
-                            <strong>{prd.soldCount}</strong> /{' '}
-                            {prd.stockOrCeiling}
+                            <strong>{tx(prd.soldCount)}</strong> /{' '}
+                            {tx(prd.stockOrCeiling)}
                           </td>
                         </tr>
                       ))
@@ -1454,29 +1632,28 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
         {activeSection === 'plat_finance' && (
           <div className="canvas-stack">
             <div className="page-guide-header">
-              <h1>ควบคุมรอบโอนยอดนำส่งผู้จัด (Payouts) และพิจารณาข้อยกเว้นการคืนเงิน</h1>
+              <h1>{tx("ควบคุมรอบโอนยอดนำส่งผู้จัด (Payouts) และพิจารณาข้อยกเว้นการคืนเงิน")}</h1>
               <p className="page-purpose-desc">
-                อนุมัติโอนรายได้สุทธิให้ผู้จัด พักยอดกรณีงานมีข้อร้องเรียน
-                และพิจารณาคำขอคืนเงินหรือสั่งคืนเงินกรณีพิเศษพร้อมบันทึกเหตุผลตรวจสอบย้อนหลัง
+                {tx("อนุมัติโอนรายได้สุทธิให้ผู้จัด พักยอดกรณีงานมีข้อร้องเรียน และพิจารณาคำขอคืนเงินหรือสั่งคืนเงินกรณีพิเศษพร้อมบันทึกเหตุผลตรวจสอบย้อนหลัง")}
               </p>
             </div>
 
             <section className="clean-panel">
               <h2>
-                ตารางรอบโอนยอดนำส่งให้ผู้จัดงาน (Payout Batches ·{' '}
-                <span className="mono-num">{payouts.length}</span> งวด)
+                {tx("ตารางรอบโอนยอดนำส่งให้ผู้จัดงาน (Payout Batches ·")}{' '}
+                <span className="mono-num">{tx(payouts.length)}</span> {tx(" งวด)")}
               </h2>
 
               <div className="table-scroll" style={{ marginBottom: '1rem' }}>
                 <table className="ops-table">
                   <thead>
                     <tr>
-                      <th>รหัสรอบโอน</th>
-                      <th>องค์กร / งวดงาน</th>
-                      <th>กำหนดโอน</th>
-                      <th className="num-col">ยอดนำส่งสุทธิ</th>
-                      <th>สถานะปัจจุบัน</th>
-                      <th>การจัดการโดย Platform Owner</th>
+                      <th>{tx("รหัสรอบโอน")}</th>
+                      <th>{tx("องค์กร / งวดงาน")}</th>
+                      <th>{tx("กำหนดโอน")}</th>
+                      <th className="num-col">{tx("ยอดนำส่งสุทธิ")}</th>
+                      <th>{tx("สถานะปัจจุบัน")}</th>
+                      <th>{tx("การจัดการโดย Platform Owner")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1486,12 +1663,12 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                       );
                       return (
                         <tr key={po.id}>
-                          <td className="mono-code">{po.payoutCode}</td>
+                          <td className="mono-code">{tx(po.payoutCode)}</td>
                           <td>
                             <strong>{org?.nameTh ?? po.organizationId}</strong>
-                            <div className="muted-inline">{po.periodLabel}</div>
+                            <div className="muted-inline">{tx(po.periodLabel)}</div>
                           </td>
-                          <td className="mono-num">{po.scheduledDate}</td>
+                          <td className="mono-num">{tx(po.scheduledDate)}</td>
                           <td className="num-col mono-num">
                             <strong>
                               {formatThb(po.netPayoutSatang, true)}
@@ -1510,11 +1687,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                   onClick={() => {
                                     onUpdatePayoutBatchStatus(po.id, 'paid');
                                     notifyAction(
-                                      `ยืนยันการโอนเงินงวด ${po.payoutCode} ให้ผู้จัดเรียบร้อยแล้ว`
+                                      txf("ยืนยันการโอนเงินงวด {0} ให้ผู้จัดเรียบร้อยแล้ว", po.payoutCode)
                                     );
                                   }}
                                 >
-                                  ยืนยันโอนแล้ว (Paid)
+                                  {tx("ยืนยันโอนแล้ว (Paid)")}
                                 </button>
                               )}
                               {po.status === 'scheduled' && (
@@ -1527,11 +1704,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                       'processing'
                                     );
                                     notifyAction(
-                                      `เปลี่ยนสถานะงวด ${po.payoutCode} เป็นกำลังโอน`
+                                      txf("เปลี่ยนสถานะงวด {0} เป็นกำลังโอน", po.payoutCode)
                                     );
                                   }}
                                 >
-                                  เริ่มโอน
+                                  {tx("เริ่มโอน")}
                                 </button>
                               )}
                               {po.status !== 'held' && po.status !== 'paid' && (
@@ -1541,11 +1718,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                   onClick={() => {
                                     onUpdatePayoutBatchStatus(po.id, 'held');
                                     notifyAction(
-                                      `สั่งพักยอดโอน ${po.payoutCode} เพื่อตรวจสอบแล้ว`
+                                      txf("สั่งพักยอดโอน {0} เพื่อตรวจสอบแล้ว", po.payoutCode)
                                     );
                                   }}
                                 >
-                                  พักยอด (Hold)
+                                  {tx("พักยอด (Hold)")}
                                 </button>
                               )}
                               {po.status === 'held' && (
@@ -1558,11 +1735,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                       'scheduled'
                                     );
                                     notifyAction(
-                                      `ปลดพักยอดโอน ${po.payoutCode} กลับสู่คิวกำหนดโอนแล้ว`
+                                      txf("ปลดพักยอดโอน {0} กลับสู่คิวกำหนดโอนแล้ว", po.payoutCode)
                                     );
                                   }}
                                 >
-                                  ปลดพักยอด
+                                  {tx("ปลดพักยอด")}
                                 </button>
                               )}
                             </div>
@@ -1575,10 +1752,10 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
               </div>
 
               <div className="custom-field-creator">
-                <h3>สร้างรอบโอนยอดนำส่งใหม่ (Create Payout Batch)</h3>
+                <h3>{tx("สร้างรอบโอนยอดนำส่งใหม่ (Create Payout Batch)")}</h3>
                 <div className="form-grid-3">
                   <div className="form-row">
-                    <label htmlFor="po-org">เลือกองค์กรผู้จัด</label>
+                    <label htmlFor="po-org">{tx("เลือกองค์กรผู้จัด")}</label>
                     <select
                       id="po-org"
                       value={newPoOrgId}
@@ -1593,14 +1770,14 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                     >
                       {organizations.map((o) => (
                         <option key={o.id} value={o.id}>
-                          {o.nameTh}
+                          {tx(o.nameTh)}
                         </option>
                       ))}
                     </select>
                   </div>
 
                   <div className="form-row">
-                    <label htmlFor="po-ev">เลือกงานวิ่งอ้างอิง</label>
+                    <label htmlFor="po-ev">{tx("เลือกงานวิ่งอ้างอิง")}</label>
                     <select
                       id="po-ev"
                       value={newPoEventId}
@@ -1610,14 +1787,14 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                         .filter((ev) => ev.organizationId === newPoOrgId)
                         .map((ev) => (
                           <option key={ev.id} value={ev.id}>
-                            {ev.titleTh}
+                            {tx(ev.titleTh)}
                           </option>
                         ))}
                     </select>
                   </div>
 
                   <div className="form-row">
-                    <label htmlFor="po-amt">ยอดโอนสุทธิ (บาท THB)</label>
+                    <label htmlFor="po-amt">{tx("ยอดโอนสุทธิ (บาท THB)")}</label>
                     <input
                       id="po-amt"
                       type="number"
@@ -1630,17 +1807,17 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
 
                 <div className="form-grid-2" style={{ marginTop: '0.6rem' }}>
                   <div className="form-row">
-                    <label htmlFor="po-lbl">ชื่อรอบนำส่งเงิน</label>
+                    <label htmlFor="po-lbl">{tx("ชื่อรอบนำส่งเงิน")}</label>
                     <input
                       id="po-lbl"
                       type="text"
                       value={newPoLabel}
                       onChange={(e) => setNewPoLabel(e.target.value)}
-                      placeholder="เช่น งวดปิดยอดขายรอบพิเศษ #2"
+                      placeholder={tx("เช่น งวดปิดยอดขายรอบพิเศษ #2")}
                     />
                   </div>
                   <div className="form-row">
-                    <label htmlFor="po-dt">วันที่กำหนดโอน (YYYY-MM-DD)</label>
+                    <label htmlFor="po-dt">{tx("วันที่กำหนดโอน (YYYY-MM-DD)")}</label>
                     <input
                       id="po-dt"
                       type="text"
@@ -1667,11 +1844,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                         netPayoutSatang: satang,
                       });
                       setNewPoLabel('');
-                      notifyAction('เพิ่มรอบโอนยอดนำส่งใหม่เข้าตารางเรียบร้อยแล้ว');
+                      notifyAction(tx("เพิ่มรอบโอนยอดนำส่งใหม่เข้าตารางเรียบร้อยแล้ว"));
                     }}
                   >
                     <IconPlus size={15} />
-                    <span>สร้างรอบโอนยอดนำส่ง</span>
+                    <span>{tx("สร้างรอบโอนยอดนำส่ง")}</span>
                   </button>
                 </div>
               </div>
@@ -1679,7 +1856,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
 
             <section className="clean-panel">
               <div className="section-title-bar">
-                <h2>พิจารณาคำขอคืนเงินและจัดการข้อร้องเรียนผู้สมัครข้ามทุกงาน</h2>
+                <h2>{tx("พิจารณาคำขอคืนเงินและจัดการข้อร้องเรียนผู้สมัครข้ามทุกงาน")}</h2>
                 <div className="pill-tabs-bar">
                   <button
                     type="button"
@@ -1688,7 +1865,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                     }`}
                     onClick={() => setRefundFilter('requested')}
                   >
-                    คำขอคืนเงินรออนุมัติ ({pendingRefundRegs.length})
+                    {tx("คำขอคืนเงินรออนุมัติ (")}{tx(pendingRefundRegs.length)})
                   </button>
                   <button
                     type="button"
@@ -1697,7 +1874,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                     }`}
                     onClick={() => setRefundFilter('paid_all')}
                   >
-                    รายการชำระสำเร็จทั้งหมด (สั่งคืนกรณีพิเศษได้)
+                    {tx("รายการชำระสำเร็จทั้งหมด (สั่งคืนกรณีพิเศษได้)")}
                   </button>
                   <button
                     type="button"
@@ -1706,14 +1883,14 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                     }`}
                     onClick={() => setRefundFilter('refunded')}
                   >
-                    ประวัติคืนเงิน/ปฏิเสธแล้ว
+                    {tx("ประวัติคืนเงิน/ปฏิเสธแล้ว")}
                   </button>
                 </div>
               </div>
 
               <div className="form-row" style={{ marginBottom: '0.8rem' }}>
                 <label htmlFor="adm-ref-reason">
-                  บันทึกเหตุผลการอนุมัติ / ปฏิเสธ / คืนเงินกรณีข้อร้องเรียน (บันทึกลง Audit Log)
+                  {tx("บันทึกเหตุผลการอนุมัติ / ปฏิเสธ / คืนเงินกรณีข้อร้องเรียน (บันทึกลง Audit Log)")}
                 </label>
                 <input
                   id="adm-ref-reason"
@@ -1727,18 +1904,18 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                 <table className="ops-table">
                   <thead>
                     <tr>
-                      <th>ใบสมัคร / คำสั่งซื้อ</th>
-                      <th>ผู้สมัคร / งานวิ่ง</th>
-                      <th className="num-col">ค่าสมัครฐาน (คืนได้ไม่เกินนี้)</th>
-                      <th>สถานะเงิน & คืนเงิน</th>
-                      <th>การดำเนินการของ Platform Owner</th>
+                      <th>{tx("ใบสมัคร / คำสั่งซื้อ")}</th>
+                      <th>{tx("ผู้สมัคร / งานวิ่ง")}</th>
+                      <th className="num-col">{tx("ค่าสมัครฐาน (คืนได้ไม่เกินนี้)")}</th>
+                      <th>{tx("สถานะเงิน & คืนเงิน")}</th>
+                      <th>{tx("การดำเนินการของ Platform Owner")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredRefundRegs.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="muted-inline">
-                          ไม่มีรายการในตัวกรองนี้
+                          {tx("ไม่มีรายการในตัวกรองนี้")}
                         </td>
                       </tr>
                     ) : (
@@ -1747,15 +1924,15 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                         return (
                           <tr key={reg.id}>
                             <td>
-                              <span className="mono-code">{reg.regCode}</span>
-                              <div className="muted-inline">{reg.orderCode}</div>
+                              <span className="mono-code">{tx(reg.regCode)}</span>
+                              <div className="muted-inline">{tx(reg.orderCode)}</div>
                             </td>
                             <td>
-                              <strong>{reg.participantNameTh}</strong>
-                              <div className="muted-inline">{ev?.titleTh}</div>
+                              <strong>{tx(reg.participantNameTh)}</strong>
+                              <div className="muted-inline">{tx(ev?.titleTh)}</div>
                               {reg.refundReason && (
                                 <div className="muted-inline">
-                                  เหตุผล: {reg.refundReason}
+                                  {tx("เหตุผล: ")} {tx(reg.refundReason)}
                                 </div>
                               )}
                             </td>
@@ -1780,11 +1957,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                         adminRefundNote.trim()
                                       );
                                       notifyAction(
-                                        `อนุมัติคืนเงินใบสมัคร ${reg.regCode} เรียบร้อยแล้ว`
+                                        txf("อนุมัติคืนเงินใบสมัคร {0} เรียบร้อยแล้ว", reg.regCode)
                                       );
                                     }}
                                   >
-                                    อนุมัติคืนเงิน
+                                    {tx("อนุมัติคืนเงิน")}
                                   </button>
                                   <button
                                     type="button"
@@ -1796,11 +1973,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                         adminRefundNote.trim()
                                       );
                                       notifyAction(
-                                        `ปฏิเสธคำขอคืนเงิน ${reg.regCode} แล้ว`
+                                        txf("ปฏิเสธคำขอคืนเงิน {0} แล้ว", reg.regCode)
                                       );
                                     }}
                                   >
-                                    ปฏิเสธคำขอ
+                                    {tx("ปฏิเสธคำขอ")}
                                   </button>
                                 </div>
                               )}
@@ -1817,11 +1994,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                           'คืนเงินกรณีข้อยกเว้นโดยผู้ดูแลแพลตฟอร์ม'
                                       );
                                       notifyAction(
-                                        `ดำเนินการคืนเงินกรณีข้อยกเว้นให้ ${reg.regCode} เรียบร้อยแล้ว`
+                                        txf("ดำเนินการคืนเงินกรณีข้อยกเว้นให้ {0} เรียบร้อยแล้ว", reg.regCode)
                                       );
                                     }}
                                   >
-                                    สั่งคืนเงินกรณีพิเศษ (Dispute)
+                                    {tx("สั่งคืนเงินกรณีพิเศษ (Dispute)")}
                                   </button>
                                 )}
                             </td>
@@ -1840,24 +2017,23 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
         {activeSection === 'plat_users_audit' && (
           <div className="canvas-stack">
             <div className="page-guide-header">
-              <h1>บริหารบัญชีผู้ใช้งาน สิทธิ์สมาชิกองค์กร และตรวจสอบ Audit Log ทั้งแพลตฟอร์ม</h1>
+              <h1>{tx("บริหารบัญชีผู้ใช้งาน สิทธิ์สมาชิกองค์กร และตรวจสอบ Audit Log ทั้งแพลตฟอร์ม")}</h1>
               <p className="page-purpose-desc">
-                ตรวจสอบบัญชีผู้ใช้ทั้งหมด ช่วยยืนยันอีเมลกรณีติดปัญหา กำหนดหรือเพิกถอนสิทธิ์ในองค์กรผู้จัด
-                และตรวจสอบประวัติการทำงานย้อนหลังของทุกบทบาท
+                {tx("ตรวจสอบบัญชีผู้ใช้ทั้งหมด ช่วยยืนยันอีเมลกรณีติดปัญหา กำหนดหรือเพิกถอนสิทธิ์ในองค์กรผู้จัด และตรวจสอบประวัติการทำงานย้อนหลังของทุกบทบาท")}
               </p>
             </div>
 
             <section className="clean-panel">
               <div className="section-title-bar">
-                <h2>บัญชีผู้ใช้งานทั้งหมดในระบบ ({users.length} บัญชี)</h2>
+                <h2>{tx("บัญชีผู้ใช้งานทั้งหมดในระบบ (")}{tx(users.length)} {tx(" บัญชี)")}</h2>
                 <div className="input-with-icon" style={{ minWidth: '260px' }}>
                   <IconSearch size={16} />
                   <input
                     type="search"
-                    aria-label="ค้นหาชื่อ รหัสผู้ใช้ หรืออีเมล"
+                    aria-label={tx("ค้นหาชื่อ รหัสผู้ใช้ หรืออีเมล")}
                     value={userSearch}
                     onChange={(e) => setUserSearch(e.target.value)}
-                    placeholder="ค้นหาชื่อ รหัส หรืออีเมล..."
+                    placeholder={tx("ค้นหาชื่อ รหัส หรืออีเมล...")}
                   />
                 </div>
               </div>
@@ -1873,8 +2049,8 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                       <div style={{ width: '100%' }}>
                         <div className="section-title-bar">
                           <div className="cta-inline-row">
-                            <span className="mono-code">{u.code}</span>
-                            <strong>{u.fullNameTh}</strong>
+                            <span className="mono-code">{tx(u.code)}</span>
+                            <strong>{tx(u.fullNameTh)}</strong>
                             {u.isPlatformAdmin && (
                               <span className="status-pill badge-navy">
                                 <IconShield size={13} />
@@ -1884,12 +2060,12 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                             {u.emailVerified ? (
                               <span className="status-pill badge-forest">
                                 <IconCheckCircle size={13} />
-                                <span>อีเมลยืนยันแล้ว</span>
+                                <span>{tx("อีเมลยืนยันแล้ว")}</span>
                               </span>
                             ) : (
                               <span className="status-pill badge-amber">
                                 <IconAlert size={13} />
-                                <span>ยังไม่ยืนยันอีเมล</span>
+                                <span>{tx("ยังไม่ยืนยันอีเมล")}</span>
                               </span>
                             )}
                           </div>
@@ -1904,11 +2080,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                     kind: 'verify_email',
                                   });
                                   notifyAction(
-                                    `ยืนยันสถานะอีเมลให้บัญชี ${u.fullNameTh} แล้ว`
+                                    txf("ยืนยันสถานะอีเมลให้บัญชี {0} แล้ว", u.fullNameTh)
                                   );
                                 }}
                               >
-                                ยืนยันอีเมลให้ผู้ใช้นี้
+                                {tx("ยืนยันอีเมลให้ผู้ใช้นี้")}
                               </button>
                             )}
 
@@ -1921,20 +2097,20 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                     kind: 'toggle_platform_admin',
                                   });
                                   notifyAction(
-                                    `อัปเดตสิทธิ์ผู้ดูแลแพลตฟอร์มของ ${u.fullNameTh} แล้ว`
+                                    txf("อัปเดตสิทธิ์ผู้ดูแลแพลตฟอร์มของ {0} แล้ว", u.fullNameTh)
                                   );
                                 }}
                               >
                                 {u.isPlatformAdmin
-                                  ? 'ถอนสิทธิ์ Platform Admin'
-                                  : 'แต่งตั้งเป็น Platform Admin'}
+                                  ? tx("ถอนสิทธิ์ Platform Admin")
+                                  : tx("แต่งตั้งเป็น Platform Admin")}
                               </button>
                             )}
                           </div>
                         </div>
 
                         <p className="muted-inline" style={{ marginTop: '0.25rem' }}>
-                          อีเมล: {u.contactEmail ?? 'ไม่มี (เข้าผ่าน LINE)'} · วิธีเข้าสู่ระบบ:{' '}
+                          {tx("อีเมล: ")} {u.contactEmail ?? tx("ไม่มี (เข้าผ่าน LINE)")} {tx(" · วิธีเข้าสู่ระบบ:")}{' '}
                           {u.identities.map((i) => i.provider).join(', ')}
                         </p>
 
@@ -1952,7 +2128,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                   <IconBuilding size={13} />
                                   <span>
                                     {org?.nameTh ?? m.organizationId}:{' '}
-                                    {orgRoleTh[m.role]}
+                                    {tx(orgRoleTh[m.role])}
                                   </span>
                                   <button
                                     type="button"
@@ -1964,11 +2140,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                         organizationId: m.organizationId,
                                       });
                                       notifyAction(
-                                        `ถอนสิทธิ์องค์กรออกจาก ${u.fullNameTh} แล้ว`
+                                        txf("ถอนสิทธิ์องค์กรออกจาก {0} แล้ว", u.fullNameTh)
                                       );
                                     }}
                                   >
-                                    ถอนสิทธิ์
+                                    {tx("ถอนสิทธิ์")}
                                   </button>
                                 </span>
                               );
@@ -1978,7 +2154,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
 
                         <div className="cta-inline-row" style={{ marginTop: '0.6rem' }}>
                           <select
-                            aria-label={`เลือกองค์กรให้ ${u.fullNameTh}`}
+                            aria-label={txf("เลือกองค์กรให้ {0}", u.fullNameTh)}
                             value={selectedGrantOrg}
                             onChange={(e) =>
                               setGrantOrgMap((prev) => ({
@@ -1989,13 +2165,13 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                           >
                             {organizations.map((o) => (
                               <option key={o.id} value={o.id}>
-                                {o.nameTh}
+                                {tx(o.nameTh)}
                               </option>
                             ))}
                           </select>
 
                           <select
-                            aria-label={`เลือกบทบาทให้ ${u.fullNameTh}`}
+                            aria-label={txf("เลือกบทบาทให้ {0}", u.fullNameTh)}
                             value={selectedGrantRole}
                             onChange={(e) =>
                               setGrantRoleMap((prev) => ({
@@ -2004,10 +2180,10 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                               }))
                             }
                           >
-                            <option value="owner">เจ้าขององค์กร</option>
-                            <option value="event_manager">ผู้จัดการงานวิ่ง</option>
-                            <option value="finance">ฝ่ายการเงิน</option>
-                            <option value="staff">เจ้าหน้าที่หน้างาน</option>
+                            <option value="owner">{tx("เจ้าขององค์กร")}</option>
+                            <option value="event_manager">{tx("ผู้จัดการงานวิ่ง")}</option>
+                            <option value="finance">{tx("ฝ่ายการเงิน")}</option>
+                            <option value="staff">{tx("เจ้าหน้าที่หน้างาน")}</option>
                           </select>
 
                           <button
@@ -2020,11 +2196,11 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                 role: selectedGrantRole,
                               });
                               notifyAction(
-                                `มอบหมายสิทธิ์ ${orgRoleTh[selectedGrantRole]} ให้ ${u.fullNameTh} เรียบร้อยแล้ว`
+                                txf("มอบหมายสิทธิ์ {0} ให้ {1} เรียบร้อยแล้ว", orgRoleTh[selectedGrantRole], u.fullNameTh)
                               );
                             }}
                           >
-                            บันทึกสิทธิ์เข้าองค์กร
+                            {tx("บันทึกสิทธิ์เข้าองค์กร")}
                           </button>
                         </div>
                       </div>
@@ -2036,17 +2212,17 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
 
             <section className="clean-panel">
               <div className="section-title-bar">
-                <h2>Global Platform Audit Log ({filteredAuditLogs.length} รายการ)</h2>
+                <h2>Global Platform Audit Log ({tx(filteredAuditLogs.length)} {tx(" รายการ)")}</h2>
                 <select
-                  aria-label="กรองประวัติตามองค์กร"
+                  aria-label={tx("กรองประวัติตามองค์กร")}
                   value={auditOrgFilter}
                   onChange={(e) => setAuditOrgFilter(e.target.value)}
                 >
-                  <option value="all">ทุกองค์กรและส่วนกลางแพลตฟอร์ม</option>
-                  <option value="PLATFORM-HQ">เฉพาะการกระทำของ Platform Owner</option>
+                  <option value="all">{tx("ทุกองค์กรและส่วนกลางแพลตฟอร์ม")}</option>
+                  <option value="PLATFORM-HQ">{tx("เฉพาะการกระทำของ Platform Owner")}</option>
                   {organizations.map((o) => (
                     <option key={o.id} value={o.id}>
-                      {o.nameTh}
+                      {tx(o.nameTh)}
                     </option>
                   ))}
                 </select>
@@ -2055,16 +2231,39 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
               <div className="audit-list">
                 {filteredAuditLogs.map((log) => (
                   <div key={log.id} className="audit-row">
-                    <span className="mono-code">{log.timestamp}</span>
-                    <strong>{log.actorName}</strong>
-                    <span className="muted-inline">({log.actorRole})</span>
-                    <span>{log.actionSummary}</span>
-                    <code className="audit-diff">{log.detailChange}</code>
+                    <span className="mono-code">{tx(log.timestamp)}</span>
+                    <strong>{tx(log.actorName)}</strong>
+                    <span className="muted-inline">({tx(log.actorRole)})</span>
+                    <span>{tx(log.actionSummary)}</span>
+                    <code className="audit-diff">{tx(log.detailChange)}</code>
                   </div>
                 ))}
               </div>
             </section>
           </div>
+        )}
+
+        {/* ================= 7. REGISTRATION FORM BUILDER ================= */}
+        {activeSection === 'plat_form_builder' && (
+          <RegistrationFormBuilderAdmin
+            templates={formTemplates}
+            steps={registrationSteps}
+            globalFields={globalFields}
+            conditionalRules={conditionalRules}
+            fieldRequests={fieldRequests}
+            events={events}
+            organizations={organizations}
+            registrations={registrations}
+            onUpsertStep={onUpsertStep}
+            onReorderStep={onReorderStep}
+            onDeleteStep={onDeleteStep}
+            onUpsertGlobalField={onUpsertGlobalField}
+            onAddConditionalRule={onAddConditionalRule}
+            onDeleteConditionalRule={onDeleteConditionalRule}
+            onPublishTemplateVersion={onPublishTemplateVersion}
+            onCreateTemplate={onCreateTemplate}
+            onResolveFieldRequest={onResolveFieldRequest}
+          />
         )}
       </main>
     </div>

@@ -6,8 +6,8 @@
 
 - RunEvent เป็นแพลตฟอร์มงานวิ่งสำหรับหลายองค์กรผู้จัด (multi-tenant B2B2C)
 - เริ่มที่ Dashboard ผู้จัดงาน แยกบริบทองค์กรและงานวิ่ง ควบคู่กับหน้ารายการงานวิ่งสาธารณะและระบบสลับบทบาท
-- **สถานะปัจจุบัน (อัปเดต 17 พฤศจิกายน 2026 — ยืนยันโดยคำสั่งผู้ใช้): อยู่ในระยะต้นแบบโต้ตอบบนเครื่องผู้ใช้ (Interactive Local Mockup)** ด้วย `Vite + React + TypeScript` สำหรับสำรวจ UX/UI และโมเดลธุรกิจ (Organizer Dashboard, ระบบ Login จำลองหลายบทบาท/หลายองค์กร, และหน้ารายการงานวิ่งสาธารณะ) พร้อม Workspace Skill `.agents/skills/run-local`
-- **ขอบเขตที่ยังไม่อนุญาต:** ยังไม่พัฒนา Backend/Database จริง, ยังไม่เชื่อมต่อ Payment Provider จริง, และยังไม่ Deploy ขึ้น Production จนกว่าผู้ใช้จะยืนยันขอบเขตเทคนิคและสั่งเริ่มพัฒนาระบบหลังบ้าน
+- **สถานะปัจจุบัน (อัปเดต 18 พฤศจิกายน 2026 — ยืนยันโดยคำสั่งผู้ใช้): ระบบทำงานจริงบน Local (Local Full-Stack System)** ด้วย Frontend `Vite + React + TypeScript` (รองรับสลับภาษา `TH / EN`) เชื่อมต่อกับ Backend REST API `Node.js + Express + SQLite` (`node:sqlite`, เก็บข้อมูลใน `data/runevent.sqlite`) พร้อม Password Hashing (`scrypt`), `HttpOnly` Session Cookie, การตรวจสิทธิ์ RBAC ฝั่งเซิร์ฟเวอร์ และ Atomic SQLite Transaction สำหรับโควตา/สต็อกเสื้อ/เลข BIB โดยใช้ชุดข้อมูลผู้ใช้ทดสอบ (`USR-001`, `USR-901`, `USR-902`, `USR-101`..`USR-104`) ชุดเดิมเป็นข้อมูลเริ่มต้น (Seed)
+- **ขอบเขตที่ยังไม่อนุญาต:** ยังไม่เชื่อมต่อ Google/LINE OAuth Provider จริง (ทำงานในโหมด Local Sandbox), ยังไม่เชื่อมต่อ Payment Gateway ตัดเงินจริง (ทำงานแบบจำลองสัญญาณชำระ/Webhook บน Local), และยังไม่ Deploy ขึ้น Production จนกว่าผู้ใช้จะสั่งและให้ Credentials ภายนอก
 - ภาษาไทย ตลาดไทย และ THB เป็นสมมติฐานเริ่มต้น ส่วน backend framework, hosting, payment provider และกำหนดส่งระบบจริงยังไม่ยืนยัน
 
 ## 2. อ่านอะไรและอัปเดตที่ไหน
