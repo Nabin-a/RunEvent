@@ -1,0 +1,14 @@
+services:
+  runevent:
+    build: .
+    container_name: runevent-fullstack
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - SERVE_STATIC=1
+      - API_HOST=0.0.0.0
+      - API_PORT=3001
+    volumes:
+      - ./data:/app/data

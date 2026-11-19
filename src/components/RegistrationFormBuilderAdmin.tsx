@@ -1,3 +1,4 @@
+import { RequiredFieldText } from './RequiredFieldText';
 import React, { useState } from 'react';
 import {
   ConditionalRule,
@@ -7,10 +8,14 @@ import {
   GlobalFormFieldDef,
   Organization,
   OrganizerFieldRequest,
+  PlatformProfileConfig,
+  ProfileCompletionSectionKey,
   RaceEvent,
   RegistrationRecord,
   RegistrationStepDef,
+  ShirtCutType,
 } from '../types';
+import { DEFAULT_PLATFORM_PROFILE_CONFIG } from '../data/runnerProfileDefaults';
 import { policyLabelTh } from '../data/formBuilderData';
 import {
   IconAlert,
@@ -28,7 +33,8 @@ export type BuilderSubmodule =
   | 'field_library'
   | 'field_config'
   | 'conditional_logic'
-  | 'versions';
+  | 'versions'
+  | 'runner_profile_config';
 
 interface RegistrationFormBuilderAdminProps {
   templates: FormTemplate[];
@@ -39,6 +45,8 @@ interface RegistrationFormBuilderAdminProps {
   events: RaceEvent[];
   organizations: Organization[];
   registrations: RegistrationRecord[];
+  platformProfileConfig?: PlatformProfileConfig;
+  onUpdatePlatformProfileConfig?: (next: PlatformProfileConfig) => void;
   onUpsertStep: (step: RegistrationStepDef) => void;
   onReorderStep: (stepId: string, direction: 'up' | 'down') => void;
   onDeleteStep: (stepId: string) => void;
@@ -94,6 +102,8 @@ export const RegistrationFormBuilderAdmin: React.FC<
   events,
   organizations,
   registrations,
+  platformProfileConfig = DEFAULT_PLATFORM_PROFILE_CONFIG,
+  onUpdatePlatformProfileConfig,
   onUpsertStep,
   onReorderStep,
   onDeleteStep,
@@ -107,6 +117,12 @@ export const RegistrationFormBuilderAdmin: React.FC<
   const [subTab, setSubTab] = useState<BuilderSubmodule>('requests_permissions');
   const [bannerMsg, setBannerMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // State for Platform Runner Profile & Shirt Size Governance
+  const [chartCutEdit, setChartCutEdit] = useState<ShirtCutType>('Unisex');
+  const [newSizeCode, setNewSizeCode] = useState('');
+  const [newSizeChest, setNewSizeChest] = useState('54 นิ้ว');
+  const [newSizeLength, setNewSizeLength] = useState('33.5 นิ้ว');
 
   // State for Step Management
   const [newStepTitle, setNewStepTitle] = useState('');
@@ -281,6 +297,10 @@ export const RegistrationFormBuilderAdmin: React.FC<
               ],
               ['templates', `6. Form Templates (${templates.length} แม่แบบ)`],
               ['versions', '7. Form Version Management'],
+              [
+                'runner_profile_config',
+                `8. Runner Profile & Shirt Sizes (${platformProfileConfig.shirtSizes.filter((s) => s.enabled).length} ไซส์)`,
+              ],
             ] as const
           ).map(([key, label]) => (
             <button
@@ -1208,7 +1228,7 @@ export const RegistrationFormBuilderAdmin: React.FC<
               <div className="form-row">
                 <label htmlFor="live-prev-input">
                   {tx(selectedField.label)}{' '}
-                  {selectedField.required ? '*' : tx("(ไม่บังคับ)")}
+                  {selectedField.required ? <RequiredFieldText text="*" /> : tx("(ไม่บังคับ)")}
                 </label>
                 {selectedField.descriptionTh && (
                   <span className="muted-inline">
@@ -1634,6 +1654,298 @@ export const RegistrationFormBuilderAdmin: React.FC<
                   })}
                 </tbody>
               </table>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* ================= SUBMODULE 8: RUNNER PROFILE & SHIRT SIZE GOVERNANCE ================= */}
+      {subTab === 'runner_profile_config' && (
+        <div className="canvas-stack">
+          <section className="clean-panel canvas-stack">
+            <div className="section-title-bar">
+              <div>
+                <h2>
+                  {tx(
+                    'จัดการตัวเลือกไซส์เสื้อกลางและตารางไซส์ตามทรงเสื้อ (Platform Shirt Sizes & Size Charts)'
+                  )}
+                </h2>
+                <p className="muted-block">
+                  {tx(
+                    'เพิ่ม แก้ไข หรือเปิด/ปิดไซส์เสื้อมาตรฐาน (XS–5XL) พร้อมกำหนดขนาดรอบอกและความยาวแยกตาม Unisex, Men และ Women สำหรับใช้ใน Runner Profile และเป็นค่าเริ่มต้นของทุกงานวิ่ง'
+                  )}
+                </p>
+              </div>
+              <div className="priority-pill-bar">
+                {(['Unisex', 'Men', 'Women'] as ShirtCutType[]).map((cut) => (
+                  <button
+                    key={cut}
+                    type="button"
+                    className={`filter-pill ${chartCutEdit === cut ? 'active' : ''}`}
+                    onClick={() => setChartCutEdit(cut)}
+                  >
+                    {tx('ตารางทรง')} {cut}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="table-scroll">
+              <table className="ops-table">
+                <thead>
+                  <tr>
+                    <th>{tx('รหัสไซส์')}</th>
+                    <th>{tx('สถานะใน Runner Profile')}</th>
+                    <th>{tx(`รอบอก (${chartCutEdit})`)}</th>
+                    <th>{tx(`ความยาวเสื้อ (${chartCutEdit})`)}</th>
+                    <th>{tx('การจัดการ')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {platformProfileConfig.shirtSizes
+                    .slice()
+                    .sort((a, b) => a.sortOrder - b.sortOrder)
+                    .map((sz) => {
+                      const spec = sz.chartByType[chartCutEdit];
+                      return (
+                        <tr key={sz.code}>
+                          <td>
+                            <strong className="mono-code">{sz.code}</strong>
+                          </td>
+                          <td>
+                            <span
+                              className={`status-pill ${
+                                sz.enabled ? 'badge-forest' : 'badge-neutral'
+                              }`}
+                            >
+                              {sz.enabled ? tx('เปิดใช้งาน') : tx('ปิดใช้งาน')}
+                            </span>
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              aria-label={`${sz.code} chest`}
+                              value={spec.chestInch}
+                              onChange={(e) => {
+                                if (!onUpdatePlatformProfileConfig) return;
+                                const nextSizes =
+                                  platformProfileConfig.shirtSizes.map((item) =>
+                                    item.code === sz.code
+                                      ? {
+                                          ...item,
+                                          chartByType: {
+                                            ...item.chartByType,
+                                            [chartCutEdit]: {
+                                              ...item.chartByType[chartCutEdit],
+                                              chestInch: e.target.value,
+                                            },
+                                          },
+                                        }
+                                      : item
+                                  );
+                                onUpdatePlatformProfileConfig({
+                                  ...platformProfileConfig,
+                                  shirtSizes: nextSizes,
+                                });
+                              }}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              aria-label={`${sz.code} length`}
+                              value={spec.lengthInch}
+                              onChange={(e) => {
+                                if (!onUpdatePlatformProfileConfig) return;
+                                const nextSizes =
+                                  platformProfileConfig.shirtSizes.map((item) =>
+                                    item.code === sz.code
+                                      ? {
+                                          ...item,
+                                          chartByType: {
+                                            ...item.chartByType,
+                                            [chartCutEdit]: {
+                                              ...item.chartByType[chartCutEdit],
+                                              lengthInch: e.target.value,
+                                            },
+                                          },
+                                        }
+                                      : item
+                                  );
+                                onUpdatePlatformProfileConfig({
+                                  ...platformProfileConfig,
+                                  shirtSizes: nextSizes,
+                                });
+                              }}
+                            />
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="btn-ghost-sm"
+                              onClick={() => {
+                                if (!onUpdatePlatformProfileConfig) return;
+                                const nextSizes =
+                                  platformProfileConfig.shirtSizes.map((item) =>
+                                    item.code === sz.code
+                                      ? { ...item, enabled: !item.enabled }
+                                      : item
+                                  );
+                                onUpdatePlatformProfileConfig({
+                                  ...platformProfileConfig,
+                                  shirtSizes: nextSizes,
+                                });
+                                setBannerMsg(
+                                  txf(
+                                    'อัปเดตสถานะไซส์เสื้อ {0} เรียบร้อยแล้ว',
+                                    sz.code
+                                  )
+                                );
+                              }}
+                            >
+                              {sz.enabled ? tx('ปิดใช้งาน') : tx('เปิดใช้งาน')}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="custom-field-creator canvas-stack">
+              <strong>{tx('เพิ่มตัวเลือกไซส์เสื้อใหม่ในระบบกลาง')}</strong>
+              <div className="form-grid-3">
+                <div className="form-row">
+                  <label htmlFor="plat-new-sz">{tx('รหัสไซส์ (เช่น 6XL / KIDS-M)')}</label>
+                  <input
+                    id="plat-new-sz"
+                    type="text"
+                    className="mono-code"
+                    value={newSizeCode}
+                    onChange={(e) => setNewSizeCode(e.target.value.toUpperCase())}
+                    placeholder="6XL"
+                  />
+                </div>
+                <div className="form-row">
+                  <label htmlFor="plat-new-ch">{tx('รอบอกมาตรฐาน')}</label>
+                  <input
+                    id="plat-new-ch"
+                    type="text"
+                    value={newSizeChest}
+                    onChange={(e) => setNewSizeChest(e.target.value)}
+                  />
+                </div>
+                <div className="form-row">
+                  <label htmlFor="plat-new-ln">{tx('ความยาวมาตรฐาน')}</label>
+                  <input
+                    id="plat-new-ln"
+                    type="text"
+                    value={newSizeLength}
+                    onChange={(e) => setNewSizeLength(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => {
+                    const code = newSizeCode.trim().toUpperCase();
+                    if (!code || !onUpdatePlatformProfileConfig) return;
+                    if (
+                      platformProfileConfig.shirtSizes.some(
+                        (s) => s.code.toUpperCase() === code
+                      )
+                    ) {
+                      setErrorMsg(tx('มีรหัสไซส์นี้อยู่ในระบบแล้ว'));
+                      return;
+                    }
+                    const baseSpec = {
+                      chestInch: newSizeChest.trim() || '54 นิ้ว',
+                      lengthInch: newSizeLength.trim() || '33.5 นิ้ว',
+                    };
+                    onUpdatePlatformProfileConfig({
+                      ...platformProfileConfig,
+                      shirtSizes: [
+                        ...platformProfileConfig.shirtSizes,
+                        {
+                          code,
+                          label: code,
+                          sortOrder:
+                            platformProfileConfig.shirtSizes.length + 1,
+                          enabled: true,
+                          chartByType: {
+                            Unisex: baseSpec,
+                            Men: baseSpec,
+                            Women: baseSpec,
+                          },
+                        },
+                      ],
+                    });
+                    setNewSizeCode('');
+                    setErrorMsg(null);
+                    setBannerMsg(
+                      txf('เพิ่มตัวเลือกไซส์เสื้อ {0} สำเร็จ', code)
+                    );
+                  }}
+                >
+                  <IconPlus size={14} />
+                  <span>{tx('เพิ่มตัวเลือกไซส์เสื้อ')}</span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="clean-panel canvas-stack">
+            <h2>
+              {tx(
+                'เกณฑ์ความสมบูรณ์ของโปรไฟล์นักวิ่ง (Required Sections for Profile Completion)'
+              )}
+            </h2>
+            <p className="muted-block">
+              {tx(
+                'กำหนดว่าหมวดข้อมูลใดใน Runner Profile ที่นำมาคำนวณเป็นเปอร์เซ็นต์ความครบถ้วน (Profile Completion %) เพื่อเตรียมข้อมูลสมัครงานวิ่งอัตโนมัติ'
+              )}
+            </p>
+            <div className="form-grid-2">
+              {(
+                [
+                  ['personal', 'ข้อมูลส่วนตัวพื้นฐาน (Personal Information)'],
+                  ['contact', 'อีเมลและเบอร์โทรที่ยืนยันแล้ว (Contact Verification)'],
+                  ['running_prefs', 'ไซส์เสื้อและระยะวิ่งที่ชอบ (Running Preferences)'],
+                  ['emergency', 'ผู้ติดต่อกรณีฉุกเฉินหลัก (Primary Emergency Contact)'],
+                  ['address', 'ที่อยู่จัดส่งอุปกรณ์เริ่มต้น (Default Address)'],
+                ] as [ProfileCompletionSectionKey, string][]
+              ).map(([secKey, label]) => {
+                const checked =
+                  platformProfileConfig.requiredProfileSections.includes(secKey);
+                return (
+                  <label key={secKey} className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        if (!onUpdatePlatformProfileConfig) return;
+                        const cur =
+                          platformProfileConfig.requiredProfileSections;
+                        const nextSecs = checked
+                          ? cur.filter((k) => k !== secKey)
+                          : [...cur, secKey];
+                        if (nextSecs.length === 0) return;
+                        onUpdatePlatformProfileConfig({
+                          ...platformProfileConfig,
+                          requiredProfileSections: nextSecs,
+                        });
+                        setBannerMsg(
+                          tx('อัปเดตเกณฑ์คำนวณความสมบูรณ์ของ Runner Profile แล้ว')
+                        );
+                      }}
+                    />
+                    <span>{tx(label)}</span>
+                  </label>
+                );
+              })}
             </div>
           </section>
         </div>

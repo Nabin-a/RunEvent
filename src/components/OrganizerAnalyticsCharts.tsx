@@ -1381,7 +1381,13 @@ export const OrganizerAnalyticsCharts: React.FC<
 
               {/* Shirt Size Stock Bars */}
               <div className="shirt-capacity-grid">
-                {(['XS', 'S', 'M', 'L', 'XL', '2XL'] as const).map((sz) => {
+                {Array.from(
+                  new Set(
+                    scopedEvents.flatMap((ev) =>
+                      ev.shirtStocks.map((s) => s.size)
+                    )
+                  )
+                ).map((sz) => {
                   const totalSz = scopedEvents.reduce((acc, ev) => {
                     const row = ev.shirtStocks.find((s) => s.size === sz);
                     return acc + (row?.total ?? 0);

@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express, { type Request, type Response } from 'express';
 import {
   clearSessionCookie,
@@ -19,6 +22,7 @@ import {
   upsertMerchOrderRow,
   upsertOrganizationRow,
   upsertPayoutRow,
+  upsertPlatformProfileConfig,
   upsertProductionInquiryRow,
   upsertRegistrationRow,
   upsertUserRow,
@@ -43,11 +47,15 @@ import type {
   OrgRole,
   PayoutBatch,
   PayoutStatus,
+  PlatformProfileConfig,
   ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
   RegistrationStepDef,
+  RunnerProfileData,
   SellerServiceModel,
+  ShirtSizeMeasurement,
+  ShirtStock,
   TeamInvitation,
   UserAccount,
 } from '../src/types';
@@ -55,6 +63,39 @@ import type {
 seedDatabase(false);
 
 const app = express();
+
+// Allow same-host cross-port requests (e.g. Nginx :8090 calling API :3001 on the same VM IP)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    try {
+      const originUrl = new URL(origin);
+      const reqHost = (req.headers.host ?? '').split(':')[0];
+      if (
+        originUrl.hostname === reqHost ||
+        originUrl.hostname === 'localhost' ||
+        originUrl.hostname === '127.0.0.1'
+      ) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader(
+          'Access-Control-Allow-Methods',
+          'GET, POST, PATCH, DELETE, OPTIONS'
+        );
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      }
+    } catch {
+      // ignore malformed origin
+    }
+  }
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  next();
+});
+
 app.use(express.json({ limit: '12mb' }));
 
 function nowThaiStamp(): string {
@@ -198,20 +239,43 @@ app.get('/api/bootstrap', (req, res) => {
 /* ==================== AUTH & ACCOUNT SECURITY ==================== */
 
 app.post('/api/auth/login', (req, res) => {
-  const email = String(req.body?.email ?? '').trim().toLowerCase();
+  const identifier = String(req.body?.email ?? req.body?.username ?? '')
+    .trim()
+    .toLowerCase();
   const password = String(req.body?.password ?? '');
-  if (!email || !password) {
-    return res.status(400).json({ ok: false, error: 'กรุณากรอกอีเมลและรหัสผ่านให้ครบถ้วน' });
+  if (!identifier || !password) {
+    return res
+      .status(400)
+      .json({ ok: false, error: 'กรุณากรอกชื่อผู้ใช้/อีเมล และรหัสผ่านให้ครบถ้วน' });
   }
-  const row = db
-    .prepare('SELECT id, has_password, password_hash FROM users WHERE LOWER(contact_email) = ?')
-    .get(email) as { id: string; has_password: number; password_hash: string | null } | undefined;
+  const rows = db
+    .prepare(
+      'SELECT id, code, contact_email, has_password, password_hash FROM users'
+    )
+    .all() as {
+    id: string;
+    code: string;
+    contact_email: string | null;
+    has_password: number;
+    password_hash: string | null;
+  }[];
+
+  const row = rows.find((r) => {
+    const emailLower = (r.contact_email ?? '').toLowerCase();
+    const localPart = emailLower.includes('@') ? emailLower.split('@')[0] : '';
+    const codeLower = (r.code ?? '').toLowerCase();
+    return (
+      emailLower === identifier ||
+      codeLower === identifier ||
+      (localPart !== '' && localPart === identifier)
+    );
+  });
 
   if (!row || !row.has_password || !verifyPassword(password, row.password_hash)) {
     return res.status(401).json({
       ok: false,
       error:
-        'อีเมลหรือรหัสผ่านไม่ถูกต้อง (หากสมัครไว้ด้วย LINE หรือ Google อย่างเดียว กรุณาเข้าสู่ระบบด้วยปุ่มช่องทางนั้น)',
+        'ชื่อผู้ใช้/อีเมล หรือรหัสผ่านไม่ถูกต้อง (หากสมัครไว้ด้วย LINE, Facebook หรือ Google อย่างเดียว กรุณาเข้าสู่ระบบด้วยปุ่มช่องทางนั้น)',
     });
   }
 
@@ -234,7 +298,10 @@ app.post('/api/auth/verify-collision-password', (req, res) => {
     });
   }
   const user = getUserById(row.id)!;
-  const provider = (req.body?.provider === 'line' ? 'line' : 'google') as 'google' | 'line';
+  const rawProv = String(req.body?.provider ?? 'google');
+  const provider = (
+    rawProv === 'line' ? 'line' : rawProv === 'facebook' ? 'facebook' : 'google'
+  ) as 'google' | 'line' | 'facebook';
   const alreadyLinked = user.identities.some((i) => i.provider === provider);
   const updatedUser: UserAccount = alreadyLinked
     ? user
@@ -355,8 +422,17 @@ app.post('/api/auth/register-runner', (req, res) => {
 });
 
 app.post('/api/auth/register-social', (req, res) => {
-  const provider = (req.body?.provider === 'line' ? 'line' : 'google') as 'google' | 'line';
+  const rawProv = String(req.body?.provider ?? 'google');
+  const provider = (
+    rawProv === 'line' ? 'line' : rawProv === 'facebook' ? 'facebook' : 'google'
+  ) as 'google' | 'line' | 'facebook';
   const fullNameTh = String(req.body?.fullNameTh ?? 'สมาชิกใหม่').trim();
+  const incomingProf = req.body?.runnerProfile as RunnerProfileData | undefined;
+  const derivedEn =
+    incomingProf?.firstNameEn || incomingProf?.lastNameEn
+      ? `${incomingProf?.firstNameEn ?? ''} ${incomingProf?.lastNameEn ?? ''}`.trim()
+      : '';
+  const fullNameEn = String(req.body?.fullNameEn || derivedEn || fullNameTh).trim();
   const rawEmail = req.body?.email ? String(req.body.email).trim().toLowerCase() : null;
 
   if (rawEmail) {
@@ -376,7 +452,7 @@ app.post('/api/auth/register-social', (req, res) => {
     id: `usr-soc-${Date.now()}`,
     code: `USR-${totalUsers + 920}`,
     fullNameTh,
-    fullNameEn: fullNameTh,
+    fullNameEn,
     contactEmail: rawEmail,
     emailVerified: Boolean(rawEmail),
     hasPassword: false,
@@ -546,16 +622,140 @@ app.post('/api/auth/register-organizer', (req, res) => {
 app.patch('/api/account/profile', (req, res) => {
   const { user } = resolveSessionUser(req);
   if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
-  const updated: UserAccount = { ...user, runnerProfile: req.body?.profile };
+  const incoming = (req.body?.profile ?? {}) as RunnerProfileData;
+  const fullNameTh = String(
+    req.body?.fullNameTh ||
+      (incoming.firstName && incoming.lastName
+        ? `${incoming.firstName.trim()} ${incoming.lastName.trim()}`.trim()
+        : user.fullNameTh)
+  );
+  const fullNameEn = String(
+    req.body?.fullNameEn ||
+      (incoming.firstNameEn || incoming.lastNameEn
+        ? `${incoming.firstNameEn ?? ''} ${incoming.lastNameEn ?? ''}`.trim()
+        : user.fullNameEn)
+  );
+
+  // Sync legacy primary emergency contact fields for backward compatibility
+  const primaryEc =
+    incoming.emergencyContacts?.find((c) => c.isPrimary) ??
+    incoming.emergencyContacts?.[0];
+  const mergedProfile: RunnerProfileData = {
+    ...user.runnerProfile,
+    ...incoming,
+    phoneVerified: Boolean(
+      (incoming.phone ?? user.runnerProfile?.phone ?? '').trim()
+    ),
+    emergencyContactName: primaryEc?.contactName ?? incoming.emergencyContactName,
+    emergencyContactRelation: primaryEc?.relationship ?? incoming.emergencyContactRelation,
+    emergencyContactPhone: primaryEc?.phone ?? incoming.emergencyContactPhone,
+  };
+
+  // Achievements remain strictly server/system controlled (Runner cannot overwrite)
+  const updated: UserAccount = {
+    ...user,
+    fullNameTh,
+    fullNameEn,
+    runnerProfile: mergedProfile,
+  };
   upsertUserRow(updated, { preservePasswordHash: true });
+
+  recordAudit(
+    updated,
+    'PLATFORM-HQ',
+    `อัปเดตข้อมูล Runner Profile (${updated.code})`,
+    `Preferred Shirt: ${mergedProfile.preferredShirtSize ?? '-'} · Addresses: ${
+      mergedProfile.savedAddresses?.length ?? 0
+    } · Emergency Contacts: ${mergedProfile.emergencyContacts?.length ?? 0}`
+  );
   return okSnapshot(res, updated.id, { user: updated });
+});
+
+app.post('/api/account/verify-phone', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const phone = String(req.body?.phone ?? '').trim();
+  const otp = String(req.body?.otp ?? '').trim();
+  if (phone.replace(/\D/g, '').length < 9) {
+    return res.status(400).json({ ok: false, error: 'กรุณาระบุเบอร์โทรศัพท์ให้ครบ 9–10 หลัก' });
+  }
+  if (otp && otp !== '123456') {
+    return res.status(400).json({ ok: false, error: 'รหัสยืนยัน OTP ไม่ถูกต้อง (ทดสอบใช้ 123456)' });
+  }
+  const updatedProfile: RunnerProfileData = {
+    ...user.runnerProfile,
+    phone,
+    phoneVerified: true,
+  };
+  const updated: UserAccount = { ...user, runnerProfile: updatedProfile };
+  upsertUserRow(updated, { preservePasswordHash: true });
+  recordAudit(updated, 'PLATFORM-HQ', `ยืนยันเบอร์โทรศัพท์ใหม่ (${updated.code})`, phone);
+  return okSnapshot(res, updated.id, { user: updated });
+});
+
+app.post('/api/account/status', (req, res) => {
+  const { user, tokenHash } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const action = String(req.body?.action ?? '');
+  const reason = String(req.body?.reason ?? '').trim();
+
+  if (action === 'deactivate') {
+    const updated: UserAccount = { ...user, accountStatus: 'deactivated' };
+    upsertUserRow(updated, { preservePasswordHash: true });
+    recordAudit(
+      updated,
+      'PLATFORM-HQ',
+      `ผู้ใช้สั่งปิดพักบัญชีชั่วคราว (${updated.code})`,
+      reason || 'Account Deactivated by User'
+    );
+    if (tokenHash) {
+      db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(tokenHash);
+    }
+    clearSessionCookie(res);
+    return okSnapshot(res, null);
+  }
+
+  if (action === 'request_deletion') {
+    const updated: UserAccount = {
+      ...user,
+      accountStatus: 'deletion_requested',
+      deletionRequestReason: reason || 'ขอลบบัญชีตามนโยบายความเป็นส่วนตัว',
+      deletionRequestedAt: nowThaiStamp(),
+    };
+    upsertUserRow(updated, { preservePasswordHash: true });
+    recordAudit(
+      updated,
+      'PLATFORM-HQ',
+      `ส่งคำขอลบบัญชีผู้ใช้งาน (${updated.code})`,
+      updated.deletionRequestReason!
+    );
+    return okSnapshot(res, updated.id, { user: updated });
+  }
+
+  if (action === 'cancel_deletion') {
+    const updated: UserAccount = {
+      ...user,
+      accountStatus: 'active',
+      deletionRequestReason: undefined,
+      deletionRequestedAt: undefined,
+    };
+    upsertUserRow(updated, { preservePasswordHash: true });
+    recordAudit(updated, 'PLATFORM-HQ', `ยกเลิกคำขอลบบัญชี (${updated.code})`, 'active');
+    return okSnapshot(res, updated.id, { user: updated });
+  }
+
+  return res.status(400).json({ ok: false, error: 'ไม่รู้จักคำสั่งจัดการสถานะบัญชี' });
 });
 
 app.post('/api/account/verify-email', (req, res) => {
   const { user } = resolveSessionUser(req);
   if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
   const email = String(req.body?.email ?? '').trim().toLowerCase();
+  const otp = req.body?.otp !== undefined ? String(req.body.otp).trim() : undefined;
   if (!email) return res.status(400).json({ ok: false, error: 'กรุณาระบุอีเมล' });
+  if (otp !== undefined && otp !== '123456') {
+    return res.status(400).json({ ok: false, error: 'รหัสยืนยัน OTP อีเมลไม่ถูกต้อง (ทดสอบใช้ 123456)' });
+  }
   const dup = db
     .prepare('SELECT id FROM users WHERE LOWER(contact_email) = ? AND id != ?')
     .get(email, user.id) as { id: string } | undefined;
@@ -564,6 +764,7 @@ app.post('/api/account/verify-email', (req, res) => {
   }
   const updated: UserAccount = { ...user, contactEmail: email, emailVerified: true };
   upsertUserRow(updated, { preservePasswordHash: true });
+  recordAudit(updated, 'PLATFORM-HQ', `ยืนยันอีเมลติดต่อ (${updated.code})`, email);
   return okSnapshot(res, updated.id, { user: updated });
 });
 
@@ -600,7 +801,10 @@ function hashPasswordFallback(pw: string): string {
 app.post('/api/account/providers', (req, res) => {
   const { user } = resolveSessionUser(req);
   if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
-  const provider = (req.body?.provider === 'line' ? 'line' : 'google') as 'google' | 'line';
+  const rawProv = String(req.body?.provider ?? 'google');
+  const provider = (
+    rawProv === 'line' ? 'line' : rawProv === 'facebook' ? 'facebook' : 'google'
+  ) as 'google' | 'line' | 'facebook';
   if (user.identities.some((i) => i.provider === provider)) {
     return okSnapshot(res, user.id);
   }
@@ -859,12 +1063,27 @@ app.post('/api/registrations', (req, res) => {
       participantNameTh: String(payload.participantNameTh ?? ''),
       participantNameEn: String(payload.participantNameEn ?? ''),
       email: user?.contactEmail ?? 'verified.runner@demo.local',
-      phoneMasked: user?.runnerProfile?.phone || '081-•••-9900',
-      emergencyContact:
-        user?.runnerProfile?.emergencyContactName && user?.runnerProfile?.emergencyContactPhone
-          ? `${user.runnerProfile.emergencyContactName} ${user.runnerProfile.emergencyContactPhone}`
-          : 'ผู้ติดต่อฉุกเฉินจำลอง 089-•••-0011',
+      phoneMasked: String(
+        payload.phone || user?.runnerProfile?.phone || '081-•••-9900'
+      ),
+      emergencyContact: String(
+        payload.emergencyContact ||
+          (user?.runnerProfile?.emergencyContactName &&
+          user?.runnerProfile?.emergencyContactPhone
+            ? `${user.runnerProfile.emergencyContactName} (${
+                user.runnerProfile.emergencyContactRelation ?? 'ฉุกเฉิน'
+              }) ${user.runnerProfile.emergencyContactPhone}`
+            : 'ผู้ติดต่อฉุกเฉินจำลอง 089-•••-0011')
+      ),
       shirtSize,
+      kitDeliveryMethod:
+        payload.kitDeliveryMethod === 'postal_shipping'
+          ? 'postal_shipping'
+          : 'pickup_at_expo',
+      shippingAddressSnapshot: payload.shippingAddressSnapshot
+        ? String(payload.shippingAddressSnapshot)
+        : undefined,
+      participantSnapshot: payload.participantSnapshot,
       customAnswers: payload.customAnswers,
       bibNumber: null,
       qrCheckInToken: String(payload.qrCheckInToken || `TKN-${cat.bibPrefix}${seq}-${tokenSuffix}`),
@@ -1821,8 +2040,51 @@ app.patch('/api/events/:id', (req, res) => {
     );
   }
 
+  if (patch.customSizeChart) {
+    nextEv.customSizeChart = patch.customSizeChart as Record<string, ShirtSizeMeasurement>;
+    recordAudit(
+      user,
+      target.organizationId,
+      `อัปเดตตารางไซส์เสื้อเฉพาะงาน ${target.code}`,
+      `จำนวน ${Object.keys(nextEv.customSizeChart).length} ไซส์`,
+      target.id
+    );
+  }
+
+  if (Array.isArray(patch.shirtStocks)) {
+    nextEv.shirtStocks = patch.shirtStocks as ShirtStock[];
+    recordAudit(
+      user,
+      target.organizationId,
+      `อัปเดตโควตาและรายการไซส์เสื้อของงาน ${target.code}`,
+      nextEv.shirtStocks.map((s) => `${s.size}:${s.total}`).join(', '),
+      target.id
+    );
+  }
+
   upsertEventRow(nextEv);
   return okSnapshot(res, user!.id);
+});
+
+app.patch('/api/admin/profile-config', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const nextConfig = req.body?.config as PlatformProfileConfig | undefined;
+  if (!nextConfig || !Array.isArray(nextConfig.shirtSizes)) {
+    return res.status(400).json({ ok: false, error: 'โครงสร้างข้อมูลตั้งค่าไม่ถูกต้อง' });
+  }
+  upsertPlatformProfileConfig(nextConfig);
+  recordAudit(
+    user,
+    'PLATFORM-HQ',
+    'อัปเดตตัวเลือกไซส์เสื้อกลางและเกณฑ์ความสมบูรณ์ Runner Profile',
+    `ไซส์เปิดใช้ ${nextConfig.shirtSizes.filter((s) => s.enabled).length}/${
+      nextConfig.shirtSizes.length
+    } · หมวดบังคับ ${nextConfig.requiredProfileSections.length} หมวด`
+  );
+  return okSnapshot(res, user.id);
 });
 
 /* ==================== PLATFORM OWNER GOVERNANCE & FORM BUILDER ==================== */
@@ -2504,7 +2766,27 @@ app.post('/api/dev/reset', (_req, res) => {
   return okSnapshot(res, null);
 });
 
+/* ==================== STATIC SPA HOSTING (PRODUCTION / DOCKER) ==================== */
+
+const __serverDir = path.dirname(fileURLToPath(import.meta.url));
+const DIST_DIR = path.resolve(__serverDir, '..', 'dist');
+const INDEX_HTML_PATH = path.join(DIST_DIR, 'index.html');
+
+if (process.env.SERVE_STATIC === '1' || process.env.NODE_ENV === 'production') {
+  if (fs.existsSync(INDEX_HTML_PATH)) {
+    app.use(express.static(DIST_DIR));
+    app.use((req, res, next) => {
+      if (req.method === 'GET' && !req.path.startsWith('/api/')) {
+        res.sendFile(INDEX_HTML_PATH);
+        return;
+      }
+      next();
+    });
+  }
+}
+
 const PORT = Number(process.env.API_PORT || 3001);
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`[RunEvent API] SQLite server listening on http://127.0.0.1:${PORT} (DB: ${DB_FILE_PATH})`);
+const HOST = process.env.API_HOST || '127.0.0.1';
+app.listen(PORT, HOST, () => {
+  console.log(`[RunEvent API] SQLite server listening on http://${HOST}:${PORT} (DB: ${DB_FILE_PATH})`);
 });

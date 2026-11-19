@@ -260,6 +260,23 @@ export const IconLineMark: React.FC<IconProps> = ({ size = 18, className }) => (
   </svg>
 );
 
+export const IconFacebookMark: React.FC<IconProps> = ({ size = 18, className }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.85"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    aria-hidden="true"
+  >
+    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+  </svg>
+);
+
 export const EventCoverArtwork: React.FC<{
   motif: RaceEvent['coverMotif'];
   className?: string;
@@ -436,6 +453,41 @@ export const IconGlobe: React.FC<IconProps> = ({ size, className }) => (
   <svg {...baseProps(size, className)}>
     <circle cx="12" cy="12" r="9" />
     <path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3Z" />
+  </svg>
+);
+
+export const IconAward: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <circle cx="12" cy="8.5" r="5.5" />
+    <path d="M8.6 13.1 7 21l5-2.6L17 21l-1.6-7.9" />
+  </svg>
+);
+
+export const IconBell: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <path d="M18 8a6 6 0 0 0-12 0c0 6.5-3 8.5-3 8.5h18S18 14.5 18 8Z" />
+    <path d="M13.73 20a2 2 0 0 1-3.46 0" />
+  </svg>
+);
+
+export const IconChevronDown: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <path d="m6 9 6 6 6-6" />
+  </svg>
+);
+
+export const IconMenu: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <line x1="4" y1="7" x2="20" y2="7" />
+    <line x1="4" y1="12" x2="20" y2="12" />
+    <line x1="4" y1="17" x2="20" y2="17" />
+  </svg>
+);
+
+export const IconClose: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <line x1="6" y1="6" x2="18" y2="18" />
+    <line x1="18" y1="6" x2="6" y2="18" />
   </svg>
 );
 

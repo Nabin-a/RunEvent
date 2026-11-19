@@ -7,3 +7,4 @@ data/*.sqlite-wal
 .impeccable/review/
 .impeccable/mocks/
 *.local
+dist.tar.gz

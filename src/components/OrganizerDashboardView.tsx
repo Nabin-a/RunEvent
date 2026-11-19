@@ -1,3 +1,4 @@
+import { RequiredFieldText } from './RequiredFieldText';
 import React, { useMemo, useState } from 'react';
 import {
   AuditLogEntry,
@@ -12,17 +13,23 @@ import {
   OrganizerFieldRequest,
   OrgRole,
   PayoutBatch,
+  PlatformProfileConfig,
   ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
   RegistrationStatus,
   RegistrationStepDef,
   SellerServiceModel,
+  ShirtSizeCode,
   SimulatedUiState,
   TeamInvitation,
   TimeWindowFilter,
   UserAccount,
 } from '../types';
+import {
+  DEFAULT_PLATFORM_PROFILE_CONFIG,
+  resolveShirtSpec,
+} from '../data/runnerProfileDefaults';
 import {
   calculateFeeQuote,
   computeMetrics,
@@ -152,6 +159,14 @@ interface OrganizerDashboardViewProps {
   fieldRequests?: OrganizerFieldRequest[];
   onSelectEventTemplate?: (eventId: string, templateId: string) => void;
   onUpdateEventMedia?: (eventId: string, patch: EventMediaPatch) => void;
+  platformProfileConfig?: PlatformProfileConfig;
+  onUpdateEventShirtConfig?: (
+    eventId: string,
+    patch: {
+      shirtStocks?: RaceEvent['shirtStocks'];
+      customSizeChart?: RaceEvent['customSizeChart'];
+    }
+  ) => void;
   onSubmitOrganizerFieldRequest?: (
     payload: Omit<
       OrganizerFieldRequest,
@@ -445,7 +460,7 @@ export function CustomFieldsManager({
             {fields.map((f) => (
               <div key={f.id} className="form-row">
                 <label>
-                  {tx(f.label)} {f.required ? '*' : tx("(ไม่บังคับ)")}
+                  {tx(f.label)} {f.required ? <RequiredFieldText text="*" /> : tx("(ไม่บังคับ)")}
                 </label>
                 <input
                   type="text"
@@ -579,7 +594,7 @@ export function CustomFieldsManager({
           <div className="form-grid-3" style={{ marginTop: '0.65rem' }}>
             <div className="form-row">
               <label htmlFor="cf-req-label">
-                {tx("หัวข้อข้อมูลที่ต้องการให้นักวิ่งกรอก *")}
+                {<RequiredFieldText text={tx("หัวข้อข้อมูลที่ต้องการให้นักวิ่งกรอก *")} />}
               </label>
               <input
                 id="cf-req-label"
@@ -657,7 +672,7 @@ export function CustomFieldsManager({
           <div className="form-grid-2" style={{ marginTop: '0.6rem' }}>
             <div className="form-row">
               <label htmlFor="cf-req-reason">
-                {tx("เหตุผลความจำเป็นในการเก็บข้อมูลนี้ (แจ้ง Platform Owner) *")}
+                {<RequiredFieldText text={tx("เหตุผลความจำเป็นในการเก็บข้อมูลนี้ (แจ้ง Platform Owner) *")} />}
               </label>
               <input
                 id="cf-req-reason"
@@ -819,9 +834,14 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
   fieldRequests = [],
   onSelectEventTemplate,
   onUpdateEventMedia,
+  platformProfileConfig = DEFAULT_PLATFORM_PROFILE_CONFIG,
+  onUpdateEventShirtConfig,
   onSubmitOrganizerFieldRequest,
 }) => {
   const [timeWindow, setTimeWindow] = useState<TimeWindowFilter>('all_time');
+  const [addEventSizePick, setAddEventSizePick] =
+    useState<ShirtSizeCode>('3XL');
+  const [addEventSizeQty, setAddEventSizeQty] = useState<number>(80);
   const [eventSearch, setEventSearch] = useState('');
   const [eventStatusFilter, setEventStatusFilter] = useState<
     'all' | EventStatus
@@ -3099,13 +3119,19 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                   }
                 />
 
-                <section className="clean-panel">
-                  <h2>{tx("สต็อกเสื้อตามสิทธิ์สมัครและเครื่องมือขอราคาผลิตจากยอดจริง")}</h2>
+                <section className="clean-panel canvas-stack">
+                  <h2>{tx("สต็อกเสื้อตามสิทธิ์สมัคร ตารางไซส์เฉพาะงาน และเครื่องมือขอราคาผลิตจากยอดจริง")}</h2>
                   <div className="shirt-stock-strip">
                     {selectedEvent.shirtStocks.map((st) => {
                       const left = Math.max(
                         0,
                         st.total - st.reservedOrConfirmed
+                      );
+                      const spec = resolveShirtSpec(
+                        st.size,
+                        'Unisex',
+                        platformProfileConfig.shirtSizes,
+                        selectedEvent.customSizeChart
                       );
                       return (
                         <div key={st.size} className="shirt-size-cell">
@@ -3114,12 +3140,217 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                             {tx("ว่าง ")} {tx(left)} / {tx(st.total)}
                           </strong>
                           <span className="muted-inline mono-num">
+                            {tx("รอบอก")} {tx(spec.chestInch)} · {tx("ยาว")} {tx(spec.lengthInch)}
+                          </span>
+                          <span className="muted-inline mono-num">
                             {tx("จอง/ยืนยันแล้ว ")} {tx(st.reservedOrConfirmed)} {tx(" ตัว")}
                           </span>
                         </div>
                       );
                     })}
                   </div>
+
+                  {canManageEventConfig && onUpdateEventShirtConfig && (
+                    <div className="custom-field-creator canvas-stack">
+                      <div className="section-title-bar">
+                        <div>
+                          <strong>
+                            {tx(
+                              'ตั้งค่าไซส์เสื้อเพิ่มเติม (XS–5XL) และตารางไซส์เฉพาะงานนี้ (Event-Specific Size Chart)'
+                            )}
+                          </strong>
+                          <p className="muted-inline">
+                            {tx(
+                              'กำหนดไซส์ที่เปิดให้เลือกและขนาดรอบอก/ความยาวเฉพาะเสื้อของงานนี้ (หากไม่ระบุจะใช้ตารางมาตรฐานของแพลตฟอร์ม)'
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      {(() => {
+                        const missingPlatformSizes =
+                          platformProfileConfig.shirtSizes.filter(
+                            (opt) =>
+                              opt.enabled &&
+                              !selectedEvent.shirtStocks.some(
+                                (s) => s.size === opt.code
+                              )
+                          );
+                        return (
+                          missingPlatformSizes.length > 0 && (
+                            <div className="form-grid-3">
+                              <div className="form-row">
+                                <label htmlFor="ev-add-sz">
+                                  {tx('เพิ่มไซส์เสื้อจากระบบกลางเข้าสู่งานนี้')}
+                                </label>
+                                <select
+                                  id="ev-add-sz"
+                                  value={
+                                    missingPlatformSizes.some(
+                                      (m) => m.code === addEventSizePick
+                                    )
+                                      ? addEventSizePick
+                                      : missingPlatformSizes[0].code
+                                  }
+                                  onChange={(e) =>
+                                    setAddEventSizePick(e.target.value)
+                                  }
+                                >
+                                  {missingPlatformSizes.map((opt) => (
+                                    <option key={opt.code} value={opt.code}>
+                                      {tx('ไซส์')} {opt.code} ({opt.chartByType.Unisex.chestInch})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="form-row">
+                                <label htmlFor="ev-add-qty">
+                                  {tx('โควตาสต็อกเริ่มต้น (ตัว)')}
+                                </label>
+                                <input
+                                  id="ev-add-qty"
+                                  type="number"
+                                  className="mono-num"
+                                  min={1}
+                                  value={addEventSizeQty}
+                                  onChange={(e) =>
+                                    setAddEventSizeQty(
+                                      Math.max(1, Number(e.target.value) || 1)
+                                    )
+                                  }
+                                />
+                              </div>
+                              <div
+                                className="form-row"
+                                style={{ justifyContent: 'flex-end' }}
+                              >
+                                <button
+                                  type="button"
+                                  className="btn-secondary"
+                                  onClick={() => {
+                                    const codeToUse = missingPlatformSizes.some(
+                                      (m) => m.code === addEventSizePick
+                                    )
+                                      ? addEventSizePick
+                                      : missingPlatformSizes[0].code;
+                                    onUpdateEventShirtConfig(selectedEvent.id, {
+                                      shirtStocks: [
+                                        ...selectedEvent.shirtStocks,
+                                        {
+                                          size: codeToUse,
+                                          total: addEventSizeQty,
+                                          reservedOrConfirmed: 0,
+                                        },
+                                      ],
+                                    });
+                                  }}
+                                >
+                                  <IconPlus size={14} />
+                                  <span>{tx('เปิดรับไซส์นี้ในงาน')}</span>
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        );
+                      })()}
+
+                      <div className="table-scroll">
+                        <table className="ops-table">
+                          <thead>
+                            <tr>
+                              <th>{tx('ไซส์เสื้อ')}</th>
+                              <th>{tx('รอบอกเฉพาะงานนี้')}</th>
+                              <th>{tx('ความยาวเฉพาะงานนี้')}</th>
+                              <th className="num-col">{tx('โควตาเสื้อรวม')}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedEvent.shirtStocks.map((st) => {
+                              const resolved = resolveShirtSpec(
+                                st.size,
+                                'Unisex',
+                                platformProfileConfig.shirtSizes,
+                                selectedEvent.customSizeChart
+                              );
+                              return (
+                                <tr key={st.size}>
+                                  <td>
+                                    <strong className="mono-code">{st.size}</strong>
+                                  </td>
+                                  <td>
+                                    <input
+                                      type="text"
+                                      aria-label={`${st.size} event chest`}
+                                      value={resolved.chestInch}
+                                      onChange={(e) => {
+                                        const nextChart = {
+                                          ...(selectedEvent.customSizeChart ?? {}),
+                                          [st.size]: {
+                                            chestInch: e.target.value,
+                                            lengthInch: resolved.lengthInch,
+                                          },
+                                        };
+                                        onUpdateEventShirtConfig(
+                                          selectedEvent.id,
+                                          { customSizeChart: nextChart }
+                                        );
+                                      }}
+                                    />
+                                  </td>
+                                  <td>
+                                    <input
+                                      type="text"
+                                      aria-label={`${st.size} event length`}
+                                      value={resolved.lengthInch}
+                                      onChange={(e) => {
+                                        const nextChart = {
+                                          ...(selectedEvent.customSizeChart ?? {}),
+                                          [st.size]: {
+                                            chestInch: resolved.chestInch,
+                                            lengthInch: e.target.value,
+                                          },
+                                        };
+                                        onUpdateEventShirtConfig(
+                                          selectedEvent.id,
+                                          { customSizeChart: nextChart }
+                                        );
+                                      }}
+                                    />
+                                  </td>
+                                  <td className="num-col">
+                                    <input
+                                      type="number"
+                                      aria-label={`${st.size} stock total`}
+                                      className="mono-num"
+                                      min={st.reservedOrConfirmed}
+                                      value={st.total}
+                                      onChange={(e) => {
+                                        const nextVal = Math.max(
+                                          st.reservedOrConfirmed,
+                                          Number(e.target.value) || 0
+                                        );
+                                        onUpdateEventShirtConfig(
+                                          selectedEvent.id,
+                                          {
+                                            shirtStocks:
+                                              selectedEvent.shirtStocks.map((x) =>
+                                                x.size === st.size
+                                                  ? { ...x, total: nextVal }
+                                                  : x
+                                              ),
+                                          }
+                                        );
+                                      }}
+                                    />
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
 
                   {canManageEventConfig &&
                     (() => {
@@ -3455,6 +3686,26 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                 {tx(inspectedReg.email)} · {tx(inspectedReg.phoneMasked)}
                                 <div>{tx("ฉุกเฉิน:")} {tx(inspectedReg.emergencyContact)}</div>
                               </>
+                            )}
+                          </dd>
+                          <dt>{tx("วิธีรับ Race Kit / ที่อยู่จัดส่งที่ส่งมากับงานนี้")}</dt>
+                          <dd>
+                            {inspectedReg.kitDeliveryMethod === 'postal_shipping' ? (
+                              role === 'staff' ? (
+                                <span className="muted-inline">
+                                  {tx("จัดส่งทางไปรษณีย์ (ซ่อนที่อยู่ตามสิทธิ์เจ้าหน้าที่หน้างาน)")}
+                                </span>
+                              ) : (
+                                <span>
+                                  <strong>{tx("จัดส่งไปรษณีย์:")}</strong>{' '}
+                                  {inspectedReg.shippingAddressSnapshot ??
+                                    tx("ไม่พบที่อยู่จัดส่งใน Snapshot")}
+                                </span>
+                              )
+                            ) : (
+                              <span className="muted-inline">
+                                {tx("รับด้วยตนเองหน้างาน (ไม่เปิดเผยที่อยู่ส่วนตัวของนักวิ่งให้ผู้จัด)")}
+                              </span>
                             )}
                           </dd>
                           <dt>{tx("กติกาที่ยอมรับ")}</dt>

@@ -20,6 +20,13 @@ import {
   INITIAL_GLOBAL_FIELDS,
   INITIAL_REGISTRATION_STEPS,
 } from '../src/data/formBuilderData';
+import {
+  DEFAULT_PLATFORM_PROFILE_CONFIG,
+  SEEDED_OLDMOAT_RACE_RESULT,
+  SEEDED_RUNNER_901_ACHIEVEMENTS,
+  SEEDED_RUNNER_901_LOGIN_HISTORY,
+  SEEDED_RUNNER_901_PROFILE,
+} from '../src/data/runnerProfileDefaults';
 import type {
   AuditLogEntry,
   ConditionalRule,
@@ -30,6 +37,7 @@ import type {
   OrganizationMembership,
   OrganizerFieldRequest,
   PayoutBatch,
+  PlatformProfileConfig,
   ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
@@ -68,6 +76,7 @@ export interface SystemStatePayload {
   globalFields: GlobalFormFieldDef[];
   conditionalRules: ConditionalRule[];
   fieldRequests: OrganizerFieldRequest[];
+  platformProfileConfig: PlatformProfileConfig;
 }
 
 export function initSchema(): void {
@@ -305,7 +314,18 @@ export function initSchema(): void {
       created_at TEXT NOT NULL,
       detail_json TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS platform_config (
+      key TEXT PRIMARY KEY,
+      detail_json TEXT NOT NULL
+    );
   `);
+
+  // Safe column migration on existing SQLite files
+  const userCols = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+  if (!userCols.some((c) => c.name === 'user_meta_json')) {
+    db.exec("ALTER TABLE users ADD COLUMN user_meta_json TEXT NOT NULL DEFAULT '{}';");
+  }
 }
 
 function normalizeCategoryDistanceCode(code: string, distanceKm: number): string {
@@ -370,14 +390,21 @@ export function upsertUserRow(
   }
 
   const sortOrder = options?.sortOrder ?? existing?.sort_order ?? 500;
+  const userMeta = {
+    accountStatus: user.accountStatus ?? 'active',
+    deletionRequestReason: user.deletionRequestReason,
+    deletionRequestedAt: user.deletionRequestedAt,
+    loginHistory: user.loginHistory ?? [],
+    achievements: user.achievements ?? [],
+  };
 
   db.prepare(`
     INSERT INTO users (
       id, sort_order, code, full_name_th, full_name_en, contact_email,
       email_verified, has_password, password_hash, demo_password_hint,
       is_platform_admin, demo_role_summary, is_demo_preset,
-      runner_profile_json, identities_json, device_sessions_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      runner_profile_json, identities_json, device_sessions_json, user_meta_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       code = excluded.code,
       full_name_th = excluded.full_name_th,
@@ -392,7 +419,8 @@ export function upsertUserRow(
       is_demo_preset = excluded.is_demo_preset,
       runner_profile_json = excluded.runner_profile_json,
       identities_json = excluded.identities_json,
-      device_sessions_json = excluded.device_sessions_json
+      device_sessions_json = excluded.device_sessions_json,
+      user_meta_json = excluded.user_meta_json
   `).run(
     user.id,
     sortOrder,
@@ -409,7 +437,8 @@ export function upsertUserRow(
     user.isDemoPreset ? 1 : 0,
     user.runnerProfile ? JSON.stringify(user.runnerProfile) : null,
     JSON.stringify(user.identities ?? []),
-    JSON.stringify(user.sessions ?? [])
+    JSON.stringify(user.sessions ?? []),
+    JSON.stringify(userMeta)
   );
 
   db.prepare('DELETE FROM organization_memberships WHERE user_id = ?').run(user.id);
@@ -655,11 +684,106 @@ export function insertAuditLog(entry: AuditLogEntry): void {
   );
 }
 
+export function upsertPlatformProfileConfig(cfg: PlatformProfileConfig): void {
+  db.prepare(`
+    INSERT INTO platform_config (key, detail_json) VALUES ('runner_profile', ?)
+    ON CONFLICT(key) DO UPDATE SET detail_json = excluded.detail_json
+  `).run(JSON.stringify(cfg));
+}
+
+export function readPlatformProfileConfig(): PlatformProfileConfig {
+  const row = db
+    .prepare("SELECT detail_json FROM platform_config WHERE key = 'runner_profile'")
+    .get() as { detail_json: string } | undefined;
+  if (!row) {
+    upsertPlatformProfileConfig(DEFAULT_PLATFORM_PROFILE_CONFIG);
+    return DEFAULT_PLATFORM_PROFILE_CONFIG;
+  }
+  return JSON.parse(row.detail_json) as PlatformProfileConfig;
+}
+
 export function seedDatabase(forceReset = false): void {
   initSchema();
 
   const countRow = db.prepare('SELECT COUNT(*) AS cnt FROM users').get() as { cnt: number };
   if (countRow.cnt > 0 && !forceReset) {
+    // Ensure platform profile config exists
+    readPlatformProfileConfig();
+    // Idempotent migration: ensure seeded runner USR-901 has Facebook + full Runner Profile + Race Result
+    const runner = getUserById('usr-runner');
+    if (runner) {
+      const hasFb = runner.identities.some((i) => i.provider === 'facebook');
+      const hasLatestSeededParticipants = Boolean(
+        runner.runnerProfile?.savedParticipants?.some(
+          (p) => p.id === 'sp-901-2' && Boolean(p.emergencyContactRelation)
+        )
+      );
+      const needsProfileUpgrade =
+        !runner.runnerProfile?.savedAddresses ||
+        !runner.runnerProfile?.firstNameEn ||
+        !hasLatestSeededParticipants;
+      if (!hasFb || needsProfileUpgrade) {
+        const existingCustomParticipants = (
+          runner.runnerProfile?.savedParticipants ?? []
+        ).filter((p) => p.id !== 'sp-901-1' && p.id !== 'sp-901-2');
+        upsertUserRow(
+          {
+            ...runner,
+            runnerProfile: needsProfileUpgrade
+              ? {
+                  ...SEEDED_RUNNER_901_PROFILE,
+                  ...runner.runnerProfile,
+                  firstNameEn:
+                    runner.runnerProfile?.firstNameEn ??
+                    SEEDED_RUNNER_901_PROFILE.firstNameEn,
+                  lastNameEn:
+                    runner.runnerProfile?.lastNameEn ??
+                    SEEDED_RUNNER_901_PROFILE.lastNameEn,
+                  nicknameEn:
+                    runner.runnerProfile?.nicknameEn ??
+                    SEEDED_RUNNER_901_PROFILE.nicknameEn,
+                  savedParticipants: hasLatestSeededParticipants
+                    ? runner.runnerProfile!.savedParticipants
+                    : [
+                        ...(SEEDED_RUNNER_901_PROFILE.savedParticipants ?? []),
+                        ...existingCustomParticipants,
+                      ],
+                }
+              : runner.runnerProfile,
+            achievements:
+              runner.achievements && runner.achievements.length > 0
+                ? runner.achievements
+                : SEEDED_RUNNER_901_ACHIEVEMENTS,
+            loginHistory:
+              runner.loginHistory && runner.loginHistory.length > 0
+                ? runner.loginHistory
+                : SEEDED_RUNNER_901_LOGIN_HISTORY,
+            identities: hasFb
+              ? runner.identities
+              : [
+                  ...runner.identities,
+                  {
+                    id: 'id-901-fb',
+                    provider: 'facebook',
+                    providerSubject: 'fb-uid-9014402',
+                    providerEmail: 'kanpitcha.runner@demo.runevent.local',
+                    linkedAt: '2026-10-14 19:20',
+                  },
+                ],
+          },
+          { preservePasswordHash: true }
+        );
+      }
+    }
+    const reg07Row = db
+      .prepare("SELECT detail_json FROM registrations WHERE id = 'reg-07'")
+      .get() as { detail_json: string } | undefined;
+    if (reg07Row) {
+      const reg07 = JSON.parse(reg07Row.detail_json) as RegistrationRecord;
+      if (!reg07.raceResult) {
+        upsertRegistrationRow({ ...reg07, raceResult: SEEDED_OLDMOAT_RACE_RESULT });
+      }
+    }
     return;
   }
 
@@ -683,8 +807,11 @@ export function seedDatabase(forceReset = false): void {
         DELETE FROM global_fields;
         DELETE FROM conditional_rules;
         DELETE FROM field_requests;
+        DELETE FROM platform_config;
       `);
     }
+
+    upsertPlatformProfileConfig(DEFAULT_PLATFORM_PROFILE_CONFIG);
 
     DEMO_ORGANIZATIONS.forEach((org, idx) => upsertOrganizationRow(org, idx + 1));
 
@@ -856,6 +983,16 @@ function mapUserRow(uRow: Record<string, unknown>): UserAccount {
       : undefined,
   }));
 
+  const meta = uRow.user_meta_json
+    ? (JSON.parse(String(uRow.user_meta_json)) as {
+        accountStatus?: UserAccount['accountStatus'];
+        deletionRequestReason?: string;
+        deletionRequestedAt?: string;
+        loginHistory?: UserAccount['loginHistory'];
+        achievements?: UserAccount['achievements'];
+      })
+    : {};
+
   return {
     id: String(uRow.id),
     code: String(uRow.code),
@@ -872,6 +1009,11 @@ function mapUserRow(uRow: Record<string, unknown>): UserAccount {
     runnerProfile: uRow.runner_profile_json
       ? JSON.parse(String(uRow.runner_profile_json))
       : undefined,
+    accountStatus: meta.accountStatus ?? 'active',
+    deletionRequestReason: meta.deletionRequestReason,
+    deletionRequestedAt: meta.deletionRequestedAt,
+    loginHistory: meta.loginHistory ?? [],
+    achievements: meta.achievements ?? [],
     isPlatformAdmin: Boolean(uRow.is_platform_admin),
     demoRoleSummary: String(uRow.demo_role_summary || ''),
     isDemoPreset: Boolean(uRow.is_demo_preset),
@@ -999,5 +1141,6 @@ export function readSystemState(): SystemStatePayload {
     globalFields,
     conditionalRules,
     fieldRequests,
+    platformProfileConfig: readPlatformProfileConfig(),
   };
 }

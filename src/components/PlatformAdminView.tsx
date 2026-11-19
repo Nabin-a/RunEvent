@@ -12,6 +12,7 @@ import {
   OrgRole,
   PayoutBatch,
   PayoutStatus,
+  PlatformProfileConfig,
   ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
@@ -73,6 +74,8 @@ interface PlatformAdminViewProps {
   globalFields: GlobalFormFieldDef[];
   conditionalRules: ConditionalRule[];
   fieldRequests: OrganizerFieldRequest[];
+  platformProfileConfig?: PlatformProfileConfig;
+  onUpdatePlatformProfileConfig?: (next: PlatformProfileConfig) => void;
   onUpsertStep: (step: RegistrationStepDef) => void;
   onReorderStep: (stepId: string, direction: 'up' | 'down') => void;
   onDeleteStep: (stepId: string) => void;
@@ -163,6 +166,8 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
   globalFields,
   conditionalRules,
   fieldRequests,
+  platformProfileConfig,
+  onUpdatePlatformProfileConfig,
   onUpsertStep,
   onReorderStep,
   onDeleteStep,
@@ -2254,6 +2259,8 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
             events={events}
             organizations={organizations}
             registrations={registrations}
+            platformProfileConfig={platformProfileConfig}
+            onUpdatePlatformProfileConfig={onUpdatePlatformProfileConfig}
             onUpsertStep={onUpsertStep}
             onReorderStep={onReorderStep}
             onDeleteStep={onDeleteStep}

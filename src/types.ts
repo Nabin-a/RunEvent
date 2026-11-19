@@ -85,7 +85,7 @@ export type SimulatedUiState =
   | 'partial_error'
   | 'permission_denied';
 
-export type AuthProviderType = 'password' | 'google' | 'line';
+export type AuthProviderType = 'password' | 'google' | 'line' | 'facebook';
 
 export interface LinkedAuthIdentity {
   id: string;
@@ -109,16 +109,189 @@ export interface OrganizationMembership {
   assignedEventIds?: string[];
 }
 
-export interface RunnerProfileData {
-  phone?: string;
+export type ShirtSizeCode = string;
+export type ShirtCutType = 'Unisex' | 'Men' | 'Women';
+export type ShirtFitType = 'Regular Fit' | 'Slim Fit' | 'Oversize';
+
+export interface ShirtSizeMeasurement {
+  chestInch: string;
+  lengthInch: string;
+}
+
+export interface PlatformShirtSizeOption {
+  code: ShirtSizeCode;
+  label: string;
+  enabled: boolean;
+  sortOrder: number;
+  chartByType: Record<ShirtCutType, ShirtSizeMeasurement>;
+}
+
+export type ProfileCompletionSectionKey =
+  | 'personal'
+  | 'contact'
+  | 'running_prefs'
+  | 'emergency'
+  | 'address';
+
+export interface PlatformProfileConfig {
+  shirtSizes: PlatformShirtSizeOption[];
+  requiredProfileSections: ProfileCompletionSectionKey[];
+  distanceOptions: string[];
+  runningTypeOptions: string[];
+}
+
+export interface RunnerEmergencyContact {
+  id: string;
+  contactName: string;
+  relationship: string;
+  phone: string;
+  email?: string;
+  isPrimary: boolean;
+}
+
+export interface RunnerSavedAddress {
+  id: string;
+  addressName: string;
+  recipientName: string;
+  phone: string;
+  address: string;
+  province: string;
+  district: string;
+  subdistrict: string;
+  postalCode: string;
+  country: string;
+  isDefault: boolean;
+}
+
+export interface RunnerSocialLinks {
+  facebook?: string;
+  instagram?: string;
+  line?: string;
+  strava?: string;
+  website?: string;
+  otherLinks?: { id: string; label: string; url: string }[];
+}
+
+export interface RunnerNotificationPrefs {
+  emailNotification: boolean;
+  smsNotification: boolean;
+  eventUpdates: boolean;
+  registrationConfirmation: boolean;
+  paymentConfirmation: boolean;
+  raceReminder: boolean;
+  raceResultAnnouncement: boolean;
+  marketingPromotion: boolean;
+}
+
+export interface RaceResultSnapshot {
+  gunTime: string;
+  chipTime: string;
+  paceMinPerKm: string;
+  overallRank: string;
+  categoryRank: string;
+  status: 'Finisher' | 'DNF' | 'DNS';
+  certificateCode: string;
+  verifiedAt: string;
+}
+
+export interface RunnerAchievement {
+  id: string;
+  title: string;
+  eventId: string;
+  eventNameTh: string;
+  achievementType:
+    | 'Finisher'
+    | 'Personal Best'
+    | 'Age Group Podium'
+    | 'Official Record';
+  achievementDate: string;
+  medalOrAward: string;
+  certificateCode: string;
+  distanceKm: number;
+  finishTime?: string;
+}
+
+export interface LoginHistoryEntry {
+  id: string;
+  timestamp: string;
+  method: string;
+  deviceLabel: string;
+  ipOrLocation: string;
+  status: 'success' | 'revoked';
+}
+
+export interface SavedParticipant {
+  id: string;
+  firstName: string;
+  lastName: string;
+  nickname?: string;
+  firstNameEn?: string;
+  lastNameEn?: string;
+  nicknameEn?: string;
   dateOfBirth?: string;
   gender?: 'ชาย' | 'หญิง' | 'ไม่ระบุ';
   nationality?: string;
-  runningExperience?: 'Beginner' | 'Intermediate' | 'Advanced';
+  idType?: 'none' | 'thai_id' | 'passport';
+  idNumber?: string;
+  phone?: string;
+  preferredShirtSize?: ShirtSizeCode;
   emergencyContactName?: string;
   emergencyContactRelation?: string;
   emergencyContactPhone?: string;
+  relationshipToOwner?: string;
+  lastUsedAt?: string;
+}
+
+export interface RunnerProfileData {
+  // 1. Personal Information
+  avatarDataUrl?: string;
+  firstName?: string;
+  lastName?: string;
+  nickname?: string;
+  firstNameEn?: string;
+  lastNameEn?: string;
+  nicknameEn?: string;
+  dateOfBirth?: string;
+  gender?: 'ชาย' | 'หญิง' | 'ไม่ระบุ';
+  phone?: string;
+  phoneVerified?: boolean;
+  nationality?: string;
+  idType?: 'none' | 'thai_id' | 'passport';
+  idNumber?: string;
+  country?: string;
+  province?: string;
+  district?: string;
+  subdistrict?: string;
+  postalCode?: string;
+  address?: string;
+
+  // 2. Running & Shirt Preferences
+  preferredShirtSize?: ShirtSizeCode;
+  preferredShirtType?: ShirtCutType;
+  preferredShirtFit?: ShirtFitType;
   preferredDistances?: string[];
+  preferredRunningTypes?: string[];
+  runningGoal?: string;
+  favoriteEventIds?: string[];
+  runningExperience?: 'Beginner' | 'Intermediate' | 'Advanced';
+
+  // 3. Emergency Contacts (Legacy single fields kept for backward compatibility + multi-list)
+  emergencyContactName?: string;
+  emergencyContactRelation?: string;
+  emergencyContactPhone?: string;
+  emergencyContacts?: RunnerEmergencyContact[];
+
+  // 4. Address Book
+  savedAddresses?: RunnerSavedAddress[];
+
+  // 4.1 Saved Participants (สมัครให้ผู้อื่น)
+  savedParticipants?: SavedParticipant[];
+
+  // 7. Social Links
+  socialLinks?: RunnerSocialLinks;
+
+  // 9. Notification Preferences
+  notificationPrefs?: RunnerNotificationPrefs;
 }
 
 export type OrganizationType =
@@ -170,6 +343,11 @@ export interface UserAccount {
   sessions: DeviceSession[];
   memberships: OrganizationMembership[];
   runnerProfile?: RunnerProfileData;
+  accountStatus?: 'active' | 'deactivated' | 'deletion_requested';
+  deletionRequestReason?: string;
+  deletionRequestedAt?: string;
+  loginHistory?: LoginHistoryEntry[];
+  achievements?: RunnerAchievement[];
   isPlatformAdmin?: boolean;
   demoRoleSummary: string;
   isDemoPreset: boolean;
@@ -193,7 +371,8 @@ export interface ReturnIntent {
   | 'custom_production'
   | 'organizer'
   | 'platform_admin'
-  | 'account_security';
+  | 'account_security'
+  | 'runner_profile';
   eventId?: string | null;
   eventTab?: 'register' | 'storefront' | 'info_results';
   label: string;
@@ -260,7 +439,7 @@ export interface RaceCategory {
 }
 
 export interface ShirtStock {
-  size: 'XS' | 'S' | 'M' | 'L' | 'XL' | '2XL';
+  size: ShirtSizeCode;
   total: number;
   reservedOrConfirmed: number;
 }
@@ -490,6 +669,7 @@ export interface RaceEvent {
   highlights: string[];
   categories: RaceCategory[];
   shirtStocks: ShirtStock[];
+  customSizeChart?: Record<string, ShirtSizeMeasurement>;
   products: EventProduct[];
   customFields?: CustomRegistrationField[];
   activeTemplateId?: string;
@@ -522,7 +702,29 @@ export interface RegistrationRecord {
   email: string;
   phoneMasked: string;
   emergencyContact: string;
-  shirtSize: 'XS' | 'S' | 'M' | 'L' | 'XL' | '2XL';
+  shirtSize: ShirtSizeCode;
+  kitDeliveryMethod?: 'pickup_at_expo' | 'postal_shipping';
+  shippingAddressSnapshot?: string;
+  participantSnapshot?: {
+    firstName?: string;
+    lastName?: string;
+    nickname?: string;
+    firstNameEn?: string;
+    lastNameEn?: string;
+    nicknameEn?: string;
+    phone?: string;
+    nationality?: string;
+    dateOfBirth?: string;
+    gender?: string;
+    idType?: 'none' | 'thai_id' | 'passport';
+    idNumberMasked?: string;
+    emergencyContactName?: string;
+    emergencyContactRelation?: string;
+    emergencyContactPhone?: string;
+    preferredShirtType?: ShirtCutType;
+    preferredShirtFit?: ShirtFitType;
+  };
+  raceResult?: RaceResultSnapshot;
   bibNumber: string | null;
   qrCheckInToken: string;
   acceptedRulesVersion: string;

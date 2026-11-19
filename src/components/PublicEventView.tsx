@@ -93,7 +93,7 @@ export function RunnerCustomFieldsInputs({
                   <label htmlFor={inputId}>
                     {tx(field.label)}{' '}
                     {field.required ? (
-                      <span className="text-vermilion">*</span>
+                      <span className="required-field-marker">*</span>
                     ) : (
                       <span className="muted-inline">{tx("(ไม่บังคับ)")}</span>
                     )}
@@ -166,6 +166,8 @@ export function RunnerCustomFieldsInputs({
                           ? 'date'
                           : field.type === 'email'
                           ? 'email'
+                          : field.type === 'phone'
+                          ? 'tel'
                           : 'text'
                       }
                       required={field.required}

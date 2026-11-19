@@ -1,0 +1,4721 @@
+import { RequiredFieldText } from './RequiredFieldText';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import Swal from 'sweetalert2';
+import type {
+  AuthProviderType,
+  Organization,
+  PlatformProfileConfig,
+  RaceEvent,
+  RegistrationRecord,
+  RunnerEmergencyContact,
+  RunnerNotificationPrefs,
+  RunnerProfileData,
+  RunnerSavedAddress,
+  RunnerSocialLinks,
+  SavedParticipant,
+  ShirtCutType,
+  ShirtFitType,
+  TeamInvitation,
+  UserAccount,
+} from '../types';
+import {
+  DEFAULT_NOTIFICATION_PREFS,
+  DEFAULT_PLATFORM_PROFILE_CONFIG,
+  enrichSocialLinksFromIdentities,
+  evaluateRunnerProfileCompletion,
+} from '../data/runnerProfileDefaults';
+import {
+  IconAlert,
+  IconArrowRight,
+  IconAward,
+  IconBell,
+  IconBib,
+  IconBuilding,
+  IconCalendar,
+  IconCamera,
+  IconCheckCircle,
+  IconChevronDown,
+  IconDevice,
+  IconDownload,
+  IconFacebookMark,
+  IconFlag,
+  IconGlobe,
+  IconGoogleMark,
+  IconLineMark,
+  IconLock,
+  IconMail,
+  IconMapPin,
+  IconPlus,
+  IconQr,
+  IconShield,
+  IconShirt,
+  IconUsers,
+} from './Icons';
+import {
+  FulfillmentStatusBadge,
+  PaymentStatusBadge,
+  RegStatusBadge,
+} from './StatusBadges';
+import { DateOfBirthInput } from './DateOfBirthInput';
+import { ThaiPostalAddressSelector } from './ThaiPostalAddressSelector';
+import { ALL_THAI_PROVINCES } from '../data/thaiPostalAddresses';
+import {
+  isoToDdMmYyyy,
+  sanitizeEnglishNameInput,
+  sanitizeThaiIdOrPassport,
+  sanitizeThaiNameInput,
+} from '../utils/dateFormat';
+import { getLang, tx, txf } from '../i18n';
+
+function localizeCountryName(raw?: string): string {
+  const v = (raw ?? '').trim();
+  if (!v) return '';
+  if (getLang() === 'en') {
+    const thToEn: Record<string, string> = {
+      ไทย: 'Thailand',
+      ประเทศไทย: 'Thailand',
+      ญี่ปุ่น: 'Japan',
+      สิงคโปร์: 'Singapore',
+      มาเลเซีย: 'Malaysia',
+    };
+    return thToEn[v] ?? v;
+  }
+  const enToTh: Record<string, string> = {
+    thailand: 'ไทย',
+    japan: 'ญี่ปุ่น',
+    singapore: 'สิงคโปร์',
+    malaysia: 'มาเลเซีย',
+    other: 'ประเทศอื่น ๆ',
+  };
+  return enToTh[v.toLowerCase()] ?? v;
+}
+
+export type RunnerProfileTab =
+  | 'personal'
+  | 'preferences'
+  | 'emergency'
+  | 'addresses'
+  | 'participants'
+  | 'history'
+  | 'achievements'
+  | 'social'
+  | 'notifications'
+  | 'organizer'
+  | 'security';
+
+function resizeAvatarFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read_failed'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('decode_failed'));
+      img.onload = () => {
+        const maxSide = 320;
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(String(reader.result));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.84));
+      };
+      img.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function downloadFinisherCertificateSvg(params: {
+  runnerName: string;
+  eventTitle: string;
+  eventDate: string;
+  distanceLabel: string;
+  bibNumber: string;
+  chipTime: string;
+  gunTime: string;
+  pace: string;
+  rank: string;
+  certCode: string;
+}) {
+  const esc = (s: string) =>
+    s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="840" viewBox="0 0 1200 840">
+  <rect width="1200" height="840" fill="#f7f8fa"/>
+  <rect x="44" y="44" width="1112" height="752" rx="16" fill="#ffffff" stroke="#0f172a" stroke-width="3"/>
+  <rect x="44" y="44" width="1112" height="96" rx="14" fill="#0f172a"/>
+  <text x="96" y="102" fill="#f8fafc" font-family="Plus Jakarta Sans, sans-serif" font-size="28" font-weight="700">RUNEVENT · OFFICIAL FINISHER CERTIFICATE</text>
+  <text x="1104" y="102" text-anchor="end" fill="#cbd5e1" font-family="JetBrains Mono, monospace" font-size="18">${esc(params.certCode)}</text>
+  <text x="600" y="220" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="22">ขอรับรองว่านักวิ่งผู้เข้าแข่งขัน</text>
+  <text x="600" y="290" text-anchor="middle" fill="#0f172a" font-family="Plus Jakarta Sans, Anuphan, sans-serif" font-size="46" font-weight="800">${esc(params.runnerName)}</text>
+  <line x1="280" y1="322" x2="920" y2="322" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="600" y="382" text-anchor="middle" fill="#c23b1a" font-family="Plus Jakarta Sans, Anuphan, sans-serif" font-size="30" font-weight="700">${esc(params.eventTitle)}</text>
+  <text x="600" y="424" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="20">วันที่แข่งขัน: ${esc(params.eventDate)} · ระยะทาง: ${esc(params.distanceLabel)}</text>
+  <rect x="140" y="476" width="920" height="156" rx="12" fill="#f1f4f8" stroke="#cbd5e1"/>
+  <text x="255" y="528" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="16">หมายเลข BIB</text>
+  <text x="255" y="578" text-anchor="middle" fill="#0f172a" font-family="JetBrains Mono, monospace" font-size="30" font-weight="700">${esc(params.bibNumber)}</text>
+  <text x="485" y="528" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="16">เวลาสุทธิ (Chip Time)</text>
+  <text x="485" y="578" text-anchor="middle" fill="#157347" font-family="JetBrains Mono, monospace" font-size="30" font-weight="700">${esc(params.chipTime)}</text>
+  <text x="715" y="528" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="16">เฉลี่ยฝีเท้า (Pace)</text>
+  <text x="715" y="578" text-anchor="middle" fill="#0f172a" font-family="JetBrains Mono, monospace" font-size="28" font-weight="700">${esc(params.pace)}</text>
+  <text x="945" y="528" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="16">อันดับรวม (Overall)</text>
+  <text x="945" y="578" text-anchor="middle" fill="#0f172a" font-family="JetBrains Mono, monospace" font-size="26" font-weight="700">${esc(params.rank)}</text>
+  <text x="600" y="720" text-anchor="middle" fill="#475569" font-family="JetBrains Mono, Anuphan, sans-serif" font-size="16">Gun Time: ${esc(params.gunTime)} · Verified Official Result by RunEvent Timing Ledger</text>
+</svg>`;
+  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${params.certCode}.svg`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export interface RunnerProfileViewProps {
+  user: UserAccount;
+  initialTab?: RunnerProfileTab;
+  events: RaceEvent[];
+  organizations: Organization[];
+  registrations: RegistrationRecord[];
+  invitations: TeamInvitation[];
+  platformProfileConfig?: PlatformProfileConfig;
+  onSaveProfile: (
+    profile: RunnerProfileData,
+    names?: { fullNameTh?: string; fullNameEn?: string }
+  ) => Promise<{ ok: boolean; error?: string }>;
+  onOpenEmailVerifyPage: (email: string) => void;
+  verifiedEmailNotice?: string | null;
+  onClearVerifiedEmailNotice?: () => void;
+  onSetOrChangePassword: (newPassword?: string) => void;
+  onLinkProvider: (provider: 'google' | 'line' | 'facebook') => void;
+  onUnlinkProvider: (
+    provider: AuthProviderType
+  ) => { ok: boolean; error?: string };
+  onRevokeOtherSessions: () => void;
+  onAcceptTeamInvitation: (code: string) => { ok: boolean; message: string };
+  onApplyNewOrganizerOrg: (orgNameTh: string, province: string) => Organization;
+  onEnterOrganizerOrg: (orgId: string) => void;
+  onManageAccountStatus: (
+    action: 'deactivate' | 'request_deletion' | 'cancel_deletion',
+    reason?: string
+  ) => Promise<{ ok: boolean; error?: string }>;
+  onNavigateDiscoverEvents: () => void;
+  onNavigateEventDetail: (eventId: string) => void;
+  onPersonalDirtyChange?: (dirty: boolean) => void;
+  discardSignal?: number;
+}
+
+export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
+  user,
+  initialTab = 'personal',
+  events,
+  organizations,
+  registrations,
+  platformProfileConfig = DEFAULT_PLATFORM_PROFILE_CONFIG,
+  onSaveProfile,
+  onOpenEmailVerifyPage,
+  verifiedEmailNotice = null,
+  onClearVerifiedEmailNotice,
+  onSetOrChangePassword,
+  onLinkProvider,
+  onUnlinkProvider,
+  onRevokeOtherSessions,
+  onAcceptTeamInvitation,
+  onApplyNewOrganizerOrg,
+  onEnterOrganizerOrg,
+  onManageAccountStatus,
+  onNavigateDiscoverEvents,
+  onNavigateEventDetail,
+  onPersonalDirtyChange,
+  discardSignal = 0,
+}) => {
+  const [activeTab, setActiveTab] = useState<RunnerProfileTab>(initialTab);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [showShelvedNav, setShowShelvedNav] = useState(true);
+  const [banner, setBanner] = useState<{
+    tone: 'ok' | 'err';
+    text: string;
+  } | null>(null);
+
+  const lastHandledDiscardRef = useRef(discardSignal);
+
+  useEffect(() => {
+    if (discardSignal !== lastHandledDiscardRef.current) {
+      lastHandledDiscardRef.current = discardSignal;
+      resetPersonalFormToSaved();
+      setBanner(null);
+      setMobileNavOpen(false);
+      setActiveTab(initialTab);
+      return;
+    }
+    if (initialTab !== activeTab) {
+      requestSwitchProfileTab(initialTab);
+    } else {
+      setMobileNavOpen(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTab, discardSignal]);
+
+  const prof = user.runnerProfile ?? {};
+  const nameParts = user.fullNameTh.trim().split(/\s+/);
+  const enParts = /^[A-Za-z.\s-]+$/.test(user.fullNameEn ?? '')
+    ? (user.fullNameEn ?? '').trim().split(/\s+/)
+    : [];
+
+  /* ---- 1. Personal Information State ---- */
+  const [avatarUrl, setAvatarUrl] = useState(prof.avatarDataUrl ?? '');
+  const [firstName, setFirstName] = useState(
+    prof.firstName ?? sanitizeThaiNameInput(nameParts[0] ?? '').trim()
+  );
+  const [lastName, setLastName] = useState(
+    prof.lastName ?? sanitizeThaiNameInput(nameParts.slice(1).join(' ')).trim()
+  );
+  const [nickname, setNickname] = useState(prof.nickname ?? '');
+  const [firstNameEn, setFirstNameEn] = useState(
+    prof.firstNameEn ?? enParts[0] ?? ''
+  );
+  const [lastNameEn, setLastNameEn] = useState(
+    prof.lastNameEn ?? enParts.slice(1).join(' ') ?? ''
+  );
+  const [nicknameEn, setNicknameEn] = useState(prof.nicknameEn ?? '');
+  const [dob, setDob] = useState(prof.dateOfBirth ?? '');
+  const [gender, setGender] = useState<'ชาย' | 'หญิง' | 'ไม่ระบุ'>(
+    prof.gender ?? 'ไม่ระบุ'
+  );
+  const [nationality, setNationality] = useState(prof.nationality ?? 'Thailand');
+  const [idType, setIdType] = useState<'none' | 'thai_id' | 'passport'>(
+    prof.idType && prof.idType !== 'none' ? prof.idType : 'thai_id'
+  );
+  const [idNumber, setIdNumber] = useState(prof.idNumber ?? '');
+
+  const [country, setCountry] = useState(prof.country ?? 'Thailand');
+  const [province, setProvince] = useState(prof.province ?? 'เชียงใหม่');
+  const [district, setDistrict] = useState(
+    prof.district ?? 'เมืองเชียงใหม่'
+  );
+  const [subdistrict, setSubdistrict] = useState(prof.subdistrict ?? 'สุเทพ');
+  const [postalCode, setPostalCode] = useState(prof.postalCode ?? '50200');
+  const [streetAddress, setStreetAddress] = useState(prof.address ?? '');
+
+  // Email & Phone States
+  const [emailInput, setEmailInput] = useState(user.contactEmail ?? '');
+  const [phoneInput, setPhoneInput] = useState(prof.phone ?? '');
+
+  useEffect(() => {
+    setEmailInput(user.contactEmail ?? '');
+  }, [user.contactEmail]);
+
+  const showResultModalAlert = (
+    ok: boolean,
+    text: string,
+    titleText?: string
+  ) => {
+    void Swal.fire({
+      icon: ok ? 'success' : 'error',
+      title:
+        titleText ??
+        (ok ? tx('บันทึกข้อมูลแล้ว') : tx('ไม่สามารถดำเนินการได้')),
+      text,
+      confirmButtonText: tx('ตกลง'),
+      buttonsStyling: false,
+      heightAuto: false,
+      scrollbarPadding: false,
+      customClass: {
+        container: 'runevent-swal-top',
+        popup: 'runevent-swal-popup',
+        actions: 'runevent-swal-actions',
+        confirmButton: 'btn-primary',
+      },
+    });
+  };
+
+  useEffect(() => {
+    if (verifiedEmailNotice) {
+      const msg = txf('ยืนยันอีเมล {0} สำเร็จ', verifiedEmailNotice);
+      setBanner({
+        tone: 'ok',
+        text: msg,
+      });
+      showResultModalAlert(true, msg, tx('ยืนยันอีเมลแล้ว'));
+      onClearVerifiedEmailNotice?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verifiedEmailNotice, onClearVerifiedEmailNotice]);
+
+  /* ---- 2. Running & Shirt Preferences State ---- */
+  const enabledSizes = useMemo(
+    () =>
+      [...platformProfileConfig.shirtSizes]
+        .filter((s) => s.enabled)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [platformProfileConfig.shirtSizes]
+  );
+  const [prefShirtSize, setPrefShirtSize] = useState<string>(
+    prof.preferredShirtSize ?? ''
+  );
+  const [prefShirtType, setPrefShirtType] = useState<ShirtCutType>(
+    prof.preferredShirtType ?? 'Unisex'
+  );
+  const [prefShirtFit, setPrefShirtFit] = useState<ShirtFitType>(
+    prof.preferredShirtFit ?? 'Regular Fit'
+  );
+  const [showSizeChart, setShowSizeChart] = useState(false);
+  const [chartPreviewType, setChartPreviewType] = useState<ShirtCutType>(
+    prof.preferredShirtType ?? 'Unisex'
+  );
+  const [prefDistances, setPrefDistances] = useState<string[]>(
+    prof.preferredDistances ?? ['10 KM']
+  );
+  const [prefRunTypes, setPrefRunTypes] = useState<string[]>(
+    prof.preferredRunningTypes ?? ['Road Race']
+  );
+  const [runExp, setRunExp] = useState<'Beginner' | 'Intermediate' | 'Advanced'>(
+    prof.runningExperience ?? 'Intermediate'
+  );
+  const [runningGoal, setRunningGoal] = useState(prof.runningGoal ?? '');
+  const [favEventIds, setFavEventIds] = useState<string[]>(
+    prof.favoriteEventIds ?? []
+  );
+
+  /* ---- 3. Emergency Contacts State ---- */
+  const initialEmergencyList: RunnerEmergencyContact[] = useMemo(() => {
+    if (prof.emergencyContacts && prof.emergencyContacts.length > 0) {
+      return prof.emergencyContacts;
+    }
+    if (prof.emergencyContactName && prof.emergencyContactPhone) {
+      return [
+        {
+          id: 'ec-migrated-1',
+          contactName: prof.emergencyContactName,
+          relationship: prof.emergencyContactRelation ?? 'ครอบครัว',
+          phone: prof.emergencyContactPhone,
+          isPrimary: true,
+        },
+      ];
+    }
+    return [];
+  }, [prof]);
+
+  const [emergencyList, setEmergencyList] =
+    useState<RunnerEmergencyContact[]>(initialEmergencyList);
+  const [ecModalOpen, setEcModalOpen] = useState(false);
+  const [editingEcId, setEditingEcId] = useState<string | null>(null);
+  const [ecName, setEcName] = useState('');
+  const [ecRel, setEcRel] = useState('คู่สมรส / ครอบครัว');
+  const [ecPhone, setEcPhone] = useState('');
+  const [ecEmail, setEcEmail] = useState('');
+  const [ecModalBaseline, setEcModalBaseline] = useState({
+    name: '',
+    rel: 'คู่สมรส / ครอบครัว',
+    phone: '',
+    email: '',
+  });
+
+  /* ---- 4. Saved Addresses State ---- */
+  const [addressList, setAddressList] = useState<RunnerSavedAddress[]>(
+    prof.savedAddresses ?? []
+  );
+  const [addrModalOpen, setAddrModalOpen] = useState(false);
+  const [editingAddrId, setEditingAddrId] = useState<string | null>(null);
+  const [addrLabel, setAddrLabel] = useState('');
+  const [addrRecipient, setAddrRecipient] = useState(user.fullNameTh);
+  const [addrPhone, setAddrPhone] = useState(prof.phone ?? '');
+  const [addrLine, setAddrLine] = useState('');
+  const [addrProv, setAddrProv] = useState('เชียงใหม่');
+  const [addrDist, setAddrDist] = useState('เมืองเชียงใหม่');
+  const [addrSubd, setAddrSubd] = useState('สุเทพ');
+  const [addrZip, setAddrZip] = useState('50200');
+  const [addrCountry, setAddrCountry] = useState('Thailand');
+  const [addrModalBaseline, setAddrModalBaseline] = useState({
+    label: '',
+    recipient: user.fullNameTh,
+    phone: prof.phone ?? '',
+    line: '',
+    prov: 'เชียงใหม่',
+    dist: 'เมืองเชียงใหม่',
+    subd: 'สุเทพ',
+    zip: '50200',
+    country: 'Thailand',
+  });
+
+  /* ---- 4.1 Saved Participants State ---- */
+  const createEmptyParticipantDraft = (): SavedParticipant => ({
+    id: '',
+    firstName: '',
+    lastName: '',
+    nickname: '',
+    firstNameEn: '',
+    lastNameEn: '',
+    nicknameEn: '',
+    dateOfBirth: '',
+    gender: 'ไม่ระบุ',
+    nationality: 'Thailand',
+    idType: 'thai_id',
+    idNumber: '',
+    phone: '',
+    preferredShirtSize: '',
+    emergencyContactName: '',
+    emergencyContactRelation: '',
+    emergencyContactPhone: '',
+    relationshipToOwner: '',
+  });
+  const [participantList, setParticipantList] = useState<SavedParticipant[]>(
+    prof.savedParticipants ?? []
+  );
+  const [editingPartId, setEditingPartId] = useState<string | null>(null);
+  const [partDraft, setPartDraft] = useState<SavedParticipant>(() =>
+    createEmptyParticipantDraft()
+  );
+  const [partModalBaseline, setPartModalBaseline] = useState<string>(() =>
+    JSON.stringify(createEmptyParticipantDraft())
+  );
+
+  /* ---- 5. Running History State ---- */
+  const [historyFilter, setHistoryFilter] = useState<
+    'all' | 'upcoming' | 'past'
+  >('all');
+  const [expandedRegId, setExpandedRegId] = useState<string | null>(null);
+  const [certPreviewReg, setCertPreviewReg] =
+    useState<RegistrationRecord | null>(null);
+
+  /* ---- 7. Social Links State (with Auto-Fill from Linked Facebook / LINE) ---- */
+  const initialAutoSocial = enrichSocialLinksFromIdentities(user);
+  const [fbUrl, setFbUrl] = useState(initialAutoSocial.facebook ?? '');
+  const [igUrl, setIgUrl] = useState(initialAutoSocial.instagram ?? '');
+  const [lineUrl, setLineUrl] = useState(initialAutoSocial.line ?? '');
+  const [stravaUrl, setStravaUrl] = useState(prof.socialLinks?.strava ?? '');
+  const [webUrl, setWebUrl] = useState(prof.socialLinks?.website ?? '');
+  const [otherLinks, setOtherLinks] = useState<
+    { id: string; label: string; url: string }[]
+  >(prof.socialLinks?.otherLinks ?? []);
+  const [newSocialLabel, setNewSocialLabel] = useState('');
+  const [newSocialUrl, setNewSocialUrl] = useState('');
+
+  /* ---- 9. Notification Preferences State ---- */
+  const [notifPrefs, setNotifPrefs] = useState<RunnerNotificationPrefs>(
+    prof.notificationPrefs ?? DEFAULT_NOTIFICATION_PREFS
+  );
+
+  /* ---- 8. Account & Security State ---- */
+  const [newPass, setNewPass] = useState('');
+  const [confirmPass, setConfirmPass] = useState('');
+  const [inviteInput, setInviteInput] = useState('INV-LANNA-STAFF26');
+  const [newOrgName, setNewOrgName] = useState('');
+  const [newOrgProv, setNewOrgProv] = useState('ขอนแก่น');
+  const [deleteReason, setDeleteReason] = useState('');
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+
+  // Sync local state if user switches via Dev/Demo dock
+  useEffect(() => {
+    const p = user.runnerProfile ?? {};
+    const np = user.fullNameTh.trim().split(/\s+/);
+    const ep = /^[A-Za-z.\s-]+$/.test(user.fullNameEn ?? '')
+      ? (user.fullNameEn ?? '').trim().split(/\s+/)
+      : [];
+    setAvatarUrl(p.avatarDataUrl ?? '');
+    setFirstName(
+      p.firstName ?? sanitizeThaiNameInput(np[0] ?? '').trim()
+    );
+    setLastName(
+      p.lastName ?? sanitizeThaiNameInput(np.slice(1).join(' ')).trim()
+    );
+    setNickname(p.nickname ?? '');
+    setFirstNameEn(p.firstNameEn ?? ep[0] ?? '');
+    setLastNameEn(p.lastNameEn ?? ep.slice(1).join(' ') ?? '');
+    setNicknameEn(p.nicknameEn ?? '');
+    setDob(p.dateOfBirth ?? '');
+    setGender(p.gender ?? 'ไม่ระบุ');
+    setNationality(p.nationality ?? 'Thailand');
+    setIdType(p.idType && p.idType !== 'none' ? p.idType : 'thai_id');
+    setIdNumber(p.idNumber ?? '');
+    setCountry(p.country ?? 'Thailand');
+    setProvince(p.province ?? 'เชียงใหม่');
+    setDistrict(p.district ?? 'เมืองเชียงใหม่');
+    setSubdistrict(p.subdistrict ?? 'สุเทพ');
+    setPostalCode(p.postalCode ?? '50200');
+    setStreetAddress(p.address ?? '');
+    setEmailInput(user.contactEmail ?? '');
+    setPhoneInput(p.phone ?? '');
+    setPrefShirtSize(p.preferredShirtSize ?? '');
+    setPrefShirtType(p.preferredShirtType ?? 'Unisex');
+    setPrefShirtFit(p.preferredShirtFit ?? 'Regular Fit');
+    setPrefDistances(p.preferredDistances ?? ['10 KM']);
+    setPrefRunTypes(p.preferredRunningTypes ?? ['Road Race']);
+    setRunExp(p.runningExperience ?? 'Intermediate');
+    setRunningGoal(p.runningGoal ?? '');
+    setFavEventIds(p.favoriteEventIds ?? []);
+    setEmergencyList(
+      p.emergencyContacts ??
+      (p.emergencyContactName && p.emergencyContactPhone
+        ? [
+          {
+            id: 'ec-1',
+            contactName: p.emergencyContactName,
+            relationship: p.emergencyContactRelation ?? 'ครอบครัว',
+            phone: p.emergencyContactPhone,
+            isPrimary: true,
+          },
+        ]
+        : [])
+    );
+    setAddressList(p.savedAddresses ?? []);
+    setParticipantList(p.savedParticipants ?? []);
+    setEcModalOpen(false);
+    setEditingEcId(null);
+    setAddrModalOpen(false);
+    setEditingAddrId(null);
+    setEditingPartId(null);
+    setPartDraft(createEmptyParticipantDraft());
+    const syncedSocial = enrichSocialLinksFromIdentities(user);
+    setFbUrl(syncedSocial.facebook ?? '');
+    setIgUrl(syncedSocial.instagram ?? '');
+    setLineUrl(syncedSocial.line ?? '');
+    setStravaUrl(p.socialLinks?.strava ?? '');
+    setWebUrl(p.socialLinks?.website ?? '');
+    setOtherLinks(p.socialLinks?.otherLinks ?? []);
+    setNotifPrefs(p.notificationPrefs ?? DEFAULT_NOTIFICATION_PREFS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user.id, user.identities.length]);
+
+  const serializedSavedParticipants = JSON.stringify(
+    user.runnerProfile?.savedParticipants ?? []
+  );
+  const serializedSavedAddresses = JSON.stringify(
+    user.runnerProfile?.savedAddresses ?? []
+  );
+  const serializedEmergencyContacts = JSON.stringify(
+    user.runnerProfile?.emergencyContacts ?? []
+  );
+  useEffect(() => {
+    setParticipantList(user.runnerProfile?.savedParticipants ?? []);
+  }, [user.id, serializedSavedParticipants]);
+  useEffect(() => {
+    setAddressList(user.runnerProfile?.savedAddresses ?? []);
+  }, [user.id, serializedSavedAddresses]);
+  useEffect(() => {
+    if (user.runnerProfile?.emergencyContacts) {
+      setEmergencyList(user.runnerProfile.emergencyContacts);
+    }
+  }, [user.id, serializedEmergencyContacts]);
+
+  const isEcModalDirty =
+    ecModalOpen &&
+    (ecName !== ecModalBaseline.name ||
+      ecRel !== ecModalBaseline.rel ||
+      ecPhone !== ecModalBaseline.phone ||
+      ecEmail !== ecModalBaseline.email);
+
+  const isAddrModalDirty =
+    addrModalOpen &&
+    (addrLabel !== addrModalBaseline.label ||
+      addrRecipient !== addrModalBaseline.recipient ||
+      addrPhone !== addrModalBaseline.phone ||
+      addrLine !== addrModalBaseline.line ||
+      addrProv !== addrModalBaseline.prov ||
+      addrDist !== addrModalBaseline.dist ||
+      addrSubd !== addrModalBaseline.subd ||
+      addrZip !== addrModalBaseline.zip ||
+      addrCountry !== addrModalBaseline.country);
+
+  const isPartModalDirty =
+    Boolean(editingPartId) && JSON.stringify(partDraft) !== partModalBaseline;
+
+  const confirmDiscardModalClose = (isDirty: boolean, doClose: () => void) => {
+    if (!isDirty) {
+      doClose();
+      return;
+    }
+    void Swal.fire({
+      icon: 'warning',
+      title: tx('ยังไม่ได้บันทึกข้อมูล'),
+      text: tx(
+        'คุณมีการกรอกหรือแก้ไขข้อมูลค้างอยู่ ต้องการละทิ้งข้อมูลและปิดหน้าต่างนี้หรือไม่?'
+      ),
+      showCancelButton: true,
+      confirmButtonText: tx('ละทิ้งข้อมูล'),
+      cancelButtonText: tx('กลับไปแก้ไขต่อ'),
+      reverseButtons: true,
+      buttonsStyling: false,
+      heightAuto: false,
+      scrollbarPadding: false,
+      customClass: {
+        container: 'runevent-swal-top',
+        popup: 'runevent-swal-popup',
+        actions: 'runevent-swal-actions',
+        confirmButton: 'btn-primary runevent-swal-discard-btn',
+        cancelButton: 'btn-secondary',
+      },
+    }).then((res) => {
+      if (res.isConfirmed) {
+        doClose();
+      }
+    });
+  };
+
+  const openEcModal = (ec?: RunnerEmergencyContact) => {
+    const init = ec
+      ? {
+        name: ec.contactName,
+        rel: ec.relationship,
+        phone: ec.phone,
+        email: ec.email ?? '',
+      }
+      : {
+        name: '',
+        rel: 'คู่สมรส / ครอบครัว',
+        phone: '',
+        email: '',
+      };
+    setEditingEcId(ec ? ec.id : null);
+    setEcName(init.name);
+    setEcRel(init.rel);
+    setEcPhone(init.phone);
+    setEcEmail(init.email);
+    setEcModalBaseline(init);
+    setEcModalOpen(true);
+  };
+
+  const requestCloseEcModal = () => {
+    confirmDiscardModalClose(isEcModalDirty, () => {
+      setEcModalOpen(false);
+      setEditingEcId(null);
+      setEcName('');
+      setEcPhone('');
+      setEcEmail('');
+    });
+  };
+
+  const openAddrModal = (addr?: RunnerSavedAddress) => {
+    const init = addr
+      ? {
+        label: addr.addressName,
+        recipient: addr.recipientName,
+        phone: addr.phone,
+        line: addr.address,
+        prov: addr.province,
+        dist: addr.district,
+        subd: addr.subdistrict,
+        zip: addr.postalCode,
+        country: addr.country,
+      }
+      : {
+        label: '',
+        recipient: user.fullNameTh,
+        phone: prof.phone ?? '',
+        line: '',
+        prov: 'เชียงใหม่',
+        dist: 'เมืองเชียงใหม่',
+        subd: 'สุเทพ',
+        zip: '50200',
+        country: 'Thailand',
+      };
+    setEditingAddrId(addr ? addr.id : null);
+    setAddrLabel(init.label);
+    setAddrRecipient(init.recipient);
+    setAddrPhone(init.phone);
+    setAddrLine(init.line);
+    setAddrProv(init.prov);
+    setAddrDist(init.dist);
+    setAddrSubd(init.subd);
+    setAddrZip(init.zip);
+    setAddrCountry(init.country);
+    setAddrModalBaseline(init);
+    setAddrModalOpen(true);
+  };
+
+  const requestCloseAddrModal = () => {
+    confirmDiscardModalClose(isAddrModalDirty, () => {
+      setAddrModalOpen(false);
+      setEditingAddrId(null);
+      setAddrLabel('');
+      setAddrLine('');
+    });
+  };
+
+  const openPartModal = (pt: SavedParticipant) => {
+    const initDraft: SavedParticipant = {
+      ...createEmptyParticipantDraft(),
+      ...pt,
+    };
+    setEditingPartId(pt.id);
+    setPartDraft(initDraft);
+    setPartModalBaseline(JSON.stringify(initDraft));
+  };
+
+  const requestClosePartModal = () => {
+    confirmDiscardModalClose(isPartModalDirty, () => {
+      setEditingPartId(null);
+      setPartDraft(createEmptyParticipantDraft());
+    });
+  };
+
+  const closeActiveModalRef = useRef<() => void>(() => { });
+  closeActiveModalRef.current = () => {
+    if (ecModalOpen) {
+      requestCloseEcModal();
+    } else if (addrModalOpen) {
+      requestCloseAddrModal();
+    } else if (editingPartId) {
+      requestClosePartModal();
+    }
+  };
+
+  const anyModalOpen =
+    Boolean(editingPartId) || ecModalOpen || addrModalOpen;
+  useEffect(() => {
+    if (!anyModalOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (Swal.isVisible()) return;
+        e.preventDefault();
+        closeActiveModalRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [anyModalOpen]);
+
+  const savedPersonalBaseline = useMemo(() => {
+    const p = user.runnerProfile ?? {};
+    const np = user.fullNameTh.trim().split(/\s+/);
+    const ep = /^[A-Za-z.\s-]+$/.test(user.fullNameEn ?? '')
+      ? (user.fullNameEn ?? '').trim().split(/\s+/)
+      : [];
+    return {
+      avatarUrl: p.avatarDataUrl ?? '',
+      firstName: p.firstName ?? sanitizeThaiNameInput(np[0] ?? '').trim(),
+      lastName:
+        p.lastName ?? sanitizeThaiNameInput(np.slice(1).join(' ')).trim(),
+      nickname: p.nickname ?? '',
+      firstNameEn: p.firstNameEn ?? ep[0] ?? '',
+      lastNameEn: p.lastNameEn ?? ep.slice(1).join(' ') ?? '',
+      nicknameEn: p.nicknameEn ?? '',
+      dob: p.dateOfBirth ?? '',
+      gender: (p.gender ?? 'ไม่ระบุ') as 'ชาย' | 'หญิง' | 'ไม่ระบุ',
+      nationality: p.nationality ?? 'Thailand',
+      idType: (p.idType && p.idType !== 'none' ? p.idType : 'thai_id') as
+        | 'none'
+        | 'thai_id'
+        | 'passport',
+      idNumber: p.idNumber ?? '',
+      country: p.country ?? 'Thailand',
+      province: p.province ?? 'เชียงใหม่',
+      district: p.district ?? 'เมืองเชียงใหม่',
+      subdistrict: p.subdistrict ?? 'สุเทพ',
+      postalCode: p.postalCode ?? '50200',
+      streetAddress: p.address ?? '',
+      phoneInput: p.phone ?? '',
+    };
+  }, [user]);
+
+  const isPersonalDirty =
+    avatarUrl !== savedPersonalBaseline.avatarUrl ||
+    firstName !== savedPersonalBaseline.firstName ||
+    lastName !== savedPersonalBaseline.lastName ||
+    nickname !== savedPersonalBaseline.nickname ||
+    firstNameEn !== savedPersonalBaseline.firstNameEn ||
+    lastNameEn !== savedPersonalBaseline.lastNameEn ||
+    nicknameEn !== savedPersonalBaseline.nicknameEn ||
+    dob !== savedPersonalBaseline.dob ||
+    gender !== savedPersonalBaseline.gender ||
+    nationality !== savedPersonalBaseline.nationality ||
+    (idNumber.trim() !== '' && idType !== savedPersonalBaseline.idType) ||
+    idNumber !== savedPersonalBaseline.idNumber ||
+    country !== savedPersonalBaseline.country ||
+    province !== savedPersonalBaseline.province ||
+    district !== savedPersonalBaseline.district ||
+    subdistrict !== savedPersonalBaseline.subdistrict ||
+    postalCode !== savedPersonalBaseline.postalCode ||
+    streetAddress !== savedPersonalBaseline.streetAddress ||
+    phoneInput !== savedPersonalBaseline.phoneInput;
+
+  const effectivePersonalDirty = activeTab === 'personal' && isPersonalDirty;
+
+  useEffect(() => {
+    onPersonalDirtyChange?.(effectivePersonalDirty);
+    return () => {
+      onPersonalDirtyChange?.(false);
+    };
+  }, [effectivePersonalDirty, onPersonalDirtyChange]);
+
+  useEffect(() => {
+    if (!effectivePersonalDirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [effectivePersonalDirty]);
+
+  const resetPersonalFormToSaved = () => {
+    setAvatarUrl(savedPersonalBaseline.avatarUrl);
+    setFirstName(savedPersonalBaseline.firstName);
+    setLastName(savedPersonalBaseline.lastName);
+    setNickname(savedPersonalBaseline.nickname);
+    setFirstNameEn(savedPersonalBaseline.firstNameEn);
+    setLastNameEn(savedPersonalBaseline.lastNameEn);
+    setNicknameEn(savedPersonalBaseline.nicknameEn);
+    setDob(savedPersonalBaseline.dob);
+    setGender(savedPersonalBaseline.gender);
+    setNationality(savedPersonalBaseline.nationality);
+    setIdType(savedPersonalBaseline.idType);
+    setIdNumber(savedPersonalBaseline.idNumber);
+    setCountry(savedPersonalBaseline.country);
+    setProvince(savedPersonalBaseline.province);
+    setDistrict(savedPersonalBaseline.district);
+    setSubdistrict(savedPersonalBaseline.subdistrict);
+    setPostalCode(savedPersonalBaseline.postalCode);
+    setStreetAddress(savedPersonalBaseline.streetAddress);
+    setPhoneInput(savedPersonalBaseline.phoneInput);
+  };
+
+  const requestSwitchProfileTab = (nextTab: RunnerProfileTab) => {
+    if (nextTab === activeTab) {
+      setMobileNavOpen(false);
+      return;
+    }
+    if (activeTab === 'personal' && isPersonalDirty) {
+      setMobileNavOpen(false);
+      void Swal.fire({
+        icon: 'warning',
+        title: tx('ยังไม่ได้บันทึกข้อมูลส่วนตัว'),
+        text: tx(
+          'คุณมีการแก้ไขข้อมูลส่วนตัวค้างอยู่ กรุณาบันทึกข้อมูลก่อน หรือกดยืนยันเพื่อละทิ้งข้อมูลที่กำลังแก้ไขและเปลี่ยนหน้า'
+        ),
+        showCancelButton: true,
+        confirmButtonText: tx('ละทิ้งการแก้ไขและเปลี่ยนหน้า'),
+        cancelButtonText: tx('กลับไปบันทึกข้อมูล'),
+        reverseButtons: true,
+        buttonsStyling: false,
+        heightAuto: false,
+        scrollbarPadding: false,
+        customClass: {
+          container: 'runevent-swal-top',
+          popup: 'runevent-swal-popup',
+          actions: 'runevent-swal-actions',
+          confirmButton: 'btn-primary runevent-swal-discard-btn',
+          cancelButton: 'btn-secondary',
+        },
+      }).then((result) => {
+        if (result.isConfirmed) {
+          resetPersonalFormToSaved();
+          setBanner(null);
+          setActiveTab(nextTab);
+        }
+      });
+      return;
+    }
+    setActiveTab(nextTab);
+    setMobileNavOpen(false);
+    setBanner(null);
+  };
+
+  const completion = useMemo(
+    () => evaluateRunnerProfileCompletion(user, platformProfileConfig),
+    [user, platformProfileConfig]
+  );
+
+  const myRegistrations = useMemo(
+    () =>
+      registrations.filter(
+        (r) =>
+          r.runnerUserId === user.id ||
+          (user.contactEmail &&
+            r.email.toLowerCase() === user.contactEmail.toLowerCase())
+      ),
+    [registrations, user.id, user.contactEmail]
+  );
+
+  const categorizedHistory = useMemo(() => {
+    return myRegistrations.map((reg) => {
+      const ev = events.find((e) => e.id === reg.eventId);
+      const cat = ev?.categories.find((c) => c.id === reg.categoryId);
+      const isPast =
+        ev?.status === 'completed' ||
+        (ev?.eventDate ? ev.eventDate < '2026-11-18' : false);
+      return { reg, ev, cat, isPast };
+    });
+  }, [myRegistrations, events]);
+
+  const filteredHistory = useMemo(() => {
+    if (historyFilter === 'upcoming') {
+      return categorizedHistory.filter((x) => !x.isPast);
+    }
+    if (historyFilter === 'past') {
+      return categorizedHistory.filter((x) => x.isPast);
+    }
+    return categorizedHistory;
+  }, [categorizedHistory, historyFilter]);
+
+  const buildMergedProfile = (
+    overrides: Partial<RunnerProfileData> = {}
+  ): RunnerProfileData => ({
+    ...prof,
+    avatarDataUrl: avatarUrl || undefined,
+    firstName: firstName.trim(),
+    lastName: lastName.trim(),
+    nickname: nickname.trim() || undefined,
+    firstNameEn: firstNameEn.trim() || undefined,
+    lastNameEn: lastNameEn.trim() || undefined,
+    nicknameEn: nicknameEn.trim() || undefined,
+    dateOfBirth: dob || undefined,
+    gender,
+    phone: phoneInput.trim() || undefined,
+    phoneVerified: prof.phoneVerified,
+    nationality: nationality.trim() || 'Thailand',
+    idType: idNumber.trim() ? idType : 'none',
+    idNumber: idType === 'none' ? undefined : idNumber.trim() || undefined,
+    country: country.trim() || 'Thailand',
+    province,
+    district,
+    subdistrict,
+    postalCode: postalCode.trim(),
+    address: streetAddress.trim() || undefined,
+    preferredShirtSize: prefShirtSize || undefined,
+    preferredShirtType: prefShirtType,
+    preferredShirtFit: prefShirtFit,
+    preferredDistances: prefDistances,
+    preferredRunningTypes: prefRunTypes,
+    runningExperience: runExp,
+    runningGoal: runningGoal.trim() || undefined,
+    favoriteEventIds: favEventIds,
+    emergencyContacts: emergencyList,
+    savedAddresses: addressList,
+    savedParticipants: participantList,
+    socialLinks: {
+      facebook: fbUrl.trim() || undefined,
+      instagram: igUrl.trim() || undefined,
+      line: lineUrl.trim() || undefined,
+      strava: stravaUrl.trim() || undefined,
+      website: webUrl.trim() || undefined,
+      otherLinks,
+    },
+    notificationPrefs: notifPrefs,
+    ...overrides,
+  });
+
+  const saveProfileWithFeedback = async (
+    profile: RunnerProfileData,
+    names?: { fullNameTh?: string; fullNameEn?: string },
+    successMessage?: string
+  ): Promise<boolean> => {
+    setBanner(null);
+    let result: { ok: boolean; error?: string };
+    try {
+      result = await onSaveProfile(profile, names);
+    } catch {
+      result = { ok: false };
+    }
+    const message = result.ok
+      ? successMessage ?? tx('บันทึกข้อมูลโปรไฟล์เรียบร้อยแล้ว')
+      : result.error ?? tx('ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่อีกครั้ง');
+    showResultModalAlert(result.ok, message);
+    if (!result.ok) setBanner({ tone: 'err', text: message });
+    return result.ok;
+  };
+
+  const handleSavePersonal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!firstNameEn.trim() || !lastNameEn.trim()) {
+      const errMsg = tx(
+        'กรุณากรอกชื่อจริงและนามสกุลภาษาอังกฤษ (First Name & Last Name EN) ให้ครบถ้วน'
+      );
+      setBanner({ tone: 'err', text: errMsg });
+      showResultModalAlert(false, errMsg);
+      return;
+    }
+    if (idType === 'thai_id' && idNumber.trim() && idNumber.trim().length !== 13) {
+      const errMsg = tx(
+        'เลขบัตรประจำตัวประชาชนต้องครบ 13 หลัก (หรือเว้นว่างหากยังไม่ต้องการระบุ)'
+      );
+      setBanner({ tone: 'err', text: errMsg });
+      showResultModalAlert(false, errMsg);
+      return;
+    }
+    const composedEn = `${firstNameEn.trim()} ${lastNameEn.trim()}`.trim();
+    const composedTh = `${firstName.trim()} ${lastName.trim()}`.trim();
+    const okMsg = tx('บันทึกข้อมูลส่วนตัวเรียบร้อยแล้ว');
+    if (
+      !(await saveProfileWithFeedback(
+        buildMergedProfile(),
+        {
+          fullNameTh: composedTh || composedEn,
+          fullNameEn: composedEn,
+        },
+        okMsg
+      ))
+    )
+      return;
+    setBanner({
+      tone: 'ok',
+      text: okMsg,
+    });
+  };
+
+  const handleSavePreferences = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const okMsg = tx(
+      'บันทึกไซส์เสื้อเริ่มต้นและความชอบการวิ่งแล้ว (มีผลกับการสมัครครั้งถัดไป ไม่กระทบใบสมัครเดิมที่ยืนยันแล้ว)'
+    );
+    if (!(await saveProfileWithFeedback(buildMergedProfile(), undefined, okMsg)))
+      return;
+    setBanner({
+      tone: 'ok',
+      text: okMsg,
+    });
+  };
+
+  const handleSaveEmergencyContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ecName.trim() || ecPhone.trim().replace(/\D/g, '').length < 9) {
+      const errMsg = tx('กรุณาระบุชื่อและเบอร์โทรผู้ติดต่อฉุกเฉิน (9–10 หลัก)');
+      setBanner({ tone: 'err', text: errMsg });
+      showResultModalAlert(false, errMsg);
+      return;
+    }
+    let nextList: RunnerEmergencyContact[];
+    if (editingEcId) {
+      nextList = emergencyList.map((c) =>
+        c.id === editingEcId
+          ? {
+            ...c,
+            contactName: ecName.trim(),
+            relationship: ecRel.trim() || 'ครอบครัว',
+            phone: ecPhone.trim(),
+            email: ecEmail.trim() || undefined,
+          }
+          : c
+      );
+    } else {
+      const isFirst = emergencyList.length === 0;
+      nextList = [
+        ...emergencyList,
+        {
+          id: `ec-${Date.now()}`,
+          contactName: ecName.trim(),
+          relationship: ecRel.trim() || 'ครอบครัว',
+          phone: ecPhone.trim(),
+          email: ecEmail.trim() || undefined,
+          isPrimary: isFirst,
+        },
+      ];
+    }
+    setEmergencyList(nextList);
+    setEcModalOpen(false);
+    setEditingEcId(null);
+    setEcName('');
+    setEcPhone('');
+    setEcEmail('');
+    const okMsg = tx('บันทึกข้อมูลผู้ติดต่อฉุกเฉินเรียบร้อยแล้ว');
+    if (
+      !(await saveProfileWithFeedback(
+        buildMergedProfile({ emergencyContacts: nextList }),
+        undefined,
+        okMsg
+      ))
+    )
+      return;
+    setBanner({
+      tone: 'ok',
+      text: okMsg,
+    });
+  };
+
+  const handleSaveAddressItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addrLabel.trim() || !addrRecipient.trim() || !addrLine.trim()) {
+      const errMsg = tx(
+        'กรุณาระบุชื่อเรียกที่อยู่ ชื่อผู้รับ และบ้านเลขที่/ถนนให้ครบถ้วน'
+      );
+      setBanner({ tone: 'err', text: errMsg });
+      showResultModalAlert(false, errMsg);
+      return;
+    }
+    let nextAddrs: RunnerSavedAddress[];
+    if (editingAddrId) {
+      nextAddrs = addressList.map((a) =>
+        a.id === editingAddrId
+          ? {
+            ...a,
+            addressName: addrLabel.trim(),
+            recipientName: addrRecipient.trim(),
+            phone: addrPhone.trim(),
+            address: addrLine.trim(),
+            province: addrProv,
+            district: addrDist,
+            subdistrict: addrSubd,
+            postalCode: addrZip.trim(),
+            country: addrCountry.trim() || 'Thailand',
+          }
+          : a
+      );
+    } else {
+      const isFirst = addressList.length === 0;
+      nextAddrs = [
+        ...addressList,
+        {
+          id: `addr-${Date.now()}`,
+          addressName: addrLabel.trim(),
+          recipientName: addrRecipient.trim(),
+          phone: addrPhone.trim(),
+          address: addrLine.trim(),
+          province: addrProv,
+          district: addrDist,
+          subdistrict: addrSubd,
+          postalCode: addrZip.trim(),
+          country: addrCountry.trim() || 'Thailand',
+          isDefault: isFirst,
+        },
+      ];
+    }
+    setAddressList(nextAddrs);
+    setAddrModalOpen(false);
+    setEditingAddrId(null);
+    setAddrLabel('');
+    setAddrLine('');
+    const okMsg = tx('บันทึกที่อยู่จัดส่งเรียบร้อยแล้ว');
+    if (
+      !(await saveProfileWithFeedback(
+        buildMergedProfile({ savedAddresses: nextAddrs }),
+        undefined,
+        okMsg
+      ))
+    )
+      return;
+    setBanner({
+      tone: 'ok',
+      text: okMsg,
+    });
+  };
+
+  const handleSaveSocialLinks = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const checkUrl = (u: string) =>
+      !u.trim() || /^https?:\/\//i.test(u.trim());
+    if (
+      !checkUrl(fbUrl) ||
+      !checkUrl(igUrl) ||
+      !checkUrl(stravaUrl) ||
+      !checkUrl(webUrl)
+    ) {
+      const errMsg = tx('ลิงก์โซเชียลมีเดียต้องขึ้นต้นด้วย https:// หรือ http://');
+      setBanner({ tone: 'err', text: errMsg });
+      showResultModalAlert(false, errMsg);
+      return;
+    }
+    const nextSocial: RunnerSocialLinks = {
+      facebook: fbUrl.trim() || undefined,
+      instagram: igUrl.trim() || undefined,
+      strava: stravaUrl.trim() || undefined,
+      website: webUrl.trim() || undefined,
+      otherLinks,
+    };
+    const okMsg = tx('บันทึกลิงก์โซเชียลมีเดียเรียบร้อยแล้ว');
+    if (
+      !(await saveProfileWithFeedback(
+        buildMergedProfile({ socialLinks: nextSocial }),
+        undefined,
+        okMsg
+      ))
+    )
+      return;
+    setBanner({
+      tone: 'ok',
+      text: okMsg,
+    });
+  };
+
+  const handleSaveNotificationPrefs = async (next: RunnerNotificationPrefs) => {
+    setNotifPrefs(next);
+    const okMsg = tx('อัปเดตการตั้งค่ารับการแจ้งเตือนเรียบร้อยแล้ว');
+    if (
+      !(await saveProfileWithFeedback(
+        buildMergedProfile({ notificationPrefs: next }),
+        undefined,
+        okMsg
+      ))
+    )
+      return;
+    setBanner({
+      tone: 'ok',
+      text: okMsg,
+    });
+  };
+
+  const activeNavItems: {
+    key: RunnerProfileTab;
+    label: string;
+    icon: React.ReactNode;
+    shelved?: false;
+  }[] = [
+      {
+        key: 'personal',
+        label: tx('ข้อมูลส่วนตัว'),
+        icon: <IconUsers size={16} />,
+      },
+      {
+        key: 'emergency',
+        label: tx('ผู้ติดต่อฉุกเฉิน'),
+        icon: <IconAlert size={16} />,
+      },
+      {
+        key: 'addresses',
+        label: tx('ที่อยู่จัดส่ง'),
+        icon: <IconMapPin size={16} />,
+      },
+      {
+        key: 'participants',
+        label: tx('ผู้สมัครที่บันทึกไว้'),
+        icon: <IconUsers size={16} />,
+      },
+      {
+        key: 'history',
+        label: tx('ประวัติการวิ่งและใบเซอร์'),
+        icon: <IconBib size={16} />,
+      },
+      {
+        key: 'security',
+        label: tx('บัญชีและความปลอดภัย'),
+        icon: <IconShield size={16} />,
+      },
+    ];
+
+  // หมวดที่พักไว้และย้ายไปตำแหน่งท้ายสุด — จะไม่นำไปใช้จริงในระบบหากเปิดเป็น Public
+  const shelvedNavItems: {
+    key: RunnerProfileTab;
+    label: string;
+    icon: React.ReactNode;
+    shelved: true;
+  }[] = [
+      {
+        key: 'preferences',
+        label: tx('ไซส์เสื้อและการวิ่ง'),
+        icon: <IconShirt size={16} />,
+        shelved: true,
+      },
+      {
+        key: 'achievements',
+        label: tx('รางวัลและความสำเร็จ'),
+        icon: <IconAward size={16} />,
+        shelved: true,
+      },
+      {
+        key: 'social',
+        label: tx('โซเชียลมีเดีย'),
+        icon: <IconGlobe size={16} />,
+        shelved: true,
+      },
+      {
+        key: 'notifications',
+        label: tx('การแจ้งเตือน'),
+        icon: <IconBell size={16} />,
+        shelved: true,
+      },
+      {
+        key: 'organizer',
+        label: tx('องค์กรและคำเชิญ'),
+        icon: <IconBuilding size={16} />,
+        shelved: true,
+      },
+    ];
+
+  const navItems = [...activeNavItems, ...shelvedNavItems];
+
+  const isEn = getLang() === 'en';
+  const heroDisplayName = isEn
+    ? user.fullNameEn ||
+    `${firstNameEn} ${lastNameEn}`.trim() ||
+    tx(user.fullNameTh)
+    : user.fullNameTh;
+  const heroDisplayNick = isEn ? nicknameEn || tx(nickname) : nickname;
+  const initials = (
+    (isEn
+      ? firstNameEn.trim()[0] ?? user.fullNameEn?.[0]
+      : firstName.trim()[0] ?? user.fullNameTh[0]) ?? 'R'
+  ).toUpperCase();
+  const hasGoogle = user.identities.some((i) => i.provider === 'google');
+  const hasFacebook = user.identities.some((i) => i.provider === 'facebook');
+  const hasLine = user.identities.some((i) => i.provider === 'line');
+  const otherSessionsCount = user.sessions.filter(
+    (s) => !s.isCurrentDevice
+  ).length;
+
+  return (
+    <main className="customer-container">
+      {/* TOP PROFILE HERO & COMPLETION BAR (§11) */}
+      <section className="clean-panel runner-profile-hero">
+        <div className="runner-hero-top">
+          <div className="runner-avatar-cluster">
+            <div className="runner-avatar-frame">
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt={heroDisplayName}
+                  className="runner-avatar-img"
+                />
+              ) : (
+                <span className="runner-avatar-initials">{initials}</span>
+              )}
+            </div>
+            <div className="runner-hero-identity">
+              <div className="runner-hero-title-row">
+                <h1>
+                  {heroDisplayName}
+                  {heroDisplayNick ? ` (${heroDisplayNick})` : ''}
+                </h1>
+                <span className="mono-code">{user.code}</span>
+                <span
+                  className={`status-pill ${user.accountStatus === 'deletion_requested'
+                    ? 'badge-amber'
+                    : 'badge-forest'
+                    }`}
+                >
+                  <IconCheckCircle size={13} />
+                  <span>
+                    {user.accountStatus === 'deletion_requested'
+                      ? tx('รอพิจารณาลบบัญชี')
+                      : tx('บัญชีปกติ')}
+                  </span>
+                </span>
+              </div>
+              <p className="muted-block">
+                {tx(
+                  'ศูนย์กลางข้อมูลนักวิ่งสำหรับเติมฟอร์มสมัครงานวิ่งอัตโนมัติ (การแก้ไขข้อมูลในหน้านี้จะไม่เปลี่ยนแปลงข้อมูลใบสมัครเดิมที่ยืนยันไปแล้ว)'
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="cta-inline-row">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={onNavigateDiscoverEvents}
+            >
+              <IconFlag size={15} />
+              <span>{tx('ค้นหางานวิ่ง')}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Profile Completion Strip */}
+        <div className="runner-completion-box">
+          <div className="runner-completion-head">
+            <strong>{tx('ความครบถ้วนของข้อมูลโปรไฟล์')}</strong>
+            <strong className="mono-num text-forest">
+              {completion.pct}% ({completion.completedCount}/
+              {completion.totalRequired} {tx('หมวดที่ระบบกำหนด')})
+            </strong>
+          </div>
+          <div className="hbar-track">
+            <div
+              className="hbar-fill fill-forest"
+              style={{ width: `${Math.max(8, completion.pct)}%` }}
+            />
+          </div>
+          <div className="runner-completion-pills">
+            {completion.sections.map((sec) => {
+              const targetTabMap: Record<typeof sec.key, RunnerProfileTab> = {
+                personal: 'personal',
+                contact:
+                  !user.contactEmail || !user.emailVerified
+                    ? 'security'
+                    : 'personal',
+                running_prefs: 'preferences',
+                emergency: 'emergency',
+                address: 'addresses',
+              };
+              return (
+                <button
+                  key={sec.key}
+                  type="button"
+                  className={`completion-check-pill ${sec.complete ? 'is-complete' : 'is-missing'
+                    }`}
+                  onClick={() => {
+                    requestSwitchProfileTab(targetTabMap[sec.key]);
+                  }}
+                  title={sec.complete ? tx('ข้อมูลครบถ้วน') : tx(sec.missingHintTh)}
+                >
+                  {sec.complete ? (
+                    <IconCheckCircle size={13} />
+                  ) : (
+                    <IconAlert size={13} />
+                  )}
+                  <span>{tx(sec.labelTh)}</span>
+                  {!sec.required && (
+                    <small>({tx('ไม่บังคับ')})</small>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {banner && (
+        <div
+          className={
+            banner.tone === 'ok' ? 'success-callout' : 'error-callout'
+          }
+          role="status"
+        >
+          {banner.tone === 'ok' ? (
+            <IconCheckCircle size={17} />
+          ) : (
+            <IconAlert size={17} />
+          )}
+          <span>{banner.text}</span>
+        </div>
+      )}
+
+      {/* WORKSPACE LAYOUT: STICKY SUB-NAVIGATION + ACTIVE MODULE */}
+      <div className="runner-profile-grid">
+        <nav
+          className={`runner-profile-nav clean-panel ${mobileNavOpen ? 'is-mobile-open' : ''
+            }`}
+          aria-label={tx('หมวดจัดการโปรไฟล์นักวิ่ง')}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && mobileNavOpen) {
+              setMobileNavOpen(false);
+            }
+          }}
+        >
+          {(() => {
+            const activeMainIdx = activeNavItems.findIndex(
+              (item) => item.key === activeTab
+            );
+            const activeItem =
+              navItems.find((item) => item.key === activeTab) ?? navItems[0];
+            return (
+              <button
+                type="button"
+                className="runner-mobile-nav-trigger"
+                aria-expanded={mobileNavOpen}
+                aria-controls="runner-profile-nav-list"
+                onClick={() => setMobileNavOpen((prev) => !prev)}
+              >
+                <span className="runner-mobile-nav-current">
+                  <span className="runner-mobile-nav-dot" aria-hidden="true" />
+                  {activeItem.icon}
+                  <span className="runner-mobile-nav-title">
+                    {activeItem.label}
+                  </span>
+                  <span className="runner-mobile-nav-count mono-code">
+                    {activeMainIdx >= 0
+                      ? `(${activeMainIdx + 1}/${activeNavItems.length})`
+                      : `(${tx('พักไว้')})`}
+                  </span>
+                </span>
+                <span className="runner-mobile-nav-action">
+                  <span>
+                    {mobileNavOpen ? tx('พับเก็บ') : tx('เปลี่ยนหมวด')}
+                  </span>
+                  <IconChevronDown
+                    size={15}
+                    className={`runner-mobile-chevron ${mobileNavOpen ? 'is-open' : ''
+                      }`}
+                  />
+                </span>
+              </button>
+            );
+          })()}
+
+          <div id="runner-profile-nav-list" className="runner-profile-nav-list">
+            {activeNavItems.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                aria-current={activeTab === item.key ? 'page' : undefined}
+                className={`runner-nav-btn ${activeTab === item.key ? 'active' : ''
+                  }`}
+                onClick={() => {
+                  requestSwitchProfileTab(item.key);
+                }}
+              >
+                <span className="runner-nav-label">
+                  {item.icon}
+                  <span>{item.label}</span>
+                </span>
+              </button>
+            ))}
+
+            {/* SHELVED / DIMMED NON-PUBLIC ITEMS MOVED TO THE VERY BOTTOM */}
+            <div className="runner-shelved-group">
+              <div className="runner-shelved-head">
+                <span className="runner-shelved-note">
+                  {tx('จะไม่นำไปใช้จริงในระบบเมื่อเปิดใช้งานสาธารณะ')}
+                </span>
+                <button
+                  type="button"
+                  className="runner-shelved-toggle"
+                  aria-expanded={showShelvedNav}
+                  onClick={() => setShowShelvedNav((v) => !v)}
+                >
+                  {showShelvedNav ? tx('ซ่อน') : tx('แสดง (5)')}
+                </button>
+              </div>
+
+              {showShelvedNav && (
+                <div className="runner-shelved-list">
+                  {shelvedNavItems.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      aria-current={activeTab === item.key ? 'page' : undefined}
+                      className={`runner-nav-btn is-shelved ${activeTab === item.key ? 'active' : ''
+                        }`}
+                      title={tx('จะไม่นำไปใช้จริงในระบบเมื่อเปิดใช้งานสาธารณะ')}
+                      onClick={() => {
+                        requestSwitchProfileTab(item.key);
+                      }}
+                    >
+                      <span className="runner-nav-label">
+                        {item.icon}
+                        <span>{item.label}</span>
+                      </span>
+                      <span className="runner-shelved-tag">
+                        {tx('พักไว้')}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </nav>
+
+        <div className="runner-profile-content">
+          {shelvedNavItems.some((item) => item.key === activeTab) && (
+            <div className="shelved-public-notice" role="note">
+              <IconAlert size={17} />
+              <div>
+                <strong>
+                  {tx(
+                    'หมวดนี้ถูกพักไว้ — จะไม่นำไปใช้จริงในระบบเมื่อเปิดใช้งานสาธารณะ'
+                  )}
+                </strong>
+                <div className="muted-inline">
+                  {tx(
+                    'แสดงโครงสร้างต้นแบบไว้ท้ายสุดเพื่ออ้างอิงภายในเท่านั้น ผู้ใช้งานทั่วไปจะไม่เห็นเมนูนี้เมื่อเปิดระบบจริง'
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          {/* ==================== 1. PERSONAL INFORMATION ==================== */}
+          {activeTab === 'personal' && (
+            <form className="clean-panel canvas-stack" onSubmit={handleSavePersonal}>
+              <div>
+                <h2>{tx('ข้อมูลส่วนตัว')}</h2>
+                <p className="muted-block">
+                  {tx(
+                    'ข้อมูลพื้นฐานที่นำไปเติมในฟอร์มสมัครงานวิ่งอัตโนมัติ (ช่องเลขบัตรประชาชนหรือหนังสือเดินทางไม่บังคับ เก็บเฉพาะกรณีผู้จัดต้องการใช้ออกประกันอุบัติเหตุ)'
+                  )}
+                </p>
+              </div>
+
+              {/* Profile Picture */}
+              <div className="runner-avatar-upload-bar">
+                <div className="runner-avatar-frame lg">
+                  {avatarUrl ? (
+                    <img
+                      src={avatarUrl}
+                      alt={heroDisplayName}
+                      className="runner-avatar-img"
+                    />
+                  ) : (
+                    <span className="runner-avatar-initials">{initials}</span>
+                  )}
+                </div>
+                <div className="runner-avatar-controls">
+                  <strong>{tx('รูปโปรไฟล์นักวิ่ง')}</strong>
+                  <span className="muted-inline">
+                    {tx('รองรับไฟล์รูปภาพ ย่อขนาดอัตโนมัติไม่เกิน 320 พิกเซล')}
+                  </span>
+                  <div className="cta-inline-row">
+                    <label className="btn-secondary file-pick-btn">
+                      <IconCamera size={15} />
+                      <span>{tx('อัปโหลดรูปโปรไฟล์')}</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          try {
+                            const resized = await resizeAvatarFile(f);
+                            setAvatarUrl(resized);
+                          } catch {
+                            setBanner({
+                              tone: 'err',
+                              text: tx('อ่านไฟล์รูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'),
+                            });
+                          }
+                        }}
+                      />
+                    </label>
+                    {avatarUrl && (
+                      <button
+                        type="button"
+                        className="btn-ghost-sm"
+                        onClick={() => setAvatarUrl('')}
+                      >
+                        {tx('ลบรูปออก')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <h3>{tx('ชื่อและนามสกุล')}</h3>
+              <div className="form-grid-2">
+                <div className="form-row">
+                  <label htmlFor="rp-fnen">
+                    {<RequiredFieldText text={tx('ชื่อ (ภาษาอังกฤษ) *')} />}
+                  </label>
+                  <input
+                    id="rp-fnen"
+                    type="text"
+                    value={firstNameEn}
+                    onChange={(e) =>
+                      setFirstNameEn(sanitizeEnglishNameInput(e.target.value))
+                    }
+                    placeholder={tx('กรอกชื่อภาษาอังกฤษ')}
+                    required
+                  />
+                </div>
+                <div className="form-row">
+                  <label htmlFor="rp-lnen">
+                    {<RequiredFieldText text={tx('นามสกุล (ภาษาอังกฤษ) *')} />}
+                  </label>
+                  <input
+                    id="rp-lnen"
+                    type="text"
+                    value={lastNameEn}
+                    onChange={(e) =>
+                      setLastNameEn(sanitizeEnglishNameInput(e.target.value))
+                    }
+                    placeholder={tx('กรอกนามสกุลภาษาอังกฤษ')}
+                    required
+                  />
+                </div>
+                <div className="form-row">
+                  <label htmlFor="rp-fn">{tx('ชื่อ (ภาษาไทย)')}</label>
+                  <input
+                    id="rp-fn"
+                    type="text"
+                    value={firstName}
+                    onChange={(e) =>
+                      setFirstName(sanitizeThaiNameInput(e.target.value))
+                    }
+                    placeholder={tx('กรอกชื่อภาษาไทย')}
+                  />
+                </div>
+                <div className="form-row">
+                  <label htmlFor="rp-ln">{tx('นามสกุล (ภาษาไทย)')}</label>
+                  <input
+                    id="rp-ln"
+                    type="text"
+                    value={lastName}
+                    onChange={(e) =>
+                      setLastName(sanitizeThaiNameInput(e.target.value))
+                    }
+                    placeholder={tx('กรอกนามสกุลภาษาไทย')}
+                  />
+                </div>
+                <div className="form-row">
+                  <label htmlFor="rp-nick">{tx('ชื่อเล่น (ภาษาไทย)')}</label>
+                  <input
+                    id="rp-nick"
+                    type="text"
+                    value={nickname}
+                    onChange={(e) =>
+                      setNickname(sanitizeThaiNameInput(e.target.value))
+                    }
+                    placeholder={tx('กรอกชื่อเล่นภาษาไทย')}
+                  />
+                </div>
+                <div className="form-row">
+                  <label htmlFor="rp-nicken">
+                    {tx('ชื่อเล่น (ภาษาอังกฤษ)')}
+                  </label>
+                  <input
+                    id="rp-nicken"
+                    type="text"
+                    value={nicknameEn}
+                    onChange={(e) =>
+                      setNicknameEn(sanitizeEnglishNameInput(e.target.value))
+                    }
+                    placeholder={tx('กรอกชื่อเล่นภาษาอังกฤษ')}
+                  />
+                </div>
+              </div>
+
+              <h3>{tx('ข้อมูลพื้นฐาน')}</h3>
+              <div className="form-grid-2">
+                <div className="form-row">
+                  <label htmlFor="rp-dob">{tx('วันเกิด')}</label>
+                  <DateOfBirthInput
+                    id="rp-dob"
+                    valueIso={dob}
+                    onChangeIso={setDob}
+                  />
+                </div>
+                <fieldset className="runner-gender-field">
+                  <legend>{tx('เพศ')}</legend>
+                  <div className="runner-gender-options">
+                    {(['ชาย', 'หญิง'] as const).map((option) => (
+                      <label key={option}>
+                        <input
+                          type="radio"
+                          name="profile-gender"
+                          value={option}
+                          checked={gender === option}
+                          onChange={() => setGender(option)}
+                        />
+                        <span>{tx(option)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <div className="form-row">
+                  <label htmlFor="rp-nat">{tx('สัญชาติ')}</label>
+                  <input
+                    id="rp-nat"
+                    type="text"
+                    value={
+                      !isEn && nationality.trim().toLowerCase() === 'thailand'
+                        ? 'ไทย'
+                        : isEn && nationality.trim() === 'ไทย'
+                          ? 'Thailand'
+                          : nationality
+                    }
+                    onChange={(e) => setNationality(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Contact Information — Plain Phone Input + Read-only Email Shortcut */}
+              <h3>{tx('ข้อมูลติดต่อ')}</h3>
+              <div className="form-grid-2">
+                <div className="form-row">
+                  <label htmlFor="rp-phone">{tx('เบอร์โทรศัพท์')}</label>
+                  <input
+                    id="rp-phone"
+                    type="tel"
+                    value={phoneInput}
+                    onChange={(e) => setPhoneInput(e.target.value)}
+                    placeholder="081-442-9910"
+                  />
+                </div>
+
+                <div className="form-row">
+                  <div className="email-readonly-head">
+                    <label htmlFor="rp-email-ro">{tx('อีเมลติดต่อ')}</label>
+                    {user.emailVerified && user.contactEmail ? (
+                      <span
+                        className="status-pill badge-forest status-pill-verify-icon"
+                        title={tx('ยืนยันแล้ว')}
+                        aria-label={tx('ยืนยันแล้ว')}
+                      >
+                        <i
+                          className="fa-solid fa-circle-check"
+                          aria-hidden="true"
+                        />
+                      </span>
+                    ) : (
+                      <span className="status-pill badge-amber">
+                        <span>{tx('รอยืนยันอีเมล')}</span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="email-readonly-row">
+                    <input
+                      id="rp-email-ro"
+                      type="email"
+                      value={user.contactEmail ?? ''}
+                      placeholder={tx('ยังไม่ได้ระบุอีเมล')}
+                      readOnly
+                    />
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => requestSwitchProfileTab('security')}
+                    >
+                      {user.contactEmail && user.emailVerified
+                        ? tx('เปลี่ยนอีเมล')
+                        : tx('ยืนยันอีเมล')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* National ID / Passport (PII Masked) */}
+              <h3>{tx('เอกสารระบุตัวตน (ไม่บังคับ)')}</h3>
+              <div className="form-grid-2">
+                <div className="form-row">
+                  <label htmlFor="rp-idt">
+                    {tx('ประเภทเอกสารยืนยันตัวตน')}
+                  </label>
+                  <select
+                    id="rp-idt"
+                    value={idType}
+                    onChange={(e) =>
+                      setIdType(
+                        e.target.value as 'none' | 'thai_id' | 'passport'
+                      )
+                    }
+                  >
+                    <option value="thai_id">
+                      {tx('บัตรประจำตัวประชาชน 13 หลัก')}
+                    </option>
+                    <option value="passport">{tx('หนังสือเดินทาง')}</option>
+                    <option value="none">{tx('-- ยังไม่ระบุเอกสาร --')}</option>
+                  </select>
+                </div>
+                {idType !== 'none' && (
+                  <div className="form-row">
+                    <label htmlFor="rp-idn">
+                      {idType === 'thai_id'
+                        ? tx('เลขบัตรประจำตัวประชาชน (13 หลัก)')
+                        : tx('เลขหนังสือเดินทาง')}
+                    </label>
+                    <input
+                      id="rp-idn"
+                      type="text"
+                      inputMode={idType === 'thai_id' ? 'numeric' : 'text'}
+                      className="mono-code"
+                      value={idNumber}
+                      onChange={(e) =>
+                        setIdNumber(
+                          sanitizeThaiIdOrPassport(e.target.value, idType)
+                        )
+                      }
+                      placeholder={
+                        idType === 'thai_id'
+                          ? tx('กรอกตัวเลข 13 หลัก')
+                          : tx('กรอกเลขหนังสือเดินทาง')
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Residential Address — Cascading from Postal Code */}
+              <div className="custom-field-creator canvas-stack">
+                <strong>
+                  {tx(
+                    'ที่อยู่ปัจจุบัน'
+                  )}
+                </strong>
+                <ThaiPostalAddressSelector
+                  idPrefix="rp-res"
+                  value={{
+                    country,
+                    postalCode,
+                    province,
+                    district,
+                    subdistrict,
+                    address: streetAddress,
+                  }}
+                  onChange={(next) => {
+                    setCountry(next.country);
+                    setPostalCode(next.postalCode);
+                    setProvince(next.province);
+                    setDistrict(next.district);
+                    setSubdistrict(next.subdistrict);
+                    setStreetAddress(next.address);
+                  }}
+                />
+              </div>
+
+              <div className="cta-inline-row">
+                <button type="submit" className="btn-primary">
+                  <IconCheckCircle size={15} />
+                  <span>{tx('บันทึกข้อมูลส่วนตัว')}</span>
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* ==================== 2. RUNNING & SHIRT PREFERENCES ==================== */}
+          {activeTab === 'preferences' && (
+            <form
+              className="clean-panel canvas-stack"
+              onSubmit={handleSavePreferences}
+            >
+              <div className="section-title-bar">
+                <div>
+                  <h2>
+                    {tx('2. ไซส์เสื้อและความชอบการวิ่ง (Running & Shirt Preferences)')}
+                  </h2>
+                  <p className="muted-block">
+                    {tx(
+                      'ตั้งค่าไซส์เสื้อและทรงเสื้อเริ่มต้นเพื่อเลือกให้อัตโนมัติตอนสมัครงานวิ่งใหม่'
+                    )}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setShowSizeChart((v) => !v)}
+                >
+                  <IconShirt size={15} />
+                  <span>
+                    {showSizeChart
+                      ? tx('ซ่อนตารางไซส์เสื้อ')
+                      : tx('เปิดดูตารางไซส์มาตรฐาน (Size Chart)')}
+                  </span>
+                </button>
+              </div>
+
+              <div className="status-explanation-banner">
+                <IconShield size={16} />
+                <span>
+                  <strong>{tx('การรับประกันข้อมูลเดิม:')}</strong>{' '}
+                  {tx(
+                    'การเปลี่ยน Preferred Shirt Size ในโปรไฟล์จะมีผลเฉพาะการสมัครงานวิ่งครั้งใหม่เท่านั้น และไม่ไปแก้ไขไซส์เสื้อของงานวิ่งเดิมที่ยืนยันใบสมัครไปแล้ว'
+                  )}
+                </span>
+              </div>
+
+              <div className="form-grid-2">
+                <div className="form-row">
+                  <label htmlFor="pref-size">
+                    {tx('ไซส์เสื้อเริ่มต้น (Preferred Shirt Size)')}
+                  </label>
+                  <select
+                    id="pref-size"
+                    value={prefShirtSize}
+                    onChange={(e) => setPrefShirtSize(e.target.value)}
+                  >
+                    {enabledSizes.map((sz) => (
+                      <option key={sz.code} value={sz.code}>
+                        {sz.label} ({tx('รอบอก')}{' '}
+                        {tx(sz.chartByType[prefShirtType].chestInch)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-row">
+                  <label htmlFor="pref-type">
+                    {tx('ประเภทเสื้อที่ต้องการ (Preferred Shirt Type)')}
+                  </label>
+                  <select
+                    id="pref-type"
+                    value={prefShirtType}
+                    onChange={(e) => {
+                      const next = e.target.value as ShirtCutType;
+                      setPrefShirtType(next);
+                      setChartPreviewType(next);
+                    }}
+                  >
+                    <option value="Unisex">Unisex</option>
+                    <option value="Men">Men ({tx('ทรงผู้ชาย')})</option>
+                    <option value="Women">Women ({tx('ทรงผู้หญิง')})</option>
+                  </select>
+                </div>
+
+                <div className="form-row">
+                  <label htmlFor="pref-fit">
+                    {tx('ทรงความกระชับ (Preferred Shirt Fit)')}
+                  </label>
+                  <select
+                    id="pref-fit"
+                    value={prefShirtFit}
+                    onChange={(e) =>
+                      setPrefShirtFit(e.target.value as ShirtFitType)
+                    }
+                  >
+                    <option value="Regular Fit">Regular Fit</option>
+                    <option value="Slim Fit">Slim Fit</option>
+                    <option value="Oversize">Oversize</option>
+                  </select>
+                </div>
+              </div>
+
+              {showSizeChart && (
+                <div className="custom-field-creator">
+                  <div className="section-title-bar">
+                    <strong>
+                      {tx('ตารางไซส์อ้างอิงกลางแยกตามประเภทเสื้อ (จัดการโดย Platform Owner)')}
+                    </strong>
+                    <div className="cta-inline-row">
+                      {(['Unisex', 'Men', 'Women'] as ShirtCutType[]).map(
+                        (cut) => (
+                          <button
+                            key={cut}
+                            type="button"
+                            className={`filter-pill ${chartPreviewType === cut ? 'active' : ''
+                              }`}
+                            onClick={() => setChartPreviewType(cut)}
+                          >
+                            {cut}
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
+                  <div className="table-scroll-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>{tx('ไซส์')}</th>
+                          <th>{tx('รอบอก')} ({chartPreviewType})</th>
+                          <th>{tx('ความยาวเสื้อ (นิ้ว)')}</th>
+                          <th>{tx('สถานะ')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {enabledSizes.map((sz) => {
+                          const spec = sz.chartByType[chartPreviewType];
+                          return (
+                            <tr
+                              key={sz.code}
+                              className={
+                                sz.code === prefShirtSize
+                                  ? 'selected-table-row'
+                                  : ''
+                              }
+                            >
+                              <td>
+                                <strong className="mono-num">{sz.label}</strong>
+                              </td>
+                              <td className="mono-num">
+                                {tx(spec.chestInch)}
+                              </td>
+                              <td className="mono-num">
+                                {tx(spec.lengthInch)}
+                              </td>
+                              <td>
+                                {sz.code === prefShirtSize ? (
+                                  <span className="status-pill badge-forest">
+                                    {tx('ค่าเริ่มต้นของคุณ')}
+                                  </span>
+                                ) : (
+                                  <span className="muted-inline">
+                                    {tx('พร้อมเลือกใช้')}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="muted-inline" style={{ marginTop: '0.45rem' }}>
+                    {tx(
+                      'หมายเหตุ: ผู้จัดงานแต่ละงานสามารถกำหนดตารางไซส์เฉพาะของงานนั้น (Event Size Chart) เพิ่มเติมได้ในหน้าสมัครงานวิ่ง'
+                    )}
+                  </p>
+                </div>
+              )}
+
+              {/* 2.3 Running Preferences */}
+              <div className="form-row">
+                <label>
+                  {tx('ระยะทางวิ่งที่ชื่นชอบ (Preferred Distance)')}
+                </label>
+                <div className="cta-inline-row">
+                  {platformProfileConfig.distanceOptions.map((d) => {
+                    const active = prefDistances.includes(d);
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        className={`filter-pill ${active ? 'active' : ''}`}
+                        onClick={() =>
+                          setPrefDistances((prev) =>
+                            active ? prev.filter((x) => x !== d) : [...prev, d]
+                          )
+                        }
+                      >
+                        {d}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="form-row">
+                <label>
+                  {tx('รูปแบบงานวิ่งที่สนใจ (Preferred Running Type)')}
+                </label>
+                <div className="cta-inline-row">
+                  {platformProfileConfig.runningTypeOptions.map((rt) => {
+                    const active = prefRunTypes.includes(rt);
+                    return (
+                      <button
+                        key={rt}
+                        type="button"
+                        className={`filter-pill ${active ? 'active' : ''}`}
+                        onClick={() =>
+                          setPrefRunTypes((prev) =>
+                            active
+                              ? prev.filter((x) => x !== rt)
+                              : [...prev, rt]
+                          )
+                        }
+                      >
+                        {tx(rt)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="form-grid-2">
+                <div className="form-row">
+                  <label htmlFor="pref-exp">
+                    {tx('ระดับประสบการณ์การวิ่ง (Running Experience)')}
+                  </label>
+                  <select
+                    id="pref-exp"
+                    value={runExp}
+                    onChange={(e) =>
+                      setRunExp(
+                        e.target.value as
+                        | 'Beginner'
+                        | 'Intermediate'
+                        | 'Advanced'
+                      )
+                    }
+                  >
+                    <option value="Beginner">
+                      {tx('Beginner (เริ่มต้นวิ่งเพื่อสุขภาพ)')}
+                    </option>
+                    <option value="Intermediate">
+                      {tx('Intermediate (วิ่งสม่ำเสมอ 10 km – 21.1 km)')}
+                    </option>
+                    <option value="Advanced">
+                      {tx('Advanced (นักวิ่ง Half / Full Marathon / Trail)')}
+                    </option>
+                  </select>
+                </div>
+
+                <div className="form-row">
+                  <label htmlFor="pref-goal">
+                    {tx('เป้าหมายการวิ่ง (Running Goal)')}
+                  </label>
+                  <input
+                    id="pref-goal"
+                    type="text"
+                    value={runningGoal}
+                    onChange={(e) => setRunningGoal(e.target.value)}
+                    placeholder={tx(
+                      'เช่น จบ Half Marathon แรก หรือทำ Sub-1 ในระยะ 10K'
+                    )}
+                  />
+                </div>
+              </div>
+
+              <div className="form-row">
+                <label>
+                  {tx('งานวิ่งที่ชื่นชอบ / ติดตาม (Favorite Running Events)')}
+                </label>
+                <div className="cta-inline-row">
+                  {events
+                    .filter((e) => e.status !== 'draft')
+                    .map((ev) => {
+                      const fav = favEventIds.includes(ev.id);
+                      return (
+                        <button
+                          key={ev.id}
+                          type="button"
+                          className={`filter-pill ${fav ? 'active' : ''}`}
+                          onClick={() =>
+                            setFavEventIds((prev) =>
+                              fav
+                                ? prev.filter((x) => x !== ev.id)
+                                : [...prev, ev.id]
+                            )
+                          }
+                        >
+                          {tx(ev.titleTh)}
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+
+              <div className="cta-inline-row">
+                <button type="submit" className="btn-primary">
+                  <IconCheckCircle size={15} />
+                  <span>{tx('บันทึกค่าความชอบและไซส์เสื้อเริ่มต้น')}</span>
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* ==================== 3. EMERGENCY CONTACTS ==================== */}
+          {activeTab === 'emergency' && (
+            <section className="clean-panel canvas-stack">
+              <div>
+                <h2>{tx('ผู้ติดต่อฉุกเฉิน')}</h2>
+                <p className="muted-block">
+                  {tx(
+                    'บันทึกได้มากกว่า 1 รายชื่อ และกำหนดผู้ติดต่อหลักเพื่อเติมในใบสมัครงานวิ่งอัตโนมัติ'
+                  )}
+                </p>
+              </div>
+              <div className="cta-inline-row">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => openEcModal()}
+                >
+                  <IconPlus size={15} />
+                  <span>{tx('เพิ่มผู้ติดต่อฉุกเฉิน')}</span>
+                </button>
+              </div>
+
+              {emergencyList.length === 0 ? (
+                <div className="empty-state-box">
+                  <strong>{tx('ยังไม่มีรายชื่อผู้ติดต่อฉุกเฉิน')}</strong>
+                  <p className="muted-inline">
+                    {tx(
+                      'กรุณาเพิ่มผู้ติดต่อฉุกเฉินอย่างน้อย 1 คนเพื่อความรวดเร็วในการสมัครงานวิ่ง'
+                    )}
+                  </p>
+                </div>
+              ) : (
+                <div className="linked-provider-list">
+                  {emergencyList.map((ec) => (
+                    <div key={ec.id} className="linked-provider-row">
+                      <div>
+                        <div className="cta-inline-row">
+                          <strong>{tx(ec.contactName)}</strong>
+                          <span className="status-pill badge-neutral">
+                            {tx(ec.relationship)}
+                          </span>
+                          {ec.isPrimary && (
+                            <span className="status-pill badge-forest">
+                              <IconCheckCircle size={12} />
+                              <span>{tx('ผู้ติดต่อหลัก (เติมฟอร์มอัตโนมัติ)')}</span>
+                            </span>
+                          )}
+                        </div>
+                        <div className="muted-inline mono-num">
+                          {ec.phone}
+                          {ec.email ? ` · ${ec.email}` : ''}
+                        </div>
+                      </div>
+                      <div className="cta-inline-row">
+                        {!ec.isPrimary && (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={async () => {
+                              const next = emergencyList.map((item) => ({
+                                ...item,
+                                isPrimary: item.id === ec.id,
+                              }));
+                              setEmergencyList(next);
+                              if (!(await saveProfileWithFeedback(
+                                buildMergedProfile({ emergencyContacts: next })
+                              ))) return;
+                            }}
+                          >
+                            {tx('ตั้งเป็นผู้ติดต่อหลัก')}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => openEcModal(ec)}
+                        >
+                          {tx('แก้ไข')}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-ghost-sm"
+                          onClick={() => {
+                            void Swal.fire({
+                              icon: 'warning',
+                              title: tx('ยืนยันการลบผู้ติดต่อฉุกเฉิน?'),
+                              text: `${ec.contactName} (${ec.phone})`,
+                              showCancelButton: true,
+                              confirmButtonText: tx('ลบรายการ'),
+                              cancelButtonText: tx('ยกเลิก'),
+                              reverseButtons: true,
+                              buttonsStyling: false,
+                              heightAuto: false,
+                              scrollbarPadding: false,
+                              customClass: {
+                                container: 'runevent-swal-top',
+                                popup: 'runevent-swal-popup',
+                                actions: 'runevent-swal-actions',
+                                confirmButton:
+                                  'btn-primary runevent-swal-discard-btn',
+                                cancelButton: 'btn-secondary',
+                              },
+                            }).then(async (res) => {
+                              if (!res.isConfirmed) return;
+                              const filtered = emergencyList.filter(
+                                (x) => x.id !== ec.id
+                              );
+                              if (
+                                filtered.length > 0 &&
+                                !filtered.some((x) => x.isPrimary)
+                              ) {
+                                filtered[0] = {
+                                  ...filtered[0],
+                                  isPrimary: true,
+                                };
+                              }
+                              setEmergencyList(filtered);
+                              if (editingEcId === ec.id) {
+                                setEditingEcId(null);
+                                setEcModalOpen(false);
+                              }
+                              const okMsg = tx('ลบผู้ติดต่อฉุกเฉินเรียบร้อยแล้ว');
+                              if (
+                                !(await saveProfileWithFeedback(
+                                  buildMergedProfile({
+                                    emergencyContacts: filtered,
+                                  }),
+                                  undefined,
+                                  okMsg
+                                ))
+                              )
+                                return;
+                              setBanner({
+                                tone: 'ok',
+                                text: okMsg,
+                              });
+                            });
+                          }}
+                        >
+                          {tx('ลบ')}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {ecModalOpen &&
+                createPortal(
+                  <div
+                    className="runner-modal-backdrop"
+                    onMouseDown={(e) => {
+                      if (e.target === e.currentTarget) {
+                        requestCloseEcModal();
+                      }
+                    }}
+                  >
+                    <div
+                      className="runner-modal-dialog"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-labelledby="ec-modal-title"
+                    >
+                      <form
+                        className="runner-modal-form"
+                        onSubmit={handleSaveEmergencyContact}
+                      >
+                        <div className="runner-modal-header">
+                          <div>
+                            <h3 id="ec-modal-title">
+                              {editingEcId
+                                ? tx('แก้ไขผู้ติดต่อฉุกเฉิน')
+                                : tx('เพิ่มผู้ติดต่อฉุกเฉินใหม่')}
+                            </h3>
+                          </div>
+                          <button
+                            type="button"
+                            className="runner-modal-close-btn"
+                            aria-label={tx('ปิดหน้าต่างแก้ไข')}
+                            onClick={requestCloseEcModal}
+                          >
+                            ×
+                          </button>
+                        </div>
+
+                        <div className="runner-modal-body canvas-stack">
+                          <div className="form-grid-2">
+                            <div className="form-row">
+                              <label htmlFor="ec-name">
+                                {<RequiredFieldText text={tx('ชื่อ-นามสกุลผู้ติดต่อ *')} />}
+                              </label>
+                              <input
+                                id="ec-name"
+                                type="text"
+                                value={ecName}
+                                onChange={(e) => setEcName(e.target.value)}
+                                placeholder={tx('เช่น วีระ วัฒนากูล')}
+                                required
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="ec-rel">
+                                {<RequiredFieldText text={tx('ความสัมพันธ์ *')} />}
+                              </label>
+                              <input
+                                id="ec-rel"
+                                type="text"
+                                value={ecRel}
+                                onChange={(e) => setEcRel(e.target.value)}
+                                placeholder={tx('เช่น บิดา / มารดา / คู่สมรส')}
+                                required
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="ec-phone">
+                                {<RequiredFieldText text={tx('เบอร์โทรศัพท์ *')} />}
+                              </label>
+                              <input
+                                id="ec-phone"
+                                type="tel"
+                                value={ecPhone}
+                                onChange={(e) => setEcPhone(e.target.value)}
+                                placeholder="089-110-2211"
+                                required
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="ec-email">
+                                {tx('อีเมล (ไม่บังคับ)')}
+                              </label>
+                              <input
+                                id="ec-email"
+                                type="email"
+                                value={ecEmail}
+                                onChange={(e) => setEcEmail(e.target.value)}
+                                placeholder={tx('กรอกอีเมลผู้ติดต่อ')}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="runner-modal-footer">
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={requestCloseEcModal}
+                          >
+                            {tx('ยกเลิก')}
+                          </button>
+                          <button type="submit" className="btn-primary">
+                            {editingEcId ? (
+                              <IconCheckCircle size={15} />
+                            ) : (
+                              <IconPlus size={15} />
+                            )}
+                            <span>
+                              {editingEcId
+                                ? tx('บันทึกการแก้ไข')
+                                : tx('เพิ่มรายชื่อผู้ติดต่อฉุกเฉิน')}
+                            </span>
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>,
+                  document.body
+                )}
+            </section>
+          )}
+
+          {/* ==================== 4. ADDRESS MANAGEMENT ==================== */}
+          {activeTab === 'addresses' && (
+            <section className="clean-panel canvas-stack">
+              <div>
+                <h2>{tx('ที่อยู่จัดส่ง')}</h2>
+                <p className="muted-block">
+                  {tx(
+                    'จัดการหลายที่อยู่และกำหนดที่อยู่หลักสำหรับจัดส่งชุดแข่งขันหรือสินค้าที่ระลึก'
+                  )}
+                </p>
+              </div>
+              <div className="cta-inline-row">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => openAddrModal()}
+                >
+                  <IconPlus size={15} />
+                  <span>{tx('เพิ่มที่อยู่จัดส่ง')}</span>
+                </button>
+              </div>
+
+              {addressList.length === 0 ? (
+                <div className="empty-state-box">
+                  <strong>{tx('ยังไม่มีที่อยู่จัดส่งที่บันทึกไว้')}</strong>
+                  <p className="muted-inline">
+                    {tx('เพิ่มที่อยู่เริ่มต้นเพื่อไม่ต้องพิมพ์ซ้ำในขั้นตอนสมัครงานวิ่ง')}
+                  </p>
+                </div>
+              ) : (
+                <div className="linked-provider-list">
+                  {addressList.map((addr) => (
+                    <div key={addr.id} className="linked-provider-row">
+                      <div>
+                        <div className="cta-inline-row">
+                          <strong>{tx(addr.addressName)}</strong>
+                          {addr.isDefault && (
+                            <span className="status-pill badge-forest">
+                              <IconCheckCircle size={12} />
+                              <span>{tx('ที่อยู่หลัก')}</span>
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          {tx(addr.recipientName)} ·{' '}
+                          <span className="mono-num">{addr.phone}</span>
+                        </div>
+                        <div className="muted-inline">
+                          {tx(addr.address)} {tx(addr.subdistrict)}{' '}
+                          {tx(addr.district)} {tx(addr.province)}{' '}
+                          <span className="mono-num">{addr.postalCode}</span> (
+                          {localizeCountryName(addr.country)})
+                        </div>
+                      </div>
+                      <div className="cta-inline-row">
+                        {!addr.isDefault && (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={async () => {
+                              const next = addressList.map((x) => ({
+                                ...x,
+                                isDefault: x.id === addr.id,
+                              }));
+                              setAddressList(next);
+                              if (!(await saveProfileWithFeedback(
+                                buildMergedProfile({ savedAddresses: next })
+                              ))) return;
+                            }}
+                          >
+                            {tx('ตั้งเป็นที่อยู่หลัก')}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => openAddrModal(addr)}
+                        >
+                          {tx('แก้ไข')}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-ghost-sm"
+                          onClick={() => {
+                            void Swal.fire({
+                              icon: 'warning',
+                              title: tx('ยืนยันการลบที่อยู่จัดส่ง?'),
+                              text: `${addr.addressName} · ${addr.recipientName}`,
+                              showCancelButton: true,
+                              confirmButtonText: tx('ลบรายการ'),
+                              cancelButtonText: tx('ยกเลิก'),
+                              reverseButtons: true,
+                              buttonsStyling: false,
+                              heightAuto: false,
+                              scrollbarPadding: false,
+                              customClass: {
+                                container: 'runevent-swal-top',
+                                popup: 'runevent-swal-popup',
+                                actions: 'runevent-swal-actions',
+                                confirmButton:
+                                  'btn-primary runevent-swal-discard-btn',
+                                cancelButton: 'btn-secondary',
+                              },
+                            }).then(async (res) => {
+                              if (!res.isConfirmed) return;
+                              const filtered = addressList.filter(
+                                (x) => x.id !== addr.id
+                              );
+                              if (
+                                filtered.length > 0 &&
+                                !filtered.some((x) => x.isDefault)
+                              ) {
+                                filtered[0] = {
+                                  ...filtered[0],
+                                  isDefault: true,
+                                };
+                              }
+                              setAddressList(filtered);
+                              if (editingAddrId === addr.id) {
+                                setEditingAddrId(null);
+                                setAddrModalOpen(false);
+                              }
+                              const okMsg = tx('ลบที่อยู่จัดส่งเรียบร้อยแล้ว');
+                              if (
+                                !(await saveProfileWithFeedback(
+                                  buildMergedProfile({
+                                    savedAddresses: filtered,
+                                  }),
+                                  undefined,
+                                  okMsg
+                                ))
+                              )
+                                return;
+                              setBanner({
+                                tone: 'ok',
+                                text: okMsg,
+                              });
+                            });
+                          }}
+                        >
+                          {tx('ลบ')}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {addrModalOpen &&
+                createPortal(
+                  <div
+                    className="runner-modal-backdrop"
+                    onMouseDown={(e) => {
+                      if (e.target === e.currentTarget) {
+                        requestCloseAddrModal();
+                      }
+                    }}
+                  >
+                    <div
+                      className="runner-modal-dialog"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-labelledby="addr-modal-title"
+                    >
+                      <form
+                        className="runner-modal-form"
+                        onSubmit={handleSaveAddressItem}
+                      >
+                        <div className="runner-modal-header">
+                          <div>
+                            <h3 id="addr-modal-title">
+                              {editingAddrId
+                                ? tx('แก้ไขที่อยู่จัดส่ง')
+                                : tx('เพิ่มที่อยู่จัดส่งใหม่')}
+                            </h3>
+                          </div>
+                          <button
+                            type="button"
+                            className="runner-modal-close-btn"
+                            aria-label={tx('ปิดหน้าต่างแก้ไข')}
+                            onClick={requestCloseAddrModal}
+                          >
+                            ×
+                          </button>
+                        </div>
+
+                        <div className="runner-modal-body canvas-stack">
+                          <div className="form-grid-2">
+                            <div className="form-row">
+                              <label htmlFor="ad-lbl">
+                                {<RequiredFieldText text={tx('ชื่อเรียกที่อยู่ *')} />}
+                              </label>
+                              <input
+                                id="ad-lbl"
+                                type="text"
+                                value={addrLabel}
+                                onChange={(e) => setAddrLabel(e.target.value)}
+                                placeholder={tx('เช่น บ้านพัก / ที่ทำงาน')}
+                                required
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="ad-rec">
+                                {<RequiredFieldText text={tx('ชื่อผู้รับพัสดุ *')} />}
+                              </label>
+                              <input
+                                id="ad-rec"
+                                type="text"
+                                value={addrRecipient}
+                                onChange={(e) =>
+                                  setAddrRecipient(e.target.value)
+                                }
+                                required
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="ad-ph">
+                                {<RequiredFieldText text={tx('เบอร์โทรผู้รับ *')} />}
+                              </label>
+                              <input
+                                id="ad-ph"
+                                type="tel"
+                                value={addrPhone}
+                                onChange={(e) => setAddrPhone(e.target.value)}
+                                required
+                              />
+                            </div>
+                          </div>
+
+                          <ThaiPostalAddressSelector
+                            idPrefix="ad-book"
+                            required
+                            streetAddressLabel="ที่อยู่ (บ้านเลขที่ อาคาร ซอย ถนน)"
+                            streetAddressPlaceholder="เช่น 199/8 ถ.ห้วยแก้ว หมู่บ้านล้านนาวิว"
+                            value={{
+                              country: addrCountry,
+                              postalCode: addrZip,
+                              province: addrProv,
+                              district: addrDist,
+                              subdistrict: addrSubd,
+                              address: addrLine,
+                            }}
+                            onChange={(next) => {
+                              setAddrCountry(next.country);
+                              setAddrZip(next.postalCode);
+                              setAddrProv(next.province);
+                              setAddrDist(next.district);
+                              setAddrSubd(next.subdistrict);
+                              setAddrLine(next.address);
+                            }}
+                          />
+                        </div>
+
+                        <div className="runner-modal-footer">
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={requestCloseAddrModal}
+                          >
+                            {tx('ยกเลิก')}
+                          </button>
+                          <button type="submit" className="btn-primary">
+                            {editingAddrId ? (
+                              <IconCheckCircle size={15} />
+                            ) : (
+                              <IconPlus size={15} />
+                            )}
+                            <span>
+                              {editingAddrId
+                                ? tx('บันทึกการแก้ไขที่อยู่')
+                                : tx('บันทึกที่อยู่จัดส่ง')}
+                            </span>
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>,
+                  document.body
+                )}
+            </section>
+          )}
+
+          {/* ==================== 5. RUNNING HISTORY & CERTIFICATES ==================== */}
+          {activeTab === 'history' && (
+            <section className="clean-panel canvas-stack">
+              <div className="section-title-bar">
+                <div>
+                  <h2>{tx('ประวัติการสมัครและผลการแข่งขัน')}</h2>
+                  <p className="muted-block">
+                    {tx(
+                      'แสดงรายการสมัครทั้งหมด แยกงานที่กำลังจะมาถึงกับงานที่ผ่านมาแล้ว พร้อมดูข้อมูลใบสมัครและดาวน์โหลดใบประกาศนียบัตร'
+                    )}
+                  </p>
+                </div>
+                <div className="cta-inline-row">
+                  {(
+                    [
+                      ['all', tx('ทั้งหมด')],
+                      ['upcoming', tx('กำลังจะมาถึง')],
+                      ['past', tx('ผ่านมาแล้ว')],
+                    ] as const
+                  ).map(([key, lbl]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`filter-pill ${historyFilter === key ? 'active' : ''
+                        }`}
+                      onClick={() => setHistoryFilter(key)}
+                    >
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {filteredHistory.length === 0 ? (
+                <div className="empty-state-box">
+                  <strong>{tx('ไม่มีรายการงานวิ่งในหมวดนี้')}</strong>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={onNavigateDiscoverEvents}
+                  >
+                    <span>{tx('ค้นหางานวิ่งที่เปิดรับสมัคร')}</span>
+                    <IconArrowRight size={14} />
+                  </button>
+                </div>
+              ) : (
+                <div className="canvas-stack">
+                  {filteredHistory.map(({ reg, ev, cat, isPast }) => (
+                    <article key={reg.id} className="custom-field-creator">
+                      <div className="section-title-bar">
+                        <div>
+                          <div className="cta-inline-row">
+                            <span className="mono-code">{reg.regCode}</span>
+                            <span
+                              className={`status-pill ${isPast ? 'badge-neutral' : 'badge-navy'
+                                }`}
+                            >
+                              {isPast
+                                ? tx('จบการแข่งขันแล้ว')
+                                : tx('กำลังจะมาถึง')}
+                            </span>
+                            <RegStatusBadge
+                              status={reg.registrationStatus}
+                            />
+                            <PaymentStatusBadge status={reg.paymentStatus} />
+                            <FulfillmentStatusBadge
+                              status={reg.fulfillmentStatus}
+                            />
+                          </div>
+                          <h3 style={{ margin: '0.45rem 0 0.15rem' }}>
+                            {isEn
+                              ? ev?.titleEn || tx(ev?.titleTh ?? reg.eventId)
+                              : ev?.titleTh ?? reg.eventId}
+                          </h3>
+                          <div className="muted-inline">
+                            <IconCalendar size={13} />{' '}
+                            <span className="mono-num">
+                              {ev?.eventDate ?? '-'}
+                            </span>{' '}
+                            · <IconMapPin size={13} />{' '}
+                            {tx(ev?.venue ?? '-')} ({tx(ev?.province ?? '-')})
+                          </div>
+                        </div>
+
+                        <div className="cta-inline-row">
+                          <button
+                            type="button"
+                            className="btn-ghost-sm"
+                            onClick={() =>
+                              setExpandedRegId(
+                                expandedRegId === reg.id ? null : reg.id
+                              )
+                            }
+                          >
+                            {expandedRegId === reg.id
+                              ? tx('ซ่อนรายละเอียด')
+                              : tx('ดูรายละเอียดใบสมัคร')}
+                          </button>
+                          {ev && (
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              onClick={() => onNavigateEventDetail(ev.id)}
+                            >
+                              {tx('เปิดหน้างานวิ่ง')}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="receipt-summary-box" style={{ marginTop: '0.6rem' }}>
+                        <div>
+                          <span className="muted-inline">
+                            {tx('ประเภท / ระยะทาง')}
+                          </span>
+                          <strong className="mono-num">
+                            {tx(cat?.name ?? '-')} ({cat?.distanceKm ?? '-'}{' '}
+                            {tx('กม.')})
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="muted-inline">
+                            {tx('หมายเลขบิบ')}
+                          </span>
+                          <strong className="mono-num">
+                            {reg.bibNumber ?? tx('รอกำหนดหมายเลข')}
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="muted-inline">
+                            {tx('ไซส์เสื้อที่เลือกในงานนี้')}
+                          </span>
+                          <strong className="mono-num">
+                            {reg.shirtSize} ({tx('ค่าที่บันทึกไว้ ณ วันสมัคร')})
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="muted-inline">
+                            {tx('ผลการแข่งขัน')}
+                          </span>
+                          {reg.raceResult ? (
+                            <strong className="mono-num text-forest">
+                              {reg.raceResult.chipTime} ({reg.raceResult.paceMinPerKm})
+                            </strong>
+                          ) : (
+                            <span className="muted-inline">
+                              {isPast
+                                ? tx('รอประกาศผลทางการ')
+                                : tx('ยังไม่ถึงวันแข่งขัน')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {reg.raceResult && (
+                        <div
+                          className="cta-inline-row"
+                          style={{ marginTop: '0.65rem' }}
+                        >
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            onClick={() => setCertPreviewReg(reg)}
+                          >
+                            <IconAward size={15} />
+                            <span>
+                              {tx('ดูผลการแข่งขันและใบประกาศนียบัตร')}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() =>
+                              downloadFinisherCertificateSvg({
+                                runnerName: reg.participantNameTh,
+                                eventTitle: ev?.titleTh ?? reg.eventId,
+                                eventDate: ev?.eventDate ?? '-',
+                                distanceLabel: `${cat?.distanceKm ?? 10} KM`,
+                                bibNumber: reg.bibNumber ?? '-',
+                                chipTime: reg.raceResult!.chipTime,
+                                gunTime: reg.raceResult!.gunTime,
+                                pace: reg.raceResult!.paceMinPerKm,
+                                rank: reg.raceResult!.overallRank,
+                                certCode: reg.raceResult!.certificateCode,
+                              })
+                            }
+                          >
+                            <IconDownload size={15} />
+                            <span>{tx('ดาวน์โหลดใบประกาศนียบัตร')}</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {expandedRegId === reg.id && (
+                        <div
+                          className="price-breakdown-box"
+                          style={{ marginTop: '0.65rem' }}
+                        >
+                          <strong>
+                            {tx('ข้อมูลใบสมัครที่บันทึกไว้ ณ เวลาสมัคร (แยกจากโปรไฟล์ปัจจุบัน)')}
+                          </strong>
+                          <div className="breakdown-line">
+                            <span>{tx('ชื่อผู้เข้าแข่งขัน:')}</span>
+                            <strong>
+                              {isEn
+                                ? reg.participantNameEn || reg.participantNameTh
+                                : reg.participantNameTh}
+                            </strong>
+                          </div>
+                          {reg.participantSnapshot?.dateOfBirth && (
+                            <div className="breakdown-line">
+                              <span>{tx('วันเกิด ณ วันสมัคร:')}</span>
+                              <span className="mono-num">
+                                {isoToDdMmYyyy(reg.participantSnapshot.dateOfBirth)}
+                              </span>
+                            </div>
+                          )}
+                          {reg.participantSnapshot?.idNumberMasked && (
+                            <div className="breakdown-line">
+                              <span>{tx('เลขเอกสารยืนยันตัวตน:')}</span>
+                              <span className="mono-code">
+                                {reg.participantSnapshot.idNumberMasked}
+                              </span>
+                            </div>
+                          )}
+                          <div className="breakdown-line">
+                            <span>{tx('ผู้ติดต่อฉุกเฉินของใบสมัครนี้:')}</span>
+                            <span>{tx(reg.emergencyContact)}</span>
+                          </div>
+                          <div className="breakdown-line">
+                            <span>{tx('วิธีรับชุดแข่งขัน:')}</span>
+                            <span>
+                              {reg.kitDeliveryMethod === 'postal_shipping'
+                                ? txf(
+                                  'จัดส่งไปรษณีย์ ({0})',
+                                  reg.shippingAddressSnapshot ?? '-'
+                                )
+                                : tx('รับที่หน้างานด้วยคิวอาร์โค้ดเช็กอิน')}
+                            </span>
+                          </div>
+                          <div className="breakdown-line">
+                            <span>{tx('รหัสเช็กอิน:')}</span>
+                            <span className="mono-code">
+                              <IconQr size={12} /> {reg.qrCheckInToken}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
+
+              {certPreviewReg && certPreviewReg.raceResult && (
+                <div className="custom-field-creator certificate-preview-card">
+                  <div className="section-title-bar">
+                    <div>
+                      <strong>
+                        OFFICIAL FINISHER E-CERTIFICATE ·{' '}
+                        <span className="mono-code">
+                          {certPreviewReg.raceResult.certificateCode}
+                        </span>
+                      </strong>
+                      <div className="muted-inline">
+                        {tx('ยืนยันผลจากระบบจับเวลากลางเมื่อ')}{' '}
+                        <span className="mono-num">
+                          {certPreviewReg.raceResult.verifiedAt}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-ghost-sm"
+                      onClick={() => setCertPreviewReg(null)}
+                    >
+                      {tx('ปิดหน้าต่างใบเซอร์')}
+                    </button>
+                  </div>
+                  <div className="receipt-summary-box">
+                    <div>
+                      <span className="muted-inline">{tx('นักวิ่ง')}</span>
+                      <strong>{certPreviewReg.participantNameTh}</strong>
+                    </div>
+                    <div>
+                      <span className="muted-inline">Chip Time / Gun Time</span>
+                      <strong className="mono-num text-forest">
+                        {certPreviewReg.raceResult.chipTime} /{' '}
+                        {certPreviewReg.raceResult.gunTime}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="muted-inline">Overall Rank</span>
+                      <strong className="mono-num">
+                        {certPreviewReg.raceResult.overallRank}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="muted-inline">Age Group Rank</span>
+                      <strong className="mono-num">
+                        {certPreviewReg.raceResult.categoryRank}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ==================== 6. ACHIEVEMENTS (READ-ONLY) ==================== */}
+          {activeTab === 'achievements' && (
+            <section className="clean-panel canvas-stack">
+              <div>
+                <h2>
+                  {tx('6. ความสำเร็จและรางวัลจากการแข่งขัน (Achievements)')}
+                </h2>
+                <p className="muted-block">
+                  {tx(
+                    'บันทึกความสำเร็จที่เชื่อมโยงกับผลการแข่งขันอย่างเป็นทางการของแต่ละอีเวนต์'
+                  )}
+                </p>
+              </div>
+
+              <div className="status-explanation-banner">
+                <IconLock size={16} />
+                <span>
+                  <strong>{tx('ล็อกความถูกต้องโดยระบบกลาง:')}</strong>{' '}
+                  {tx(
+                    'รายการรางวัลและสถิติเวลาออกโดยระบบประมวลผลหลังจบงาน นักวิ่งไม่สามารถเพิ่มหรือแก้ไขผลการแข่งขันเองได้'
+                  )}
+                </span>
+              </div>
+
+              {(user.achievements ?? []).length === 0 ? (
+                <div className="empty-state-box">
+                  <strong>{tx('ยังไม่มีประวัติรางวัลที่ประกาศผลแล้ว')}</strong>
+                  <p className="muted-inline">
+                    {tx(
+                      'เมื่อคุณวิ่งจบการแข่งขันและผู้จัดประกาศผลอย่างเป็นทางการ เหรียญ Finisher และสถิติจะปรากฏที่นี่อัตโนมัติ'
+                    )}
+                  </p>
+                </div>
+              ) : (
+                <div className="form-grid-2">
+                  {(user.achievements ?? []).map((ach) => (
+                    <article key={ach.id} className="custom-field-creator">
+                      <div className="cta-inline-row">
+                        <span className="status-pill badge-forest">
+                          <IconAward size={13} />
+                          <span>{ach.achievementType}</span>
+                        </span>
+                        <span className="mono-code">{ach.distanceKm} KM</span>
+                        <span className="muted-inline mono-num">
+                          {ach.achievementDate}
+                        </span>
+                      </div>
+                      <h3 style={{ margin: '0.45rem 0 0.25rem' }}>
+                        {tx(ach.title)}
+                      </h3>
+                      <p className="muted-inline">{tx(ach.eventNameTh)}</p>
+                      <div className="breakdown-line">
+                        <span>{tx('เหรียญ / รางวัล:')}</span>
+                        <strong>{tx(ach.medalOrAward)}</strong>
+                      </div>
+                      {ach.finishTime && (
+                        <div className="breakdown-line">
+                          <span>{tx('เวลาเข้าเส้นชัย:')}</span>
+                          <strong className="mono-num text-forest">
+                            {ach.finishTime}
+                          </strong>
+                        </div>
+                      )}
+                      <div className="breakdown-line">
+                        <span>{tx('รหัสใบรับรอง:')}</span>
+                        <span className="mono-code">{ach.certificateCode}</span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ==================== 7. SOCIAL LINKS ==================== */}
+          {activeTab === 'social' && (
+            <form
+              className="clean-panel canvas-stack"
+              onSubmit={handleSaveSocialLinks}
+            >
+              <div>
+                <h2>{tx('7. โซเชียลมีเดียและโปรไฟล์กีฬา (Social Links · ไม่บังคับ)')}</h2>
+                <p className="muted-block">
+                  {tx(
+                    'เชื่อมโยงโปรไฟล์โซเชียลมีเดียหรือคลังสถิติการซ้อม เช่น Strava สำหรับแสดงในคอมมูนิตี้นักวิ่ง'
+                  )}
+                </p>
+              </div>
+
+              <div className="form-grid-2">
+                <div className="form-row">
+                  <label htmlFor="soc-fb">Facebook URL</label>
+                  <input
+                    id="soc-fb"
+                    type="url"
+                    value={fbUrl}
+                    onChange={(e) => setFbUrl(e.target.value)}
+                    placeholder="https://facebook.com/your.profile"
+                  />
+                </div>
+                <div className="form-row">
+                  <label htmlFor="soc-ig">Instagram URL</label>
+                  <input
+                    id="soc-ig"
+                    type="url"
+                    value={igUrl}
+                    onChange={(e) => setIgUrl(e.target.value)}
+                    placeholder="https://instagram.com/your.handle"
+                  />
+                </div>
+                <div className="form-row">
+                  <label htmlFor="soc-st">Strava Athlete URL</label>
+                  <input
+                    id="soc-st"
+                    type="url"
+                    value={stravaUrl}
+                    onChange={(e) => setStravaUrl(e.target.value)}
+                    placeholder="https://strava.com/athletes/..."
+                  />
+                </div>
+                <div className="form-row">
+                  <label htmlFor="soc-web">Website / Blog</label>
+                  <input
+                    id="soc-web"
+                    type="url"
+                    value={webUrl}
+                    onChange={(e) => setWebUrl(e.target.value)}
+                    placeholder="https://yourblog.example.com"
+                  />
+                </div>
+              </div>
+
+              <div className="custom-field-creator canvas-stack">
+                <strong>{tx('ลิงก์โซเชียลอื่น ๆ (Other Social Links)')}</strong>
+                {otherLinks.map((lnk) => (
+                  <div key={lnk.id} className="linked-provider-row">
+                    <div>
+                      <strong>{lnk.label}</strong>
+                      <div className="muted-inline">{lnk.url}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-ghost-sm"
+                      onClick={() =>
+                        setOtherLinks((prev) =>
+                          prev.filter((x) => x.id !== lnk.id)
+                        )
+                      }
+                    >
+                      {tx('ลบ')}
+                    </button>
+                  </div>
+                ))}
+                <div className="form-grid-2">
+                  <div className="form-row">
+                    <input
+                      type="text"
+                      placeholder={tx('ชื่อแพลตฟอร์ม เช่น Garmin / TikTok')}
+                      value={newSocialLabel}
+                      onChange={(e) => setNewSocialLabel(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-row">
+                    <input
+                      type="url"
+                      placeholder="https://..."
+                      value={newSocialUrl}
+                      onChange={(e) => setNewSocialUrl(e.target.value)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      if (
+                        !newSocialLabel.trim() ||
+                        !/^https?:\/\//i.test(newSocialUrl.trim())
+                      ) {
+                        setBanner({
+                          tone: 'err',
+                          text: tx(
+                            'กรุณาระบุชื่อแพลตฟอร์มและลิงก์ที่ขึ้นต้นด้วย https://'
+                          ),
+                        });
+                        return;
+                      }
+                      setOtherLinks((prev) => [
+                        ...prev,
+                        {
+                          id: `soc-${Date.now()}`,
+                          label: newSocialLabel.trim(),
+                          url: newSocialUrl.trim(),
+                        },
+                      ]);
+                      setNewSocialLabel('');
+                      setNewSocialUrl('');
+                    }}
+                  >
+                    <IconPlus size={15} />
+                    <span>{tx('เพิ่มลิงก์')}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="cta-inline-row">
+                <button type="submit" className="btn-primary">
+                  <IconCheckCircle size={15} />
+                  <span>{tx('บันทึก Social Links')}</span>
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* ==================== 9. NOTIFICATION PREFERENCES ==================== */}
+          {activeTab === 'notifications' && (
+            <section className="clean-panel canvas-stack">
+              <div>
+                <h2>
+                  {tx('9. ตั้งค่าการรับแจ้งเตือน (Notification Preferences)')}
+                </h2>
+                <p className="muted-block">
+                  {tx(
+                    'แยกการแจ้งเตือนที่จำเป็นต่อธุรกรรมการสมัครและการชำระเงิน ออกจากข่าวสารประชาสัมพันธ์และการตลาดอย่างชัดเจน'
+                  )}
+                </p>
+              </div>
+
+              <div className="custom-field-creator canvas-stack">
+                <strong>
+                  {tx('ช่องทางรับการแจ้งเตือนหลัก (Delivery Channels)')}
+                </strong>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={notifPrefs.emailNotification}
+                    onChange={(e) =>
+                      handleSaveNotificationPrefs({
+                        ...notifPrefs,
+                        emailNotification: e.target.checked,
+                      })
+                    }
+                  />
+                  <span>
+                    <strong>Email Notification</strong> —{' '}
+                    {tx('รับใบยืนยันการสมัคร ใบเสร็จ และข่าวอัปเดตงานวิ่งทางอีเมล')}
+                  </span>
+                </label>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={notifPrefs.smsNotification}
+                    onChange={(e) =>
+                      handleSaveNotificationPrefs({
+                        ...notifPrefs,
+                        smsNotification: e.target.checked,
+                      })
+                    }
+                  />
+                  <span>
+                    <strong>SMS Notification</strong> —{' '}
+                    {tx('รับข้อความแจ้งเตือนเร่งด่วนก่อนปล่อยตัวและรหัส OTP ทาง SMS')}
+                  </span>
+                </label>
+              </div>
+
+              <div className="custom-field-creator canvas-stack">
+                <strong>
+                  {tx(
+                    'การแจ้งเตือนธุรกรรมและปฏิบัติการงานวิ่ง (Transactional & Event Operations)'
+                  )}
+                </strong>
+                <label className="checkbox-row">
+                  <input type="checkbox" checked disabled />
+                  <span>
+                    <strong>
+                      Registration Confirmation {tx('[จำเป็นต่อธุรกรรม]')}
+                    </strong>{' '}
+                    — {tx('ยืนยันสถานะใบสมัครและรหัส QR รับอุปกรณ์')}
+                  </span>
+                </label>
+                <label className="checkbox-row">
+                  <input type="checkbox" checked disabled />
+                  <span>
+                    <strong>
+                      Payment Confirmation {tx('[จำเป็นต่อธุรกรรม]')}
+                    </strong>{' '}
+                    — {tx('ใบเสร็จรับเงินและแจ้งเตือนสถานะการคืนเงิน')}
+                  </span>
+                </label>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={notifPrefs.eventUpdates}
+                    onChange={(e) =>
+                      handleSaveNotificationPrefs({
+                        ...notifPrefs,
+                        eventUpdates: e.target.checked,
+                      })
+                    }
+                  />
+                  <span>
+                    <strong>Event Updates</strong> —{' '}
+                    {tx('ประกาศสำคัญจากผู้จัดงาน การเปลี่ยนจุดปล่อยตัว หรือกำหนดการ Expo')}
+                  </span>
+                </label>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={notifPrefs.raceReminder}
+                    onChange={(e) =>
+                      handleSaveNotificationPrefs({
+                        ...notifPrefs,
+                        raceReminder: e.target.checked,
+                      })
+                    }
+                  />
+                  <span>
+                    <strong>Race Reminder</strong> —{' '}
+                    {tx('แจ้งเตือนล่วงหน้าก่อนวันรับ BIB และวันแข่งขัน')}
+                  </span>
+                </label>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={notifPrefs.raceResultAnnouncement}
+                    onChange={(e) =>
+                      handleSaveNotificationPrefs({
+                        ...notifPrefs,
+                        raceResultAnnouncement: e.target.checked,
+                      })
+                    }
+                  />
+                  <span>
+                    <strong>Race Result Announcement</strong> —{' '}
+                    {tx('แจ้งเตือนทันทีเมื่อผลการแข่งขันทางการและ E-Certificate พร้อมดาวน์โหลด')}
+                  </span>
+                </label>
+              </div>
+
+              <div className="custom-field-creator canvas-stack">
+                <strong>
+                  {tx('ข่าวสารและการตลาด (Marketing & Promotions — แยกอิสระ)')}
+                </strong>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={notifPrefs.marketingPromotion}
+                    onChange={(e) =>
+                      handleSaveNotificationPrefs({
+                        ...notifPrefs,
+                        marketingPromotion: e.target.checked,
+                      })
+                    }
+                  />
+                  <span>
+                    <strong>Marketing & Promotion</strong> —{' '}
+                    {tx(
+                      'รับข่าวสารงานวิ่งเปิดใหม่ รหัสส่วนลด Early Bird และสิทธิประโยชน์จากพาร์ตเนอร์'
+                    )}
+                  </span>
+                </label>
+              </div>
+            </section>
+          )}
+
+          {/* ==================== 8. ACCOUNT & SECURITY ==================== */}
+          {activeTab === 'organizer' && (
+            <div className="canvas-stack">
+              {/* Organizer Memberships & Invitations (Unified Single Account) */}
+              <section className="clean-panel canvas-stack">
+                <h2>{tx('องค์กรผู้จัดงาน: ร่วมเป็นผู้จัดงาน / กรอกรหัสคำเชิญ')}</h2>
+                <p className="muted-block">
+                  {tx('บัญชีเดียวใช้ได้ทั้งนักวิ่งและผู้จัดงาน กรอกรหัสคำเชิญจากทีมผู้จัด หรือยื่นขอเปิดองค์กรใหม่เพื่อรอ Platform Owner ตรวจสอบ')}
+                </p>
+                {user.memberships.length === 0 && (
+                  <div className="subtle-empty-note">
+                    {tx('บัญชีนี้ยังไม่ได้สังกัดองค์กรผู้จัดงาน')}
+                  </div>
+                )}
+                {user.memberships.length > 0 && (
+                  <div className="linked-provider-list">
+                    {user.memberships.map((m) => {
+                      const org = organizations.find(
+                        (o) => o.id === m.organizationId
+                      );
+                      return (
+                        <div
+                          key={m.organizationId}
+                          className="linked-provider-row"
+                        >
+                          <div>
+                            <strong>
+                              {tx(org?.nameTh ?? m.organizationId)}
+                            </strong>
+                            <div className="muted-inline">
+                              Role: <span className="mono-code">{m.role}</span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => onEnterOrganizerOrg(m.organizationId)}
+                          >
+                            {tx('เปิด Organizer Dashboard')}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* พับเก็บตัวเลือกยื่นขอเปิดองค์กรผู้จัดใหม่ชั่วคราว (คงเฉพาะการรับรหัสคำเชิญเข้าทีมเดิม) */}
+                <div className="custom-field-creator canvas-stack">
+                  <strong>{tx('ตอบรับรหัสคำเชิญเข้าทีมผู้จัดงาน')}</strong>
+                  <div className="subdistrict-zip-row">
+                    <input
+                      type="text"
+                      className="mono-code"
+                      value={inviteInput}
+                      onChange={(e) => setInviteInput(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => {
+                        const r = onAcceptTeamInvitation(inviteInput.trim());
+                        setBanner({
+                          tone: r.ok ? 'ok' : 'err',
+                          text: r.message,
+                        });
+                        showResultModalAlert(r.ok, r.message);
+                      }}
+                    >
+                      {tx('รับสิทธิ์')}
+                    </button>
+                  </div>
+                </div>
+
+                {false && (
+                  <div className="custom-field-creator canvas-stack">
+                    <strong>{tx('ยื่นขอเปิดองค์กรผู้จัดงานวิ่งใหม่')}</strong>
+                    <div className="form-grid-2">
+                      <input
+                        type="text"
+                        value={newOrgName}
+                        onChange={(e) => setNewOrgName(e.target.value)}
+                        placeholder={tx('ชื่อองค์กร/ชมรมผู้จัดงาน...')}
+                      />
+                      <select
+                        aria-label={tx('จังหวัดที่ตั้งองค์กร')}
+                        value={newOrgProv}
+                        onChange={(e) => setNewOrgProv(e.target.value)}
+                      >
+                        {ALL_THAI_PROVINCES.map((prov) => (
+                          <option key={prov} value={prov}>
+                            {tx(prov)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => {
+                          if (!newOrgName.trim()) return;
+                          const created = onApplyNewOrganizerOrg(
+                            newOrgName.trim(),
+                            newOrgProv
+                          );
+                          setNewOrgName('');
+                          onEnterOrganizerOrg(created.id);
+                        }}
+                      >
+                        <IconBuilding size={14} />
+                        <span>{tx('ส่งคำขอเปิดองค์กร')}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </section>
+
+            </div>
+          )}
+
+          {activeTab === 'participants' && (
+            <section className="clean-panel canvas-stack">
+              <div>
+                <h2>{tx('ผู้สมัครที่บันทึกไว้ (สมัครให้ผู้อื่น)')}</h2>
+                <p className="muted-block">
+                  {tx(
+                    'รายชื่อบุคคลที่คุณเคยสมัครงานวิ่งให้ ระบบบันทึกให้อัตโนมัติเมื่อสมัครให้ผู้อื่นสำเร็จ สามารถแก้ไขข้อมูลหรือลบรายการได้ที่นี่'
+                  )}
+                </p>
+              </div>
+
+              {participantList.length === 0 ? (
+                <div className="empty-state-box">
+                  <strong>{tx('ยังไม่มีรายชื่อผู้สมัครที่บันทึกไว้')}</strong>
+                  <p className="muted-inline">
+                    {tx(
+                      'รายชื่อจะถูกบันทึกอัตโนมัติเมื่อเลือก "สมัครให้ผู้อื่น" ในหน้าสมัครงานวิ่ง'
+                    )}
+                  </p>
+                </div>
+              ) : (
+                <div className="linked-provider-list">
+                  {participantList.map((pt) => {
+                    const enFull =
+                      `${pt.firstNameEn ?? ''} ${pt.lastNameEn ?? ''}`.trim();
+                    const thFull = `${pt.firstName} ${pt.lastName}`.trim();
+                    const primaryTitle = isEn
+                      ? enFull || tx(thFull)
+                      : thFull || enFull;
+                    const nickDisplay = isEn
+                      ? pt.nicknameEn || tx(pt.nickname ?? '')
+                      : pt.nickname || pt.nicknameEn;
+                    return (
+                      <div key={pt.id} className="linked-provider-row">
+                        <div>
+                          <div className="cta-inline-row">
+                            <strong>
+                              {primaryTitle}
+                              {nickDisplay ? ` (${nickDisplay})` : ''}
+                            </strong>
+                            {pt.relationshipToOwner && (
+                              <span className="status-pill badge-navy">
+                                {tx(pt.relationshipToOwner)}
+                              </span>
+                            )}
+                            {pt.preferredShirtSize && (
+                              <span className="status-pill badge-neutral">
+                                {tx('เสื้อ')} {pt.preferredShirtSize}
+                              </span>
+                            )}
+                          </div>
+                          <div className="muted-inline">
+                            {[
+                              pt.dateOfBirth
+                                ? `${tx('เกิด')} ${isoToDdMmYyyy(pt.dateOfBirth)}`
+                                : '',
+                              pt.nationality
+                                ? localizeCountryName(pt.nationality)
+                                : '',
+                              pt.idNumber
+                                ? `${pt.idType === 'passport' ? tx('หนังสือเดินทาง') : tx('บัตร ปชช.')} ${pt.idNumber}`
+                                : '',
+                              pt.phone ? `${tx('เบอร์โทรศัพท์')}: ${pt.phone}` : '',
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </div>
+                          {(pt.emergencyContactName ||
+                            pt.emergencyContactPhone) && (
+                              <div className="muted-inline">
+                                <strong>{tx('ผู้ติดต่อฉุกเฉิน:')}</strong>{' '}
+                                {[
+                                  tx(pt.emergencyContactName ?? ''),
+                                  pt.emergencyContactRelation
+                                    ? `(${tx(pt.emergencyContactRelation)})`
+                                    : '',
+                                  pt.emergencyContactPhone ?? '',
+                                ]
+                                  .filter(Boolean)
+                                  .join(' ')}
+                              </div>
+                            )}
+                        </div>
+                        <div className="cta-inline-row">
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => openPartModal(pt)}
+                          >
+                            {tx('แก้ไข')}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-ghost-sm"
+                            onClick={() => {
+                              void Swal.fire({
+                                icon: 'warning',
+                                title: tx('ยืนยันการลบผู้สมัครแทน?'),
+                                text: `${primaryTitle}${nickDisplay ? ` (${nickDisplay})` : ''}`,
+                                showCancelButton: true,
+                                confirmButtonText: tx('ลบรายการ'),
+                                cancelButtonText: tx('ยกเลิก'),
+                                reverseButtons: true,
+                                buttonsStyling: false,
+                                heightAuto: false,
+                                scrollbarPadding: false,
+                                customClass: {
+                                  container: 'runevent-swal-top',
+                                  popup: 'runevent-swal-popup',
+                                  actions: 'runevent-swal-actions',
+                                  confirmButton:
+                                    'btn-primary runevent-swal-discard-btn',
+                                  cancelButton: 'btn-secondary',
+                                },
+                              }).then(async (res) => {
+                                if (!res.isConfirmed) return;
+                                const next = participantList.filter(
+                                  (x) => x.id !== pt.id
+                                );
+                                setParticipantList(next);
+                                if (editingPartId === pt.id) {
+                                  setEditingPartId(null);
+                                  setPartDraft(createEmptyParticipantDraft());
+                                }
+                                const okMsg = tx('ลบผู้สมัครที่บันทึกไว้แล้ว');
+                                if (
+                                  !(await saveProfileWithFeedback(
+                                    buildMergedProfile({
+                                      savedParticipants: next,
+                                    }),
+                                    undefined,
+                                    okMsg
+                                  ))
+                                )
+                                  return;
+                                setBanner({
+                                  tone: 'ok',
+                                  text: okMsg,
+                                });
+                              });
+                            }}
+                          >
+                            {tx('ลบ')}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {editingPartId &&
+                createPortal(
+                  <div
+                    className="runner-modal-backdrop"
+                    onMouseDown={(e) => {
+                      if (e.target === e.currentTarget) {
+                        requestClosePartModal();
+                      }
+                    }}
+                  >
+                    <div
+                      className="runner-modal-dialog"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-labelledby="sp-modal-title"
+                    >
+                      <form
+                        className="runner-modal-form"
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          if (
+                            !(partDraft.firstNameEn ?? '').trim() ||
+                            !(partDraft.lastNameEn ?? '').trim()
+                          ) {
+                            const errMsg = tx(
+                              'กรุณากรอกชื่อและนามสกุลภาษาอังกฤษของผู้สมัครแทน'
+                            );
+                            setBanner({ tone: 'err', text: errMsg });
+                            showResultModalAlert(false, errMsg);
+                            return;
+                          }
+                          if (
+                            partDraft.idType === 'thai_id' &&
+                            partDraft.idNumber &&
+                            partDraft.idNumber.length !== 13
+                          ) {
+                            const errMsg = tx(
+                              'เลขบัตรประจำตัวประชาชนต้องครบ 13 หลัก'
+                            );
+                            setBanner({ tone: 'err', text: errMsg });
+                            showResultModalAlert(false, errMsg);
+                            return;
+                          }
+                          const normalizedItem: SavedParticipant = {
+                            ...partDraft,
+                            id: editingPartId,
+                            firstName: partDraft.firstName.trim(),
+                            lastName: partDraft.lastName.trim(),
+                            nickname:
+                              (partDraft.nickname ?? '').trim() || undefined,
+                            firstNameEn: (partDraft.firstNameEn ?? '').trim(),
+                            lastNameEn: (partDraft.lastNameEn ?? '').trim(),
+                            nicknameEn:
+                              (partDraft.nicknameEn ?? '').trim() || undefined,
+                            dateOfBirth: partDraft.dateOfBirth || undefined,
+                            nationality:
+                              (partDraft.nationality ?? '').trim() || 'Thailand',
+                            idType: (partDraft.idNumber ?? '').trim()
+                              ? partDraft.idType ?? 'thai_id'
+                              : 'none',
+                            idNumber:
+                              (partDraft.idNumber ?? '').trim() || undefined,
+                            phone: (partDraft.phone ?? '').trim() || undefined,
+                            preferredShirtSize:
+                              partDraft.preferredShirtSize || undefined,
+                            relationshipToOwner:
+                              (partDraft.relationshipToOwner ?? '').trim() ||
+                              undefined,
+                            emergencyContactName:
+                              (partDraft.emergencyContactName ?? '').trim() ||
+                              undefined,
+                            emergencyContactRelation:
+                              (partDraft.emergencyContactRelation ?? '').trim() ||
+                              undefined,
+                            emergencyContactPhone:
+                              (partDraft.emergencyContactPhone ?? '').trim() ||
+                              undefined,
+                          };
+                          const next = participantList.map((x) =>
+                            x.id === editingPartId ? normalizedItem : x
+                          );
+                          setParticipantList(next);
+                          setEditingPartId(null);
+                          setPartDraft(createEmptyParticipantDraft());
+                          const okMsg = tx('อัปเดตข้อมูลผู้สมัครแทนเรียบร้อยแล้ว');
+                          if (
+                            !(await saveProfileWithFeedback(
+                              buildMergedProfile({ savedParticipants: next }),
+                              undefined,
+                              okMsg
+                            ))
+                          )
+                            return;
+                          setBanner({
+                            tone: 'ok',
+                            text: okMsg,
+                          });
+                        }}
+                      >
+                        <div className="runner-modal-header">
+                          <div>
+                            <h3 id="sp-modal-title">
+                              {tx('แก้ไขข้อมูลผู้สมัครแทน')}
+                            </h3>
+                            <p className="muted-inline">
+                              {isEn
+                                ? `${partDraft.firstNameEn ?? ''} ${partDraft.lastNameEn ?? ''}`.trim() ||
+                                `${partDraft.firstName} ${partDraft.lastName}`.trim()
+                                : `${partDraft.firstName} ${partDraft.lastName}`.trim() ||
+                                `${partDraft.firstNameEn ?? ''} ${partDraft.lastNameEn ?? ''}`.trim()}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="runner-modal-close-btn"
+                            aria-label={tx('ปิดหน้าต่างแก้ไข')}
+                            onClick={requestClosePartModal}
+                          >
+                            ×
+                          </button>
+                        </div>
+
+                        <div className="runner-modal-body canvas-stack">
+                          <div className="form-grid-2">
+                            <div className="form-row">
+                              <label htmlFor="sp-fne">
+                                {<RequiredFieldText text={tx('ชื่อ (ภาษาอังกฤษ) *')} />}
+                              </label>
+                              <input
+                                id="sp-fne"
+                                type="text"
+                                placeholder={tx('กรอกชื่อภาษาอังกฤษ')}
+                                value={partDraft.firstNameEn ?? ''}
+                                onChange={(e) =>
+                                  setPartDraft({
+                                    ...partDraft,
+                                    firstNameEn: sanitizeEnglishNameInput(
+                                      e.target.value
+                                    ),
+                                  })
+                                }
+                                required
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="sp-lne">
+                                {<RequiredFieldText text={tx('นามสกุล (ภาษาอังกฤษ) *')} />}
+                              </label>
+                              <input
+                                id="sp-lne"
+                                type="text"
+                                placeholder={tx('กรอกนามสกุลภาษาอังกฤษ')}
+                                value={partDraft.lastNameEn ?? ''}
+                                onChange={(e) =>
+                                  setPartDraft({
+                                    ...partDraft,
+                                    lastNameEn: sanitizeEnglishNameInput(
+                                      e.target.value
+                                    ),
+                                  })
+                                }
+                                required
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="sp-nke">
+                                {tx('ชื่อเล่น (ภาษาอังกฤษ)')}
+                              </label>
+                              <input
+                                id="sp-nke"
+                                type="text"
+                                placeholder={tx('กรอกชื่อเล่นภาษาอังกฤษ')}
+                                value={partDraft.nicknameEn ?? ''}
+                                onChange={(e) =>
+                                  setPartDraft({
+                                    ...partDraft,
+                                    nicknameEn: sanitizeEnglishNameInput(
+                                      e.target.value
+                                    ),
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
+
+                          <div className="form-grid-2">
+                            <div className="form-row">
+                              <label htmlFor="sp-fn">
+                                {tx('ชื่อ (ภาษาไทย)')}
+                              </label>
+                              <input
+                                id="sp-fn"
+                                type="text"
+                                placeholder={tx('ไม่บังคับสำหรับชาวต่างชาติ')}
+                                value={partDraft.firstName}
+                                onChange={(e) =>
+                                  setPartDraft({
+                                    ...partDraft,
+                                    firstName: sanitizeThaiNameInput(
+                                      e.target.value
+                                    ),
+                                  })
+                                }
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="sp-ln">
+                                {tx('นามสกุล (ภาษาไทย)')}
+                              </label>
+                              <input
+                                id="sp-ln"
+                                type="text"
+                                placeholder={tx('ไม่บังคับสำหรับชาวต่างชาติ')}
+                                value={partDraft.lastName}
+                                onChange={(e) =>
+                                  setPartDraft({
+                                    ...partDraft,
+                                    lastName: sanitizeThaiNameInput(
+                                      e.target.value
+                                    ),
+                                  })
+                                }
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="sp-nk">
+                                {tx('ชื่อเล่น (ภาษาไทย)')}
+                              </label>
+                              <input
+                                id="sp-nk"
+                                type="text"
+                                placeholder={tx('กรอกชื่อเล่นภาษาไทย')}
+                                value={partDraft.nickname ?? ''}
+                                onChange={(e) =>
+                                  setPartDraft({
+                                    ...partDraft,
+                                    nickname: sanitizeThaiNameInput(
+                                      e.target.value
+                                    ),
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
+
+                          <div className="form-grid-2">
+                            <div className="form-row">
+                              <label htmlFor="sp-dob">{tx('วันเกิด')}</label>
+                              <DateOfBirthInput
+                                id="sp-dob"
+                                valueIso={partDraft.dateOfBirth ?? ''}
+                                onChangeIso={(v) =>
+                                  setPartDraft({ ...partDraft, dateOfBirth: v })
+                                }
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="sp-gen">{tx('เพศ')}</label>
+                              <select
+                                id="sp-gen"
+                                value={partDraft.gender ?? 'ไม่ระบุ'}
+                                onChange={(e) =>
+                                  setPartDraft({
+                                    ...partDraft,
+                                    gender: e.target.value as
+                                      | 'ชาย'
+                                      | 'หญิง'
+                                      | 'ไม่ระบุ',
+                                  })
+                                }
+                              >
+                                <option value="ไม่ระบุ">{tx('ไม่ระบุ')}</option>
+                                <option value="ชาย">{tx('ชาย')}</option>
+                                <option value="หญิง">{tx('หญิง')}</option>
+                              </select>
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="sp-nat">{tx('สัญชาติ')}</label>
+                              <input
+                                id="sp-nat"
+                                type="text"
+                                placeholder={tx('ระบุสัญชาติ')}
+                                value={
+                                  !isEn &&
+                                    (partDraft.nationality ?? '')
+                                      .trim()
+                                      .toLowerCase() === 'thailand'
+                                    ? 'ไทย'
+                                    : isEn &&
+                                      (partDraft.nationality ?? '').trim() ===
+                                      'ไทย'
+                                      ? 'Thailand'
+                                      : partDraft.nationality ?? 'Thailand'
+                                }
+                                onChange={(e) =>
+                                  setPartDraft({
+                                    ...partDraft,
+                                    nationality: e.target.value,
+                                  })
+                                }
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="sp-ph">{tx('เบอร์โทรศัพท์')}</label>
+                              <input
+                                id="sp-ph"
+                                type="tel"
+                                placeholder="086-000-0000"
+                                value={partDraft.phone ?? ''}
+                                onChange={(e) =>
+                                  setPartDraft({
+                                    ...partDraft,
+                                    phone: e.target.value,
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
+
+                          <div className="form-grid-2">
+                            <div className="form-row">
+                              <label htmlFor="sp-idt">
+                                {tx('ประเภทเอกสาร')}
+                              </label>
+                              <select
+                                id="sp-idt"
+                                value={
+                                  partDraft.idType && partDraft.idType !== 'none'
+                                    ? partDraft.idType
+                                    : 'thai_id'
+                                }
+                                onChange={(e) =>
+                                  setPartDraft({
+                                    ...partDraft,
+                                    idType: e.target.value as
+                                      | 'none'
+                                      | 'thai_id'
+                                      | 'passport',
+                                  })
+                                }
+                              >
+                                <option value="thai_id">
+                                  {tx('บัตรประจำตัวประชาชน 13 หลัก')}
+                                </option>
+                                <option value="passport">
+                                  {tx('หนังสือเดินทาง')}
+                                </option>
+                              </select>
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="sp-idn">
+                                {tx('เลขบัตร / เลขหนังสือเดินทาง')}
+                              </label>
+                              <input
+                                id="sp-idn"
+                                type="text"
+                                className="mono-code"
+                                value={partDraft.idNumber ?? ''}
+                                onChange={(e) =>
+                                  setPartDraft({
+                                    ...partDraft,
+                                    idNumber: sanitizeThaiIdOrPassport(
+                                      e.target.value,
+                                      partDraft.idType &&
+                                        partDraft.idType !== 'none'
+                                        ? partDraft.idType
+                                        : 'thai_id'
+                                    ),
+                                  })
+                                }
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="sp-shirt">
+                                {tx('ไซส์เสื้อวิ่ง')}
+                              </label>
+                              <select
+                                id="sp-shirt"
+                                value={partDraft.preferredShirtSize ?? ''}
+                                onChange={(e) =>
+                                  setPartDraft({
+                                    ...partDraft,
+                                    preferredShirtSize: e.target.value,
+                                  })
+                                }
+                              >
+                                <option value="">{tx('ไม่ระบุ')}</option>
+                                {enabledSizes.map((sz) => (
+                                  <option key={sz.code} value={sz.code}>
+                                    {sz.code}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="sp-rel-owner">
+                                {tx('ความสัมพันธ์')}
+                              </label>
+                              <input
+                                id="sp-rel-owner"
+                                type="text"
+                                placeholder={tx('เช่น น้องชาย / เพื่อนร่วมทีม')}
+                                value={partDraft.relationshipToOwner ?? ''}
+                                onChange={(e) =>
+                                  setPartDraft({
+                                    ...partDraft,
+                                    relationshipToOwner: e.target.value,
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
+
+                          <div className="form-grid-2">
+                            <div className="form-row">
+                              <label htmlFor="sp-em-name">
+                                {tx('ชื่อผู้ติดต่อฉุกเฉิน')}
+                              </label>
+                              <input
+                                id="sp-em-name"
+                                type="text"
+                                placeholder={tx('ชื่อ-นามสกุลผู้ติดต่อฉุกเฉิน')}
+                                value={partDraft.emergencyContactName ?? ''}
+                                onChange={(e) =>
+                                  setPartDraft({
+                                    ...partDraft,
+                                    emergencyContactName: e.target.value,
+                                  })
+                                }
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="sp-em-rel">
+                                {tx('ความสัมพันธ์ผู้ติดต่อฉุกเฉิน')}
+                              </label>
+                              <input
+                                id="sp-em-rel"
+                                type="text"
+                                placeholder={tx('เช่น บิดา / มารดา / คู่สมรส')}
+                                value={partDraft.emergencyContactRelation ?? ''}
+                                onChange={(e) =>
+                                  setPartDraft({
+                                    ...partDraft,
+                                    emergencyContactRelation: e.target.value,
+                                  })
+                                }
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="sp-em-phone">
+                                {tx('เบอร์โทรฉุกเฉิน')}
+                              </label>
+                              <input
+                                id="sp-em-phone"
+                                type="tel"
+                                placeholder="089-000-0000"
+                                value={partDraft.emergencyContactPhone ?? ''}
+                                onChange={(e) =>
+                                  setPartDraft({
+                                    ...partDraft,
+                                    emergencyContactPhone: e.target.value,
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="runner-modal-footer">
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={requestClosePartModal}
+                          >
+                            {tx('ยกเลิก')}
+                          </button>
+                          <button type="submit" className="btn-primary">
+                            <IconCheckCircle size={15} />
+                            <span>{tx('บันทึกการแก้ไข')}</span>
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>,
+                  document.body
+                )}
+            </section>
+          )}
+
+          {activeTab === 'security' && (
+            <div className="canvas-stack">
+              {/* Verification & Password */}
+              <section className="clean-panel canvas-stack">
+                <h2>{tx('บัญชีและความปลอดภัย')}</h2>
+
+                <div className="receipt-summary-box">
+                  <div>
+                    <span className="muted-inline">{tx('การยืนยันอีเมล')}</span>
+                    <strong
+                      className={
+                        user.emailVerified ? 'text-forest' : 'text-amber'
+                      }
+                    >
+                      {user.emailVerified ? (
+                        <span className="verify-icon-inline">
+                          <i
+                            className="fa-solid fa-circle-check"
+                            title={tx('ยืนยันแล้ว')}
+                            aria-label={tx('ยืนยันแล้ว')}
+                          />
+                          <span>({user.contactEmail})</span>
+                        </span>
+                      ) : (
+                        tx('ยังไม่ได้ยืนยันอีเมล')
+                      )}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="muted-inline">{tx('สถานะบัญชี')}</span>
+                    <strong>
+                      {user.accountStatus === 'deletion_requested'
+                        ? tx('ส่งคำขอลบบัญชีแล้ว')
+                        : tx('ใช้งานปกติ')}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Email Contact & Trigger to Dedicated OTP Page (/verify-email) */}
+                <div className="custom-field-creator canvas-stack">
+                  <div className="section-title-bar">
+                    <div>
+                      <strong>{tx('อีเมลติดต่อของบัญชี')}</strong>
+                      <div className="muted-inline">
+                        {tx(
+                          'ระบุอีเมลแล้วกดปุ่มยืนยันเพื่อไปยังหน้ากรอกรหัส 6 หลักแยกเฉพาะ'
+                        )}
+                      </div>
+                    </div>
+                    {user.emailVerified &&
+                      user.contactEmail &&
+                      emailInput.trim().toLowerCase() ===
+                      user.contactEmail.toLowerCase() ? (
+                      <span
+                        className="status-pill badge-forest status-pill-verify-icon"
+                        title={tx('ยืนยันแล้ว')}
+                        aria-label={tx('ยืนยันแล้ว')}
+                      >
+                        <i
+                          className="fa-solid fa-circle-check"
+                          aria-hidden="true"
+                        />
+                      </span>
+                    ) : (
+                      <span className="status-pill badge-amber">
+                        <span>{tx('รอยืนยันอีเมล')}</span>
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="security-email-verify-row">
+                    <div className="form-row">
+                      <label htmlFor="sec-email">{tx('อีเมลติดต่อ')}</label>
+                      <input
+                        id="sec-email"
+                        type="email"
+                        value={emailInput}
+                        onChange={(e) => setEmailInput(e.target.value)}
+                        placeholder={tx('กรอกอีเมลติดต่อ')}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className={
+                        user.emailVerified &&
+                          user.contactEmail &&
+                          emailInput.trim().toLowerCase() ===
+                          user.contactEmail.toLowerCase()
+                          ? 'btn-secondary'
+                          : 'btn-primary'
+                      }
+                      onClick={() => {
+                        const target = emailInput.trim();
+                        if (!target || !target.includes('@')) {
+                          const errMsg = tx(
+                            'กรุณากรอกที่อยู่อีเมลให้ถูกต้องก่อนกดยืนยัน'
+                          );
+                          setBanner({ tone: 'err', text: errMsg });
+                          showResultModalAlert(false, errMsg);
+                          return;
+                        }
+                        onOpenEmailVerifyPage(target);
+                      }}
+                    >
+                      <IconMail size={15} />
+                      <span>
+                        {user.emailVerified &&
+                          user.contactEmail &&
+                          emailInput.trim().toLowerCase() ===
+                          user.contactEmail.toLowerCase()
+                          ? tx('ส่งรหัสยืนยันอีกครั้ง')
+                          : tx('ยืนยันอีเมลด้วยรหัส')}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Change Password */}
+                <div className="custom-field-creator canvas-stack">
+                  <strong>
+                    {user.hasPassword
+                      ? tx('เปลี่ยนรหัสผ่าน')
+                      : tx('ตั้งรหัสผ่านเพิ่มเติมสำหรับเข้าด้วยอีเมล')}
+                  </strong>
+                  <div className="form-grid-2">
+                    <div className="form-row">
+                      <label htmlFor="sec-npw">
+                        {tx('รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)')}
+                      </label>
+                      <input
+                        id="sec-npw"
+                        type="password"
+                        value={newPass}
+                        onChange={(e) => setNewPass(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-row">
+                      <label htmlFor="sec-cpw">{tx('ยืนยันรหัสผ่านใหม่')}</label>
+                      <input
+                        id="sec-cpw"
+                        type="password"
+                        value={confirmPass}
+                        onChange={(e) => setConfirmPass(e.target.value)}
+                      />
+                    </div>
+                    <div
+                      className="form-row"
+                      style={{ justifyContent: 'flex-end' }}
+                    >
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={() => {
+                          if (newPass.length < 8 || newPass !== confirmPass) {
+                            const errMsg = tx(
+                              'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษรและตรงกันทั้งสองช่อง'
+                            );
+                            setBanner({ tone: 'err', text: errMsg });
+                            showResultModalAlert(false, errMsg);
+                            return;
+                          }
+                          onSetOrChangePassword(newPass);
+                          setNewPass('');
+                          setConfirmPass('');
+                          const okMsg = tx('อัปเดตรหัสผ่านลงฐานข้อมูลเรียบร้อยแล้ว');
+                          setBanner({ tone: 'ok', text: okMsg });
+                          showResultModalAlert(true, okMsg);
+                        }}
+                      >
+                        <IconLock size={15} />
+                        <span>
+                          {user.hasPassword
+                            ? tx('บันทึกรหัสผ่านใหม่')
+                            : tx('ตั้งรหัสผ่าน')}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Connected Accounts */}
+                <div>
+                  <h3>
+                    {tx(
+                      'บัญชีภายนอกที่เชื่อมต่อ (ป้องกันการถอดช่องทางสุดท้าย)'
+                    )}
+                  </h3>
+                  <div className="linked-provider-list">
+                    {(
+                      [
+                        {
+                          key: 'google' as const,
+                          title: tx('บัญชี Google'),
+                          linked: hasGoogle,
+                          icon: <IconGoogleMark size={18} />,
+                        },
+                        {
+                          key: 'facebook' as const,
+                          title: tx('บัญชี Facebook'),
+                          linked: hasFacebook,
+                          icon: <IconFacebookMark size={18} />,
+                        },
+                        {
+                          key: 'line' as const,
+                          title: tx('บัญชี LINE'),
+                          linked: hasLine,
+                          icon: <IconLineMark size={18} />,
+                        },
+                      ] as const
+                    ).map((p) => (
+                      <div key={p.key} className="linked-provider-row">
+                        <div className="persona-identity">
+                          {p.icon}
+                          <div>
+                            <strong>{p.title}</strong>
+                            <div className="muted-inline">
+                              {p.linked ? (
+                                <span className="provider-connected-inline">
+                                  <i
+                                    className="fa-solid fa-circle-check"
+                                    aria-hidden="true"
+                                  />
+                                  <span>{tx('เชื่อมต่อกับบัญชีนี้แล้ว')}</span>
+                                </span>
+                              ) : (
+                                tx('ยังไม่ได้เชื่อมต่อ')
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        {p.linked ? (
+                          <button
+                            type="button"
+                            className="btn-ghost-sm"
+                            onClick={() => {
+                              const r = onUnlinkProvider(p.key);
+                              const msg = r.ok
+                                ? txf('ถอดการเชื่อม {0} เรียบร้อยแล้ว', p.title)
+                                : r.error ?? tx('ไม่สามารถถอดช่องทางสุดท้ายได้');
+                              setBanner({
+                                tone: r.ok ? 'ok' : 'err',
+                                text: msg,
+                              });
+                              showResultModalAlert(r.ok, msg);
+                            }}
+                          >
+                            {tx('ถอดการเชื่อม')}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => {
+                              onLinkProvider(p.key);
+                              const msg = txf('เชื่อม {0} สำเร็จ', p.title);
+                              setBanner({
+                                tone: 'ok',
+                                text: msg,
+                              });
+                              showResultModalAlert(true, msg);
+                            }}
+                          >
+                            {txf('เชื่อม {0}', p.title)}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Active Sessions & Login History */}
+                <div>
+                  <div className="section-title-bar">
+                    <h3>{tx('อุปกรณ์ที่เข้าสู่ระบบและประวัติการใช้งาน')}</h3>
+                    {otherSessionsCount > 0 && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => {
+                          onRevokeOtherSessions();
+                          const okMsg = tx(
+                            'ออกจากระบบอุปกรณ์อื่นทั้งหมดเรียบร้อยแล้ว'
+                          );
+                          setBanner({ tone: 'ok', text: okMsg });
+                          showResultModalAlert(true, okMsg);
+                        }}
+                      >
+                        {tx('ออกจากระบบอุปกรณ์อื่น')} ({otherSessionsCount})
+                      </button>
+                    )}
+                  </div>
+                  <div className="linked-provider-list">
+                    {user.sessions.map((ses) => (
+                      <div key={ses.id} className="linked-provider-row">
+                        <div className="persona-identity">
+                          <IconDevice size={18} />
+                          <div>
+                            <strong>{tx(ses.deviceLabel)}</strong>
+                            <div className="muted-inline">
+                              {tx(ses.locationHint)} · {tx(ses.lastActiveAt)}
+                            </div>
+                          </div>
+                        </div>
+                        {ses.isCurrentDevice && (
+                          <span className="status-pill badge-forest">
+                            {tx('เครื่องนี้')}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {(user.loginHistory ?? []).length > 0 && (
+                    <div
+                      className="table-scroll-wrap"
+                      style={{ marginTop: '0.65rem' }}
+                    >
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>{tx('วัน-เวลา')}</th>
+                            <th>{tx('ช่องทาง')}</th>
+                            <th>{tx('อุปกรณ์')}</th>
+                            <th>{tx('สถานที่อ้างอิง')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(user.loginHistory ?? []).map((lh) => (
+                            <tr key={lh.id}>
+                              <td className="mono-num">{lh.timestamp}</td>
+                              <td>{lh.method}</td>
+                              <td>{tx(lh.deviceLabel)}</td>
+                              <td>{tx(lh.ipOrLocation)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              {/* Account Deactivation & PDPA Deletion Request */}
+              <section className="clean-panel canvas-stack">
+                <h3>
+                  {tx(
+                    'การปิดพักบัญชีและคำขอลบบัญชีตามนโยบายความเป็นส่วนตัว'
+                  )}
+                </h3>
+                <div className="form-grid-2">
+                  <div className="custom-field-creator canvas-stack">
+                    <strong>{tx('ปิดพักการใช้งานบัญชีชั่วคราว')}</strong>
+                    <span className="muted-inline">
+                      {tx(
+                        'ออกจากระบบทุกอุปกรณ์และพักการแสดงโปรไฟล์ชั่วคราว โดยยังเก็บบัตรวิ่งเดิมไว้ให้กู้คืนเมื่อเข้าสู่ระบบใหม่'
+                      )}
+                    </span>
+                    {!confirmDeactivate ? (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => setConfirmDeactivate(true)}
+                      >
+                        {tx('ขอปิดพักบัญชีชั่วคราว')}
+                      </button>
+                    ) : (
+                      <div className="cta-inline-row">
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          onClick={() => {
+                            void onManageAccountStatus(
+                              'deactivate',
+                              'ผู้ใช้กดยืนยันปิดพักบัญชีชั่วคราว'
+                            );
+                          }}
+                        >
+                          {tx('ยืนยันปิดพักบัญชีและออกจากระบบ')}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-ghost-sm"
+                          onClick={() => setConfirmDeactivate(false)}
+                        >
+                          {tx('ยกเลิก')}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="custom-field-creator canvas-stack">
+                    <strong>{tx('ส่งคำขอลบบัญชีถาวร')}</strong>
+                    {user.accountStatus === 'deletion_requested' ? (
+                      <>
+                        <div className="status-explanation-banner">
+                          <IconMail size={15} />
+                          <span>
+                            {tx('ส่งคำขอลบบัญชีเมื่อ')}{' '}
+                            <span className="mono-num">
+                              {user.deletionRequestedAt}
+                            </span>{' '}
+                            ({user.deletionRequestReason})
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={async () => {
+                            const r = await onManageAccountStatus(
+                              'cancel_deletion'
+                            );
+                            const msg = r.ok
+                              ? tx('ยกเลิกคำขอลบบัญชีเรียบร้อยแล้ว')
+                              : r.error ?? tx('ไม่สามารถดำเนินการได้');
+                            setBanner({
+                              tone: r.ok ? 'ok' : 'err',
+                              text: msg,
+                            });
+                            showResultModalAlert(r.ok, msg);
+                          }}
+                        >
+                          {tx('ยกเลิกคำขอลบบัญชี')}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <input
+                          type="text"
+                          value={deleteReason}
+                          onChange={(e) => setDeleteReason(e.target.value)}
+                          placeholder={tx(
+                            'ระบุเหตุผลประกอบคำขอลบข้อมูลส่วนบุคคล...'
+                          )}
+                        />
+                        <button
+                          type="button"
+                          className="btn-ghost-sm"
+                          onClick={async () => {
+                            const r = await onManageAccountStatus(
+                              'request_deletion',
+                              deleteReason.trim() ||
+                              'ขอลบข้อมูลตามสิทธิ์เจ้าของข้อมูลส่วนบุคคล'
+                            );
+                            const msg = r.ok
+                              ? tx('บันทึกคำขอลบบัญชีลงระบบเรียบร้อยแล้ว')
+                              : r.error ?? tx('ไม่สามารถดำเนินการได้');
+                            if (r.ok) {
+                              setDeleteReason('');
+                            }
+                            setBanner({
+                              tone: r.ok ? 'ok' : 'err',
+                              text: msg,
+                            });
+                            showResultModalAlert(r.ok, msg);
+                          }}
+                        >
+                          {tx('ส่งคำขอลบบัญชี')}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </section>
+            </div>
+          )}
+        </div>
+      </div>
+    </main>
+  );
+};

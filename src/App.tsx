@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import Swal from 'sweetalert2';
 import {
   DEMO_CUSTOM_FIELDS,
   DEMO_ORGANIZATIONS,
@@ -19,6 +20,11 @@ import {
   INITIAL_REGISTRATION_STEPS,
 } from './data/formBuilderData';
 import {
+  DEFAULT_PLATFORM_PROFILE_CONFIG,
+  deriveProviderSocialHandle,
+  enrichSocialLinksFromIdentities,
+} from './data/runnerProfileDefaults';
+import {
   AuditLogEntry,
   AuthProviderType,
   ConditionalRule,
@@ -38,6 +44,7 @@ import {
   OrgRole,
   PayoutBatch,
   PayoutStatus,
+  PlatformProfileConfig,
   ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
@@ -45,13 +52,19 @@ import {
   ReturnIntent,
   RunnerProfileData,
   SellerServiceModel,
+  ShirtSizeCode,
   SimulatedUiState,
   TeamInvitation,
   UserAccount,
 } from './types';
 import { calculateFeeQuote, getCurrentTier } from './utils/pricing';
 import { cloneCustomFieldsSchema } from './utils/eventConfig';
-import { AccountSecurityView, AuthScreen } from './components/AuthViews';
+import { AuthScreen } from './components/AuthViews';
+import {
+  RunnerProfileTab,
+  RunnerProfileView,
+} from './components/RunnerProfileView';
+import { EmailOtpVerifyView } from './components/EmailOtpVerifyView';
 import {
   CustomerPortalView,
   CustomerSubView,
@@ -63,9 +76,11 @@ import {
   IconBib,
   IconBuilding,
   IconCheckCircle,
+  IconClose,
   IconFlag,
   IconGlobe,
   IconLock,
+  IconMenu,
   IconShield,
   IconShirt,
   IconSliders,
@@ -88,7 +103,9 @@ type RootSurface =
   | 'organizer'
   | 'platform_admin'
   | 'auth'
-  | 'account_security';
+  | 'runner_profile'
+  | 'account_security'
+  | 'verify_email';
 
 const STORAGE_KEY = 'runevent_v2_mock_system';
 const SESSION_USER_KEY = 'runevent_v2_session_user_id';
@@ -108,6 +125,7 @@ interface PersistedSystemState {
   globalFields: GlobalFormFieldDef[];
   conditionalRules: ConditionalRule[];
   fieldRequests: OrganizerFieldRequest[];
+  platformProfileConfig?: PlatformProfileConfig;
 }
 
 function createDefaultState(): PersistedSystemState {
@@ -126,6 +144,7 @@ function createDefaultState(): PersistedSystemState {
     globalFields: INITIAL_GLOBAL_FIELDS,
     conditionalRules: INITIAL_CONDITIONAL_RULES,
     fieldRequests: INITIAL_FIELD_REQUESTS,
+    platformProfileConfig: DEFAULT_PLATFORM_PROFILE_CONFIG,
   };
 }
 
@@ -169,6 +188,7 @@ interface ParsedUrlRoute {
   eventSlug: string | null;
   eventTab: 'register' | 'storefront' | 'info_results';
   authTab: 'signin' | 'signup' | 'forgot';
+  verifyEmailParam?: string | null;
 }
 
 function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
@@ -191,6 +211,15 @@ function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
       authTab,
     };
   }
+  if (cleanPath === '/profile') {
+    return {
+      surface: 'runner_profile',
+      customerSubView: 'directory',
+      eventSlug: null,
+      eventTab: 'register',
+      authTab: 'signin',
+    };
+  }
   if (cleanPath === '/account/security') {
     return {
       surface: 'account_security',
@@ -198,6 +227,16 @@ function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
       eventSlug: null,
       eventTab: 'register',
       authTab: 'signin',
+    };
+  }
+  if (cleanPath === '/verify-email') {
+    return {
+      surface: 'verify_email',
+      customerSubView: 'directory',
+      eventSlug: null,
+      eventTab: 'register',
+      authTab: 'signin',
+      verifyEmailParam: params.get('email'),
     };
   }
   if (
@@ -336,6 +375,15 @@ export const App: React.FC = () => {
   const [authInitialTab, setAuthInitialTab] = useState<
     'signin' | 'signup' | 'forgot'
   >(initialParsed.authTab);
+  const [profileInitialTab, setProfileInitialTab] = useState<RunnerProfileTab>(
+    initialParsed.surface === 'account_security' ? 'security' : 'personal'
+  );
+  const [pendingVerifyEmail, setPendingVerifyEmail] = useState<string>(
+    initialParsed.verifyEmailParam ?? ''
+  );
+  const [verifiedEmailNotice, setVerifiedEmailNotice] = useState<string | null>(
+    null
+  );
 
   // Default first-time visitor is Guest (null), persisted across refreshes
   const [currentUserId, setCurrentUserId] = useState<string | null>(
@@ -352,10 +400,55 @@ export const App: React.FC = () => {
   const [simulatedState, setSimulatedState] =
     useState<SimulatedUiState>('normal');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showDemoTools, setShowDemoTools] = useState(false);
+  const personalDirtyRef = useRef(false);
+  const [personalDiscardSeq, setPersonalDiscardSeq] = useState(0);
+  const handlePersonalDirtyChange = useCallback((dirty: boolean) => {
+    personalDirtyRef.current = dirty;
+  }, []);
+
+  const guardUnsavedProfileNavigation = (proceed: () => void) => {
+    if (
+      (surface === 'runner_profile' || surface === 'account_security') &&
+      personalDirtyRef.current
+    ) {
+      setShowProfileMenu(false);
+      setShowMobileMenu(false);
+      void Swal.fire({
+        icon: 'warning',
+        title: tx('ยังไม่ได้บันทึกข้อมูลส่วนตัว'),
+        text: tx(
+          'คุณมีการแก้ไขข้อมูลส่วนตัวค้างอยู่ กรุณาบันทึกข้อมูลก่อน หรือกดยืนยันเพื่อละทิ้งข้อมูลที่กำลังแก้ไขและเปลี่ยนหน้า'
+        ),
+        showCancelButton: true,
+        confirmButtonText: tx('ละทิ้งการแก้ไขและเปลี่ยนหน้า'),
+        cancelButtonText: tx('กลับไปบันทึกข้อมูล'),
+        reverseButtons: true,
+        buttonsStyling: false,
+        heightAuto: false,
+        scrollbarPadding: false,
+        customClass: {
+          container: 'runevent-swal-top',
+          popup: 'runevent-swal-popup',
+          actions: 'runevent-swal-actions',
+          confirmButton: 'btn-primary runevent-swal-discard-btn',
+          cancelButton: 'btn-secondary',
+        },
+      }).then((result) => {
+        if (result.isConfirmed) {
+          personalDirtyRef.current = false;
+          setPersonalDiscardSeq((s) => s + 1);
+          proceed();
+        }
+      });
+      return;
+    }
+    proceed();
+  };
   const [externalSocialScenario, setExternalSocialScenario] = useState<{
     seq: number;
-    provider: 'google' | 'line';
+    provider: 'google' | 'line' | 'facebook';
     scenario: 'new_no_email' | 'collision' | 'cancelled';
   } | null>(null);
 
@@ -379,17 +472,94 @@ export const App: React.FC = () => {
     setSelectedPublicEventId(matchedEv?.id ?? null);
     setInitialEventTab(parsed.eventTab);
     setAuthInitialTab(parsed.authTab);
+    if (parsed.verifyEmailParam !== undefined) {
+      setPendingVerifyEmail(parsed.verifyEmailParam ?? '');
+    }
   };
 
   useEffect(() => {
     const onPopState = () => {
-      applyRouteStateFromUrl(window.location.pathname, window.location.search);
+      const targetPath = window.location.pathname;
+      const targetSearch = window.location.search;
+      if (
+        (surface === 'runner_profile' || surface === 'account_security') &&
+        personalDirtyRef.current &&
+        targetPath !== '/profile'
+      ) {
+        window.history.pushState({}, '', '/profile');
+        guardUnsavedProfileNavigation(() => {
+          window.history.replaceState(
+            {},
+            '',
+            `${targetPath}${targetSearch}`
+          );
+          applyRouteStateFromUrl(targetPath, targetSearch);
+          setShowProfileMenu(false);
+          setShowMobileMenu(false);
+        });
+        return;
+      }
+      applyRouteStateFromUrl(targetPath, targetSearch);
       setShowProfileMenu(false);
+      setShowMobileMenu(false);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sys.events]);
+  }, [sys.events, surface]);
+
+  // Prevent background page scrolling when any modal or SweetAlert2 dialog is open
+  // without setting overflow: hidden/clip on html/body (preserving position: sticky)
+  useEffect(() => {
+    const canScrollInsideModal = (
+      target: EventTarget | null,
+      deltaY?: number
+    ): boolean => {
+      if (!(target instanceof Element)) return false;
+      const scroller = target.closest(
+        '.runner-modal-body, .swal2-html-container'
+      ) as HTMLElement | null;
+      if (!scroller) return false;
+      if (scroller.scrollHeight <= scroller.clientHeight) return false;
+      if (deltaY !== undefined) {
+        if (deltaY < 0 && scroller.scrollTop <= 0) return false;
+        if (
+          deltaY > 0 &&
+          scroller.scrollTop + scroller.clientHeight >=
+            scroller.scrollHeight - 1
+        ) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    const hasOpenModalOverlay = () =>
+      Boolean(
+        document.querySelector(
+          '.swal2-container:not(.swal2-toast-shown), .runner-modal-backdrop'
+        )
+      );
+
+    const onWheel = (e: WheelEvent) => {
+      if (!hasOpenModalOverlay()) return;
+      if (canScrollInsideModal(e.target, e.deltaY)) return;
+      e.preventDefault();
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!hasOpenModalOverlay()) return;
+      if (canScrollInsideModal(e.target)) return;
+      e.preventDefault();
+    };
+
+    window.addEventListener('wheel', onWheel, { passive: false });
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => {
+      window.removeEventListener('wheel', onWheel);
+      window.removeEventListener('touchmove', onTouchMove);
+    };
+  }, []);
 
   // Session & business data are backed by Node.js + SQLite API (/api/bootstrap + HttpOnly cookie)
   const [apiBootstrapped, setApiBootstrapped] = useState(false);
@@ -483,6 +653,14 @@ export const App: React.FC = () => {
         setAuthInitialTab('signin');
         setSurface('auth');
         pushUrl('/login', true);
+      } else if (surface === 'runner_profile') {
+        setReturnIntent({
+          surface: 'runner_profile',
+          label: 'จัดการโปรไฟล์นักวิ่ง (Runner Profile)',
+        });
+        setAuthInitialTab('signin');
+        setSurface('auth');
+        pushUrl('/login', true);
       } else if (surface === 'account_security') {
         setReturnIntent({
           surface: 'account_security',
@@ -508,118 +686,161 @@ export const App: React.FC = () => {
     evId?: string | null,
     tab?: 'register' | 'storefront' | 'info_results'
   ) => {
-    setShowProfileMenu(false);
-    if (view === 'my_orders' && !currentUser) {
-      setReturnIntent({
-        surface: 'my_orders',
-        label: 'ดูบัตรวิ่งและคำสั่งซื้อของฉัน',
-      });
-      setAuthInitialTab('signin');
-      setSurface('auth');
-      pushUrl('/login');
-      return;
-    }
+    guardUnsavedProfileNavigation(() => {
+      setShowProfileMenu(false);
+      setShowMobileMenu(false);
+      if (view === 'my_orders' && !currentUser) {
+        setReturnIntent({
+          surface: 'my_orders',
+          label: 'ดูบัตรวิ่งและคำสั่งซื้อของฉัน',
+        });
+        setAuthInitialTab('signin');
+        setSurface('auth');
+        pushUrl('/login');
+        return;
+      }
 
-    setSurface('customer');
-    setCustomerSubView(view);
-    const resolvedId = evId !== undefined ? evId : selectedPublicEventId;
-    if (evId !== undefined) setSelectedPublicEventId(evId);
-    const resolvedTab = tab ?? 'register';
-    if (tab) setInitialEventTab(tab);
+      setSurface('customer');
+      setCustomerSubView(view);
+      const resolvedId = evId !== undefined ? evId : selectedPublicEventId;
+      if (evId !== undefined) setSelectedPublicEventId(evId);
+      const resolvedTab = tab ?? 'register';
+      if (tab) setInitialEventTab(tab);
 
-    if (view === 'directory') {
-      pushUrl('/');
-    } else if (view === 'custom_production') {
-      pushUrl('/custom-production');
-    } else if (view === 'my_orders') {
-      pushUrl('/my-orders');
-    } else if (view === 'event_register' && resolvedId) {
-      const ev = sys.events.find((e) => e.id === resolvedId);
-      const codeSlug = (ev?.code ?? resolvedId).toLowerCase();
-      pushUrl(`/events/${codeSlug}/register`);
-    } else if (view === 'event_detail' && resolvedId) {
-      const ev = sys.events.find((e) => e.id === resolvedId);
-      const codeSlug = (ev?.code ?? resolvedId).toLowerCase();
-      const suffix =
-        resolvedTab === 'storefront'
-          ? '/shop'
-          : resolvedTab === 'info_results'
-            ? '/results'
-            : '';
-      pushUrl(`/events/${codeSlug}${suffix}`);
-    }
+      if (view === 'directory') {
+        pushUrl('/');
+      } else if (view === 'custom_production') {
+        pushUrl('/custom-production');
+      } else if (view === 'my_orders') {
+        pushUrl('/my-orders');
+      } else if (view === 'event_register' && resolvedId) {
+        const ev = sys.events.find((e) => e.id === resolvedId);
+        const codeSlug = (ev?.code ?? resolvedId).toLowerCase();
+        pushUrl(`/events/${codeSlug}/register`);
+      } else if (view === 'event_detail' && resolvedId) {
+        const ev = sys.events.find((e) => e.id === resolvedId);
+        const codeSlug = (ev?.code ?? resolvedId).toLowerCase();
+        const suffix =
+          resolvedTab === 'storefront'
+            ? '/shop'
+            : resolvedTab === 'info_results'
+              ? '/results'
+              : '';
+        pushUrl(`/events/${codeSlug}${suffix}`);
+      }
+    });
   };
 
   const navigateLogin = (mode: 'signin' | 'signup' | 'forgot' = 'signin') => {
-    setShowProfileMenu(false);
-    setAuthInitialTab(mode);
-    setSurface('auth');
-    pushUrl(mode === 'signin' ? '/login' : `/login?mode=${mode}`);
+    guardUnsavedProfileNavigation(() => {
+      setShowProfileMenu(false);
+      setShowMobileMenu(false);
+      setAuthInitialTab(mode);
+      setSurface('auth');
+      pushUrl(mode === 'signin' ? '/login' : `/login?mode=${mode}`);
+    });
+  };
+
+  const navigateRunnerProfile = (tab: RunnerProfileTab = 'personal') => {
+    const run = () => {
+      setShowProfileMenu(false);
+      setShowMobileMenu(false);
+      setProfileInitialTab(tab);
+      if (!currentUser) {
+        setReturnIntent({
+          surface: 'runner_profile',
+          label: 'จัดการโปรไฟล์นักวิ่ง (Runner Profile)',
+        });
+        navigateLogin('signin');
+        return;
+      }
+      setSurface('runner_profile');
+      pushUrl('/profile');
+    };
+    if (tab !== 'personal') {
+      guardUnsavedProfileNavigation(run);
+    } else {
+      run();
+    }
   };
 
   const navigateAccountSecurity = () => {
-    setShowProfileMenu(false);
-    if (!currentUser) {
-      setReturnIntent({
-        surface: 'account_security',
-        label: 'จัดการบัญชีและความปลอดภัย / ขอเปิดองค์กรผู้จัดงาน',
-      });
-      navigateLogin('signin');
-      return;
-    }
-    setSurface('account_security');
-    pushUrl('/account/security');
+    guardUnsavedProfileNavigation(() => {
+      setShowProfileMenu(false);
+      setShowMobileMenu(false);
+      setProfileInitialTab('security');
+      if (!currentUser) {
+        setReturnIntent({
+          surface: 'account_security',
+          label: 'จัดการบัญชีและความปลอดภัย / ขอเปิดองค์กรผู้จัดงาน',
+        });
+        navigateLogin('signin');
+        return;
+      }
+      setSurface('account_security');
+      pushUrl('/account/security');
+    });
   };
 
   const navigateOrganizer = (orgId?: string, evId?: string | null) => {
-    setShowProfileMenu(false);
-    if (orgId) {
-      setActiveOrgId(orgId);
-      setActiveEventId(evId ?? null);
-      setActiveOrgSection(evId ? 'evt_overview' : 'org_overview');
-    }
-    if (!currentUser) {
-      setReturnIntent({
-        surface: 'organizer',
-        label: 'เข้าใช้งานระบบผู้จัดงาน (Organizer Dashboard)',
-      });
-      navigateLogin('signin');
-      return;
-    }
-    setSurface('organizer');
-    pushUrl('/organizer');
+    guardUnsavedProfileNavigation(() => {
+      setShowProfileMenu(false);
+      setShowMobileMenu(false);
+      if (orgId) {
+        setActiveOrgId(orgId);
+        setActiveEventId(evId ?? null);
+        setActiveOrgSection(evId ? 'evt_overview' : 'org_overview');
+      }
+      if (!currentUser) {
+        setReturnIntent({
+          surface: 'organizer',
+          label: 'เข้าใช้งานระบบผู้จัดงาน (Organizer Dashboard)',
+        });
+        navigateLogin('signin');
+        return;
+      }
+      setSurface('organizer');
+      pushUrl('/organizer');
+    });
   };
 
   const navigatePlatformAdmin = (sec?: PlatformSection) => {
-    setShowProfileMenu(false);
-    if (sec) setActivePlatformSection(sec);
-    if (!currentUser) {
-      setReturnIntent({
-        surface: 'platform_admin',
-        label: 'เข้าใช้งานศูนย์ควบคุม Platform Owner',
-      });
-      navigateLogin('signin');
-      return;
-    }
-    setSurface('platform_admin');
-    pushUrl('/platform-admin');
+    guardUnsavedProfileNavigation(() => {
+      setShowProfileMenu(false);
+      setShowMobileMenu(false);
+      if (sec) setActivePlatformSection(sec);
+      if (!currentUser) {
+        setReturnIntent({
+          surface: 'platform_admin',
+          label: 'เข้าใช้งานศูนย์ควบคุม Platform Owner',
+        });
+        navigateLogin('signin');
+        return;
+      }
+      setSurface('platform_admin');
+      pushUrl('/platform-admin');
+    });
   };
 
   const handleLogout = () => {
-    void syncApi('POST', '/api/auth/logout');
-    setCurrentUserId(null);
-    setShowProfileMenu(false);
-    setReturnIntent(null);
-    if (
-      surface === 'platform_admin' ||
-      surface === 'organizer' ||
-      surface === 'account_security' ||
-      (surface === 'customer' && customerSubView === 'my_orders')
-    ) {
-      setSurface('customer');
-      setCustomerSubView('directory');
-      pushUrl('/');
-    }
+    guardUnsavedProfileNavigation(() => {
+      void syncApi('POST', '/api/auth/logout');
+      setCurrentUserId(null);
+      setShowProfileMenu(false);
+      setShowMobileMenu(false);
+      setReturnIntent(null);
+      if (
+        surface === 'platform_admin' ||
+        surface === 'organizer' ||
+        surface === 'runner_profile' ||
+        surface === 'account_security' ||
+        (surface === 'customer' && customerSubView === 'my_orders')
+      ) {
+        setSurface('customer');
+        setCustomerSubView('directory');
+        pushUrl('/');
+      }
+    });
   };
 
   const handlePasswordLogin = async (
@@ -656,9 +877,62 @@ export const App: React.FC = () => {
     }));
   };
 
-  const handleAuthenticated = (user: UserAccount, preferredOrgId?: string) => {
-    if (currentUserId !== user.id) {
-      void syncApi('POST', '/api/auth/dev-switch', { userId: user.id });
+  const handleAuthenticated = (
+    incomingUser: UserAccount,
+    preferredOrgId?: string
+  ) => {
+    const user =
+      sys.users.find((u) => u.id === incomingUser.id) ??
+      (incomingUser.contactEmail
+        ? sys.users.find(
+            (u) =>
+              (u.contactEmail ?? '').toLowerCase() ===
+              incomingUser.contactEmail!.toLowerCase()
+          )
+        : undefined) ??
+      (currentUser && currentUser.fullNameTh === incomingUser.fullNameTh
+        ? currentUser
+        : incomingUser);
+    const autoSocial = enrichSocialLinksFromIdentities(user);
+    const prevSocial = user.runnerProfile?.socialLinks ?? {};
+    const socialChanged =
+      autoSocial.facebook !== prevSocial.facebook ||
+      autoSocial.line !== prevSocial.line;
+
+    if (socialChanged) {
+      const nextProf: RunnerProfileData = {
+        ...(user.runnerProfile ?? {}),
+        socialLinks: autoSocial,
+      };
+      setSys((prev) => ({
+        ...prev,
+        users: prev.users.map((u) =>
+          u.id === user.id ? { ...u, runnerProfile: nextProf } : u
+        ),
+      }));
+    }
+
+    const existsInUsers = sys.users.some((u) => u.id === user.id);
+    if (currentUserId !== user.id && existsInUsers) {
+      void syncApi('POST', '/api/auth/dev-switch', { userId: user.id }).then(
+        () => {
+          if (socialChanged) {
+            void syncApi('PATCH', '/api/profile', {
+              runnerProfile: {
+                ...(user.runnerProfile ?? {}),
+                socialLinks: autoSocial,
+              },
+            });
+          }
+        }
+      );
+    } else if (socialChanged) {
+      void syncApi('PATCH', '/api/profile', {
+        runnerProfile: {
+          ...(user.runnerProfile ?? {}),
+          socialLinks: autoSocial,
+        },
+      });
     }
     setCurrentUserId(user.id);
     setSimulatedState('normal');
@@ -703,7 +977,14 @@ export const App: React.FC = () => {
         pushUrl('/custom-production');
         return;
       }
+      if (intent.surface === 'runner_profile') {
+        setProfileInitialTab('personal');
+        setSurface('runner_profile');
+        pushUrl('/profile');
+        return;
+      }
       if (intent.surface === 'account_security') {
+        setProfileInitialTab('security');
         setSurface('account_security');
         pushUrl('/account/security');
         return;
@@ -820,6 +1101,7 @@ export const App: React.FC = () => {
       isDemoPreset: false,
     };
     setSys((prev) => ({ ...prev, users: [...prev.users, newUser] }));
+    setCurrentUserId(newUser.id);
     void syncApi('POST', '/api/auth/register-runner', {
       ...payload,
       password: payload.password || 'demo1234',
@@ -828,26 +1110,61 @@ export const App: React.FC = () => {
   };
 
   const handleRegisterSocialUser = (payload: {
-    provider: 'google' | 'line';
+    provider: 'google' | 'line' | 'facebook';
     fullNameTh: string;
+    fullNameEn?: string;
     email: string | null;
     marketingConsent: boolean;
     runnerProfile?: RunnerProfileData;
   }): UserAccount => {
+    const providerSubject = `${payload.provider}-uid-${Date.now()}`;
+    const existingSocial = payload.runnerProfile?.socialLinks ?? {};
+    const enrichedSocial = {
+      ...existingSocial,
+      ...(payload.provider === 'facebook' && !existingSocial.facebook
+        ? {
+            facebook: deriveProviderSocialHandle('facebook', {
+              fullNameTh: payload.fullNameTh,
+              fullNameEn: payload.fullNameEn,
+              email: payload.email,
+              providerSubject,
+            }),
+          }
+        : {}),
+      ...(payload.provider === 'line' && !existingSocial.line
+        ? {
+            line: deriveProviderSocialHandle('line', {
+              fullNameTh: payload.fullNameTh,
+              fullNameEn: payload.fullNameEn,
+              email: payload.email,
+              providerSubject,
+            }),
+          }
+        : {}),
+    };
+    const enrichedProfile: RunnerProfileData = {
+      ...(payload.runnerProfile ?? {}),
+      socialLinks: enrichedSocial,
+    };
+    const enrichedPayload = {
+      ...payload,
+      runnerProfile: enrichedProfile,
+    };
+
     const newUser: UserAccount = {
       id: `usr-soc-${Date.now()}`,
       code: `USR-${sys.users.length + 920}`,
       fullNameTh: payload.fullNameTh,
-      fullNameEn: payload.fullNameTh,
+      fullNameEn: payload.fullNameEn ?? payload.fullNameTh,
       contactEmail: payload.email,
       emailVerified: Boolean(payload.email),
       hasPassword: false,
-      runnerProfile: payload.runnerProfile,
+      runnerProfile: enrichedProfile,
       identities: [
         {
           id: `id-soc-${Date.now()}`,
           provider: payload.provider,
-          providerSubject: `${payload.provider}-uid-${Date.now()}`,
+          providerSubject,
           providerEmail: payload.email ?? undefined,
           linkedAt: '2026-11-18 09:30',
         },
@@ -866,19 +1183,99 @@ export const App: React.FC = () => {
       isDemoPreset: false,
     };
     setSys((prev) => ({ ...prev, users: [...prev.users, newUser] }));
-    void syncApi('POST', '/api/auth/register-social', payload);
+    setCurrentUserId(newUser.id);
+    void syncApi('POST', '/api/auth/register-social', enrichedPayload);
     return newUser;
   };
 
-  const handleUpdateRunnerProfile = (profile: RunnerProfileData) => {
-    if (!currentUser) return;
+  const handleSaveRunnerProfile = async (
+    patch: Partial<RunnerProfileData>,
+    opts?: { fullNameTh?: string; fullNameEn?: string }
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!currentUser) return { ok: false, error: tx("กรุณาเข้าสู่ระบบก่อน") };
+    const mergedProfile: RunnerProfileData = {
+      ...(currentUser.runnerProfile ?? {}),
+      ...patch,
+    };
     setSys((prev) => ({
       ...prev,
       users: prev.users.map((u) =>
-        u.id === currentUser.id ? { ...u, runnerProfile: profile } : u
+        u.id === currentUser.id
+          ? {
+              ...u,
+              fullNameTh: opts?.fullNameTh ?? u.fullNameTh,
+              fullNameEn: opts?.fullNameEn ?? u.fullNameEn,
+              runnerProfile: mergedProfile,
+            }
+          : u
       ),
     }));
-    void syncApi('PATCH', '/api/account/profile', { profile });
+    const res = await syncApi('PATCH', '/api/account/profile', {
+      profile: patch,
+      fullNameTh: opts?.fullNameTh,
+      fullNameEn: opts?.fullNameEn,
+    });
+    return { ok: res.ok, error: res.error };
+  };
+
+  const handleVerifyEmailWithOtp = async (
+    email: string,
+    otp: string
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!currentUser) return { ok: false, error: tx("กรุณาเข้าสู่ระบบก่อน") };
+    const res = await syncApi('POST', '/api/account/verify-email', {
+      email,
+      otp,
+    });
+    return { ok: res.ok, error: res.error };
+  };
+
+  const handleManageAccountStatus = async (
+    action: 'deactivate' | 'request_deletion' | 'cancel_deletion',
+    reason?: string
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!currentUser) return { ok: false, error: tx("กรุณาเข้าสู่ระบบก่อน") };
+    const res = await syncApi('POST', '/api/account/status', {
+      action,
+      reason,
+    });
+    if (res.ok && action === 'deactivate') {
+      setCurrentUserId(null);
+      setSurface('customer');
+      setCustomerSubView('directory');
+      pushUrl('/');
+    }
+    return { ok: res.ok, error: res.error };
+  };
+
+  const handleUpdatePlatformProfileConfig = (next: PlatformProfileConfig) => {
+    setSys((prev) => ({
+      ...prev,
+      platformProfileConfig: next,
+    }));
+    void syncApi('PATCH', '/api/admin/profile-config', { config: next });
+  };
+
+  const handleUpdateEventShirtConfig = (
+    eventId: string,
+    patch: {
+      shirtStocks?: RaceEvent['shirtStocks'];
+      customSizeChart?: RaceEvent['customSizeChart'];
+    }
+  ) => {
+    setSys((prev) => ({
+      ...prev,
+      events: prev.events.map((ev) =>
+        ev.id === eventId
+          ? {
+              ...ev,
+              shirtStocks: patch.shirtStocks ?? ev.shirtStocks,
+              customSizeChart: patch.customSizeChart ?? ev.customSizeChart,
+            }
+          : ev
+      ),
+    }));
+    void syncApi('PATCH', `/api/events/${eventId}`, patch);
   };
 
   const handleSubmitOrganizerOnboarding = (payload: {
@@ -1025,19 +1422,6 @@ export const App: React.FC = () => {
     return { user: targetUser, organization: newOrg };
   };
 
-  const handleVerifyContactEmail = (email: string) => {
-    if (!currentUser) return;
-    setSys((prev) => ({
-      ...prev,
-      users: prev.users.map((u) =>
-        u.id === currentUser.id
-          ? { ...u, contactEmail: email, emailVerified: true }
-          : u
-      ),
-    }));
-    void syncApi('POST', '/api/account/verify-email', { email });
-  };
-
   const handleSetOrChangePassword = () => {
     if (!currentUser) return;
     setSys((prev) => ({
@@ -1067,28 +1451,60 @@ export const App: React.FC = () => {
     void syncApi('POST', '/api/account/password', {});
   };
 
-  const handleLinkProvider = (provider: 'google' | 'line') => {
+  const handleLinkProvider = (provider: 'google' | 'line' | 'facebook') => {
     if (!currentUser) return;
+    const newSubject = `${provider}-linked-${Date.now()}`;
+    const nextSocial =
+      provider === 'facebook' || provider === 'line'
+        ? enrichSocialLinksFromIdentities(
+            {
+              ...currentUser,
+              identities: [
+                ...currentUser.identities,
+                {
+                  id: `id-${provider}-tmp`,
+                  provider,
+                  providerSubject: newSubject,
+                  linkedAt: '2026-11-17 09:46',
+                },
+              ],
+            },
+            provider
+          )
+        : currentUser.runnerProfile?.socialLinks;
+
+    const nextRunnerProfile: RunnerProfileData = {
+      ...(currentUser.runnerProfile ?? {}),
+      ...(nextSocial ? { socialLinks: nextSocial } : {}),
+    };
+
     setSys((prev) => ({
       ...prev,
       users: prev.users.map((u) =>
         u.id === currentUser.id
           ? {
-            ...u,
-            identities: [
-              ...u.identities,
-              {
-                id: `id-${provider}-${Date.now()}`,
-                provider,
-                providerSubject: `${provider}-linked-${Date.now()}`,
-                linkedAt: '2026-11-17 09:46',
-              },
-            ],
-          }
+              ...u,
+              runnerProfile: nextRunnerProfile,
+              identities: [
+                ...u.identities,
+                {
+                  id: `id-${provider}-${Date.now()}`,
+                  provider,
+                  providerSubject: newSubject,
+                  linkedAt: '2026-11-17 09:46',
+                },
+              ],
+            }
           : u
       ),
     }));
-    void syncApi('POST', '/api/account/providers', { provider });
+    void syncApi('POST', '/api/account/providers', { provider }).then(() => {
+      if (provider === 'facebook' || provider === 'line') {
+        void syncApi('PATCH', '/api/profile', {
+          runnerProfile: nextRunnerProfile,
+        });
+      }
+    });
   };
 
   const handleUnlinkProvider = (
@@ -1241,7 +1657,12 @@ export const App: React.FC = () => {
     buyerName: string;
     participantNameTh: string;
     participantNameEn: string;
-    shirtSize: 'XS' | 'S' | 'M' | 'L' | 'XL' | '2XL';
+    phone?: string;
+    emergencyContact?: string;
+    shirtSize: ShirtSizeCode;
+    kitDeliveryMethod?: 'pickup_at_expo' | 'postal_shipping';
+    shippingAddressSnapshot?: string;
+    participantSnapshot?: RegistrationRecord['participantSnapshot'];
     marketingConsent: boolean;
     simulateImmediateWebhook: boolean;
     addonProduct?: EventProduct | null;
@@ -1261,6 +1682,12 @@ export const App: React.FC = () => {
       .substring(2, 8)
       .toUpperCase();
 
+    const cleanPhoneDigits = (payload.phone ?? '').replace(/\D/g, '');
+    const maskedPhone =
+      cleanPhoneDigits.length >= 7
+        ? `${cleanPhoneDigits.slice(0, 3)}-•••-${cleanPhoneDigits.slice(-4)}`
+        : '081-•••-9900';
+
     const newReg: RegistrationRecord = {
       id: `reg-dyn-${Date.now()}`,
       regCode,
@@ -1273,9 +1700,16 @@ export const App: React.FC = () => {
       participantNameTh: payload.participantNameTh,
       participantNameEn: payload.participantNameEn,
       email: currentUser?.contactEmail ?? 'verified.runner@demo.local',
-      phoneMasked: '081-•••-9900',
-      emergencyContact: 'ผู้ติดต่อฉุกเฉินจำลอง 089-•••-0011',
+      phoneMasked: maskedPhone,
+      emergencyContact:
+        payload.emergencyContact || 'ผู้ติดต่อฉุกเฉินจำลอง 089-•••-0011',
       shirtSize: payload.shirtSize,
+      kitDeliveryMethod: payload.kitDeliveryMethod ?? 'pickup_at_expo',
+      shippingAddressSnapshot:
+        payload.kitDeliveryMethod === 'postal_shipping'
+          ? payload.shippingAddressSnapshot
+          : undefined,
+      participantSnapshot: payload.participantSnapshot,
       customAnswers: payload.customAnswers,
       bibNumber: null,
       qrCheckInToken: `TKN-${cat.bibPrefix}${seq}-${tokenSuffix}`,
@@ -1913,7 +2347,7 @@ export const App: React.FC = () => {
 
   const handleUpdateRunnerShirtSize = (
     regId: string,
-    newSize: 'XS' | 'S' | 'M' | 'L' | 'XL' | '2XL'
+    newSize: ShirtSizeCode
   ) => {
     const target = sys.registrations.find((r) => r.id === regId);
     if (!target || target.shirtSize === newSize) return;
@@ -2917,6 +3351,20 @@ export const App: React.FC = () => {
   const hasOrganizerAccess = Boolean(
     currentUser && (currentUser.memberships.length > 0 || currentUser.isPlatformAdmin)
   );
+  const currentUserDisplayName = currentUser
+    ? lang === 'en'
+      ? currentUser.fullNameEn || tx(currentUser.fullNameTh)
+      : currentUser.fullNameTh
+    : '';
+  const currentUserAvatarUrl = currentUser?.runnerProfile?.avatarDataUrl ?? '';
+  const currentUserInitial = (
+    (lang === 'en'
+      ? currentUser?.runnerProfile?.firstNameEn?.trim()[0] ??
+        currentUser?.fullNameEn?.trim()[0] ??
+        currentUserDisplayName.trim()[0]
+      : currentUser?.runnerProfile?.firstName?.trim()[0] ??
+        currentUser?.fullNameTh.trim()[0]) ?? 'R'
+  ).toUpperCase();
   const pendingWebhookRegs = sys.registrations.filter(
     (r) => r.registrationStatus === 'pending_payment'
   );
@@ -2924,7 +3372,15 @@ export const App: React.FC = () => {
   return (
     <div className="app-root">
       {/* PRODUCTION ROLE-BASED TOP HEADER */}
-      <header className="global-topbar">
+      <header
+        className="global-topbar"
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            setShowMobileMenu(false);
+            setShowProfileMenu(false);
+          }
+        }}
+      >
         <div className="brand-lockup">
           <button
             type="button"
@@ -2976,6 +3432,19 @@ export const App: React.FC = () => {
             <IconBag size={15} />
             <span>{tx("บัตรวิ่ง & คำสั่งซื้อ")}</span>
           </button>
+
+          {currentUser && (
+            <button
+              type="button"
+              className={`surface-switch-btn ${
+                surface === 'runner_profile' ? 'active' : ''
+              }`}
+              onClick={() => navigateRunnerProfile('personal')}
+            >
+              <IconUsers size={15} />
+              <span>{tx("โปรไฟล์นักวิ่ง")}</span>
+            </button>
+          )}
 
           {/* VISIBLE ONLY WHEN LOGGED IN AS AN ORGANIZER MEMBER (OR PLATFORM ADMIN) */}
           {hasOrganizerAccess && (
@@ -3030,40 +3499,44 @@ export const App: React.FC = () => {
             </button>
           </div>
           {!currentUser ? (
-            <>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => navigateLogin('signup')}
-              >
-                <span>{tx("สมัครสมาชิก")}</span>
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => navigateLogin('signin')}
-              >
-                <IconLock size={14} />
-                <span>{tx("เข้าสู่ระบบ")}</span>
-              </button>
-            </>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => navigateLogin('signin')}
+            >
+              <IconLock size={14} />
+              <span>{tx("เข้าสู่ระบบ")}</span>
+            </button>
           ) : (
             <div className="profile-menu-wrap">
               <button
                 type="button"
-                className={`btn-account-pill ${showProfileMenu || surface === 'account_security'
+                className={`btn-account-pill ${showProfileMenu || surface === 'account_security' || surface === 'runner_profile'
                   ? 'active'
                   : ''
                   }`}
                 aria-expanded={showProfileMenu}
-                onClick={() => setShowProfileMenu((v) => !v)}
+                onClick={() => {
+                  setShowMobileMenu(false);
+                  setShowProfileMenu((v) => !v);
+                }}
               >
-                {hasOrganizerAccess ? (
-                  <IconShield size={15} />
-                ) : (
-                  <IconUsers size={15} />
-                )}
-                <span>{tx(currentUser.fullNameTh)}</span>
+                <span className="runner-avatar-frame xs" aria-hidden="true">
+                  {currentUserAvatarUrl ? (
+                    <img
+                      src={currentUserAvatarUrl}
+                      alt=""
+                      className="runner-avatar-img"
+                    />
+                  ) : (
+                    <span className="runner-avatar-initials">
+                      {currentUserInitial}
+                    </span>
+                  )}
+                </span>
+                <span className="btn-account-pill-name">
+                  {currentUserDisplayName}
+                </span>
               </button>
 
               {showProfileMenu && (
@@ -3073,12 +3546,36 @@ export const App: React.FC = () => {
                   aria-label={tx("เมนูบัญชีผู้ใช้งาน")}
                 >
                   <div className="profile-dropdown-head">
-                    <strong>{tx(currentUser.fullNameTh)}</strong>
-                    <div className="muted-inline">
-                      {currentUser.contactEmail ??
-                        tx("เข้าใช้งานผ่าน LINE (ยังไม่ได้ผูกอีเมล)")}
+                    <div className="runner-avatar-frame sm" aria-hidden="true">
+                      {currentUserAvatarUrl ? (
+                        <img
+                          src={currentUserAvatarUrl}
+                          alt=""
+                          className="runner-avatar-img"
+                        />
+                      ) : (
+                        <span className="runner-avatar-initials">
+                          {currentUserInitial}
+                        </span>
+                      )}
+                    </div>
+                    <div className="profile-dropdown-identity">
+                      <strong>{currentUserDisplayName}</strong>
+                      <div className="muted-inline profile-dropdown-email">
+                        {currentUser.contactEmail ??
+                          tx("เข้าใช้งานผ่าน LINE (ยังไม่ได้ผูกอีเมล)")}
+                      </div>
                     </div>
                   </div>
+
+                  <button
+                    type="button"
+                    className="profile-menu-item"
+                    onClick={() => navigateRunnerProfile('personal')}
+                  >
+                    <IconUsers size={15} />
+                    <span>{tx("โปรไฟล์นักวิ่ง")}</span>
+                  </button>
 
                   <button
                     type="button"
@@ -3129,16 +3626,7 @@ export const App: React.FC = () => {
                         );
                       })}
                     </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className="profile-menu-item"
-                      onClick={navigateAccountSecurity}
-                    >
-                      <IconBuilding size={15} />
-                      <span>{tx("ร่วมเป็นผู้จัดงาน / กรอกรหัสคำเชิญ")}</span>
-                    </button>
-                  )}
+                  ) : null}
 
                   <div className="profile-menu-divider" />
 
@@ -3154,7 +3642,225 @@ export const App: React.FC = () => {
               )}
             </div>
           )}
+
+          {/* MOBILE HAMBURGER BUTTON (Option 1 — visible only on <= 67.5rem) */}
+          <button
+            type="button"
+            className={`mobile-hamburger-btn ${showMobileMenu ? 'is-open' : ''}`}
+            aria-expanded={showMobileMenu}
+            aria-controls="mobile-primary-drawer"
+            aria-label={
+              showMobileMenu ? tx("ปิดเมนูนำทาง") : tx("เปิดเมนูนำทาง")
+            }
+            onClick={() => {
+              setShowProfileMenu(false);
+              setShowMobileMenu((v) => !v);
+            }}
+          >
+            {showMobileMenu ? <IconClose size={18} /> : <IconMenu size={18} />}
+          </button>
         </div>
+
+        {/* MOBILE SLIDE-DOWN DRAWER + BACKDROP (Option 1) */}
+        {showMobileMenu && (
+          <>
+            <button
+              type="button"
+              className="mobile-nav-backdrop"
+              aria-label={tx("ปิดเมนูนำทาง")}
+              tabIndex={-1}
+              onClick={() => setShowMobileMenu(false)}
+            />
+            <div
+              id="mobile-primary-drawer"
+              className="mobile-nav-drawer"
+              role="dialog"
+              aria-label={tx("เมนูหลักของแพลตฟอร์ม")}
+            >
+              <nav className="mobile-drawer-links" aria-label={tx("เมนูหลักของแพลตฟอร์ม")}>
+                <button
+                  type="button"
+                  className={`mobile-drawer-link ${
+                    surface === 'customer' &&
+                    (customerSubView === 'directory' ||
+                      customerSubView === 'event_detail')
+                      ? 'active'
+                      : ''
+                  }`}
+                  onClick={() => navigateCustomer('directory', null)}
+                >
+                  <span className="mobile-drawer-link-label">
+                    <IconFlag size={16} />
+                    <span>{tx("ค้นหางานวิ่ง")}</span>
+                  </span>
+                  {surface === 'customer' &&
+                    (customerSubView === 'directory' ||
+                      customerSubView === 'event_detail') && (
+                      <span className="mobile-drawer-dot" aria-hidden="true" />
+                    )}
+                </button>
+
+                <button
+                  type="button"
+                  className={`mobile-drawer-link ${
+                    surface === 'customer' &&
+                    customerSubView === 'custom_production'
+                      ? 'active'
+                      : ''
+                  }`}
+                  onClick={() => navigateCustomer('custom_production')}
+                >
+                  <span className="mobile-drawer-link-label">
+                    <IconShirt size={16} />
+                    <span>{tx("สั่งผลิตเสื้อ/เหรียญ")}</span>
+                  </span>
+                  {surface === 'customer' &&
+                    customerSubView === 'custom_production' && (
+                      <span className="mobile-drawer-dot" aria-hidden="true" />
+                    )}
+                </button>
+
+                <button
+                  type="button"
+                  className={`mobile-drawer-link ${
+                    surface === 'customer' && customerSubView === 'my_orders'
+                      ? 'active'
+                      : ''
+                  }`}
+                  onClick={() => navigateCustomer('my_orders')}
+                >
+                  <span className="mobile-drawer-link-label">
+                    <IconBag size={16} />
+                    <span>{tx("บัตรวิ่ง & คำสั่งซื้อ")}</span>
+                  </span>
+                  {surface === 'customer' &&
+                    customerSubView === 'my_orders' && (
+                      <span className="mobile-drawer-dot" aria-hidden="true" />
+                    )}
+                </button>
+
+                {currentUser && (
+                  <>
+                    <button
+                      type="button"
+                      className={`mobile-drawer-link ${
+                        surface === 'runner_profile' ? 'active' : ''
+                      }`}
+                      onClick={() => navigateRunnerProfile('personal')}
+                    >
+                      <span className="mobile-drawer-link-label">
+                        <IconUsers size={16} />
+                        <span>{tx("โปรไฟล์นักวิ่ง")}</span>
+                      </span>
+                      {surface === 'runner_profile' && (
+                        <span className="mobile-drawer-dot" aria-hidden="true" />
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`mobile-drawer-link ${
+                        surface === 'account_security' ? 'active' : ''
+                      }`}
+                      onClick={navigateAccountSecurity}
+                    >
+                      <span className="mobile-drawer-link-label">
+                        <IconShield size={16} />
+                        <span>{tx("บัญชีและความปลอดภัย")}</span>
+                      </span>
+                      {surface === 'account_security' && (
+                        <span className="mobile-drawer-dot" aria-hidden="true" />
+                      )}
+                    </button>
+                  </>
+                )}
+
+                {hasOrganizerAccess && (
+                  <button
+                    type="button"
+                    className={`mobile-drawer-link ${
+                      surface === 'organizer' ? 'active' : ''
+                    }`}
+                    onClick={() => navigateOrganizer()}
+                  >
+                    <span className="mobile-drawer-link-label">
+                      <IconBuilding size={16} />
+                      <span>{tx("ระบบผู้จัดงาน")}</span>
+                    </span>
+                    {surface === 'organizer' && (
+                      <span className="mobile-drawer-dot" aria-hidden="true" />
+                    )}
+                  </button>
+                )}
+
+                {isPlatformOwner && (
+                  <button
+                    type="button"
+                    className={`mobile-drawer-link ${
+                      surface === 'platform_admin' ? 'active' : ''
+                    }`}
+                    onClick={() => navigatePlatformAdmin()}
+                  >
+                    <span className="mobile-drawer-link-label">
+                      <IconShield size={16} />
+                      <span>{tx("จัดการแพลตฟอร์ม")}</span>
+                    </span>
+                    {surface === 'platform_admin' && (
+                      <span className="mobile-drawer-dot" aria-hidden="true" />
+                    )}
+                  </button>
+                )}
+              </nav>
+
+              <div className="mobile-drawer-footer">
+                <div
+                  className="mobile-drawer-lang"
+                  role="group"
+                  aria-label={lang === 'th' ? 'เลือกภาษา' : 'Choose language'}
+                >
+                  <span className="muted-inline">{tx("ภาษา:")}</span>
+                  <button
+                    type="button"
+                    className={`mobile-lang-pill ${lang === 'th' ? 'active' : ''}`}
+                    aria-pressed={lang === 'th'}
+                    lang="th"
+                    onClick={() => setLang('th')}
+                  >
+                    TH
+                  </button>
+                  <button
+                    type="button"
+                    className={`mobile-lang-pill ${lang === 'en' ? 'active' : ''}`}
+                    aria-pressed={lang === 'en'}
+                    lang="en"
+                    onClick={() => setLang('en')}
+                  >
+                    EN
+                  </button>
+                </div>
+
+                {currentUser ? (
+                  <button
+                    type="button"
+                    className="mobile-drawer-logout-btn"
+                    onClick={handleLogout}
+                  >
+                    <IconLock size={14} />
+                    <span>{tx("ออกจากระบบ")}</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="auth-register-cta-link"
+                    onClick={() => navigateLogin('signup')}
+                  >
+                    <span>{tx("สมัครสมาชิกใหม่ (Register)")}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </header>
 
       {/* ACTIVE SURFACE */}
@@ -3169,6 +3875,9 @@ export const App: React.FC = () => {
           merchOrders={sys.merchOrders}
           productionInquiries={sys.productionInquiries}
           registrationSteps={sys.registrationSteps}
+          platformProfileConfig={
+            sys.platformProfileConfig ?? DEFAULT_PLATFORM_PROFILE_CONFIG
+          }
           currentUser={currentUser}
           onNavigate={navigateCustomer}
           onRequireLoginWithIntent={(intent) => {
@@ -3176,6 +3885,10 @@ export const App: React.FC = () => {
             navigateLogin('signin');
           }}
           onOpenAccountSecurity={navigateAccountSecurity}
+          onOpenRunnerProfile={() => navigateRunnerProfile('personal')}
+          onSaveProfilePatch={(patch) => {
+            void handleSaveRunnerProfile(patch);
+          }}
           onOpenOrganizerDashboard={(orgId, evId) =>
             navigateOrganizer(orgId, evId)
           }
@@ -3202,7 +3915,7 @@ export const App: React.FC = () => {
           onRegisterSocialUser={handleRegisterSocialUser}
           onSubmitOrganizerOnboarding={handleSubmitOrganizerOnboarding}
           onNavigateExploreEvents={() => navigateCustomer('directory', null)}
-          onNavigateRunnerDashboard={navigateAccountSecurity}
+          onNavigateRunnerDashboard={() => navigateRunnerProfile('personal')}
           onNavigateOrganizerWorkspace={(orgId) =>
             navigateOrganizer(orgId, null)
           }
@@ -3210,22 +3923,61 @@ export const App: React.FC = () => {
         />
       )}
 
-      {surface === 'account_security' && currentUser && (
-        <AccountSecurityView
-          user={currentUser}
-          organizations={sys.organizations}
-          invitations={sys.invitations}
-          onVerifyContactEmail={handleVerifyContactEmail}
-          onSetOrChangePassword={handleSetOrChangePassword}
-          onLinkProvider={handleLinkProvider}
-          onUnlinkProvider={handleUnlinkProvider}
-          onRevokeOtherSessions={handleRevokeOtherSessions}
-          onAcceptTeamInvitation={handleAcceptTeamInvitation}
-          onApplyNewOrganizerOrg={handleApplyNewOrganizerOrg}
-          onEnterOrganizerOrg={(orgId) => navigateOrganizer(orgId, null)}
-          onUpdateRunnerProfile={handleUpdateRunnerProfile}
-          onNavigateDiscoverEvents={() => navigateCustomer('directory', null)}
-          onNavigateMyOrders={() => navigateCustomer('my_orders', null)}
+      {(surface === 'runner_profile' || surface === 'account_security') &&
+        currentUser && (
+          <RunnerProfileView
+            user={currentUser}
+            events={sys.events}
+            registrations={sys.registrations}
+            organizations={sys.organizations}
+            invitations={sys.invitations}
+            platformProfileConfig={
+              sys.platformProfileConfig ?? DEFAULT_PLATFORM_PROFILE_CONFIG
+            }
+            initialTab={
+              surface === 'account_security' ? 'security' : profileInitialTab
+            }
+            onSaveProfile={handleSaveRunnerProfile}
+            onOpenEmailVerifyPage={(email) => {
+              setPendingVerifyEmail(email);
+              setProfileInitialTab('security');
+              setSurface('verify_email');
+              pushUrl(`/verify-email?email=${encodeURIComponent(email)}`);
+            }}
+            verifiedEmailNotice={verifiedEmailNotice}
+            onClearVerifiedEmailNotice={() => setVerifiedEmailNotice(null)}
+            onSetOrChangePassword={handleSetOrChangePassword}
+            onLinkProvider={handleLinkProvider}
+            onUnlinkProvider={handleUnlinkProvider}
+            onRevokeOtherSessions={handleRevokeOtherSessions}
+            onAcceptTeamInvitation={handleAcceptTeamInvitation}
+            onApplyNewOrganizerOrg={handleApplyNewOrganizerOrg}
+            onEnterOrganizerOrg={(orgId) => navigateOrganizer(orgId, null)}
+            onManageAccountStatus={handleManageAccountStatus}
+            onNavigateDiscoverEvents={() => navigateCustomer('directory', null)}
+            onNavigateEventDetail={(eventId) =>
+              navigateCustomer('event_detail', eventId, 'info_results')
+            }
+            onPersonalDirtyChange={handlePersonalDirtyChange}
+            discardSignal={personalDiscardSeq}
+          />
+        )}
+
+      {surface === 'verify_email' && currentUser && (
+        <EmailOtpVerifyView
+          targetEmail={pendingVerifyEmail || currentUser.contactEmail || ''}
+          onVerifyEmailWithOtp={handleVerifyEmailWithOtp}
+          onVerifiedSuccess={(verifiedEmail) => {
+            setVerifiedEmailNotice(verifiedEmail);
+            setProfileInitialTab('security');
+            setSurface('runner_profile');
+            pushUrl('/profile');
+          }}
+          onBackToSecurity={() => {
+            setProfileInitialTab('security');
+            setSurface('runner_profile');
+            pushUrl('/profile');
+          }}
         />
       )}
 
@@ -3290,6 +4042,10 @@ export const App: React.FC = () => {
             fieldRequests={sys.fieldRequests}
             onSelectEventTemplate={handleSelectEventTemplate}
             onUpdateEventMedia={handleUpdateEventMedia}
+            platformProfileConfig={
+              sys.platformProfileConfig ?? DEFAULT_PLATFORM_PROFILE_CONFIG
+            }
+            onUpdateEventShirtConfig={handleUpdateEventShirtConfig}
             onSubmitOrganizerFieldRequest={handleSubmitOrganizerFieldRequest}
           />
         ) : (
@@ -3310,7 +4066,7 @@ export const App: React.FC = () => {
                 <button
                   type="button"
                   className="btn-primary"
-                  onClick={navigateAccountSecurity}
+                  onClick={() => navigateRunnerProfile('organizer')}
                 >
                   <IconBuilding size={15} />
                   <span>{tx("ขอเปิดองค์กรผู้จัดใหม่ / กรอกรหัสคำเชิญ")}</span>
@@ -3347,6 +4103,10 @@ export const App: React.FC = () => {
             globalFields={sys.globalFields}
             conditionalRules={sys.conditionalRules}
             fieldRequests={sys.fieldRequests}
+            platformProfileConfig={
+              sys.platformProfileConfig ?? DEFAULT_PLATFORM_PROFILE_CONFIG
+            }
+            onUpdatePlatformProfileConfig={handleUpdatePlatformProfileConfig}
             onUpsertStep={handleUpsertStep}
             onReorderStep={handleReorderStep}
             onDeleteStep={handleDeleteStep}
@@ -3402,19 +4162,15 @@ export const App: React.FC = () => {
           <span>
             <strong>RunEvent</strong> {tx(" · แพลตฟอร์มงานวิ่งและร้านค้าที่ระลึกประจำงาน")}
           </span>
-          <button
-            type="button"
-            className="footer-text-link"
-            onClick={() => {
-              if (hasOrganizerAccess) {
-                navigateOrganizer();
-              } else {
-                navigateAccountSecurity();
-              }
-            }}
-          >
-            {tx("สำหรับผู้จัดงาน / เปิดรับสมัครงานวิ่งกับเรา")}
-          </button>
+          {hasOrganizerAccess && (
+            <button
+              type="button"
+              className="footer-text-link"
+              onClick={() => navigateOrganizer()}
+            >
+              {tx("เข้าสู่ระบบบริหารผู้จัดงาน")}
+            </button>
+          )}
         </div>
         <span className="muted-inline">
           {tx("โหมดระบบจริงบน Local (Node.js + SQLite API) · ข้อมูลทดสอบชุดเดิม · OAuth/Payment จำลองใน Sandbox")}

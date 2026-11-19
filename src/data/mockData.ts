@@ -6,9 +6,16 @@ import {
   ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
+  ShirtSizeCode,
   TeamInvitation,
   UserAccount,
 } from '../types';
+import {
+  SEEDED_OLDMOAT_RACE_RESULT,
+  SEEDED_RUNNER_901_ACHIEVEMENTS,
+  SEEDED_RUNNER_901_LOGIN_HISTORY,
+  SEEDED_RUNNER_901_PROFILE,
+} from './runnerProfileDefaults';
 import { calculateFeeQuote } from '../utils/pricing';
 
 export const DEMO_ORGANIZATIONS: Organization[] = [
@@ -114,6 +121,13 @@ export const INITIAL_USERS: UserAccount[] = [
         providerEmail: 'kanpitcha.runner@demo.runevent.local',
         linkedAt: '2026-10-02 18:15',
       },
+      {
+        id: 'id-901-fb',
+        provider: 'facebook',
+        providerSubject: 'fb-uid-9014402',
+        providerEmail: 'kanpitcha.runner@demo.runevent.local',
+        linkedAt: '2026-10-14 19:20',
+      },
     ],
     sessions: [
       {
@@ -132,6 +146,10 @@ export const INITIAL_USERS: UserAccount[] = [
       },
     ],
     memberships: [],
+    runnerProfile: SEEDED_RUNNER_901_PROFILE,
+    achievements: SEEDED_RUNNER_901_ACHIEVEMENTS,
+    loginHistory: SEEDED_RUNNER_901_LOGIN_HISTORY,
+    accountStatus: 'active',
     demoRoleSummary:
       'นักวิ่งสมาชิก — เชื่อมทั้งอีเมลและ Google แล้ว มีใบสมัครวิ่งและคำสั่งซื้อของที่ระลึก',
     isDemoPreset: true,
@@ -1085,7 +1103,7 @@ function buildReg(params: {
   email: string;
   phoneMasked: string;
   emergencyContact: string;
-  shirtSize: 'XS' | 'S' | 'M' | 'L' | 'XL' | '2XL';
+  shirtSize: ShirtSizeCode;
   bibNumber: string | null;
   qrCheckInToken: string;
   baseSatang: number;
@@ -1110,6 +1128,7 @@ function buildReg(params: {
   refundedSatangOverride?: number;
   marketingConsent?: boolean;
   customAnswers?: Record<string, string | boolean>;
+  raceResult?: RegistrationRecord['raceResult'];
 }): RegistrationRecord {
   const quote = calculateFeeQuote(params.baseSatang, params.policy);
   return {
@@ -1151,6 +1170,7 @@ function buildReg(params: {
       params.refundedSatangOverride ??
       (params.refundStatus === 'succeeded' ? quote.baseSatang : 0),
     customAnswers: params.customAnswers,
+    raceResult: params.raceResult,
   };
 }
 
@@ -1351,6 +1371,7 @@ export const INITIAL_REGISTRATIONS: RegistrationRecord[] = [
     fulfillmentStatus: 'kit_picked_up',
     fulfillmentUpdatedBy: 'ณัฐพล ศรีวิชัย',
     fulfillmentUpdatedAt: '2026-10-24 14:22',
+    raceResult: SEEDED_OLDMOAT_RACE_RESULT,
   }),
   buildReg({
     id: 'reg-08',
