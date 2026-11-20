@@ -1,7 +1,7 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import type { Response } from 'express';
 
-export const SESSION_COOKIE_NAME = 'runevent_sid';
+export const SESSION_COOKIE_NAME = 'kratai_sid';
 const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
 export function hashPassword(plain: string): string {

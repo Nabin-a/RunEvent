@@ -592,8 +592,8 @@ export interface RegistrationAnswerPatch {
 
 export type SellerServiceModel =
   | 'organizer_self_sell'
-  | 'runevent_produce_bulk'
-  | 'runevent_full_service';
+  | 'kratai_produce_bulk'
+  | 'kratai_full_service';
 
 export interface EventProduct {
   id: string;

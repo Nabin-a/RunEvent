@@ -1,7 +1,7 @@
 /**
- * RunEvent privacy notice (PDPA) — ORIGINAL DRAFT for the local mockup.
+ * Kratai privacy notice (PDPA) — ORIGINAL DRAFT for the local mockup.
  *
- * Written for RunEvent from the data this system actually collects; not copied from any
+ * Written for Kratai from the data this system actually collects; not copied from any
  * other organisation's policy. Company and contact details are fictional placeholders
  * (example.com-style domains, 02-000-xxxx numbers). Must be reviewed by a lawyer / DPO
  * before any real launch. Retention periods are intentionally left undecided.
@@ -17,10 +17,10 @@ export interface PrivacyNoticeSection {
 }
 
 export const PRIVACY_NOTICE_CONTROLLER = {
-  name: 'บริษัท รันอีเวนต์ แพลตฟอร์ม จำกัด (ข้อมูลสมมติสำหรับต้นแบบ)',
+  name: 'บริษัท กระต่าย แพลตฟอร์ม จำกัด (ข้อมูลสมมติสำหรับต้นแบบ)',
   address: 'เลขที่ 99 อาคารตัวอย่าง ถนนสมมติ แขวงตัวอย่าง เขตตัวอย่าง กรุงเทพมหานคร 10000 (ที่อยู่สมมติ)',
-  email: 'privacy@runevent.example',
-  dpoEmail: 'dpo@runevent.example',
+  email: 'privacy@kratai.example',
+  dpoEmail: 'dpo@kratai.example',
   phone: '02-000-0000 (เบอร์สมมติ)',
 };
 
@@ -31,9 +31,9 @@ export const PRIVACY_NOTICE_SECTIONS: PrivacyNoticeSection[] = [
     id: 'who',
     title: '1. เราคือใคร และประกาศนี้ใช้กับอะไร',
     paragraphs: [
-      `${PRIVACY_NOTICE_CONTROLLER.name} ("RunEvent" หรือ "เรา") ให้บริการแพลตฟอร์มค้นหาและสมัครงานวิ่ง ร้านค้าของที่ระลึก และระบบบริหารงานสำหรับผู้จัดงานวิ่ง`,
-      'ประกาศนี้อธิบายว่าเราเก็บ ใช้ และเปิดเผยข้อมูลส่วนบุคคลของคุณอย่างไรเมื่อคุณสร้างบัญชี สมัครงานวิ่ง หรือซื้อสินค้าผ่าน RunEvent ตามพระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562 (PDPA)',
-      'สำหรับข้อมูลบัญชีของคุณ RunEvent เป็นผู้ควบคุมข้อมูล ส่วนข้อมูลในใบสมัครแต่ละงาน ผู้จัดงานนั้นเป็นผู้ควบคุมข้อมูลร่วม และ RunEvent ประมวลผลเพื่อให้การสมัครและการจัดงานเป็นไปได้',
+      `${PRIVACY_NOTICE_CONTROLLER.name} ("กระต่าย" หรือ "เรา") ให้บริการแพลตฟอร์มค้นหาและสมัครงานวิ่ง ร้านค้าของที่ระลึก และระบบบริหารงานสำหรับผู้จัดงานวิ่ง`,
+      'ประกาศนี้อธิบายว่าเราเก็บ ใช้ และเปิดเผยข้อมูลส่วนบุคคลของคุณอย่างไรเมื่อคุณสร้างบัญชี สมัครงานวิ่ง หรือซื้อสินค้าผ่าน กระต่าย ตามพระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562 (PDPA)',
+      'สำหรับข้อมูลบัญชีของคุณ กระต่าย เป็นผู้ควบคุมข้อมูล ส่วนข้อมูลในใบสมัครแต่ละงาน ผู้จัดงานนั้นเป็นผู้ควบคุมข้อมูลร่วม และ กระต่าย ประมวลผลเพื่อให้การสมัครและการจัดงานเป็นไปได้',
     ],
   },
   {

@@ -891,7 +891,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
     'ready_stock' | 'preorder'
   >('preorder');
   const [newProdService, setNewProdService] = useState<SellerServiceModel>(
-    'runevent_full_service'
+    'kratai_full_service'
   );
   const [newProdPrice, setNewProdPrice] = useState(420);
   const [newProdCap, setNewProdCap] = useState(50);
@@ -2113,7 +2113,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                         onChange={(e) => setRequestProdHelp(e.target.checked)}
                       />
                       <span>
-                        {tx("ต้องการขอใบเสนอราคาให้ทีม RunEvent ช่วยออกแบบ/ผลิตเสื้อแข่งขันและเหรียญรางวัลสำหรับงานนี้ด้วย")}
+                        {tx("ต้องการขอใบเสนอราคาให้ทีม กระต่าย ช่วยออกแบบ/ผลิตเสื้อแข่งขันและเหรียญรางวัลสำหรับงานนี้ด้วย")}
                       </span>
                     </label>
 
@@ -3876,11 +3876,11 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                           <option value="organizer_self_sell">
                             {tx("ผู้จัดมีสินค้าและจัดส่งเอง")}
                           </option>
-                          <option value="runevent_produce_bulk">
-                            {tx("ให้ RunEvent ผลิตส่งล็อตใหญ่ให้ผู้จัด")}
+                          <option value="kratai_produce_bulk">
+                            {tx("ให้ กระต่าย ผลิตส่งล็อตใหญ่ให้ผู้จัด")}
                           </option>
-                          <option value="runevent_full_service">
-                            {tx("ให้ RunEvent ดูแลครบ (พรีออเดอร์ + ผลิต + จัดส่ง)")}
+                          <option value="kratai_full_service">
+                            {tx("ให้ กระต่าย ดูแลครบ (พรีออเดอร์ + ผลิต + จัดส่ง)")}
                           </option>
                         </select>
                       </div>

@@ -3,7 +3,7 @@ import { EN_DICT } from './en';
 
 export type Lang = 'th' | 'en';
 
-const LANG_STORAGE_KEY = 'runevent_v2_lang';
+const LANG_STORAGE_KEY = 'kratai_v2_lang';
 
 function readInitialLang(): Lang {
   try {

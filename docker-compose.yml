@@ -1,7 +1,7 @@
 services:
-  runevent:
+  kratai:
     build: .
-    container_name: runevent-fullstack
+    container_name: kratai-fullstack
     restart: unless-stopped
     ports:
       - "3001:3001"

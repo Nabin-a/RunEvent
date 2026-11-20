@@ -64,6 +64,7 @@ import {
 } from './types';
 import { calculateFeeQuote, getCurrentTier } from './utils/pricing';
 import { buildAgeSnapshot, evaluateCategoryAge, type AgeConfigValid } from './utils/age';
+import { installInvalidFieldHighlight } from './utils/formValidation';
 import { cloneCustomFieldsSchema } from './utils/eventConfig';
 import { AuthScreen } from './components/AuthViews';
 import {
@@ -79,6 +80,7 @@ import {
   IconAlert,
   IconArrowRight,
   IconBag,
+  IconCalendar,
   IconBib,
   IconBuilding,
   IconCheckCircle,
@@ -114,8 +116,8 @@ type RootSurface =
   | 'account_security'
   | 'verify_email';
 
-const STORAGE_KEY = 'runevent_v2_mock_system';
-const SESSION_USER_KEY = 'runevent_v2_session_user_id';
+const STORAGE_KEY = 'kratai_v2_mock_system';
+const SESSION_USER_KEY = 'kratai_v2_session_user_id';
 
 interface PersistedSystemState {
   users: UserAccount[];
@@ -280,6 +282,15 @@ function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
       authTab: 'signin',
     };
   }
+  if (cleanPath === '/calendar') {
+    return {
+      surface: 'customer',
+      customerSubView: 'calendar',
+      eventSlug: null,
+      eventTab: 'register',
+      authTab: 'signin',
+    };
+  }
   if (cleanPath === '/custom-production') {
     return {
       surface: 'customer',
@@ -340,6 +351,9 @@ export const App: React.FC = () => {
   // ใช้ context ภาษาเพื่อให้ทั้ง tree re-render เมื่อสลับ TH/EN
   const { lang, setLang } = useI18n();
   const [sys, setSys] = useState<PersistedSystemState>(loadSystemState);
+
+  // Highlight required / invalid fields in every form (see utils/formValidation.ts)
+  useEffect(() => installInvalidFieldHighlight(), []);
 
   // วัดความสูง header จริงให้ sidebar sticky ของผู้จัด/Platform Owner วางตำแหน่งพอดี
   useEffect(() => {
@@ -441,10 +455,10 @@ export const App: React.FC = () => {
         heightAuto: false,
         scrollbarPadding: false,
         customClass: {
-          container: 'runevent-swal-top',
-          popup: 'runevent-swal-popup',
-          actions: 'runevent-swal-actions',
-          confirmButton: 'btn-primary runevent-swal-discard-btn',
+          container: 'kratai-swal-top',
+          popup: 'kratai-swal-popup',
+          actions: 'kratai-swal-actions',
+          confirmButton: 'btn-primary kratai-swal-discard-btn',
           cancelButton: 'btn-secondary',
         },
       }).then((result) => {
@@ -733,6 +747,8 @@ export const App: React.FC = () => {
         pushUrl('/');
       } else if (view === 'custom_production') {
         pushUrl('/custom-production');
+      } else if (view === 'calendar') {
+        pushUrl('/calendar');
       } else if (view === 'my_orders') {
         pushUrl('/my-orders');
       } else if (view === 'event_register' && resolvedId) {
@@ -1519,7 +1535,7 @@ export const App: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `runevent-my-data-${currentUser.code}.json`;
+    a.download = `kratai-my-data-${currentUser.code}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -2634,7 +2650,7 @@ export const App: React.FC = () => {
         organizerBufferQty: 10,
         existingStockDeductedQty: 0,
         netQtyToProduce: 110,
-        artworkVersion: 'ขอคำปรึกษาออกแบบจากทีม RunEvent',
+        artworkVersion: 'ขอคำปรึกษาออกแบบจากทีม กระต่าย',
         targetDeliveryDate: payload.eventDate,
         quoteStatus: 'submitted',
         productionStatus: 'awaiting_approval',
@@ -2781,12 +2797,12 @@ export const App: React.FC = () => {
       saleMode: payload.saleMode,
       serviceModel: payload.serviceModel,
       sellerLabel:
-        payload.serviceModel === 'runevent_full_service'
-          ? 'ดูแลพรีออเดอร์และจัดส่งโดย RunEvent (จำลอง)'
+        payload.serviceModel === 'kratai_full_service'
+          ? 'ดูแลพรีออเดอร์และจัดส่งโดย กระต่าย (จำลอง)'
           : 'ผู้ขาย: องค์กรผู้จัดงาน (จำลอง)',
       fulfillmentOwnerLabel:
-        payload.serviceModel === 'runevent_full_service'
-          ? 'RunEvent ผลิตและจัดส่ง'
+        payload.serviceModel === 'kratai_full_service'
+          ? 'กระต่าย ผลิตและจัดส่ง'
           : 'ผู้จัดงานส่งมอบ',
       priceSatang: payload.priceBaht * 100,
       shippingFeeSatang: 5000,
@@ -3532,7 +3548,7 @@ export const App: React.FC = () => {
             <span className="brand-bib-mark" aria-hidden="true">
               <IconBib size={17} />
             </span>
-            <strong className="brand-name">RunEvent</strong>
+            <strong className="brand-name">{tx('กระต่าย')}</strong>
           </button>
         </div>
 
@@ -3549,6 +3565,18 @@ export const App: React.FC = () => {
           >
             <IconFlag size={15} />
             <span>{tx("ค้นหางานวิ่ง")}</span>
+          </button>
+
+          <button
+            type="button"
+            className={`surface-switch-btn ${surface === 'customer' && customerSubView === 'calendar'
+              ? 'active'
+              : ''
+              }`}
+            onClick={() => navigateCustomer('calendar')}
+          >
+            <IconCalendar size={15} />
+            <span>{tx("ปฏิทินงานวิ่ง")}</span>
           </button>
 
           <button
@@ -3862,6 +3890,24 @@ export const App: React.FC = () => {
                       customerSubView === 'event_detail') && (
                       <span className="mobile-drawer-dot" aria-hidden="true" />
                     )}
+                </button>
+
+                <button
+                  type="button"
+                  className={`mobile-drawer-link ${
+                    surface === 'customer' && customerSubView === 'calendar'
+                      ? 'active'
+                      : ''
+                  }`}
+                  onClick={() => navigateCustomer('calendar')}
+                >
+                  <span className="mobile-drawer-link-label">
+                    <IconCalendar size={16} />
+                    <span>{tx("ปฏิทินงานวิ่ง")}</span>
+                  </span>
+                  {surface === 'customer' && customerSubView === 'calendar' && (
+                    <span className="mobile-drawer-dot" aria-hidden="true" />
+                  )}
                 </button>
 
                 <button
@@ -4310,7 +4356,7 @@ export const App: React.FC = () => {
               </div>
               <h1>{tx("หน้านี้จำกัดเฉพาะผู้ดูแลระบบสูงสุดของแพลตฟอร์ม (Platform Owner)")}</h1>
               <p>
-                {tx("บัญชีผู้จัดงานและลูกค้าทั่วไปไม่สามารถเข้าถึงศูนย์อนุมัติกลางของ RunEvent ได้")}
+                {tx("บัญชีผู้จัดงานและลูกค้าทั่วไปไม่สามารถเข้าถึงศูนย์อนุมัติกลางของ กระต่าย ได้")}
               </p>
               <div className="cta-inline-row">
                 <button
@@ -4329,7 +4375,7 @@ export const App: React.FC = () => {
       <footer className="minimal-footer">
         <div className="footer-links-group">
           <span>
-            <strong>RunEvent</strong> {tx(" · แพลตฟอร์มงานวิ่งและร้านค้าที่ระลึกประจำงาน")}
+            <strong>{tx('กระต่าย')}</strong> {tx(" · แพลตฟอร์มงานวิ่งและร้านค้าที่ระลึกประจำงาน")}
           </span>
           {hasOrganizerAccess && (
             <button

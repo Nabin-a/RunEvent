@@ -54,7 +54,7 @@ if (!fs.existsSync(dataDir)) {
 
 export const DB_FILE_PATH = path.resolve(
   dataDir,
-  process.env.RUNEVENT_DB_FILENAME || 'runevent.sqlite'
+  process.env.KRATAI_DB_FILENAME || 'kratai.sqlite'
 );
 
 export const db = new DatabaseSync(DB_FILE_PATH);
@@ -777,7 +777,7 @@ export function seedDatabase(forceReset = false): void {
                     id: 'id-901-fb',
                     provider: 'facebook',
                     providerSubject: 'fb-uid-9014402',
-                    providerEmail: 'kanpitcha.runner@demo.runevent.local',
+                    providerEmail: 'kanpitcha.runner@demo.kratai.local',
                     linkedAt: '2026-10-14 19:20',
                   },
                 ],

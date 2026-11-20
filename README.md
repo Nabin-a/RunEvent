@@ -1,13 +1,15 @@
-# RunEvent
+# Kratai
 
 แพลตฟอร์มกลางสำหรับหลายผู้จัดงานวิ่ง (Multi-Tenant B2B2C) เชื่อมการสร้างงาน รับสมัคร ชำระเงิน จัดการนักวิ่ง และการรับอุปกรณ์ โดยนำแนวคิดการบริหารงานและค่าบริการตามการสมัครจาก **RunSignup** และประสบการณ์ค้นหางานวิ่ง/บริการอัลบั้มหลังงานจาก **ThaiRun** มาปรับใช้กับผลิตภัณฑ์ของเราโดยไม่คัดลอกแบรนด์หรือหน้าจอ
+
+> ชื่อระบบเปลี่ยนจาก RunEvent เป็น **Kratai** เมื่อ 20 พฤศจิกายน 2026 (หน้าเว็บภาษาไทยแสดง "กระต่าย") ฐานข้อมูล Local ย้ายไปที่ `data/kratai.sqlite` และบัญชีทดสอบใช้โดเมน `@demo.kratai.local`
 
 ## สถานะโปรเจกต์
 
 **ระบบทำงานจริงบนเครื่องผู้ใช้แล้ว (Local Full-Stack System v0.2 — อัปเดตเมื่อ 18 พฤศจิกายน 2026)**
 
 - **สิ่งที่พัฒนาและทำงานจริงบน Local แล้ว:**
-  - **Backend & Database จริงบนเครื่อง (`server/`):** `Node.js + Express + SQLite` (`node:sqlite` เก็บไฟล์ที่ `data/runevent.sqlite` สร้างและ Seed ข้อมูลผู้ใช้ทดสอบชุดเดิมอัตโนมัติเมื่อรันครั้งแรก) รองรับการแฮชรหัสผ่านด้วย `scrypt`, เซสชัน `HttpOnly` Cookie (`runevent_sid`), การตรวจสิทธิ์ RBAC ฝั่งเซิร์ฟเวอร์ (`401`/`403`), และ Atomic SQLite Transaction ป้องกันขายเกินโควตา ป้องกันเลข BIB ซ้ำในงานเดียวกัน และป้องกันรับอุปกรณ์ซ้ำ
+  - **Backend & Database จริงบนเครื่อง (`server/`):** `Node.js + Express + SQLite` (`node:sqlite` เก็บไฟล์ที่ `data/kratai.sqlite` สร้างและ Seed ข้อมูลผู้ใช้ทดสอบชุดเดิมอัตโนมัติเมื่อรันครั้งแรก) รองรับการแฮชรหัสผ่านด้วย `scrypt`, เซสชัน `HttpOnly` Cookie (`kratai_sid`), การตรวจสิทธิ์ RBAC ฝั่งเซิร์ฟเวอร์ (`401`/`403`), และ Atomic SQLite Transaction ป้องกันขายเกินโควตา ป้องกันเลข BIB ซ้ำในงานเดียวกัน และป้องกันรับอุปกรณ์ซ้ำ
   - **Frontend (`src/`):** `Vite + React + TypeScript` รองรับการสลับภาษา **TH / EN** ทั้งระบบ (`src/i18n/`), เมนูซ้ายแบบ **Sticky Sidebar** ทั้งฝั่งผู้จัดและ Platform Owner, หน้าสมัครงานวิ่ง 6 ขั้นตอนพร้อมภาพปก/ภาพประกอบของงาน (`EventMediaManager`) และครอบคลุมทุกบทบาท:
     1. **หน้าค้นหางานวิ่ง หน้ารายละเอียดงานแบบ 2 คอลัมน์ + กล่องสมัคร Sticky และร้านค้า (`CustomerPortalView` + `PublicEventView`):** ค้นหาและกรองงานวิ่ง, เปิดดูหน้ารายละเอียดงานวิ่งครบทุกหมวด (เกี่ยวกับงาน, ระยะและราคา, Race Pack & ตารางไซส์เสื้อ `XS`–`2XL`, กำหนดการ, สถานที่/กติกา/ผลแข่งขัน) คู่กับ **กล่องสรุปและปุ่มสมัครแบบ Sticky ด้านขวา**, สมัครวิ่งด้วย **Dynamic Runner Registration Wizard** ที่แสดงขั้นตอนและฟิลด์ตาม `Published Form Version` + `Conditional Logic`, ร้านค้าเฉพาะงานสำหรับลูกค้าทั่วไป และหน้าขอใบเสนอราคาสั่งผลิตเสื้อ/เหรียญสำหรับชมรมหรือบริษัท
     2. **ระบบเข้าสู่ระบบจำลอง Email / Google / Facebook / LINE, URL Routing รายหน้า และเมนูตามสิทธิ์จริง (`AuthViews` + `RunnerProfileView` + `App`):** เริ่มต้นแบบผู้เยี่ยมชมทั่วไป (`Guest`), ผูก URL จริง (`/`, `/events/:code`, `/events/:code/shop`, `/custom-production`, `/my-orders`, `/login`, `/profile`, `/account/security`, `/organizer`, `/platform-admin`), กั้นหน้า `/organizer` และ `/platform-admin` ด้วย Route Guard (`403` สำหรับบัญชีที่ไม่มีสิทธิ์) และมีแถบ `Dev / Demo` พับเก็บได้มุมขวาล่าง
@@ -18,7 +20,7 @@
     4. **Platform Owner Console & Centralized Registration Form Builder (`PlatformAdminView` + `RegistrationFormBuilderAdmin`):** ศูนย์อนุมัติองค์กรผู้จัด (KYC/บัญชีรับเงิน), อนุมัติเผยแพร่/ระงับงานวิ่ง, ออกใบเสนอราคาผลิต, จัดการรอบโอนเงิน/คืนเงิน และ **Registration Form Builder 7 เมนูย่อย** (อนุมัติคำขอฟิลด์จากผู้จัด, จัดการ Step การสมัคร, Global Field Library 15 ชนิด Input, Field Configuration & Live Preview, Conditional Logic Builder, Form Templates 5 แม่แบบ และ Form Version Management)
   - **Workspace Skill สำหรับรันบน Local:** `.agents/skills/run-local/SKILL.md` พร้อมสคริปต์ช่วยรันและตรวจ build
 - **ขอบเขตและความโปร่งใสของระบบปัจจุบัน (Persistence & Sandbox Boundaries):**
-  - ข้อมูลธุรกรรม บัญชีผู้ใช้ งานวิ่ง ใบสมัคร คำสั่งซื้อ รอบโอน และ Audit Log ทั้งหมด **บันทึกลงฐานข้อมูล SQLite จริง (`data/runevent.sqlite`) ผ่าน REST API `/api/*`** (ไม่ได้เก็บใน `localStorage` แล้ว ยกเว้นค่าภาษา `TH/EN` และร่างฟอร์มผู้จัดชั่วคราวก่อนกดส่ง)
+  - ข้อมูลธุรกรรม บัญชีผู้ใช้ งานวิ่ง ใบสมัคร คำสั่งซื้อ รอบโอน และ Audit Log ทั้งหมด **บันทึกลงฐานข้อมูล SQLite จริง (`data/kratai.sqlite`) ผ่าน REST API `/api/*`** (ไม่ได้เก็บใน `localStorage` แล้ว ยกเว้นค่าภาษา `TH/EN` และร่างฟอร์มผู้จัดชั่วคราวก่อนกดส่ง)
   - บัญชีผู้ใช้ทดสอบเริ่มต้นยังคงเป็นชุดข้อมูลสมมติชุดเดิม (`USR-001` รหัสผ่าน `platform2026`, และ `USR-901`, `USR-101`..`USR-104` รหัสผ่าน `demo1234`) สามารถกดปุ่มรีเซ็ตใน `Dev / Demo` เพื่อคืนค่าฐานข้อมูล SQLite กลับสู่จุดเริ่มต้นได้ตลอดเวลา
   - **สิ่งที่ยังเป็นโหมดจำลอง (Local Sandbox):** การเข้าสู่ระบบผ่าน Google / LINE OAuth, การส่งอีเมลออกภายนอก และการตัดบัตร/สแกน QR PromptPay จริงยังไม่ได้ต่อผู้ให้บริการภายนอก (ยังไม่มีการตัดเงินจริง และยังไม่ได้ Deploy ขึ้น Production)
 
@@ -57,7 +59,7 @@ npm run build
 
 ## ฟีเจอร์บัญชีและการลงทะเบียนครบวงจร — อัปเดต 18 พฤศจิกายน 2026
 
-พัฒนาลงในต้นแบบ Interactive Local Mockup (`src/components/AuthViews.tsx` และ `src/components/PlatformAdminView.tsx`) ครอบคลุม **อีเมล + รหัสผ่าน, Google และ LINE** ภายใต้บัญชี RunEvent เดียวกัน พร้อม **Complete Registration System แยกประสบการณ์ Runner และ Organizer** (จำลองการทำงานฝั่งหน้าบ้านใน `localStorage` ยังไม่ได้เชื่อม OAuth หรือเซิร์ฟเวอร์จริง):
+พัฒนาลงในต้นแบบ Interactive Local Mockup (`src/components/AuthViews.tsx` และ `src/components/PlatformAdminView.tsx`) ครอบคลุม **อีเมล + รหัสผ่าน, Google และ LINE** ภายใต้บัญชี Kratai เดียวกัน พร้อม **Complete Registration System แยกประสบการณ์ Runner และ Organizer** (จำลองการทำงานฝั่งหน้าบ้านใน `localStorage` ยังไม่ได้เชื่อม OAuth หรือเซิร์ฟเวอร์จริง):
 
 - **หน้าเลือกประเภทบัญชี (`Join the Running Community`):** แยกการ์ดเลือก `Register as Runner` และ `Register as Organizer` สลับหรือเพิ่มบทบาทได้โดยไม่เสียข้อมูลบัญชีเดิม
 - **Runner Registration (Wizard 2 ขั้นตอน):** ขั้นที่ 1 ข้อมูลบัญชี + Social/Email (พร้อมตัววัดความแข็งแรงรหัสผ่าน) และขั้นที่ 2 โปรไฟล์นักวิ่ง ผู้ติดต่อฉุกเฉิน และความสนใจระยะวิ่งแบบข้ามฟิลด์ไม่บังคับได้ (**ไม่นำไซส์เสื้อหรือระยะแข่งเฉพาะงานมาปะปนกับการสมัครบัญชี**) จบด้วยหน้าต้อนรับและแถบความสมบูรณ์โปรไฟล์เข้าสู่ Runner Dashboard
@@ -70,6 +72,10 @@ npm run build
 ## เกณฑ์อายุและรุ่นอายุ — อัปเดต 20 พฤศจิกายน 2026
 
 ผู้จัดตั้งวันที่นับอายุ (วันแข่ง หรือ 31 ธ.ค. ของปีที่แข่ง) อายุต่ำสุด/สูงสุด และรุ่นอายุต่อระยะได้ในเมนู "ระยะ โควตา & คำถามสมัคร" ระบบคำนวณอายุจากวันเกิดตอนสมัคร ตรวจเกณฑ์ซ้ำฝั่งเซิร์ฟเวอร์ และเก็บอายุ/รุ่นเป็น snapshot ในใบสมัคร ยังไม่มีการจัดอันดับผลการแข่งขันตามรุ่น รายละเอียดใน [Product blueprint ข้อ 19](docs/product-blueprint.md)
+
+## ปฏิทินงานวิ่ง — อัปเดต 20 พฤศจิกายน 2026
+
+เมนู "ปฏิทินงานวิ่ง" (`/calendar`) ดูงานตามเดือน จังหวัด หรือประเภทงาน ตัวกรองหน้าค้นหางานบอกจำนวนงาน และหน้างานแสดงตารางรุ่นอายุ รายละเอียดใน [Product blueprint ข้อ 20](docs/product-blueprint.md)
 
 ## ผู้ใช้งานที่จำลองในต้นแบบ (ปัจจุบัน)
 
@@ -84,7 +90,7 @@ npm run build
 ## โครงสร้าง Repository ปัจจุบัน
 
 ```text
-RunEvent/
+Kratai/
 ├── .agents/
 │   └── skills/
 │       └── run-local/
@@ -139,6 +145,6 @@ RunEvent/
 ## ขั้นตอนถัดไปก่อนพัฒนาระบบจริง
 
 - ทบทวน Flow และโมเดลรายได้จากต้นแบบ Interactive Mockup นี้ เพื่อยืนยันนโยบายเงินจริง อัตราค่าบริการจริง เลือก Payment Provider / Backend Architecture และออกแบบ Schema + การตรวจสิทธิ์ฝั่งเซิร์ฟเวอร์ก่อนเริ่มพัฒนาระบบหลังบ้านสำหรับ Pilot
-- พิจารณาข้อเสนอส่วนขยายด้าน **ร้านค้าเฉพาะงาน (ซื้อเพิ่ม/พรีออเดอร์/ซื้อโดยไม่สมัครวิ่ง) และบริการขอราคาสั่งผลิตเสื้อ/เหรียญกับ RunEvent** ตามที่บันทึกไว้ใน [docs/product-blueprint.md](docs/product-blueprint.md) ข้อ 15 และ [docs/organizer-dashboard-plan.md](docs/organizer-dashboard-plan.md) (ยังเป็นข้อเสนอในแผนเอกสาร ยังไม่ได้ยืนยันเงื่อนไขการค้าหรือพัฒนา)
+- พิจารณาข้อเสนอส่วนขยายด้าน **ร้านค้าเฉพาะงาน (ซื้อเพิ่ม/พรีออเดอร์/ซื้อโดยไม่สมัครวิ่ง) และบริการขอราคาสั่งผลิตเสื้อ/เหรียญกับ Kratai** ตามที่บันทึกไว้ใน [docs/product-blueprint.md](docs/product-blueprint.md) ข้อ 15 และ [docs/organizer-dashboard-plan.md](docs/organizer-dashboard-plan.md) (ยังเป็นข้อเสนอในแผนเอกสาร ยังไม่ได้ยืนยันเงื่อนไขการค้าหรือพัฒนา)
 
 ปรับปรุงล่าสุด: 17 พฤศจิกายน 2026

@@ -66,6 +66,7 @@ import {
   RegStatusBadge,
 } from './StatusBadges';
 import { DateOfBirthInput } from './DateOfBirthInput';
+import { AvatarCropDialog } from './AvatarCropDialog';
 import { NationalitySelect } from './NationalitySelect';
 import { ThaiPostalAddressSelector } from './ThaiPostalAddressSelector';
 import { ALL_THAI_PROVINCES } from '../data/thaiPostalAddresses';
@@ -117,29 +118,14 @@ export type RunnerProfileTab =
   | 'devices'
   | 'privacy';
 
-function resizeAvatarFile(file: File): Promise<string> {
+const AVATAR_MAX_FILE_BYTES = 15 * 1024 * 1024;
+
+/** Reads the picked image for the crop dialog (the dialog makes the final 320 px square). */
+function readImageFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('read_failed'));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error('decode_failed'));
-      img.onload = () => {
-        const maxSide = 320;
-        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(img.width * scale));
-        canvas.height = Math.max(1, Math.round(img.height * scale));
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(String(reader.result));
-          return;
-        }
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.84));
-      };
-      img.src = String(reader.result);
-    };
+    reader.onload = () => resolve(String(reader.result));
     reader.readAsDataURL(file);
   });
 }
@@ -167,7 +153,7 @@ function downloadFinisherCertificateSvg(params: {
   <rect width="1200" height="840" fill="#f7f8fa"/>
   <rect x="44" y="44" width="1112" height="752" rx="16" fill="#ffffff" stroke="#0f172a" stroke-width="3"/>
   <rect x="44" y="44" width="1112" height="96" rx="14" fill="#0f172a"/>
-  <text x="96" y="102" fill="#f8fafc" font-family="Plus Jakarta Sans, sans-serif" font-size="28" font-weight="700">RUNEVENT · OFFICIAL FINISHER CERTIFICATE</text>
+  <text x="96" y="102" fill="#f8fafc" font-family="Plus Jakarta Sans, sans-serif" font-size="28" font-weight="700">KRATAI · OFFICIAL FINISHER CERTIFICATE</text>
   <text x="1104" y="102" text-anchor="end" fill="#cbd5e1" font-family="JetBrains Mono, monospace" font-size="18">${esc(params.certCode)}</text>
   <text x="600" y="220" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="22">ขอรับรองว่านักวิ่งผู้เข้าแข่งขัน</text>
   <text x="600" y="290" text-anchor="middle" fill="#0f172a" font-family="Plus Jakarta Sans, Anuphan, sans-serif" font-size="46" font-weight="800">${esc(params.runnerName)}</text>
@@ -183,7 +169,7 @@ function downloadFinisherCertificateSvg(params: {
   <text x="715" y="578" text-anchor="middle" fill="#0f172a" font-family="JetBrains Mono, monospace" font-size="28" font-weight="700">${esc(params.pace)}</text>
   <text x="945" y="528" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="16">อันดับรวม (Overall)</text>
   <text x="945" y="578" text-anchor="middle" fill="#0f172a" font-family="JetBrains Mono, monospace" font-size="26" font-weight="700">${esc(params.rank)}</text>
-  <text x="600" y="720" text-anchor="middle" fill="#475569" font-family="JetBrains Mono, Anuphan, sans-serif" font-size="16">Gun Time: ${esc(params.gunTime)} · Verified Official Result by RunEvent Timing Ledger</text>
+  <text x="600" y="720" text-anchor="middle" fill="#475569" font-family="JetBrains Mono, Anuphan, sans-serif" font-size="16">Gun Time: ${esc(params.gunTime)} · Verified Official Result by Kratai Timing Ledger</text>
 </svg>`;
   const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -241,6 +227,21 @@ export interface RunnerProfileViewProps {
   onNavigateEventDetail: (eventId: string) => void;
   onPersonalDirtyChange?: (dirty: boolean) => void;
   discardSignal?: number;
+}
+
+/**
+ * Briefly draws attention to a field the runner was sent to from the completion
+ * checklist: amber pulses that fade out (static fade with reduced motion).
+ * Radio groups and the address block flash as a whole ([data-flash-group]).
+ */
+const FLASH_MS = 2400;
+function flashFieldAttention(el: HTMLElement) {
+  const target = el.closest<HTMLElement>('[data-flash-group]') ?? el;
+  target.removeAttribute('data-attention-flash');
+  // restart the animation when the same field is requested twice in a row
+  void target.offsetWidth;
+  target.setAttribute('data-attention-flash', '');
+  window.setTimeout(() => target.removeAttribute('data-attention-flash'), FLASH_MS);
 }
 
 export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
@@ -311,6 +312,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
 
   /* ---- 1. Personal Information State ---- */
   const [avatarUrl, setAvatarUrl] = useState(prof.avatarDataUrl ?? '');
+  const [avatarCropSrc, setAvatarCropSrc] = useState<string | null>(null);
   const [firstName, setFirstName] = useState(
     prof.firstName ?? sanitizeThaiNameInput(nameParts[0] ?? '').trim()
   );
@@ -368,9 +370,9 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
       heightAuto: false,
       scrollbarPadding: false,
       customClass: {
-        container: 'runevent-swal-top',
-        popup: 'runevent-swal-popup',
-        actions: 'runevent-swal-actions',
+        container: 'kratai-swal-top',
+        popup: 'kratai-swal-popup',
+        actions: 'kratai-swal-actions',
         confirmButton: 'btn-primary',
       },
     });
@@ -704,10 +706,10 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
       heightAuto: false,
       scrollbarPadding: false,
       customClass: {
-        container: 'runevent-swal-top',
-        popup: 'runevent-swal-popup',
-        actions: 'runevent-swal-actions',
-        confirmButton: 'btn-primary runevent-swal-discard-btn',
+        container: 'kratai-swal-top',
+        popup: 'kratai-swal-popup',
+        actions: 'kratai-swal-actions',
+        confirmButton: 'btn-primary kratai-swal-discard-btn',
         cancelButton: 'btn-secondary',
       },
     }).then((res) => {
@@ -958,10 +960,10 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
         heightAuto: false,
         scrollbarPadding: false,
         customClass: {
-          container: 'runevent-swal-top',
-          popup: 'runevent-swal-popup',
-          actions: 'runevent-swal-actions',
-          confirmButton: 'btn-primary runevent-swal-discard-btn',
+          container: 'kratai-swal-top',
+          popup: 'kratai-swal-popup',
+          actions: 'kratai-swal-actions',
+          confirmButton: 'btn-primary kratai-swal-discard-btn',
           cancelButton: 'btn-secondary',
         },
       }).then((result) => {
@@ -990,7 +992,10 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
   useEffect(() => {
     if (!pendingFocusSelector || activeTab !== 'personal') return;
     const frame = window.requestAnimationFrame(() => {
-      const el = document.querySelector<HTMLElement>(pendingFocusSelector);
+      const el = pendingFocusSelector
+        .split('|')
+        .map((sel) => document.querySelector<HTMLElement>(sel))
+        .find((x): x is HTMLElement => Boolean(x));
       if (el) {
         const reduceMotion = window.matchMedia(
           '(prefers-reduced-motion: reduce)'
@@ -1000,6 +1005,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
           block: 'center',
         });
         el.focus({ preventScroll: true });
+        flashFieldAttention(el);
       }
       setPendingFocusSelector(null);
     });
@@ -1850,7 +1856,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                 <div className="runner-avatar-controls">
                   <strong>{tx('รูปโปรไฟล์นักวิ่ง')}</strong>
                   <span className="muted-inline">
-                    {tx('รองรับไฟล์รูปภาพ ย่อขนาดอัตโนมัติไม่เกิน 320 พิกเซล')}
+                    {tx('JPG, PNG หรือ WebP ไม่เกิน 15 MB ครอปและซูมได้ก่อนบันทึก')}
                   </span>
                   <div className="cta-inline-row">
                     <label className="btn-secondary file-pick-btn">
@@ -1860,11 +1866,20 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                         type="file"
                         accept="image/jpeg,image/png,image/webp"
                         onChange={async (e) => {
-                          const f = e.target.files?.[0];
+                          const input = e.currentTarget;
+                          const f = input.files?.[0];
+                          // allow picking the same file again later
+                          input.value = '';
                           if (!f) return;
+                          if (f.size > AVATAR_MAX_FILE_BYTES) {
+                            setBanner({
+                              tone: 'err',
+                              text: tx('ไฟล์รูปใหญ่เกิน 15 MB กรุณาเลือกไฟล์ที่เล็กลง'),
+                            });
+                            return;
+                          }
                           try {
-                            const resized = await resizeAvatarFile(f);
-                            setAvatarUrl(resized);
+                            setAvatarCropSrc(await readImageFile(f));
                           } catch {
                             setBanner({
                               tone: 'err',
@@ -1885,6 +1900,14 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                     )}
                   </div>
                 </div>
+                <AvatarCropDialog
+                  src={avatarCropSrc}
+                  onCancel={() => setAvatarCropSrc(null)}
+                  onConfirm={(dataUrl) => {
+                    setAvatarUrl(dataUrl);
+                    setAvatarCropSrc(null);
+                  }}
+                />
               </div>
 
               <h3>{tx('ชื่อและนามสกุล')}</h3>
@@ -1998,7 +2021,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                     </p>
                   )}
                 </div>
-                <fieldset className="runner-gender-field">
+                <fieldset className="runner-gender-field" data-flash-group="">
                   <legend>{tx('เพศ')}</legend>
                   <div className="runner-gender-options">
                     {(['ชาย', 'หญิง'] as const).map((option) => (
@@ -2136,7 +2159,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
               </div>
 
               {/* Residential Address — Cascading from Postal Code */}
-              <div className="custom-field-creator canvas-stack">
+              <div className="custom-field-creator canvas-stack" data-flash-group="">
                 <strong>
                   {tx(
                     'ที่อยู่ปัจจุบัน'
@@ -2578,11 +2601,11 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                               heightAuto: false,
                               scrollbarPadding: false,
                               customClass: {
-                                container: 'runevent-swal-top',
-                                popup: 'runevent-swal-popup',
-                                actions: 'runevent-swal-actions',
+                                container: 'kratai-swal-top',
+                                popup: 'kratai-swal-popup',
+                                actions: 'kratai-swal-actions',
                                 confirmButton:
-                                  'btn-primary runevent-swal-discard-btn',
+                                  'btn-primary kratai-swal-discard-btn',
                                 cancelButton: 'btn-secondary',
                               },
                             }).then(async (res) => {
@@ -2849,11 +2872,11 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                               heightAuto: false,
                               scrollbarPadding: false,
                               customClass: {
-                                container: 'runevent-swal-top',
-                                popup: 'runevent-swal-popup',
-                                actions: 'runevent-swal-actions',
+                                container: 'kratai-swal-top',
+                                popup: 'kratai-swal-popup',
+                                actions: 'kratai-swal-actions',
                                 confirmButton:
-                                  'btn-primary runevent-swal-discard-btn',
+                                  'btn-primary kratai-swal-discard-btn',
                                 cancelButton: 'btn-secondary',
                               },
                             }).then(async (res) => {
@@ -3966,11 +3989,11 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                                 heightAuto: false,
                                 scrollbarPadding: false,
                                 customClass: {
-                                  container: 'runevent-swal-top',
-                                  popup: 'runevent-swal-popup',
-                                  actions: 'runevent-swal-actions',
+                                  container: 'kratai-swal-top',
+                                  popup: 'kratai-swal-popup',
+                                  actions: 'kratai-swal-actions',
                                   confirmButton:
-                                    'btn-primary runevent-swal-discard-btn',
+                                    'btn-primary kratai-swal-discard-btn',
                                   cancelButton: 'btn-secondary',
                                 },
                               }).then(async (res) => {

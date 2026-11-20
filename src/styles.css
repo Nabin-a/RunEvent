@@ -5511,7 +5511,7 @@ textarea::placeholder {
   font-weight: 600;
 }
 
-.swal2-container.runevent-swal-top {
+.swal2-container.kratai-swal-top {
   z-index: 3500;
 }
 
@@ -5532,21 +5532,21 @@ body.swal2-iosfix {
   overscroll-behavior: contain;
 }
 
-.runevent-swal-popup {
+.kratai-swal-popup {
   font-family: var(--font-body);
   border-radius: var(--radius-md);
 }
 
-.runevent-swal-actions {
+.kratai-swal-actions {
   gap: 0.65rem;
 }
 
-.runevent-swal-discard-btn {
+.kratai-swal-discard-btn {
   background: var(--danger);
   border-color: var(--danger);
 }
 
-.runevent-swal-discard-btn:hover {
+.kratai-swal-discard-btn:hover {
   background: var(--danger-ink);
   border-color: var(--danger-ink);
 }
@@ -6452,7 +6452,7 @@ body.swal2-iosfix {
 }
 
 /* ===================================================================== */
-/* Account settings (Discord-style settings pattern, RunEvent tokens)    */
+/* Account settings (Discord-style settings pattern, Kratai tokens)    */
 /* Grouped sidebar + one page per topic: My account / Connections /      */
 /* Devices / Privacy & data. Rows = label + value + action on the right. */
 /* ===================================================================== */
@@ -7288,6 +7288,22 @@ body.swal2-iosfix {
   font-size: 0.8125rem;
 }
 
+/* Sign-up: notice line directly under the create-account button */
+.auth-privacy-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--ink-secondary);
+  text-align: center;
+}
+
+.auth-privacy-note .auth-inline-link-btn {
+  padding: 0;
+  font-size: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .privacy-reconsent-note {
   margin: 0 0 1rem;
   font-weight: 600;
@@ -7830,3 +7846,685 @@ body.swal2-iosfix {
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
+
+/* ---------------------------------------------------------------------- */
+/* Filter option counts (directory + calendar)                            */
+/* ---------------------------------------------------------------------- */
+.filter-count {
+  margin-left: 0.15rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-placeholder);
+}
+
+.filter-pill.active .filter-count {
+  color: var(--ink-secondary);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Public event page: age rules & age groups                              */
+/* ---------------------------------------------------------------------- */
+.age-public-section > .muted-block {
+  margin: 0.25rem 0 1rem;
+}
+
+.age-public-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 1rem 1.5rem;
+}
+
+.age-public-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line-light);
+}
+
+.age-public-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.age-public-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.age-public-meta {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.age-public-genders {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.75rem;
+}
+
+.age-public-gender h4 {
+  margin: 0 0 0.3rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--ink-secondary);
+}
+
+.age-public-gender ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.875rem;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Race calendar                                                          */
+/* ---------------------------------------------------------------------- */
+.race-calendar {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.race-calendar-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+}
+
+.race-calendar-head h1 {
+  margin: 0 0 0.25rem;
+  font-size: clamp(1.5rem, 2.5vw, 2.125rem);
+}
+
+.race-calendar-head .muted-block {
+  margin: 0;
+}
+
+.race-calendar-views {
+  display: flex;
+  gap: 1.1rem;
+}
+
+.race-calendar-month {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+}
+
+.race-calendar-monthbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.race-calendar-monthbar h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.race-calendar-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  cursor: pointer;
+}
+
+.race-calendar-nav:hover {
+  background: var(--bg-subtle);
+}
+
+.race-calendar-strip {
+  display: flex;
+  gap: 0.25rem 1rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-bottom: 0.15rem;
+}
+
+.race-calendar-grid {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.race-calendar-grid th {
+  padding: 0.35rem 0.55rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-secondary);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.race-calendar-wd-short {
+  display: none;
+}
+
+.race-calendar-grid td {
+  height: 4.25rem;
+  padding: 2px;
+  vertical-align: top;
+  border-top: 1px solid var(--line-light);
+}
+
+.race-calendar-day {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  width: 100%;
+  height: 100%;
+  padding: 0.35rem 0.45rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-secondary);
+  font: inherit;
+  text-align: left;
+}
+
+button.race-calendar-day {
+  cursor: pointer;
+  color: var(--ink-primary);
+  background: var(--bg-subtle);
+}
+
+button.race-calendar-day:hover {
+  background: var(--bg-selected);
+}
+
+button.race-calendar-day:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
+}
+
+.race-calendar-daynum {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.race-calendar-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--forest-ink);
+}
+
+.race-calendar-grid td.is-today .race-calendar-daynum {
+  color: var(--vermilion-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.race-calendar-grid td.is-selected button.race-calendar-day {
+  background: var(--ink-primary);
+  color: var(--on-accent);
+}
+
+.race-calendar-grid td.is-selected .race-calendar-count {
+  color: var(--on-accent);
+}
+
+.race-calendar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.race-calendar-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.race-calendar-list-head p {
+  margin: 0;
+}
+
+.race-calendar-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  background: var(--bg-surface);
+  border: 1px dashed var(--line-medium);
+  border-radius: var(--radius-md);
+}
+
+.race-calendar-empty p {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--ink-secondary);
+}
+
+.race-calendar-group h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.race-calendar-group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--bg-surface);
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+}
+
+.race-calendar-row {
+  display: grid;
+  grid-template-columns: 9.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  padding: 0.9rem 1rem;
+}
+
+.race-calendar-thumb {
+  aspect-ratio: 400 / 165;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-light);
+  background: var(--bg-subtle);
+  cursor: pointer;
+}
+
+.race-calendar-thumb-media {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.race-calendar-row + .race-calendar-row {
+  border-top: 1px solid var(--line-light);
+}
+
+.race-calendar-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.race-calendar-row-main p {
+  margin: 0;
+}
+
+.race-calendar-title {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.race-calendar-title:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.race-calendar-row-side {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: none;
+}
+
+@media (max-width: 40rem) {
+  .race-calendar-month {
+    padding: 0.75rem 0.5rem;
+  }
+
+  .race-calendar-grid td {
+    height: 3rem;
+    padding: 1px;
+  }
+
+  .race-calendar-grid th {
+    padding-inline: 0;
+    text-align: center;
+  }
+
+  /* keep the full weekday name for screen readers, show the short one */
+  .race-calendar-wd-long {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .race-calendar-wd-short {
+    display: inline;
+  }
+
+  .race-calendar-day {
+    align-items: center;
+    padding: 0.3rem 0.1rem;
+  }
+
+  /* On phones the count becomes a dot; the full count stays in the button's label */
+  .race-calendar-count {
+    width: 0.4rem;
+    height: 0.4rem;
+    overflow: hidden;
+    border-radius: var(--radius-pill);
+    background: var(--forest);
+    color: transparent;
+  }
+
+  .race-calendar-grid td.is-selected .race-calendar-count {
+    background: var(--on-accent);
+  }
+
+  .race-calendar-row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .race-calendar-row-side {
+    justify-content: space-between;
+  }
+}
+
+/* Race calendar: week view */
+.race-calendar-weektitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem 0.75rem;
+  text-align: center;
+}
+
+.race-calendar-weektitle h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.race-calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.race-calendar-weekdays > li {
+  min-height: 5.5rem;
+  border-top: 1px solid var(--line-light);
+  padding-top: 2px;
+}
+
+.race-calendar-weekdays .race-calendar-wd-long {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+.race-calendar-weekdays .race-calendar-daynum {
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.race-calendar-weekmonth {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+.race-calendar-weekdays li.is-today .race-calendar-daynum {
+  color: var(--vermilion-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.race-calendar-weekdays li.is-selected button.race-calendar-day {
+  background: var(--ink-primary);
+  color: var(--on-accent);
+}
+
+.race-calendar-weekdays li.is-selected .race-calendar-wd-long,
+.race-calendar-weekdays li.is-selected .race-calendar-weekmonth,
+.race-calendar-weekdays li.is-selected .race-calendar-count {
+  color: var(--on-accent);
+}
+
+@media (max-width: 40rem) {
+  .race-calendar-weekdays {
+    gap: 2px;
+  }
+
+  .race-calendar-weekdays > li {
+    min-height: 4.25rem;
+  }
+
+  .race-calendar-weekdays .race-calendar-wd-short {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--ink-secondary);
+  }
+
+  .race-calendar-weekdays .race-calendar-daynum {
+    font-size: 1rem;
+  }
+
+  /* month label would not fit a 1/7 column on phones; the week range above names the month */
+  .race-calendar-weekmonth {
+    display: none;
+  }
+
+  .race-calendar-weekdays li.is-selected .race-calendar-count {
+    background: var(--on-accent);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Invalid / missing required fields (utils/formValidation.ts)            */
+/* ---------------------------------------------------------------------- */
+input[aria-invalid="true"],
+select[aria-invalid="true"],
+textarea[aria-invalid="true"] {
+  border-color: var(--danger) !important;
+  background-color: var(--danger-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+input[type="checkbox"][aria-invalid="true"],
+input[type="radio"][aria-invalid="true"] {
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+[data-invalid-msg] > label,
+[data-invalid-msg] > legend {
+  color: var(--danger-ink);
+}
+
+[data-invalid-msg]::after {
+  content: attr(data-invalid-msg);
+  display: block;
+  margin-top: 0.05rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--danger-ink);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Profile: attention flash on the field opened from the completion list   */
+/* ---------------------------------------------------------------------- */
+@keyframes field-attention-pulse {
+  0%,
+  36%,
+  72% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--amber) 55%, transparent);
+    background-color: var(--amber-soft);
+  }
+  18%,
+  54% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--amber) 20%, transparent);
+    background-color: var(--amber-soft);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@keyframes field-attention-fade {
+  0% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--amber) 55%, transparent);
+    background-color: var(--amber-soft);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+[data-attention-flash] {
+  border-radius: var(--radius-sm);
+  animation: field-attention-pulse 2.4s ease-out 1 both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-attention-flash] {
+    animation: field-attention-fade 2.4s linear 1 both;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Avatar crop & zoom dialog                                              */
+/* ---------------------------------------------------------------------- */
+.avatar-crop-dialog {
+  width: min(26rem, 100%);
+}
+
+.avatar-crop-dialog h3:focus {
+  outline: none;
+}
+
+.avatar-crop-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.avatar-crop-body > p {
+  margin: 0;
+}
+
+.avatar-crop-stage {
+  position: relative;
+  width: min(18rem, 100%);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--ink-primary);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.avatar-crop-stage:active {
+  cursor: grabbing;
+}
+
+.avatar-crop-stage:focus-visible {
+  outline: 3px solid var(--accent-primary);
+  outline-offset: 3px;
+}
+
+.avatar-crop-img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  max-width: none;
+  pointer-events: none;
+}
+
+/* circle the runner will see; everything outside is dimmed */
+.avatar-crop-mask {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-pill);
+  box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--ink-primary) 62%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--on-accent) 85%, transparent);
+  outline-offset: -2px;
+  pointer-events: none;
+}
+
+.avatar-crop-error {
+  position: absolute;
+  inset: auto 0.75rem 0.75rem;
+  margin: 0;
+  color: var(--on-accent);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.avatar-crop-zoom {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.avatar-crop-zoom input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--ink-primary);
+}
+
+.avatar-crop-zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: none;
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font-size: 1.125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.avatar-crop-zoom-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+

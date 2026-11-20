@@ -1130,7 +1130,7 @@ app.get('/api/account/export', (req, res) => {
     ok: true,
     data: {
       exportedAt: new Date().toISOString(),
-      note: 'สำเนาข้อมูลจากระบบ RunEvent บนเครื่อง (Local sandbox) — ไม่รวมรหัสผ่านหรือข้อมูลลับ',
+      note: 'สำเนาข้อมูลจากระบบ กระต่าย บนเครื่อง (Local sandbox) — ไม่รวมรหัสผ่านหรือข้อมูลลับ',
       account: safeUser,
       registrations,
     },
@@ -2058,7 +2058,7 @@ app.post('/api/events', (req, res) => {
       organizerBufferQty: 10,
       existingStockDeductedQty: 0,
       netQtyToProduce: 110,
-      artworkVersion: 'ขอคำปรึกษาออกแบบจากทีม RunEvent',
+      artworkVersion: 'ขอคำปรึกษาออกแบบจากทีม กระต่าย',
       targetDeliveryDate: newEv.eventDate,
       quoteStatus: 'submitted',
       productionStatus: 'awaiting_approval',
@@ -2359,12 +2359,12 @@ app.patch('/api/events/:id', (req, res) => {
       saleMode: ap.saleMode,
       serviceModel: ap.serviceModel,
       sellerLabel:
-        ap.serviceModel === 'runevent_full_service'
-          ? 'ดูแลพรีออเดอร์และจัดส่งโดย RunEvent (จำลอง)'
+        ap.serviceModel === 'kratai_full_service'
+          ? 'ดูแลพรีออเดอร์และจัดส่งโดย กระต่าย (จำลอง)'
           : 'ผู้ขาย: องค์กรผู้จัดงาน (จำลอง)',
       fulfillmentOwnerLabel:
-        ap.serviceModel === 'runevent_full_service'
-          ? 'RunEvent ผลิตและจัดส่ง'
+        ap.serviceModel === 'kratai_full_service'
+          ? 'กระต่าย ผลิตและจัดส่ง'
           : 'ผู้จัดงานส่งมอบ',
       priceSatang: ap.priceBaht * 100,
       shippingFeeSatang: 5000,
@@ -3139,5 +3139,5 @@ if (process.env.SERVE_STATIC === '1' || process.env.NODE_ENV === 'production') {
 const PORT = Number(process.env.API_PORT || 3001);
 const HOST = process.env.API_HOST || '127.0.0.1';
 app.listen(PORT, HOST, () => {
-  console.log(`[RunEvent API] SQLite server listening on http://${HOST}:${PORT} (DB: ${DB_FILE_PATH})`);
+  console.log(`[Kratai API] SQLite server listening on http://${HOST}:${PORT} (DB: ${DB_FILE_PATH})`);
 });

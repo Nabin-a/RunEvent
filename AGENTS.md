@@ -1,12 +1,13 @@
-# AGENTS.md — กฎร่วมของ RunEvent
+# AGENTS.md — กฎร่วมของ Kratai
 
 เอกสารนี้ใช้กับทั้ง repository สำหรับผู้พัฒนาและ AI agent หากมี AGENTS.md ในโฟลเดอร์ย่อย ให้ใช้กฎเฉพาะพื้นที่นั้นร่วมด้วย โดยไม่ขัดกับคำสั่งผู้ใช้หรือข้อกำหนดระดับระบบ
 
 ## 1. บริบทและขอบเขตปัจจุบัน
 
-- RunEvent เป็นแพลตฟอร์มงานวิ่งสำหรับหลายองค์กรผู้จัด (multi-tenant B2B2C)
+- **ชื่อระบบ (ยืนยันโดยคำสั่งผู้ใช้ 20 พฤศจิกายน 2026):** เปลี่ยนจาก RunEvent เป็น **Kratai** หน้าเว็บภาษาไทยแสดงชื่อ "กระต่าย" ภาษาอังกฤษแสดง "Kratai" ชื่อทางเทคนิค (cookie, คีย์ localStorage, ไฟล์ฐานข้อมูล `data/kratai.sqlite`, อีเมลทดสอบ `@demo.kratai.local`, ค่า enum) เปลี่ยนตามแล้ว ส่วนชื่อโฟลเดอร์โปรเจกต์และ repository บน GitHub ยังเป็นชื่อเดิม
+- Kratai เป็นแพลตฟอร์มงานวิ่งสำหรับหลายองค์กรผู้จัด (multi-tenant B2B2C)
 - เริ่มที่ Dashboard ผู้จัดงาน แยกบริบทองค์กรและงานวิ่ง ควบคู่กับหน้ารายการงานวิ่งสาธารณะและระบบสลับบทบาท
-- **สถานะปัจจุบัน (อัปเดต 18 พฤศจิกายน 2026 — ยืนยันโดยคำสั่งผู้ใช้): ระบบทำงานจริงบน Local (Local Full-Stack System)** ด้วย Frontend `Vite + React + TypeScript` (รองรับสลับภาษา `TH / EN`) เชื่อมต่อกับ Backend REST API `Node.js + Express + SQLite` (`node:sqlite`, เก็บข้อมูลใน `data/runevent.sqlite`) พร้อม Password Hashing (`scrypt`), `HttpOnly` Session Cookie, การตรวจสิทธิ์ RBAC ฝั่งเซิร์ฟเวอร์ และ Atomic SQLite Transaction สำหรับโควตา/สต็อกเสื้อ/เลข BIB โดยใช้ชุดข้อมูลผู้ใช้ทดสอบ (`USR-001`, `USR-901`, `USR-902`, `USR-101`..`USR-104`) ชุดเดิมเป็นข้อมูลเริ่มต้น (Seed)
+- **สถานะปัจจุบัน (อัปเดต 18 พฤศจิกายน 2026 — ยืนยันโดยคำสั่งผู้ใช้): ระบบทำงานจริงบน Local (Local Full-Stack System)** ด้วย Frontend `Vite + React + TypeScript` (รองรับสลับภาษา `TH / EN`) เชื่อมต่อกับ Backend REST API `Node.js + Express + SQLite` (`node:sqlite`, เก็บข้อมูลใน `data/kratai.sqlite`) พร้อม Password Hashing (`scrypt`), `HttpOnly` Session Cookie, การตรวจสิทธิ์ RBAC ฝั่งเซิร์ฟเวอร์ และ Atomic SQLite Transaction สำหรับโควตา/สต็อกเสื้อ/เลข BIB โดยใช้ชุดข้อมูลผู้ใช้ทดสอบ (`USR-001`, `USR-901`, `USR-902`, `USR-101`..`USR-104`) ชุดเดิมเป็นข้อมูลเริ่มต้น (Seed)
 - **ขอบเขตที่ยังไม่อนุญาต:** ยังไม่เชื่อมต่อ Google/LINE OAuth Provider จริง (ทำงานในโหมด Local Sandbox), ยังไม่เชื่อมต่อ Payment Gateway ตัดเงินจริง (ทำงานแบบจำลองสัญญาณชำระ/Webhook บน Local), และยังไม่ Deploy ขึ้น Production จนกว่าผู้ใช้จะสั่งและให้ Credentials ภายนอก
 - ภาษาไทย ตลาดไทย และ THB เป็นสมมติฐานเริ่มต้น ส่วน backend framework, hosting, payment provider และกำหนดส่งระบบจริงยังไม่ยืนยัน
 
@@ -102,7 +103,7 @@
 | gsap-scrolltrigger / gsap-plugins / gsap-utils / gsap-frameworks | งาน scroll, plugin, utilities หรือ framework ที่ตรงกับ skill | อ่านเฉพาะส่วนที่ใช้งานและไม่เปลี่ยน stack ของโปรเจกต์ตาม skill |
 | find-skills / skill-installer | ผู้ใช้ขอค้นหาหรือติดตั้ง skills | ไม่ติดตั้งทุก skill ที่ค้นเจอหรือเปลี่ยน environment เกินขอบเขต |
 | skill-creator | ผู้ใช้ขอสร้างหรือแก้ workspace skill | ไม่จำเป็นสำหรับแก้ AGENTS.md หรือเอกสารทั่วไป |
-| openai-docs | ต้องใช้ข้อมูลผลิตภัณฑ์/API ของ OpenAI หรือการตั้งค่า Codex | ใช้กับคำถามที่เกี่ยวข้อง ไม่ใช้แทนเอกสารของ RunEvent |
+| openai-docs | ต้องใช้ข้อมูลผลิตภัณฑ์/API ของ OpenAI หรือการตั้งค่า Codex | ใช้กับคำถามที่เกี่ยวข้อง ไม่ใช้แทนเอกสารของ Kratai |
 
 - ใช้ skill หลักที่ตรงงานก่อน ไม่เปิดหลายกระบวนการที่ซ้ำซ้อนโดยไม่จำเป็น
 - อ่าน SKILL.md และ reference ที่เกี่ยวข้องก่อนใช้ พร้อมแจ้งผู้ใช้ครั้งแรกที่นำมาใช้

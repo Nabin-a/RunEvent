@@ -661,7 +661,7 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({
     <div className="clean-panel acct-page">
       <PageHead
         title={tx('การเชื่อมต่อ')}
-        description={tx('เชื่อมบัญชีภายนอกเพื่อเข้าสู่ระบบ RunEvent ได้หลายทาง ถ้าลืมรหัสผ่านหรือเข้าบัญชีหนึ่งไม่ได้ ยังเข้าด้วยช่องทางอื่นได้')}
+        description={tx('เชื่อมบัญชีภายนอกเพื่อเข้าสู่ระบบ กระต่าย ได้หลายทาง ถ้าลืมรหัสผ่านหรือเข้าบัญชีหนึ่งไม่ได้ ยังเข้าด้วยช่องทางอื่นได้')}
       />
 
       {unlinked.length > 0 && (

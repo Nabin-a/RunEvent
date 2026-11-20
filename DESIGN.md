@@ -1,5 +1,5 @@
 ---
-name: RunEvent
+name: Kratai
 description: Modern minimal race discovery & storefront portal paired with a self-explanatory multi-tenant organizer dashboard
 colors:
   shell-navy: "#0f172a"
@@ -120,13 +120,13 @@ components:
     padding: "1rem 1.2rem"
 ---
 
-# Design System: RunEvent
+# Design System: Kratai
 
 ## Overview
 
 **Creative North Star: "Modern Minimal Course Atlas & Self-Explanatory Race Ledger"**
 
-RunEvent unites two modes inside one disciplined Thai-first interface:
+Kratai unites two modes inside one disciplined Thai-first interface:
 1. **Modern Minimal Public Discovery & Storefront:** Airy `#f7f8fa` canvas, crisp `#ffffff` event cards with vector topographic/route cover illustrations, explicit net-price pills, a step-by-step registration wizard, and a standalone event merchandise shop for general customers who do not register to run.
 2. **Self-Explanatory Multi-Tenant Organizer Dashboard:** A committed deep-slate navigation rail (`#0f172a`) locking Organization and Event context beside a structured workspace where every section states **what it is and what it is used for**, led by an Urgent Action Queue, a 4-stage Event Lifecycle stepper, and a traceable Quota & THB Payout Strip (`BibLedgerStrip`).
 

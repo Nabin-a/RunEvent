@@ -44,6 +44,9 @@ import {
   IconShirt,
 } from './Icons';
 import { DateOfBirthInput } from './DateOfBirthInput';
+import { EventAgeGroupsSection } from './EventAgeGroupsSection';
+import { RaceCalendarView } from './RaceCalendarView';
+import { reportInvalidFieldsWithin } from '../utils/formValidation';
 import {
   CascadingAddressValue,
   ThaiPostalAddressSelector,
@@ -69,6 +72,7 @@ import { tx, txf } from '../i18n';
 import { FEATURES } from '../config/features';
 import {
   ageCheckMessage,
+  categoryUsesAge,
   evaluateCategoryAge,
   formatAgeBasis,
   formatAgeGroupLabel,
@@ -80,7 +84,8 @@ export type CustomerSubView =
   | 'event_detail'
   | 'event_register'
   | 'my_orders'
-  | 'custom_production';
+  | 'custom_production'
+  | 'calendar';
 
 interface CustomerPortalViewProps {
   subView: CustomerSubView;
@@ -502,8 +507,15 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     [events]
   );
 
-  const filteredEvents = useMemo(() => {
-    return publicVisibleEvents.filter((ev) => {
+  // One predicate for the list and for the counts beside each filter option.
+  // A count answers "how many events would I see if I picked this option",
+  // keeping every other active filter (faceted counting).
+  type DirectoryFilters = {
+    quick: typeof quickFilter;
+    region: string;
+    distance: string;
+  };
+  const matchesDirectoryFilters = (ev: RaceEvent, f: DirectoryFilters) => {
       const q = searchQuery.trim().toLowerCase();
       const matchesText =
         !q ||
@@ -513,35 +525,39 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         ev.venue.toLowerCase().includes(q);
 
       const matchesQuick =
-        quickFilter === 'all' ||
-        (quickFilter === 'open' && ev.status === 'published') ||
-        (quickFilter === 'has_shop' && ev.products.length > 0) ||
-        (quickFilter === 'completed' && ev.status === 'completed');
+        f.quick === 'all' ||
+        (f.quick === 'open' && ev.status === 'published') ||
+        (f.quick === 'has_shop' && ev.products.length > 0) ||
+        (f.quick === 'completed' && ev.status === 'completed');
 
-      const matchesRegion =
-        regionFilter === 'all' || ev.region === regionFilter;
+      const matchesRegion = f.region === 'all' || ev.region === f.region;
 
       const matchesDist =
-        distanceFilter === 'all' ||
+        f.distance === 'all' ||
         ev.categories.some((c) => {
-          if (distanceFilter === '5k') return c.distanceKm <= 5.5;
-          if (distanceFilter === '10k')
+          if (f.distance === '5k') return c.distanceKm <= 5.5;
+          if (f.distance === '10k')
             return c.distanceKm > 5.5 && c.distanceKm <= 12;
-          if (distanceFilter === '21k')
+          if (f.distance === '21k')
             return c.distanceKm >= 20 && c.distanceKm <= 22;
-          if (distanceFilter === 'trail') return ev.raceType === 'Trail';
+          if (f.distance === 'trail') return ev.raceType === 'Trail';
           return true;
         });
 
       return matchesText && matchesQuick && matchesRegion && matchesDist;
-    });
-  }, [
-    publicVisibleEvents,
-    searchQuery,
-    quickFilter,
-    regionFilter,
-    distanceFilter,
-  ]);
+  };
+  const activeDirectoryFilters: DirectoryFilters = {
+    quick: quickFilter,
+    region: regionFilter,
+    distance: distanceFilter,
+  };
+  const filteredEvents = publicVisibleEvents.filter((ev) =>
+    matchesDirectoryFilters(ev, activeDirectoryFilters)
+  );
+  const countWith = (override: Partial<DirectoryFilters>) =>
+    publicVisibleEvents.filter((ev) =>
+      matchesDirectoryFilters(ev, { ...activeDirectoryFilters, ...override })
+    ).length;
 
   const selectedEvent = useMemo(
     () => publicVisibleEvents.find((e) => e.id === selectedEventId) ?? null,
@@ -1421,7 +1437,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
             <div className="poster-top-copy">
               <p className="poster-org-name">
-                {tx(org?.nameTh ?? "องค์กรผู้จัดงานวิ่ง RunEvent")}
+                {tx(org?.nameTh ?? "องค์กรผู้จัดงานวิ่ง กระต่าย")}
               </p>
               <h1 className="poster-event-title">
                 {selectedEvent.titleEn || selectedEvent.titleTh}
@@ -2067,9 +2083,13 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   <button
                     type="button"
                     className="btn-primary reg-next-pill-btn"
-                    onClick={() => {
+                    onClick={(e) => {
                       if (!regModeChosen) {
                         setStep2Error(tx("กรุณาเลือกว่าจะสมัครให้ตนเองหรือสมัครให้ผู้อื่นก่อน"));
+                        return;
+                      }
+                      if (!reportInvalidFieldsWithin(e.currentTarget.closest('.reg-step-body'))) {
+                        setStep2Error(tx("กรุณากรอกช่องที่มีเครื่องหมาย * ให้ครบ ช่องที่ยังไม่ครบถูกไฮไลต์ไว้"));
                         return;
                       }
                       if (!regFirstNameTh.trim() || !regLastNameTh.trim() || !buyerName.trim()) {
@@ -3025,6 +3045,15 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   >
                     {tx("ระยะทาง & ค่าสมัคร")}
                   </button>
+                  {selectedEvent.categories.some(categoryUsesAge) && (
+                    <button
+                      type="button"
+                      className="filter-pill"
+                      onClick={() => jumpToEditorialSection('sec-age-groups')}
+                    >
+                      {tx("เกณฑ์อายุ & รุ่นอายุ")}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="filter-pill"
@@ -3197,6 +3226,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     })}
                   </div>
                 </section>
+
+                {/* SECTION 2.5: AGE RULES & AGE GROUPS (shown only when a distance has age rules) */}
+                <EventAgeGroupsSection event={selectedEvent} id="sec-age-groups" />
 
                 {/* SECTION 3: RACE PACK ENTITLEMENTS, SHIRT & MEDAL + SIZE CHART */}
                 <section id="sec-racepack" className="clean-panel">
@@ -4504,6 +4536,20 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     );
   }
 
+  /* ================= SUBVIEW: RACE CALENDAR ================= */
+  if (subView === 'calendar') {
+    return (
+      <main className="customer-container">
+        <RaceCalendarView
+          events={publicVisibleEvents}
+          onOpenEvent={(ev) =>
+            openEventPage(ev, ev.status === 'published' ? 'register' : 'info_results')
+          }
+        />
+      </main>
+    );
+  }
+
   /* ================= SUBVIEW 1: MODERN MINIMAL DIRECTORY ================= */
   return (
     <main className="customer-container">
@@ -4543,9 +4589,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 key={k}
                 type="button"
                 className={`filter-pill ${quickFilter === k ? 'active' : ''}`}
+                aria-pressed={quickFilter === k}
                 onClick={() => setQuickFilter(k)}
               >
-                {tx(lbl)}
+                {tx(lbl)}{' '}
+                <span className="filter-count mono-num">{countWith({ quick: k })}</span>
               </button>
             ))}
           </div>
@@ -4561,11 +4609,19 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               value={distanceFilter}
               onChange={(e) => setDistanceFilter(e.target.value)}
             >
-              <option value="all">{tx("ทุกระยะทาง")}</option>
-              <option value="5k">Fun Run ~ 5 km</option>
-              <option value="10k">Mini Marathon 10 km</option>
-              <option value="21k">Half Marathon 21.1 km</option>
-              <option value="trail">Trail Running</option>
+              {(
+                [
+                  ['all', tx("ทุกระยะทาง")],
+                  ['5k', 'Fun Run ~ 5 km'],
+                  ['10k', 'Mini Marathon 10 km'],
+                  ['21k', 'Half Marathon 21.1 km'],
+                  ['trail', 'Trail Running'],
+                ] as const
+              ).map(([v, lbl]) => (
+                <option key={v} value={v}>
+                  {`${lbl} (${countWith({ distance: v })})`}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -4576,11 +4632,20 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               value={regionFilter}
               onChange={(e) => setRegionFilter(e.target.value)}
             >
-              <option value="all">{tx("ทุกภูมิภาค")}</option>
-              <option value="เหนือ">{tx("ภาคเหนือ")}</option>
-              <option value="ใต้">{tx("ภาคใต้")}</option>
-              <option value="กลางและกรุงเทพฯ">{tx("ภาคกลางและกรุงเทพฯ")}</option>
-              <option value="อีสาน">{tx("ภาคอีสาน")}</option>
+              {(
+                [
+                  ['all', 'ทุกภูมิภาค'],
+                  ['เหนือ', 'ภาคเหนือ'],
+                  ['กลางและกรุงเทพฯ', 'ภาคกลางและกรุงเทพฯ'],
+                  ['อีสาน', 'ภาคอีสาน'],
+                  ['ตะวันออก', 'ภาคตะวันออก'],
+                  ['ใต้', 'ภาคใต้'],
+                ] as const
+              ).map(([v, lbl]) => (
+                <option key={v} value={v}>
+                  {`${tx(lbl)} (${countWith({ region: v })})`}
+                </option>
+              ))}
             </select>
           </div>
         </div>

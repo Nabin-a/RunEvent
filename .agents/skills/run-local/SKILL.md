@@ -2,17 +2,17 @@
 name: run-local
 description: >-
   Use this skill when the user asks to start, run, preview, verify, or troubleshoot
-  the RunEvent interactive mockup project on their local machine (e.g., "run project locally",
+  the Kratai interactive mockup project on their local machine (e.g., "run project locally",
   "start dev server", "เปิดเว็บต้นแบบบน local", or "/run-local").
 ---
 
-# RunEvent Local Runner Skill
+# Kratai Local Runner Skill
 
-Runbook สำหรับตรวจสอบสภาพแวดล้อม ติดตั้งแพ็กเกจที่จำเป็น และรันเว็บต้นแบบ **RunEvent** (`Vite + React + TypeScript`) บนเครื่อง Local โดยไม่อาศัยการระบุพาธตายตัวของเครื่องใดเครื่องหนึ่ง
+Runbook สำหรับตรวจสอบสภาพแวดล้อม ติดตั้งแพ็กเกจที่จำเป็น และรันเว็บต้นแบบ **Kratai** (`Vite + React + TypeScript`) บนเครื่อง Local โดยไม่อาศัยการระบุพาธตายตัวของเครื่องใดเครื่องหนึ่ง
 
 ## ขอบเขตของโปรเจกต์ที่รัน
 
-- โปรเจกต์เป็น **Local Full-Stack System** ประกอบด้วย Frontend (`Vite + React + TypeScript` พอร์ตเริ่มต้น `5173`) และ Backend API (`Node.js + Express + node:sqlite` พอร์ตเริ่มต้น `3001` เก็บฐานข้อมูลที่ `data/runevent.sqlite`)
+- โปรเจกต์เป็น **Local Full-Stack System** ประกอบด้วย Frontend (`Vite + React + TypeScript` พอร์ตเริ่มต้น `5173`) และ Backend API (`Node.js + Express + node:sqlite` พอร์ตเริ่มต้น `3001` เก็บฐานข้อมูลที่ `data/kratai.sqlite`)
 - สคริปต์รันทั้ง API และ Vite พร้อมกันอัตโนมัติ และสร้าง/Seed ฐานข้อมูล SQLite ด้วยชุดผู้ใช้ทดสอบเดิมให้อัตโนมัติในการรันครั้งแรก ไม่ต้องตั้งค่า `.env` หรือ API key ภายนอก
 
 ## ขั้นตอนการรันบน Local

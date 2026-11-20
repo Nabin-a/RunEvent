@@ -346,7 +346,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
           </div>
         </div>
 
-        <nav className="rail-nav-group" aria-label={tx("เมนูบริหารแพลตฟอร์ม RunEvent")}>
+        <nav className="rail-nav-group" aria-label={tx("เมนูบริหารแพลตฟอร์ม กระต่าย")}>
           <div className="rail-group-heading">{tx("ระบบส่วนกลาง (Platform HQ)")}</div>
 
           <button
@@ -442,7 +442,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
           <div className="breadcrumb-trail">
             <span className="mono-code">PLT-HQ-01</span>
             <strong>
-              {tx("ศูนย์ควบคุมแพลตฟอร์มกลาง RunEvent (ครอบคลุม ")} {tx(organizations.length)}{' '}
+              {tx("ศูนย์ควบคุมแพลตฟอร์มกลาง กระต่าย (ครอบคลุม ")} {tx(organizations.length)}{' '}
               {tx("องค์กรผู้จัด · ")} {tx(events.length)} {tx(" งานวิ่ง)")}
             </strong>
           </div>
@@ -1391,7 +1391,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
             <div className="page-guide-header">
               <h1>{tx("บริหารคำขอใบเสนอราคาผลิตเสื้อ/เหรียญ และกำกับร้านค้าทั้งแพลตฟอร์ม")}</h1>
               <p className="page-purpose-desc">
-                {tx("ทีมหลังบ้าน RunEvent ใช้ประเมินราคา ส่งใบเสนอราคาให้ผู้จัดงานหรือชมรมทั่วไป และอัปเดตสถานะการผลิตของโรงงานแยกจากสถานะใบเสนอราคาอย่างชัดเจน")}
+                {tx("ทีมหลังบ้าน กระต่าย ใช้ประเมินราคา ส่งใบเสนอราคาให้ผู้จัดงานหรือชมรมทั่วไป และอัปเดตสถานะการผลิตของโรงงานแยกจากสถานะใบเสนอราคาอย่างชัดเจน")}
               </p>
             </div>
 

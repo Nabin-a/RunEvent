@@ -1,8 +1,8 @@
 {
-  "name": "runevent-local-system",
+  "name": "kratai-local-system",
   "private": true,
   "version": "0.2.0",
-  "description": "RunEvent local full-stack system — Vite + React + TypeScript frontend with Node.js + Express + SQLite backend (seeded test users & sandbox OAuth/payment)",
+  "description": "Kratai local full-stack system — Vite + React + TypeScript frontend with Node.js + Express + SQLite backend (seeded test users & sandbox OAuth/payment)",
   "type": "module",
   "scripts": {
     "dev:api": "tsx watch server/index.ts",

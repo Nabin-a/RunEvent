@@ -370,6 +370,7 @@ export interface PersonalInfoCompletionItem {
   labelTh: string;
   complete: boolean;
   /** CSS selector of the field to focus inside the "ข้อมูลส่วนตัว" tab. */
+  /** CSS selector of the field to focus; "a|b" tries a first, then b (e.g. when a is hidden). */
   focusSelector: string;
 }
 
@@ -460,7 +461,7 @@ export function evaluatePersonalInfoCompletion(
       key: 'identity',
       labelTh: 'เอกสารระบุตัวตน',
       complete: identityComplete,
-      focusSelector: '#rp-idn',
+      focusSelector: '#rp-idn|#rp-idt',
     },
     {
       key: 'address',

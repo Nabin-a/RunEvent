@@ -32,6 +32,7 @@ import { tx, txf } from '../i18n';
 import { RequiredFieldText } from './RequiredFieldText';
 import { DateOfBirthInput } from './DateOfBirthInput';
 import { PrivacyNoticeModal } from './PrivacyNoticeModal';
+import { reportInvalidFieldsWithin } from '../utils/formValidation';
 import { NationalitySelect } from './NationalitySelect';
 import { ThaiPostalAddressSelector } from './ThaiPostalAddressSelector';
 import {
@@ -162,7 +163,7 @@ interface AuthScreenProps {
   onNavigateOrganizerWorkspace?: (orgId: string) => void;
 }
 
-const ORG_DRAFT_STORAGE_KEY = 'runevent_v2_org_onboarding_draft';
+const ORG_DRAFT_STORAGE_KEY = 'kratai_v2_org_onboarding_draft';
 const ENABLE_ORGANIZER_SELF_ONBOARDING = false;
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({
@@ -308,6 +309,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [privacyModalOpen, setPrivacyModalOpen] = useState(false);
   const [privacyReadOpen, setPrivacyReadOpen] = useState(false);
+
+  const signupPrivacyNote = (includeSocial: boolean) => (
+    <p className="auth-privacy-note">
+      {includeSocial
+        ? tx("ก่อนสร้างบัญชี (รวมถึงสมัครผ่าน Google, Facebook หรือ LINE) คุณจะได้อ่านและรับทราบ")
+        : tx("ก่อนสร้างบัญชี คุณจะได้อ่านและรับทราบ")}{' '}
+      <button
+        type="button"
+        className="auth-inline-link-btn"
+        onClick={() => setPrivacyReadOpen(true)}
+      >
+        {tx("ประกาศความเป็นส่วนตัว")}
+      </button>
+    </p>
+  );
   const pendingAfterPrivacyRef = React.useRef<(() => void) | null>(null);
   const requirePrivacyConsent = (proceed: () => void) => {
     if (privacyAccepted) {
@@ -808,17 +824,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       >
         <section
           className="clean-panel auth-primary-card"
-          aria-label={tx("เข้าสู่ระบบหรือลงทะเบียนสมาชิก RunEvent")}
+          aria-label={tx("เข้าสู่ระบบหรือลงทะเบียนสมาชิก กระต่าย")}
         >
           <div className="auth-card-head">
             <h1>
               {authTab === 'signup'
                 ? runnerStep === 2 && signupFlowMode === 'runner_wizard'
                   ? tx("ข้อมูลโปรไฟล์นักวิ่ง (ข้ามไปเติมภายหลังได้)")
-                  : tx("สมัครสมาชิก RunEvent")
+                  : tx("สมัครสมาชิก กระต่าย")
                 : authTab === 'forgot'
                   ? tx("ลืมรหัสผ่าน")
-                  : tx("เข้าสู่ระบบ RunEvent")}
+                  : tx("เข้าสู่ระบบ กระต่าย")}
             </h1>
             <p className="muted-block">
               {authTab === 'signup'
@@ -1069,6 +1085,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   >
                     {tx("ยืนยันสร้างบัญชีและเข้าใช้งาน")}
                   </button>
+                  {signupPrivacyNote(false)}
                 </div>
               )}
 
@@ -1149,16 +1166,19 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             </>
           )}
 
-          {/* The notice is always readable from the sign-in / sign-up screen (no acknowledgement). */}
-          <p className="auth-privacy-link-row">
-            <button
-              type="button"
-              className="auth-inline-link-btn"
-              onClick={() => setPrivacyReadOpen(true)}
-            >
-              {tx("ประกาศความเป็นส่วนตัว (PDPA)")}
-            </button>
-          </p>
+          {/* Sign-in / forgot: the notice stays readable at the foot of the card (no acknowledgement).
+              Sign-up shows its own note under each create-account button instead. */}
+          {authTab !== 'signup' && (
+            <p className="auth-privacy-link-row">
+              <button
+                type="button"
+                className="auth-inline-link-btn"
+                onClick={() => setPrivacyReadOpen(true)}
+              >
+                {tx("ประกาศความเป็นส่วนตัว (PDPA)")}
+              </button>
+            </p>
+          )}
           <PrivacyNoticeModal
             open={privacyReadOpen}
             mode="read"
@@ -1532,6 +1552,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           <span>{tx("สมัครสมาชิก")}</span>
                           <IconArrowRight size={15} />
                         </button>
+                        {signupPrivacyNote(true)}
                       </form>
 
                       {/* Spaced Footer -> Back to Sign In (Mirrors Login Layer 8) */}
@@ -1779,16 +1800,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           onChange={(e) => setMarketingOptIn(e.target.checked)}
                         />
                         <span>
-                          {tx("[ไม่บังคับ] รับข่าวสารงานวิ่งเปิดใหม่และสิทธิพิเศษจาก RunEvent")}
+                          {tx("[ไม่บังคับ] รับข่าวสารงานวิ่งเปิดใหม่และสิทธิพิเศษจาก กระต่าย")}
                         </span>
                       </label>
 
                       <button
                         type="button"
                         className="btn-primary btn-full"
-                        onClick={() =>
-                          requirePrivacyConsent(() => handleCompleteRunnerRegistration(false))
-                        }
+                        onClick={(e) => {
+                          if (!reportInvalidFieldsWithin(e.currentTarget.closest('.auth-cred-form'))) return;
+                          requirePrivacyConsent(() => handleCompleteRunnerRegistration(false));
+                        }}
                       >
                         <IconCheckCircle size={15} />
                         <span>{tx("บันทึกโปรไฟล์และสร้างบัญชี")}</span>
@@ -1803,6 +1825,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       >
                         <span>{tx("ข้ามข้อมูลไม่บังคับและสร้างบัญชีทันที")}</span>
                       </button>
+                      {signupPrivacyNote(false)}
 
                       <div className="auth-register-footer-row">
                         <button
@@ -2557,7 +2580,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                               onChange={(e) => setMarketingOptIn(e.target.checked)}
                             />
                             <span>
-                              {tx("[ไม่บังคับ — แยกจากความยินยอมหลัก] รับข่าวสารและสิทธิประโยชน์สำหรับผู้จัดงานจาก RunEvent")}
+                              {tx("[ไม่บังคับ — แยกจากความยินยอมหลัก] รับข่าวสารและสิทธิประโยชน์สำหรับผู้จัดงานจาก กระต่าย")}
                             </span>
                           </label>
                         </div>
@@ -3081,7 +3104,7 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                     onLinkProvider('google');
                     setFeedback({
                       tone: 'ok',
-                      text: tx("เชื่อมบัญชี Google เข้ากับบัญชี RunEvent เดิมสำเร็จ"),
+                      text: tx("เชื่อมบัญชี Google เข้ากับบัญชี กระต่าย เดิมสำเร็จ"),
                     });
                   }}
                 >
@@ -3124,7 +3147,7 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                     onLinkProvider('facebook');
                     setFeedback({
                       tone: 'ok',
-                      text: tx("เชื่อมบัญชี Facebook เข้ากับบัญชี RunEvent เดิมสำเร็จ"),
+                      text: tx("เชื่อมบัญชี Facebook เข้ากับบัญชี กระต่าย เดิมสำเร็จ"),
                     });
                   }}
                 >
@@ -3167,7 +3190,7 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
                     onLinkProvider('line');
                     setFeedback({
                       tone: 'ok',
-                      text: tx("เชื่อมบัญชี LINE เข้ากับบัญชี RunEvent เดิมสำเร็จ"),
+                      text: tx("เชื่อมบัญชี LINE เข้ากับบัญชี กระต่าย เดิมสำเร็จ"),
                     });
                   }}
                 >
