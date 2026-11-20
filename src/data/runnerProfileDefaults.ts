@@ -455,7 +455,7 @@ export function evaluatePersonalInfoCompletion(
       complete:
         hasText(user.contactEmail) &&
         (!FEATURES.emailVerification || Boolean(user.emailVerified)),
-      focusSelector: '#rp-email-ro',
+      focusSelector: '#rp-email',
     },
     {
       key: 'identity',

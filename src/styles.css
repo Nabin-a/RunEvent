@@ -4,26 +4,35 @@
   --bg-canvas: #f7f8fa;
   --bg-surface: #ffffff;
   --bg-subtle: #f1f4f8;
-  --bg-selected: #eef4fb;
+  --bg-selected: #e9f9f1;
 
-  --shell-navy: #0f172a;
-  --shell-navy-elevated: #1e293b;
-  --shell-border: #334155;
+  --shell-navy: #34495f;
+  --shell-navy-elevated: #3f566e;
+  --shell-border: #546a81;
   --shell-text: #f8fafc;
   --shell-text-muted: #cbd5e1;
 
-  --ink-primary: #0f172a;
+  --ink-primary: #34495f;
   --ink-secondary: #475569;
   --ink-placeholder: #52637a;
 
-  /* Brand & Action Accents (WCAG AA compliant >= 4.5:1) */
-  --accent-primary: #0f172a;
-  --accent-primary-hover: #1e293b;
-  --vermilion: #c23b1a;
-  --vermilion-hover: #a12e11;
-  --vermilion-soft: #fef0ec;
-  --vermilion-border: #f2bfb1;
-  --vermilion-ink: #7f210a;
+  /* Brand (confirmed 20 Nov 2026): slate #34495f = primary, mint #9be8c7 = accent.
+     Mint is a fill/border colour only — never text on white (contrast 1.45:1).
+     White on slate 9.3:1, slate on mint 6.2:1, slate on mint-soft 8.6:1. */
+  --brand: #34495f;
+  --brand-hover: #2a3b4d;
+  --mint: #9be8c7;
+  --mint-soft: #e9f9f1;
+  --mint-strong: #5cc79c;
+
+  /* Action accents now follow the brand (the old "vermilion" CTA names are kept as aliases) */
+  --accent-primary: var(--brand);
+  --accent-primary-hover: var(--brand-hover);
+  --vermilion: var(--brand);
+  --vermilion-hover: var(--brand-hover);
+  --vermilion-soft: var(--mint-soft);
+  --vermilion-border: var(--mint);
+  --vermilion-ink: var(--brand-hover);
 
   --forest: #157347;
   --forest-soft: #eaf7f0;
@@ -42,7 +51,7 @@
 
   --navy-soft: #edf3fa;
   --navy-border: #c2d5eb;
-  --navy-ink: #153559;
+  --navy-ink: #2f4459;
 
   --line-light: #e2e8f0;
   --line-medium: #cbd5e1;
@@ -52,8 +61,8 @@
   --on-accent: #ffffff;
 
   /* Cover Artwork Palette Tokens */
-  --cover-sun: #e56b38;
-  --cover-route: #c23b1a;
+  --cover-sun: #9be8c7;
+  --cover-route: #34495f;
   --cover-mountain-bg: #eef3f8;
   --cover-mountain-mid: #cbd8e6;
   --cover-mountain-fg: #dae4ef;
@@ -70,8 +79,8 @@
   --cover-trail-fg: #d4e3d8;
 
   /* Shadows & Radii */
-  --shadow-card: 0 4px 14px -4px rgba(15, 23, 42, 0.06);
-  --shadow-popover: 0 12px 28px -6px rgba(15, 23, 42, 0.16);
+  --shadow-card: 0 4px 14px -4px rgba(52, 73, 95, 0.08);
+  --shadow-popover: 0 12px 28px -6px rgba(52, 73, 95, 0.18);
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
@@ -313,8 +322,8 @@ p {
   width: 30px;
   height: 30px;
   border-radius: var(--radius-sm);
-  background: var(--shell-navy);
-  color: var(--on-accent);
+  background: var(--brand);
+  color: var(--mint);
 }
 
 .brand-name {
@@ -742,8 +751,9 @@ textarea::placeholder {
 }
 
 .category-bib-chip.tone-vermilion {
-  --chip-swatch: var(--vermilion);
-  color: var(--vermilion-ink);
+  /* distance tag colour: mint swatch keeps it distinct from the slate navy tag */
+  --chip-swatch: var(--mint-strong);
+  color: var(--brand);
 }
 
 .category-bib-chip.tone-navy {
@@ -2574,7 +2584,7 @@ textarea::placeholder {
 }
 
 .action-queue-text svg {
-  color: var(--vermilion);
+  color: var(--danger);
   margin-top: 0.18rem;
   flex-shrink: 0;
 }
@@ -3593,7 +3603,7 @@ textarea::placeholder {
 }
 
 .chip-p1 {
-  color: var(--vermilion-ink);
+  color: var(--danger-ink);
 }
 
 .chip-p2 {
@@ -6254,20 +6264,6 @@ body.swal2-iosfix {
   gap: 0.5rem;
 }
 
-.email-readonly-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.email-readonly-row > input[readonly] {
-  flex: 1 1 auto;
-  min-width: 0;
-  background: var(--bg-subtle);
-  color: var(--ink-secondary);
-  cursor: default;
-}
-
 .security-email-verify-row {
   display: flex;
   flex-wrap: wrap;
@@ -6430,11 +6426,6 @@ body.swal2-iosfix {
   .otp-digit-input {
     height: 2.75rem;
     font-size: 1.1rem;
-  }
-
-  .email-readonly-row {
-    flex-direction: column;
-    align-items: stretch;
   }
 }
 
@@ -7385,6 +7376,12 @@ body.swal2-iosfix {
   overflow: hidden;
 }
 
+/* not enough room below the field: open upward like a native select */
+.wheel-sheet.is-above {
+  top: auto;
+  bottom: calc(100% + 0.35rem);
+}
+
 .wheel-toolbar {
   display: flex;
   align-items: center;
@@ -8079,12 +8076,13 @@ button.race-calendar-day:focus-visible {
 }
 
 .race-calendar-grid td.is-selected button.race-calendar-day {
-  background: var(--ink-primary);
-  color: var(--on-accent);
+  background: var(--mint);
+  color: var(--brand);
+  box-shadow: inset 0 0 0 2px var(--brand);
 }
 
 .race-calendar-grid td.is-selected .race-calendar-count {
-  color: var(--on-accent);
+  color: var(--brand);
 }
 
 .race-calendar-list {
@@ -8244,7 +8242,7 @@ button.race-calendar-day:focus-visible {
   }
 
   .race-calendar-grid td.is-selected .race-calendar-count {
-    background: var(--on-accent);
+    background: var(--brand);
   }
 
   .race-calendar-row {
@@ -8312,14 +8310,15 @@ button.race-calendar-day:focus-visible {
 }
 
 .race-calendar-weekdays li.is-selected button.race-calendar-day {
-  background: var(--ink-primary);
-  color: var(--on-accent);
+  background: var(--mint);
+  color: var(--brand);
+  box-shadow: inset 0 0 0 2px var(--brand);
 }
 
 .race-calendar-weekdays li.is-selected .race-calendar-wd-long,
 .race-calendar-weekdays li.is-selected .race-calendar-weekmonth,
 .race-calendar-weekdays li.is-selected .race-calendar-count {
-  color: var(--on-accent);
+  color: var(--brand);
 }
 
 @media (max-width: 40rem) {
@@ -8347,7 +8346,7 @@ button.race-calendar-day:focus-visible {
   }
 
   .race-calendar-weekdays li.is-selected .race-calendar-count {
-    background: var(--on-accent);
+    background: var(--brand);
   }
 }
 
@@ -8528,3 +8527,177 @@ input[type="radio"][aria-invalid="true"] {
   cursor: not-allowed;
 }
 
+/* ---------------------------------------------------------------------- */
+/* Kratai rabbit mascot (components/MascotRunner.tsx)                     */
+/* ---------------------------------------------------------------------- */
+.mascot {
+  --mascot-h: 64px;
+  position: relative;
+  display: inline-block;
+  height: var(--mascot-h);
+  line-height: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+.mascot.is-flipped {
+  transform: scaleX(-1);
+}
+
+.mascot-frames {
+  position: relative;
+  display: inline-block;
+  height: 100%;
+  aspect-ratio: 223 / 240;
+}
+
+.mascot-frame,
+.mascot-still {
+  height: 100%;
+  width: auto;
+}
+
+.mascot-frame {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  animation: mascot-frame 0.6s step-end infinite;
+}
+
+.mascot-frame.f1 { animation-delay: 0s; }
+.mascot-frame.f2 { animation-delay: -0.4s; }
+.mascot-frame.f3 { animation-delay: -0.2s; }
+
+/* each frame is visible for one third of the cycle */
+@keyframes mascot-frame {
+  0% { opacity: 1; }
+  33.333% { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+.mascot-run .mascot-frames {
+  animation: mascot-bob 0.3s ease-in-out infinite;
+}
+
+@keyframes mascot-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6%); }
+}
+
+.mascot-cheer .mascot-still {
+  animation: mascot-hop 0.55s ease-out 2;
+}
+
+@keyframes mascot-hop {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-14%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mascot-frame { animation: none; }
+  .mascot-frame.f1 { opacity: 1; }
+  .mascot-run .mascot-frames,
+  .mascot-cheer .mascot-still { animation: none; }
+}
+
+/* 1) registration stepper: the rabbit stands under the current step */
+.mascot-step-track {
+  position: relative;
+  width: 100%;
+  max-width: 42rem;
+  height: 3.75rem;
+  margin: 0.15rem auto 0;
+  border-bottom: 2px dashed var(--line-light);
+}
+
+.mascot-step-runner {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  transition: left 0.9s ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mascot-step-runner { transition: none; }
+}
+
+/* 2) home hero: runs in once along a lane, then stands at the right */
+.minimal-hero {
+  position: relative;
+}
+
+.mascot-hero-lane {
+  grid-column: 1 / -1;
+  position: relative;
+  height: 5rem;
+  margin: -0.5rem 0 -0.75rem;
+  border-bottom: 2px dashed var(--line-light);
+  container-type: inline-size;
+  overflow: hidden;
+}
+
+.mascot-hero-runner {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  transform: translateX(calc(100cqw - 100%));
+  animation: mascot-hero-run 2.2s cubic-bezier(0.3, 0.6, 0.35, 1) 1 both;
+}
+
+@keyframes mascot-hero-run {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(calc(100cqw - 100%)); }
+}
+
+.mascot-hero-runner.is-arrived {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mascot-hero-runner { animation: none; }
+}
+
+@media (max-width: 40rem) {
+  .mascot-hero-lane {
+    height: 4rem;
+  }
+}
+
+/* 3) waiting states */
+.mascot-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  color: var(--ink-secondary);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.mascot-loader.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  justify-content: center;
+  background: var(--bg-canvas);
+}
+
+
+/* Phone field: calling-code dropdown + digits-only number (components/PhoneInput.tsx) */
+.phone-input {
+  display: flex;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.phone-input .phone-input-code {
+  flex: 0 0 7.25rem;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+.phone-input input {
+  flex: 1 1 auto;
+  min-width: 0;
+}

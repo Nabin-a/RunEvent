@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import type { AuthProviderType, UserAccount } from '../types';
-import { FEATURES } from '../config/features';
 import { getLang, tx, txf } from '../i18n';
 import {
   IconAlert,
@@ -9,8 +8,6 @@ import {
   IconClose,
   IconDevice,
   IconDownload,
-  IconEye,
-  IconEyeOff,
   IconFacebookMark,
   IconGoogleMark,
   IconLineMark,
@@ -71,11 +68,6 @@ const PageHead: React.FC<{ title: string; description: string }> = ({
 interface AccountSecuritySectionsProps {
   user: UserAccount;
   phone: string;
-  emailInput: string;
-  onEmailInputChange: (value: string) => void;
-  savingContactEmail: boolean;
-  onSaveContactEmail: () => Promise<void>;
-  onOpenEmailVerifyPage: (email: string) => void;
   onSetOrChangePassword: (newPassword: string, grant: string) => Promise<ActionResult>;
   onRequestPasswordCode: () => Promise<ActionResult & { sentTo?: string }>;
   onVerifyPasswordCode: (otp: string) => Promise<ActionResult & { grant?: string }>;
@@ -90,19 +82,12 @@ interface AccountSecuritySectionsProps {
 export const AccountSecuritySections: React.FC<AccountSecuritySectionsProps> = ({
   user,
   phone,
-  emailInput,
-  onEmailInputChange,
-  savingContactEmail,
-  onSaveContactEmail,
-  onOpenEmailVerifyPage,
   onSetOrChangePassword,
   onRequestPasswordCode,
   onVerifyPasswordCode,
   onManageAccountStatus,
   notify,
 }) => {
-  const [revealEmail, setRevealEmail] = useState(false);
-  const [editingEmail, setEditingEmail] = useState(false);
   // Password change flow: idle -> send code to email -> enter code -> set new password.
   const [pwStep, setPwStep] = useState<'idle' | 'send' | 'code' | 'new'>('idle');
   const [pwSentTo, setPwSentTo] = useState('');
@@ -145,8 +130,7 @@ export const AccountSecuritySections: React.FC<AccountSecuritySectionsProps> = (
 
   const startPasswordFlow = () => {
     if (!user.contactEmail) {
-      notify(false, tx('กรุณาเพิ่มอีเมลติดต่อก่อน ระบบจะส่งรหัสยืนยันไปที่อีเมลนี้ก่อนเปลี่ยนรหัสผ่าน'));
-      setEditingEmail(true);
+      notify(false, tx('กรุณาเพิ่มอีเมลติดต่อในแท็บข้อมูลส่วนตัวก่อน ระบบจะส่งรหัสยืนยันไปที่อีเมลนี้ก่อนเปลี่ยนรหัสผ่าน'));
       return;
     }
     setPwError('');
@@ -206,89 +190,6 @@ export const AccountSecuritySections: React.FC<AccountSecuritySectionsProps> = (
       {/* Password & authentication */}
       <section className="acct-section" aria-labelledby="acct-auth-title">
         <h3 id="acct-auth-title">{tx('รหัสผ่านและความปลอดภัย')}</h3>
-
-        {/* Contact email: where the password-change verification code is sent */}
-        <div className="acct-setting-row">
-          <div className="acct-setting-text">
-            <strong>{tx('อีเมลติดต่อ')}</strong>
-            <span className="acct-field-value">
-              {user.contactEmail ? (
-                <>
-                  <span>{revealEmail ? user.contactEmail : maskEmail(user.contactEmail)}</span>
-                  <button
-                    type="button"
-                    className="acct-reveal-btn"
-                    onClick={() => setRevealEmail((v) => !v)}
-                    aria-pressed={revealEmail}
-                  >
-                    {revealEmail ? <IconEyeOff size={14} /> : <IconEye size={14} />}
-                    <span>{revealEmail ? tx('ซ่อน') : tx('แสดง')}</span>
-                  </button>
-                </>
-              ) : (
-                <span className="acct-field-empty">{tx('ยังไม่ได้เพิ่มอีเมล')}</span>
-              )}
-            </span>
-            <span className="muted-inline">
-              {tx('ใช้รับรหัสยืนยันก่อนเปลี่ยนรหัสผ่าน ใบยืนยันการสมัคร และใบเสร็จ (ไม่ใช่อีเมลของ Google/LINE)')}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="btn-secondary"
-            aria-expanded={editingEmail}
-            onClick={() => setEditingEmail((v) => !v)}
-          >
-            {editingEmail ? tx('ยกเลิก') : user.contactEmail ? tx('แก้ไข') : tx('เพิ่ม')}
-          </button>
-        </div>
-
-        {editingEmail && (
-          <div className="acct-inline-editor">
-            <label htmlFor="sec-email">{tx('อีเมลติดต่อใหม่')}</label>
-            <div className="acct-inline-editor-row">
-              <input
-                id="sec-email"
-                type="email"
-                value={emailInput}
-                onChange={(e) => onEmailInputChange(e.target.value)}
-                placeholder="name@example.com"
-                autoComplete="email"
-              />
-              {FEATURES.emailVerification ? (
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => {
-                    const target = emailInput.trim();
-                    if (!target.includes('@')) {
-                      notify(false, tx('กรุณากรอกที่อยู่อีเมลให้ถูกต้องก่อนกดยืนยัน'));
-                      return;
-                    }
-                    onOpenEmailVerifyPage(target);
-                  }}
-                >
-                  <IconMail size={15} />
-                  <span>{tx('ยืนยันอีเมลด้วยรหัส')}</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn-primary"
-                  disabled={savingContactEmail}
-                  onClick={async () => {
-                    await onSaveContactEmail();
-                    setEditingEmail(false);
-                  }}
-                >
-                  <IconMail size={15} />
-                  <span>{tx('บันทึกอีเมล')}</span>
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
 
         <div className="acct-check-block">
           <div className="acct-check-head">

@@ -77,6 +77,65 @@ npm run build
 
 เมนู "ปฏิทินงานวิ่ง" (`/calendar`) ดูงานตามเดือน จังหวัด หรือประเภทงาน ตัวกรองหน้าค้นหางานบอกจำนวนงาน และหน้างานแสดงตารางรุ่นอายุ รายละเอียดใน [Product blueprint ข้อ 20](docs/product-blueprint.md)
 
+## Deploy ขึ้น VM สำหรับ demo ภายในทีม — อัปเดต 20 พฤศจิกายน 2026
+
+> **สถานะ:** เป็นวิธีเปิดต้นแบบให้ทีมทดลองใช้ ไม่ใช่ production ยังห้ามเปิดให้คนทั่วไปเข้า และห้ามใส่ข้อมูลส่วนบุคคลจริง (เหตุผลอยู่ในหัวข้อ "ข้อจำกัดด้านความปลอดภัยที่ยังเหลือ")
+
+### ตัวแปรสภาพแวดล้อม
+
+| ตัวแปร | ค่าใน `docker-compose.yml` | ความหมาย |
+|---|---|---|
+| `NODE_ENV` | `production` | เปิดโหมด production: ปิดเครื่องมือ sandbox และตั้ง cookie แบบ `Secure` เป็นค่าเริ่มต้น |
+| `ENABLE_SANDBOX_TOOLS` | ไม่ตั้ง (ปิด) | `1` = เปิดแถบ Dev / Demo, `/api/auth/dev-switch`, `/api/dev/reset` และปุ่ม Google / Facebook / LINE จำลอง ซึ่งทำให้ใครก็สวมเป็นบัญชีใดก็ได้ **ห้ามเปิดบนเครื่องที่เข้าถึงจากอินเทอร์เน็ต** |
+| `COOKIE_SECURE` | `1` | cookie session ส่งผ่าน HTTPS เท่านั้น ใช้ `0` ได้เฉพาะเครื่องทดสอบที่ไม่มี HTTPS และไม่เปิดสู่ภายนอก |
+| `TRUST_PROXY` | `1` | เชื่อ header จาก reverse proxy (IP และโปรโตคอลจริงของผู้ใช้) ตั้งเมื่อมี Caddy / nginx อยู่หน้าแอปเท่านั้น |
+| `KRATAI_DB_FILENAME` | ไม่ตั้ง (`kratai.sqlite`) | ชื่อไฟล์ฐานข้อมูลในโฟลเดอร์ `data/` |
+| `API_HOST` / `API_PORT` | `0.0.0.0` / `3001` | ที่อยู่ที่แอปฟังภายใน container |
+
+พอร์ตใน compose ผูกไว้ที่ `127.0.0.1:3001` จึงเข้าได้เฉพาะ reverse proxy บนเครื่องเดียวกัน ไม่เปิดพอร์ต 3001 ออกอินเทอร์เน็ตตรง
+
+### ขั้นตอน
+
+1. ติดตั้ง Docker และ Docker Compose บน VM แล้ว clone repository
+2. สร้างและรันแอป:
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+3. ตั้ง reverse proxy ที่ออก HTTPS ให้อัตโนมัติ เช่น Caddy (ต้องมีโดเมนชี้มาที่ VM) และ**จำกัดคนเข้า** ด้วย basic auth, IP allowlist หรือ VPN ตัวอย่าง `Caddyfile`:
+
+   ```caddyfile
+   demo.example.com {
+     basic_auth {
+       # สร้าง hash ด้วยคำสั่ง: caddy hash-password
+       team <HASH-จาก-caddy-hash-password>
+     }
+     reverse_proxy 127.0.0.1:3001
+   }
+   ```
+
+4. ตรวจว่าเครื่องมือ sandbox ปิดอยู่: log ของ container ต้องมี `sandbox tools: OFF` และ `POST /api/auth/dev-switch` ต้องได้ 404
+
+   ```bash
+   docker compose logs kratai | grep "sandbox tools"
+   ```
+
+5. สำรองฐานข้อมูลเป็นระยะ (ข้อมูลทั้งหมดอยู่ในไฟล์ SQLite ไฟล์เดียวที่ `data/kratai.sqlite`):
+
+   ```bash
+   docker compose exec kratai node -e "const {DatabaseSync}=require('node:sqlite');new DatabaseSync('/app/data/kratai.sqlite').exec(\"VACUUM INTO '/app/data/backup.sqlite'\")"
+   ```
+
+   แล้วย้าย `data/backup.sqlite` ออกไปเก็บนอก VM
+
+### ข้อจำกัดด้านความปลอดภัยที่ยังเหลือ
+
+- **`GET /api/bootstrap` ส่งข้อมูลทั้งระบบให้ทุกคน** รวมถึงผู้ที่ยังไม่ล็อกอิน: อีเมล เบอร์โทร เลขบัตรประชาชน ประวัติการเข้าสู่ระบบ และคำใบ้รหัสผ่านทดสอบของผู้ใช้ทุกคน รวมทั้งใบสมัคร รอบโอน และ Audit Log ทั้งหมด (endpoint อื่นที่คืน snapshot ก็เป็นแบบเดียวกัน) ต้องแก้เป็นการคัดข้อมูลตามสิทธิ์ผู้ดูฝั่งเซิร์ฟเวอร์ก่อนเปิดให้คนนอกเข้า — งานค้างใน TODO ข้อ 1.4
+- บัญชีทดสอบใช้รหัสผ่าน `demo1234` ที่อยู่ใน repository ควรเปลี่ยนหรือลบบัญชีทดสอบก่อนให้คนอื่นเข้า
+- รหัสยืนยันก่อนเปลี่ยนรหัสผ่านเป็นค่าคงที่ `123456` เพราะยังไม่มีระบบส่งอีเมลจริง
+- ประกาศความเป็นส่วนตัวเป็นฉบับร่าง และชื่อผู้ควบคุมข้อมูลเป็นข้อมูลสมมติ
+
 ## ผู้ใช้งานที่จำลองในต้นแบบ (ปัจจุบัน)
 
 | กลุ่ม | งานหลัก |

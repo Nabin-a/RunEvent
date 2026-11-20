@@ -65,6 +65,8 @@ import {
 import { calculateFeeQuote, getCurrentTier } from './utils/pricing';
 import { buildAgeSnapshot, evaluateCategoryAge, type AgeConfigValid } from './utils/age';
 import { installInvalidFieldHighlight } from './utils/formValidation';
+import { MascotLoader } from './components/MascotRunner';
+import { maskPhone } from './utils/phone';
 import { cloneCustomFieldsSchema } from './utils/eventConfig';
 import { AuthScreen } from './components/AuthViews';
 import {
@@ -351,6 +353,8 @@ export const App: React.FC = () => {
   // ใช้ context ภาษาเพื่อให้ทั้ง tree re-render เมื่อสลับ TH/EN
   const { lang, setLang } = useI18n();
   const [sys, setSys] = useState<PersistedSystemState>(loadSystemState);
+  // Off until the server says otherwise, so production never flashes the dev tools.
+  const [sandboxTools, setSandboxTools] = useState(false);
 
   // Highlight required / invalid fields in every form (see utils/formValidation.ts)
   useEffect(() => installInvalidFieldHighlight(), []);
@@ -589,6 +593,12 @@ export const App: React.FC = () => {
 
   // Session & business data are backed by Node.js + SQLite API (/api/bootstrap + HttpOnly cookie)
   const [apiBootstrapped, setApiBootstrapped] = useState(false);
+  // Only show the loader when the first load is slow, so fast loads do not flash it.
+  const [bootIsSlow, setBootIsSlow] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setBootIsSlow(true), 350);
+    return () => window.clearTimeout(t);
+  }, []);
 
   const syncApi = async (
     method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
@@ -619,6 +629,7 @@ export const App: React.FC = () => {
       if (res.ok && res.state) {
         setSys(res.state);
         setCurrentUserId(res.currentUserId ?? null);
+        setSandboxTools(Boolean(res.config?.sandboxTools));
         const parsed = parseUrlRoute(window.location.pathname, window.location.search);
         if (parsed.eventSlug) {
           const matched = findEventBySlug(res.state.events, parsed.eventSlug);
@@ -951,7 +962,7 @@ export const App: React.FC = () => {
     }
 
     const existsInUsers = sys.users.some((u) => u.id === user.id);
-    if (currentUserId !== user.id && existsInUsers) {
+    if (sandboxTools && currentUserId !== user.id && existsInUsers) {
       void syncApi('POST', '/api/auth/dev-switch', { userId: user.id }).then(
         () => {
           if (socialChanged) {
@@ -1774,11 +1785,7 @@ export const App: React.FC = () => {
       .substring(2, 8)
       .toUpperCase();
 
-    const cleanPhoneDigits = (payload.phone ?? '').replace(/\D/g, '');
-    const maskedPhone =
-      cleanPhoneDigits.length >= 7
-        ? `${cleanPhoneDigits.slice(0, 3)}-•••-${cleanPhoneDigits.slice(-4)}`
-        : '081-•••-9900';
+    const maskedPhone = maskPhone(payload.phone, '081-•••-9900');
 
     const newReg: RegistrationRecord = {
       id: `reg-dyn-${Date.now()}`,
@@ -4119,6 +4126,7 @@ export const App: React.FC = () => {
           initialTab={authInitialTab}
           externalSocialScenario={externalSocialScenario}
           onAuthenticated={handleAuthenticated}
+          sandboxAuthEnabled={sandboxTools}
           onPasswordLogin={handlePasswordLogin}
           onRegisterEmailUser={handleRegisterEmailUser}
           onRegisterSocialUser={handleRegisterSocialUser}
@@ -4392,7 +4400,13 @@ export const App: React.FC = () => {
         </span>
       </footer>
 
+      {!apiBootstrapped && bootIsSlow && (
+        <MascotLoader fullscreen message={tx('กำลังเตรียมข้อมูลงานวิ่ง…')} />
+      )}
+
       {/* COLLAPSIBLE FLOATING DEV / DEMO SWITCHER BAR (SEPARATED FROM PRODUCTION UI) */}
+      {/* Hidden when the server runs without sandbox tools (production) */}
+      {sandboxTools && (
       <aside
         className="dev-demo-dock"
         aria-label={tx("แถบเครื่องมือสำหรับผู้พัฒนาและสลับบัญชีสาธิต")}
@@ -4586,6 +4600,7 @@ export const App: React.FC = () => {
           </span>
         </button>
       </aside>
+      )}
     </div>
   );
 };

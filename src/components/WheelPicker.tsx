@@ -154,6 +154,25 @@ export const WheelSheet: React.FC<WheelSheetProps> = ({
   onClear,
 }) => {
   const sheetRef = useRef<HTMLDivElement | null>(null);
+  // Desktop popover opens upward when there is no room below (like a native select).
+  const [above, setAbove] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setAbove(false);
+      return;
+    }
+    if (isPhone()) return;
+    const sheetEl = sheetRef.current;
+    const field = sheetEl?.parentElement;
+    if (!sheetEl || !field) return;
+    const fieldBox = field.getBoundingClientRect();
+    const sheetH = sheetEl.offsetHeight;
+    const gap = 8;
+    const spaceBelow = window.innerHeight - fieldBox.bottom - gap;
+    const spaceAbove = fieldBox.top - gap;
+    setAbove(sheetH > spaceBelow && spaceAbove > spaceBelow);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -184,7 +203,12 @@ export const WheelSheet: React.FC<WheelSheetProps> = ({
   const sheet = (
     <>
       <div className="wheel-backdrop" aria-hidden="true" />
-      <div ref={sheetRef} className="wheel-sheet" role="dialog" aria-label={title}>
+      <div
+        ref={sheetRef}
+        className={`wheel-sheet ${above ? 'is-above' : ''}`}
+        role="dialog"
+        aria-label={title}
+      >
         <div className="wheel-toolbar">
           <button type="button" className="wheel-tool-btn" onClick={onCancel}>
             {tx('ยกเลิก')}

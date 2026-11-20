@@ -71,6 +71,8 @@ import type {
 seedDatabase(false);
 
 const app = express();
+// Behind a reverse proxy (Caddy / nginx) set TRUST_PROXY=1 so req.ip and req.secure are the client's.
+if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
 
 // Allow same-host cross-port requests (e.g. Nginx :8090 calling API :3001 on the same VM IP)
 app.use((req, res, next) => {
@@ -219,11 +221,28 @@ function recordAudit(
   insertAuditLog(entry);
 }
 
+/**
+ * Sandbox tools = the Dev / Demo account switcher, the database reset and the
+ * simulated Google / Facebook / LINE sign-in. They let anyone act as any account,
+ * so they are OFF in production unless ENABLE_SANDBOX_TOOLS=1 is set on purpose.
+ */
+const SANDBOX_TOOLS = process.env.ENABLE_SANDBOX_TOOLS
+  ? process.env.ENABLE_SANDBOX_TOOLS === '1'
+  : process.env.NODE_ENV !== 'production';
+
+function requireSandboxTools(_req: Request, res: Response, next: () => void) {
+  if (!SANDBOX_TOOLS) {
+    return res.status(404).json({ ok: false, error: 'ฟังก์ชันนี้ปิดใช้งานในระบบที่เปิดให้ผู้ใช้จริง' });
+  }
+  next();
+}
+
 function okSnapshot(res: Response, currentUserId: string | null, extra: Record<string, unknown> = {}) {
   return res.json({
     ok: true,
     currentUserId,
     state: readSystemState(),
+    config: { sandboxTools: SANDBOX_TOOLS },
     ...extra,
   });
 }
@@ -430,7 +449,7 @@ app.post('/api/auth/verify-collision-password', (req, res) => {
   return okSnapshot(res, updatedUser.id, { user: updatedUser });
 });
 
-app.post('/api/auth/social-login', (req, res) => {
+app.post('/api/auth/social-login', requireSandboxTools, (req, res) => {
   const userId = String(req.body?.userId ?? '');
   const found = getUserById(userId);
   if (!found) {
@@ -448,7 +467,7 @@ app.post('/api/auth/social-login', (req, res) => {
   return okSnapshot(res, user.id, { user });
 });
 
-app.post('/api/auth/dev-switch', (req, res) => {
+app.post('/api/auth/dev-switch', requireSandboxTools, (req, res) => {
   const { tokenHash } = resolveSessionUser(req);
   if (tokenHash) {
     db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(tokenHash);
@@ -545,7 +564,7 @@ app.post('/api/auth/register-runner', (req, res) => {
   return okSnapshot(res, newUser.id, { user: newUser });
 });
 
-app.post('/api/auth/register-social', (req, res) => {
+app.post('/api/auth/register-social', requireSandboxTools, (req, res) => {
   const rawProv = String(req.body?.provider ?? 'google');
   const provider = (
     rawProv === 'line' ? 'line' : rawProv === 'facebook' ? 'facebook' : 'google'
@@ -3111,7 +3130,7 @@ app.post('/api/form-builder/field-requests/:id/resolve', (req, res) => {
 
 /* ==================== DEV RESET TO INITIAL TEST SEED ==================== */
 
-app.post('/api/dev/reset', (_req, res) => {
+app.post('/api/dev/reset', requireSandboxTools, (_req, res) => {
   seedDatabase(true);
   clearSessionCookie(res);
   return okSnapshot(res, null);
@@ -3140,4 +3159,5 @@ const PORT = Number(process.env.API_PORT || 3001);
 const HOST = process.env.API_HOST || '127.0.0.1';
 app.listen(PORT, HOST, () => {
   console.log(`[Kratai API] SQLite server listening on http://${HOST}:${PORT} (DB: ${DB_FILE_PATH})`);
+  console.log(`[Kratai API] sandbox tools: ${SANDBOX_TOOLS ? 'ON (dev switcher, reset, simulated social sign-in)' : 'OFF'}`);
 });

@@ -1,5 +1,5 @@
 import { RequiredFieldText } from './RequiredFieldText';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   EventProduct,
   MerchOrderRecord,
@@ -46,6 +46,7 @@ import {
 import { DateOfBirthInput } from './DateOfBirthInput';
 import { EventAgeGroupsSection } from './EventAgeGroupsSection';
 import { RaceCalendarView } from './RaceCalendarView';
+import { MascotHeroLane, MascotStepTrack } from './MascotRunner';
 import { reportInvalidFieldsWithin } from '../utils/formValidation';
 import {
   CascadingAddressValue,
@@ -68,6 +69,7 @@ import {
   RunnerCustomFieldsInputs,
 } from './PublicEventView';
 
+import { PhoneInput } from './PhoneInput';
 import { tx, txf } from '../i18n';
 import { FEATURES } from '../config/features';
 import {
@@ -189,6 +191,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   >(initialEventTab);
   const [showRegForm, setShowRegForm] = useState(false);
   const [regStep, setRegStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
+  const stepperRef = useRef<HTMLElement | null>(null);
   const [selectedCatId, setSelectedCatId] = useState<string>('');
   const [selectedDivisionOption, setSelectedDivisionOption] =
     useState<string>('');
@@ -1500,6 +1503,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           >
             {/* 6-STEP CONNECTED CIRCLE PROGRESS STEPPER */}
             <nav
+              ref={stepperRef}
               className="circle-stepper-bar"
               aria-label={tx("ความคืบหน้าขั้นตอนการสมัคร")}
             >
@@ -1536,6 +1540,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 );
               })}
             </nav>
+            <MascotStepTrack
+              stepperRef={stepperRef}
+              stepIndex={regStep - 1}
+              complete={regStep === 6}
+            />
 
             {/* STEP 1: เริ่ม — เลือกประเภทการสมัคร */}
             {regStep === 1 && (
@@ -1940,12 +1949,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         </div>
                         <div className="form-row">
                           <label htmlFor="p2-phone">{tx("เบอร์โทรศัพท์ผู้เข้าแข่งขัน")}</label>
-                          <input
+                          <PhoneInput
                             id="p2-phone"
-                            type="tel"
                             value={regPhone}
-                            onChange={(e) => setRegPhone(e.target.value)}
-                            placeholder="081-234-5678"
+                            onChange={(next) => setRegPhone(next)}
                           />
                         </div>
                       </div>
@@ -2437,24 +2444,24 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         </div>
                         <div className="form-row">
                           <label htmlFor="ship-phone">{<RequiredFieldText text={tx("เบอร์โทรผู้รับ *")} />}</label>
-                          <input
+                          <PhoneInput
                             id="ship-phone"
-                            type="tel"
                             value={shipPhone}
-                            onChange={(e) => {
-                              setShipPhone(e.target.value);
+                            onChange={(next) => {
+                              setShipPhone(next);
                               const n = regCascadeAddr;
                               setRunnerShippingAddress(
-                                `${shipRecipient} (${e.target.value}) — ${n.address}, ต.${n.subdistrict} อ.${n.district} จ.${n.province} ${n.postalCode}`.trim()
+                                `${shipRecipient} (${next}) — ${n.address}, ต.${n.subdistrict} อ.${n.district} จ.${n.province} ${n.postalCode}`.trim()
                               );
                             }}
-                            placeholder="081-234-5678"
                           />
                         </div>
                       </div>
 
                       <ThaiPostalAddressSelector
                         idPrefix="ev-reg-ship"
+                        contactPhone={shipPhone}
+                        contactEmail={currentUser?.contactEmail}
                         required
                         streetAddressLabel="ที่อยู่ (บ้านเลขที่ อาคาร ซอย ถนน)"
                         value={regCascadeAddr}
@@ -4598,6 +4605,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             ))}
           </div>
         </div>
+        <MascotHeroLane />
       </section>
 
       <section className="clean-filter-strip" aria-label={tx("ตัวกรองระยะทางและภูมิภาค")}>

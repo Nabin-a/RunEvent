@@ -1,3 +1,4 @@
+import { PhoneInput } from './PhoneInput';
 import { RequiredFieldText } from './RequiredFieldText';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -151,24 +152,24 @@ function downloadFinisherCertificateSvg(params: {
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="840" viewBox="0 0 1200 840">
   <rect width="1200" height="840" fill="#f7f8fa"/>
-  <rect x="44" y="44" width="1112" height="752" rx="16" fill="#ffffff" stroke="#0f172a" stroke-width="3"/>
-  <rect x="44" y="44" width="1112" height="96" rx="14" fill="#0f172a"/>
+  <rect x="44" y="44" width="1112" height="752" rx="16" fill="#ffffff" stroke="#34495f" stroke-width="3"/>
+  <rect x="44" y="44" width="1112" height="96" rx="14" fill="#34495f"/>
   <text x="96" y="102" fill="#f8fafc" font-family="Plus Jakarta Sans, sans-serif" font-size="28" font-weight="700">KRATAI · OFFICIAL FINISHER CERTIFICATE</text>
   <text x="1104" y="102" text-anchor="end" fill="#cbd5e1" font-family="JetBrains Mono, monospace" font-size="18">${esc(params.certCode)}</text>
   <text x="600" y="220" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="22">ขอรับรองว่านักวิ่งผู้เข้าแข่งขัน</text>
-  <text x="600" y="290" text-anchor="middle" fill="#0f172a" font-family="Plus Jakarta Sans, Anuphan, sans-serif" font-size="46" font-weight="800">${esc(params.runnerName)}</text>
+  <text x="600" y="290" text-anchor="middle" fill="#34495f" font-family="Plus Jakarta Sans, Anuphan, sans-serif" font-size="46" font-weight="800">${esc(params.runnerName)}</text>
   <line x1="280" y1="322" x2="920" y2="322" stroke="#cbd5e1" stroke-width="2"/>
-  <text x="600" y="382" text-anchor="middle" fill="#c23b1a" font-family="Plus Jakarta Sans, Anuphan, sans-serif" font-size="30" font-weight="700">${esc(params.eventTitle)}</text>
+  <text x="600" y="382" text-anchor="middle" fill="#34495f" font-family="Plus Jakarta Sans, Anuphan, sans-serif" font-size="30" font-weight="700">${esc(params.eventTitle)}</text>
   <text x="600" y="424" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="20">วันที่แข่งขัน: ${esc(params.eventDate)} · ระยะทาง: ${esc(params.distanceLabel)}</text>
   <rect x="140" y="476" width="920" height="156" rx="12" fill="#f1f4f8" stroke="#cbd5e1"/>
   <text x="255" y="528" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="16">หมายเลข BIB</text>
-  <text x="255" y="578" text-anchor="middle" fill="#0f172a" font-family="JetBrains Mono, monospace" font-size="30" font-weight="700">${esc(params.bibNumber)}</text>
+  <text x="255" y="578" text-anchor="middle" fill="#34495f" font-family="JetBrains Mono, monospace" font-size="30" font-weight="700">${esc(params.bibNumber)}</text>
   <text x="485" y="528" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="16">เวลาสุทธิ (Chip Time)</text>
   <text x="485" y="578" text-anchor="middle" fill="#157347" font-family="JetBrains Mono, monospace" font-size="30" font-weight="700">${esc(params.chipTime)}</text>
   <text x="715" y="528" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="16">เฉลี่ยฝีเท้า (Pace)</text>
-  <text x="715" y="578" text-anchor="middle" fill="#0f172a" font-family="JetBrains Mono, monospace" font-size="28" font-weight="700">${esc(params.pace)}</text>
+  <text x="715" y="578" text-anchor="middle" fill="#34495f" font-family="JetBrains Mono, monospace" font-size="28" font-weight="700">${esc(params.pace)}</text>
   <text x="945" y="528" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="16">อันดับรวม (Overall)</text>
-  <text x="945" y="578" text-anchor="middle" fill="#0f172a" font-family="JetBrains Mono, monospace" font-size="26" font-weight="700">${esc(params.rank)}</text>
+  <text x="945" y="578" text-anchor="middle" fill="#34495f" font-family="JetBrains Mono, monospace" font-size="26" font-weight="700">${esc(params.rank)}</text>
   <text x="600" y="720" text-anchor="middle" fill="#475569" font-family="JetBrains Mono, Anuphan, sans-serif" font-size="16">Gun Time: ${esc(params.gunTime)} · Verified Official Result by Kratai Timing Ledger</text>
 </svg>`;
   const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
@@ -376,28 +377,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
         confirmButton: 'btn-primary',
       },
     });
-  };
-
-  const [savingContactEmail, setSavingContactEmail] = useState(false);
-
-  // Email verification is shelved (FEATURES.emailVerification = false): save directly.
-  const handleSaveContactEmail = async () => {
-    const target = emailInput.trim();
-    if (!target || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) {
-      const errMsg = tx('กรุณากรอกที่อยู่อีเมลให้ถูกต้อง');
-      setBanner({ tone: 'err', text: errMsg });
-      showResultModalAlert(false, errMsg);
-      return;
-    }
-    if (!onSaveContactEmail) return;
-    setSavingContactEmail(true);
-    const res = await onSaveContactEmail(target);
-    setSavingContactEmail(false);
-    const msg = res.ok
-      ? txf('บันทึกอีเมล {0} แล้ว', target)
-      : tx(res.error ?? 'ไม่สามารถบันทึกอีเมลได้');
-    setBanner({ tone: res.ok ? 'ok' : 'err', text: msg });
-    showResultModalAlert(res.ok, msg);
   };
 
   useEffect(() => {
@@ -896,7 +875,8 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     subdistrict !== savedPersonalBaseline.subdistrict ||
     postalCode !== savedPersonalBaseline.postalCode ||
     streetAddress !== savedPersonalBaseline.streetAddress ||
-    phoneInput !== savedPersonalBaseline.phoneInput;
+    phoneInput !== savedPersonalBaseline.phoneInput ||
+    emailInput.trim() !== (user.contactEmail ?? '');
 
   const effectivePersonalDirty = activeTab === 'personal' && isPersonalDirty;
 
@@ -937,6 +917,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     setPostalCode(savedPersonalBaseline.postalCode);
     setStreetAddress(savedPersonalBaseline.streetAddress);
     setPhoneInput(savedPersonalBaseline.phoneInput);
+    setEmailInput(user.contactEmail ?? '');
   };
 
   const requestSwitchProfileTab = (nextTab: RunnerProfileTab) => {
@@ -1140,6 +1121,30 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
       showResultModalAlert(false, errMsg);
       return;
     }
+    // Contact email is edited in this form and saved first (it has its own API).
+    const nextEmail = emailInput.trim();
+    const emailChanged = nextEmail !== (user.contactEmail ?? '');
+    if (emailChanged) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail)) {
+        const errMsg = tx('กรุณากรอกที่อยู่อีเมลให้ถูกต้อง');
+        setBanner({ tone: 'err', text: errMsg });
+        showResultModalAlert(false, errMsg);
+        return;
+      }
+      if (FEATURES.emailVerification) {
+        // verification flow (currently shelved) confirms the new address with a code
+        onOpenEmailVerifyPage?.(nextEmail);
+      } else if (onSaveContactEmail) {
+        const res = await onSaveContactEmail(nextEmail);
+        if (!res.ok) {
+          const errMsg = tx(res.error ?? 'ไม่สามารถบันทึกอีเมลได้');
+          setBanner({ tone: 'err', text: errMsg });
+          showResultModalAlert(false, errMsg);
+          return;
+        }
+      }
+    }
+
     const composedEn = `${firstNameEn.trim()} ${lastNameEn.trim()}`.trim();
     const composedTh = `${firstName.trim()} ${lastName.trim()}`.trim();
 
@@ -2053,18 +2058,16 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
               <div className="form-grid-2">
                 <div className="form-row">
                   <label htmlFor="rp-phone">{tx('เบอร์โทรศัพท์')}</label>
-                  <input
+                  <PhoneInput
                     id="rp-phone"
-                    type="tel"
                     value={phoneInput}
-                    onChange={(e) => setPhoneInput(e.target.value)}
-                    placeholder="081-442-9910"
+                    onChange={(next) => setPhoneInput(next)}
                   />
                 </div>
 
                 <div className="form-row">
                   <div className="email-readonly-head">
-                    <label htmlFor="rp-email-ro">{tx('อีเมลติดต่อ')}</label>
+                    <label htmlFor="rp-email">{tx('อีเมลติดต่อ')}</label>
                     {!FEATURES.emailVerification ? null : user.emailVerified && user.contactEmail ? (
                       <span
                         className="status-pill badge-forest status-pill-verify-icon"
@@ -2082,28 +2085,18 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                       </span>
                     )}
                   </div>
-                  <div className="email-readonly-row">
-                    <input
-                      id="rp-email-ro"
-                      type="email"
-                      value={user.contactEmail ?? ''}
-                      placeholder={tx('ยังไม่ได้ระบุอีเมล')}
-                      readOnly
-                    />
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => requestSwitchProfileTab('privacy')}
-                    >
-                      {!FEATURES.emailVerification
-                        ? user.contactEmail
-                          ? tx('เปลี่ยนอีเมล')
-                          : tx('เพิ่มอีเมล')
-                        : user.contactEmail && user.emailVerified
-                          ? tx('เปลี่ยนอีเมล')
-                          : tx('ยืนยันอีเมล')}
-                    </button>
-                  </div>
+                  <input
+                    id="rp-email"
+                    type="email"
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    placeholder="name@example.com"
+                    autoComplete="email"
+                    aria-describedby="rp-email-help"
+                  />
+                  <span id="rp-email-help" className="muted-inline">
+                    {tx('ใช้รับรหัสยืนยันก่อนเปลี่ยนรหัสผ่าน ใบยืนยันการสมัคร และใบเสร็จ (ไม่ใช่อีเมลของ Google/LINE) บันทึกพร้อมข้อมูลส่วนตัว')}
+                  </span>
                 </div>
               </div>
 
@@ -2167,6 +2160,8 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                 </strong>
                 <ThaiPostalAddressSelector
                   idPrefix="rp-res"
+                  contactPhone={phoneInput}
+                  contactEmail={user.contactEmail}
                   value={{
                     country,
                     postalCode,
@@ -2723,12 +2718,10 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                               <label htmlFor="ec-phone">
                                 {<RequiredFieldText text={tx('เบอร์โทรศัพท์ *')} />}
                               </label>
-                              <input
+                              <PhoneInput
                                 id="ec-phone"
-                                type="tel"
                                 value={ecPhone}
-                                onChange={(e) => setEcPhone(e.target.value)}
-                                placeholder="089-110-2211"
+                                onChange={(next) => setEcPhone(next)}
                                 required
                               />
                             </div>
@@ -2995,11 +2988,10 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                               <label htmlFor="ad-ph">
                                 {<RequiredFieldText text={tx('เบอร์โทรผู้รับ *')} />}
                               </label>
-                              <input
+                              <PhoneInput
                                 id="ad-ph"
-                                type="tel"
                                 value={addrPhone}
-                                onChange={(e) => setAddrPhone(e.target.value)}
+                                onChange={(next) => setAddrPhone(next)}
                                 required
                               />
                             </div>
@@ -3007,6 +2999,8 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
 
                           <ThaiPostalAddressSelector
                             idPrefix="ad-book"
+                            contactPhone={addrPhone}
+                            contactEmail={user.contactEmail}
                             required
                             streetAddressLabel="ที่อยู่ (บ้านเลขที่ อาคาร ซอย ถนน)"
                             streetAddressPlaceholder="เช่น 199/8 ถ.ห้วยแก้ว หมู่บ้านล้านนาวิว"
@@ -4337,17 +4331,14 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                             </div>
                             <div className="form-row">
                               <label htmlFor="sp-ph">{tx('เบอร์โทรศัพท์')}</label>
-                              <input
+                              <PhoneInput
                                 id="sp-ph"
-                                type="tel"
-                                placeholder="086-000-0000"
                                 value={partDraft.phone ?? ''}
-                                onChange={(e) =>
+                                onChange={(next) =>
                                   setPartDraft({
                                     ...partDraft,
-                                    phone: e.target.value,
-                                  })
-                                }
+                                    phone: next,
+                                  })}
                               />
                             </div>
                           </div>
@@ -4485,17 +4476,14 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                               <label htmlFor="sp-em-phone">
                                 {tx('เบอร์โทรฉุกเฉิน')}
                               </label>
-                              <input
+                              <PhoneInput
                                 id="sp-em-phone"
-                                type="tel"
-                                placeholder="089-000-0000"
                                 value={partDraft.emergencyContactPhone ?? ''}
-                                onChange={(e) =>
+                                onChange={(next) =>
                                   setPartDraft({
                                     ...partDraft,
-                                    emergencyContactPhone: e.target.value,
-                                  })
-                                }
+                                    emergencyContactPhone: next,
+                                  })}
                               />
                             </div>
                           </div>
@@ -4551,11 +4539,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                 <AccountSecuritySections
                   user={user}
                   phone={user.runnerProfile?.phone ?? ''}
-                  emailInput={emailInput}
-                  onEmailInputChange={setEmailInput}
-                  savingContactEmail={savingContactEmail}
-                  onSaveContactEmail={handleSaveContactEmail}
-                  onOpenEmailVerifyPage={onOpenEmailVerifyPage}
                   onSetOrChangePassword={onSetOrChangePassword}
                   onRequestPasswordCode={onRequestPasswordCode}
                   onVerifyPasswordCode={onVerifyPasswordCode}

@@ -39,6 +39,8 @@ export interface ApiSnapshotResponse {
   error?: string;
   currentUserId?: string | null;
   state?: ApiSystemState;
+  /** Server switches; sandboxTools = dev switcher, reset and simulated social sign-in. */
+  config?: { sandboxTools: boolean };
   user?: UserAccount;
   organization?: Organization;
   event?: RaceEvent;

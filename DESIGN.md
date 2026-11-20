@@ -2,23 +2,28 @@
 name: Kratai
 description: Modern minimal race discovery & storefront portal paired with a self-explanatory multi-tenant organizer dashboard
 colors:
-  shell-navy: "#0f172a"
-  shell-navy-elevated: "#1e293b"
-  shell-border: "#334155"
+  brand: "#34495f"
+  brand-hover: "#2a3b4d"
+  mint: "#9be8c7"
+  mint-soft: "#e9f9f1"
+  mint-strong: "#5cc79c"
+  shell-navy: "#34495f"
+  shell-navy-elevated: "#3f566e"
+  shell-border: "#546a81"
   shell-text: "#f8fafc"
   shell-text-muted: "#cbd5e1"
   bg-canvas: "#f7f8fa"
   bg-surface: "#ffffff"
   bg-subtle: "#f1f4f8"
-  bg-selected: "#eef4fb"
-  ink-primary: "#0f172a"
+  bg-selected: "#e9f9f1"
+  ink-primary: "#34495f"
   ink-secondary: "#475569"
   ink-placeholder: "#52637a"
-  vermilion: "#c23b1a"
-  vermilion-hover: "#a12e11"
-  vermilion-soft: "#fef0ec"
-  vermilion-border: "#f2bfb1"
-  vermilion-ink: "#7f210a"
+  vermilion: "#34495f"
+  vermilion-hover: "#2a3b4d"
+  vermilion-soft: "#e9f9f1"
+  vermilion-border: "#9be8c7"
+  vermilion-ink: "#2a3b4d"
   forest: "#157347"
   forest-soft: "#eaf7f0"
   forest-border: "#b6e2ca"
@@ -128,15 +133,18 @@ components:
 
 Kratai unites two modes inside one disciplined Thai-first interface:
 1. **Modern Minimal Public Discovery & Storefront:** Airy `#f7f8fa` canvas, crisp `#ffffff` event cards with vector topographic/route cover illustrations, explicit net-price pills, a step-by-step registration wizard, and a standalone event merchandise shop for general customers who do not register to run.
-2. **Self-Explanatory Multi-Tenant Organizer Dashboard:** A committed deep-slate navigation rail (`#0f172a`) locking Organization and Event context beside a structured workspace where every section states **what it is and what it is used for**, led by an Urgent Action Queue, a 4-stage Event Lifecycle stepper, and a traceable Quota & THB Payout Strip (`BibLedgerStrip`).
+2. **Self-Explanatory Multi-Tenant Organizer Dashboard:** A committed slate brand navigation rail (`#34495f`) locking Organization and Event context beside a structured workspace where every section states **what it is and what it is used for**, led by an Urgent Action Queue, a 4-stage Event Lifecycle stepper, and a traceable Quota & THB Payout Strip (`BibLedgerStrip`).
 
 The visual system rejects generic SaaS decorative charts, eyebrow kickers above headings, thick side-stripe accents on rounded cards, and neutral grey text on colored surfaces.
 
 ## Colors
 
 ### Primary & Navigation Chrome
-- **Start-Corral Vermilion** (`#c23b1a`, hover `#a12e11`, soft `#fef0ec`, ink `#7f210a`): Primary conversion CTAs, active runner actions, and net organizer payout figures.
-- **Deep Slate Navy** (`#0f172a`, elevated `#1e293b`, border `#334155`, soft `#edf3fa`, ink `#153559`): Organizer context rail, top brand anchor, primary dark actions, and 10K category chips.
+> Brand palette confirmed by the user on 20 Nov 2026: slate `#34495f` + mint `#9be8c7`. It replaced the earlier vermilion CTA (`#c23b1a`) and deep navy (`#0f172a`). The `vermilion*` CSS token names are kept as aliases of the brand so existing components follow automatically.
+
+- **Kratai Slate** (`#34495f`, hover `#2a3b4d`): Primary conversion CTAs, brand mark, organizer context rail, primary ink, active underline tabs, and net payout figures. White text on slate is 9.3:1.
+- **Kratai Mint** (`#9be8c7`, soft `#e9f9f1`, strong `#5cc79c`): Accent fills only — selected calendar days, selected cards and rows (`--bg-selected`), brand-mark glyph, cover-art sun, and distance swatches. **Never mint text on a light surface (1.45:1).** Slate text on mint is 6.2:1, on mint-soft 8.6:1.
+- **Urgency stays red:** P1 priority chips and the urgent action queue use the Danger tokens, not the brand.
 
 ### Semantic Operational Signals
 - **Verified Forest** (`#157347`, soft `#eaf7f0`, ink `#0d4f30`): Confirmed race slots, verified webhook payments, verified emails, and completed kit/merchandise handovers.
@@ -146,10 +154,10 @@ The visual system rejects generic SaaS decorative charts, eyebrow kickers above 
 
 ### Neutrals
 - **Cool Minimal Canvas** (`#f7f8fa`), **Subtle Fill** (`#f1f4f8`), and **Crisp Surface** (`#ffffff`): Low-glare ground and clean card planes separated by `1px` hairlines (`#e2e8f0` / `#cbd5e1`).
-- **Slate-Tinted Inks** (`#0f172a` primary, `#475569` secondary, `#52637a` placeholder): All text tokens maintain ≥4.5:1 WCAG AA contrast over light surfaces.
+- **Slate-Tinted Inks** (`#34495f` primary, `#475569` secondary, `#52637a` placeholder): All text tokens maintain ≥4.5:1 WCAG AA contrast over light surfaces.
 
 ### Named Rules
-- **The Slate-Tinted Ink Rule.** Muted text, borders, and placeholders derive from `#0f172a` slate rather than pure neutral grey.
+- **The Slate-Tinted Ink Rule.** Muted text, borders, and placeholders derive from the `#34495f` brand slate rather than pure neutral grey.
 - **The Icon-Plus-Label Status Rule.** Every status pairs a `1.75px` stroke SVG icon (tinted with the base hue, e.g. `#157347`) with an explicit Thai status phrase in the matching ink (e.g. `#0d4f30`); color never carries meaning alone.
 - **The Frameless Status Rule (20 Nov 2026, user-confirmed).** Statuses, tags, category labels, and ID codes (`.mono-code`, e.g. `USR-104`, `EVT-CMI-2601`) render without capsule or box frames: no pill radius, no border, no tinted fill. Text-only statuses get a small leading dot; distance/category labels get a small square swatch. The only exception is a status laid over imagery (event cover), which sits on a plain `#ffffff` plate with `6px` radius and a soft shadow for legibility.
 
@@ -172,7 +180,7 @@ The visual system rejects generic SaaS decorative charts, eyebrow kickers above 
 ### Named Rules
 - **The Self-Sufficient Heading Rule.** Never stack uppercase kickers or eyebrow labels above `h1`, `h2`, or `h3`.
 - **The Single-Line Affordance Rule.** Buttons, nav tabs, and filter tabs enforce `white-space: nowrap` so Thai/English labels never wrap awkwardly mid-phrase.
-- **The Underline Selection Rule.** Top navigation, filter bars, detail tabs, and wizard steps are text tabs: inactive in `#475569`, active in `#0f172a` with a `2px` bottom rule. The language switch is a `TH | EN` text toggle with the active code underlined. The account trigger is avatar + name + chevron with no outline.
+- **The Underline Selection Rule.** Top navigation, filter bars, detail tabs, and wizard steps are text tabs: inactive in `#475569`, active in `#34495f` with a `2px` bottom rule. The language switch is a `TH | EN` text toggle with the active code underlined. The account trigger is avatar + name + chevron with no outline.
 
 ## Layout & Responsive Discipline
 
@@ -183,7 +191,7 @@ The visual system rejects generic SaaS decorative charts, eyebrow kickers above 
 ## Elevation, Shapes & Components
 
 - **Single-Layer Containers:** Cards use `#ffffff` over `#f7f8fa` with `1px solid #e2e8f0` and a subtle offset shadow (`0 4px 14px -4px rgba(15, 23, 42, 0.06)`). Nested sections inside panels use flat `#f7f8fa` / `#f1f4f8` fills with `1px` rules instead of nested drop shadows.
-- **Radii:** `6px` (`--radius-sm`) for buttons, inputs, and status chips; `10px` (`--radius-md`) for cards, modals, and the `BibLedgerStrip` shell (with an interior `#0f172a` header band rather than thick outer accent borders).
+- **Radii:** `6px` (`--radius-sm`) for buttons, inputs, and status chips; `10px` (`--radius-md`) for cards, modals, and the `BibLedgerStrip` shell (with an interior `#34495f` header band rather than thick outer accent borders).
 - **Self-Explanatory Purpose Headers:** Every Organizer Dashboard view opens with a clear title, a one-sentence operational explanation ("ส่วนนี้ใช้ทำอะไร"), and direct action buttons.
 
 ## Do's and Don'ts

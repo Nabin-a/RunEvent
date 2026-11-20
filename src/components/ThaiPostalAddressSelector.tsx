@@ -10,7 +10,8 @@ import {
   THAI_POSTAL_ENTRIES,
   UNIQUE_POSTAL_CODES,
 } from '../data/thaiPostalAddresses';
-import { getLang, tx } from '../i18n';
+import { getLang, tx, txf } from '../i18n';
+import { displayPhone } from '../utils/phone';
 
 export interface CascadingAddressValue {
   country: string;
@@ -31,6 +32,9 @@ interface ThaiPostalAddressSelectorProps {
   streetAddressPlaceholder?: string;
   required?: boolean;
   singleColumn?: boolean;
+  /** Shown under the address in the read-only summary when given. */
+  contactPhone?: string | null;
+  contactEmail?: string | null;
 }
 
 /**
@@ -49,6 +53,8 @@ export const ThaiPostalAddressSelector: React.FC<
   streetAddressLabel = 'ที่อยู่ (บ้านเลขที่ อาคาร ซอย ถนน)',
   streetAddressPlaceholder = 'เช่น 199/8 ถ.ห้วยแก้ว หมู่บ้านล้านนาวิว',
   required = false,
+  contactPhone,
+  contactEmail,
 }) => {
   const [zipFocused, setZipFocused] = useState(false);
   const isEn = getLang() === 'en';
@@ -177,6 +183,7 @@ export const ThaiPostalAddressSelector: React.FC<
   const provTrim = value.province.trim();
 
   const formattedSummary = useMemo(() => {
+    let address: string;
     if (isEn) {
       const parts = [
         addrTrim ? tx(addrTrim) : '',
@@ -185,17 +192,22 @@ export const ThaiPostalAddressSelector: React.FC<
         provTrim ? tx(provTrim) : '',
         zipTrim,
       ].filter(Boolean);
-      return parts.length > 0 ? parts.join(', ') : tx('— ยังไม่ได้กรอกข้อมูลที่อยู่ —');
+      address = parts.length > 0 ? parts.join(', ') : tx('— ยังไม่ได้กรอกข้อมูลที่อยู่ —');
+    } else {
+      const isBkk = provTrim.includes('กรุงเทพ');
+      const subdLabel = subdTrim ? (isBkk ? `แขวง${subdTrim}` : `ต.${subdTrim}`) : '';
+      const distLabel = distTrim ? (isBkk ? `เขต${distTrim}` : `อ.${distTrim}`) : '';
+      const provLabel = provTrim ? (isBkk ? provTrim : `จ.${provTrim}`) : '';
+      const parts = [addrTrim, subdLabel, distLabel, provLabel, zipTrim].filter(Boolean);
+      address = parts.length > 0 ? parts.join(' ') : tx('— ยังไม่ได้กรอกข้อมูลที่อยู่ —');
     }
-    const isBkk = provTrim.includes('กรุงเทพ');
-    const subdLabel = subdTrim ? (isBkk ? `แขวง${subdTrim}` : `ต.${subdTrim}`) : '';
-    const distLabel = distTrim ? (isBkk ? `เขต${distTrim}` : `อ.${distTrim}`) : '';
-    const provLabel = provTrim ? (isBkk ? provTrim : `จ.${provTrim}`) : '';
-    const parts = [addrTrim, subdLabel, distLabel, provLabel, zipTrim].filter(
-      Boolean
-    );
-    return parts.length > 0 ? parts.join(' ') : tx('— ยังไม่ได้กรอกข้อมูลที่อยู่ —');
-  }, [addrTrim, zipTrim, subdTrim, distTrim, provTrim, isEn]);
+    const phone = displayPhone(contactPhone);
+    const email = (contactEmail ?? '').trim();
+    const lines = [address];
+    if (phone) lines.push(txf('โทร {0}', phone));
+    if (email) lines.push(txf('อีเมล {0}', email));
+    return lines.join('\n');
+  }, [addrTrim, zipTrim, subdTrim, distTrim, provTrim, isEn, contactPhone, contactEmail]);
 
   return (
     <div className="postal-two-col-grid">
@@ -400,7 +412,7 @@ export const ThaiPostalAddressSelector: React.FC<
         <textarea
           id={`${idPrefix}-summary`}
           className="postal-summary-textarea"
-          rows={4}
+          rows={6}
           value={formattedSummary}
           disabled
           readOnly

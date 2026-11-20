@@ -28,6 +28,7 @@ import {
   IconUsers,
 } from './Icons';
 
+import { PhoneInput } from './PhoneInput';
 import { tx, txf } from '../i18n';
 import { RequiredFieldText } from './RequiredFieldText';
 import { DateOfBirthInput } from './DateOfBirthInput';
@@ -100,6 +101,8 @@ export function computeRunnerProfileCompletion(
 }
 
 interface AuthScreenProps {
+  /** Simulated Google / Facebook / LINE sign-in is only offered when the server allows it. */
+  sandboxAuthEnabled?: boolean;
   users: UserAccount[];
   returnIntent: ReturnIntent | null;
   initialTab?: 'signin' | 'signup' | 'forgot';
@@ -167,6 +170,7 @@ const ORG_DRAFT_STORAGE_KEY = 'kratai_v2_org_onboarding_draft';
 const ENABLE_ORGANIZER_SELF_ONBOARDING = false;
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({
+  sandboxAuthEnabled = true,
   users,
   returnIntent,
   initialTab = 'signin',
@@ -840,10 +844,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               {authTab === 'signup'
                 ? runnerStep === 2 && signupFlowMode === 'runner_wizard'
                   ? tx("ข้อมูลส่วนนี้ใช้เติมฟอร์มสมัครงานวิ่งอัตโนมัติในอนาคต คุณสามารถกดข้ามเพื่อสร้างบัญชีทันทีได้")
-                  : tx("สร้างบัญชีผู้ใช้งานใหม่ หรือสมัครด่วนผ่านบัญชีโซเชียลด้านล่าง")
+                  : sandboxAuthEnabled
+                    ? tx("สร้างบัญชีผู้ใช้งานใหม่ หรือสมัครด่วนผ่านบัญชีโซเชียลด้านล่าง")
+                    : tx("สร้างบัญชีผู้ใช้งานใหม่ด้วยอีเมล")
                 : authTab === 'forgot'
                   ? tx("กรอกอีเมลของคุณเพื่อรับลิงก์ตั้งรหัสผ่านใหม่")
-                  : tx("เลือกช่องทางเข้าสู่ระบบ หรือใช้อีเมลและรหัสผ่าน")}
+                  : sandboxAuthEnabled
+                    ? tx("เลือกช่องทางเข้าสู่ระบบ หรือใช้อีเมลและรหัสผ่าน")
+                    : tx("เข้าสู่ระบบด้วยอีเมลและรหัสผ่าน")}
             </p>
           </div>
 
@@ -916,7 +924,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
              ================================================================= */}
           {authTab === 'signin' && (
             <>
-              {/* Social login: Google, Facebook, LINE */}
+
+              {sandboxAuthEnabled && (
+              <>              {/* Social login: Google, Facebook, LINE */}
               <div className="social-buttons-stack">
                 {/* Layer 4: Google Login */}
                 <button
@@ -953,6 +963,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               <div className="divider-line-text">
                 <span>{tx("หรือเข้าสู่ระบบด้วยอีเมล")}</span>
               </div>
+              </>
+              )}
 
               <form onSubmit={handleEmailSignIn} className="auth-cred-form">
                 {/* Layer 1: Username / Email */}
@@ -1312,6 +1324,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   {runnerStep === 1 && (
                     <>
                       {/* Social signup: Google, Facebook, LINE */}
+                      {sandboxAuthEnabled && (
+                      <>
                       <div className="social-buttons-stack">
                         <button
                           type="button"
@@ -1372,6 +1386,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       <div className="divider-line-text">
                         <span>{tx("หรือสมัครสมาชิกด้วยอีเมล")}</span>
                       </div>
+                      </>
+                      )}
 
                       <form
                         className="auth-cred-form"
@@ -1441,13 +1457,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           <label htmlFor="rn-phone">
                             {tx("เบอร์โทรศัพท์ (ไม่บังคับ)")}
                           </label>
-                          <input
+                          <PhoneInput
                             id="rn-phone"
-                            type="tel"
                             value={regPhone}
-                            onChange={(e) => setRegPhone(e.target.value)}
-                            placeholder="081-234-5678"
-                            autoComplete="tel"
+                            onChange={(next) => setRegPhone(next)}
                           />
                         </div>
 
@@ -1552,7 +1565,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           <span>{tx("สมัครสมาชิก")}</span>
                           <IconArrowRight size={15} />
                         </button>
-                        {signupPrivacyNote(true)}
+                        {signupPrivacyNote(sandboxAuthEnabled)}
                       </form>
 
                       {/* Spaced Footer -> Back to Sign In (Mirrors Login Layer 8) */}
@@ -2051,12 +2064,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           </div>
                           <div className="form-row">
                             <label htmlFor="og-ph">{<RequiredFieldText text={tx("Phone Number (เบอร์โทรศัพท์) *")} />}</label>
-                            <input
+                            <PhoneInput
                               id="og-ph"
-                              type="tel"
                               value={regPhone}
-                              onChange={(e) => setRegPhone(e.target.value)}
-                              placeholder="081-999-8888"
+                              onChange={(next) => setRegPhone(next)}
                               required
                             />
                           </div>
@@ -2219,11 +2230,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           </div>
                           <div className="form-row">
                             <label htmlFor="og-oph"><RequiredFieldText text="Organization Phone *" /></label>
-                            <input
+                            <PhoneInput
                               id="og-oph"
-                              type="tel"
                               value={orgPhone || regPhone}
-                              onChange={(e) => setOrgPhone(e.target.value)}
+                              onChange={(next) => setOrgPhone(next)}
                             />
                           </div>
                         </div>
@@ -2333,13 +2343,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                             </div>
                             <div className="form-row">
                               <label htmlFor="og-mc-p"><RequiredFieldText text="Contact Phone *" /></label>
-                              <input
+                              <PhoneInput
                                 id="og-mc-p"
-                                type="tel"
                                 value={mainContactPhone}
-                                onChange={(e) =>
-                                  setMainContactPhone(e.target.value)
-                                }
+                                onChange={(next) =>
+                                  setMainContactPhone(next)}
                               />
                             </div>
                             <div className="form-row">
@@ -2889,11 +2897,10 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
         <div className="form-grid-3">
           <div className="form-row">
             <label htmlFor="rp-ph">{tx("เบอร์โทรศัพท์นักวิ่ง")}</label>
-            <input
+            <PhoneInput
               id="rp-ph"
-              type="tel"
               value={profPhone}
-              onChange={(e) => setProfPhone(e.target.value)}
+              onChange={(next) => setProfPhone(next)}
             />
           </div>
           <div className="form-row">
@@ -2950,11 +2957,10 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
           </div>
           <div className="form-row">
             <label htmlFor="rp-emp">{tx("เบอร์โทรผู้ติดต่อฉุกเฉิน")}</label>
-            <input
+            <PhoneInput
               id="rp-emp"
-              type="tel"
               value={profEmergPhone}
-              onChange={(e) => setProfEmergPhone(e.target.value)}
+              onChange={(next) => setProfEmergPhone(next)}
             />
           </div>
         </div>

@@ -2982,5 +2982,14 @@ export const EN_DICT: Record<string, string> = {
   "รีเซ็ต": "Reset",
   "ใช้รูปนี้": "Use this photo",
   "JPG, PNG หรือ WebP ไม่เกิน 15 MB ครอปและซูมได้ก่อนบันทึก": "JPG, PNG or WebP up to 15 MB. You can crop and zoom before saving.",
-  "ไฟล์รูปใหญ่เกิน 15 MB กรุณาเลือกไฟล์ที่เล็กลง": "The image is larger than 15 MB. Choose a smaller file."
+  "ไฟล์รูปใหญ่เกิน 15 MB กรุณาเลือกไฟล์ที่เล็กลง": "The image is larger than 15 MB. Choose a smaller file.",
+  "สร้างบัญชีผู้ใช้งานใหม่ด้วยอีเมล": "Create a new account with your email",
+  "เข้าสู่ระบบด้วยอีเมลและรหัสผ่าน": "Sign in with your email and password",
+  "กำลังโหลด…": "Loading…",
+  "กำลังเตรียมข้อมูลงานวิ่ง…": "Getting the races ready…",
+  "โทร {0}": "Tel {0}",
+  "อีเมล {0}": "Email {0}",
+  "รหัสประเทศของเบอร์โทร": "Phone country code",
+  "กรุณาเพิ่มอีเมลติดต่อในแท็บข้อมูลส่วนตัวก่อน ระบบจะส่งรหัสยืนยันไปที่อีเมลนี้ก่อนเปลี่ยนรหัสผ่าน": "Add a contact email in the Personal info tab first. The verification code is sent there before you can change your password.",
+  "ใช้รับรหัสยืนยันก่อนเปลี่ยนรหัสผ่าน ใบยืนยันการสมัคร และใบเสร็จ (ไม่ใช่อีเมลของ Google/LINE) บันทึกพร้อมข้อมูลส่วนตัว": "Used for the password-change code, registration confirmations and receipts (not your Google/LINE email). Saved with your personal info."
 };
