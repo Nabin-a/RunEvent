@@ -2991,5 +2991,6 @@ export const EN_DICT: Record<string, string> = {
   "อีเมล {0}": "Email {0}",
   "รหัสประเทศของเบอร์โทร": "Phone country code",
   "กรุณาเพิ่มอีเมลติดต่อในแท็บข้อมูลส่วนตัวก่อน ระบบจะส่งรหัสยืนยันไปที่อีเมลนี้ก่อนเปลี่ยนรหัสผ่าน": "Add a contact email in the Personal info tab first. The verification code is sent there before you can change your password.",
-  "ใช้รับรหัสยืนยันก่อนเปลี่ยนรหัสผ่าน ใบยืนยันการสมัคร และใบเสร็จ (ไม่ใช่อีเมลของ Google/LINE) บันทึกพร้อมข้อมูลส่วนตัว": "Used for the password-change code, registration confirmations and receipts (not your Google/LINE email). Saved with your personal info."
+  "ใช้รับรหัสยืนยันก่อนเปลี่ยนรหัสผ่าน ใบยืนยันการสมัคร และใบเสร็จ (ไม่ใช่อีเมลของ Google/LINE) บันทึกพร้อมข้อมูลส่วนตัว": "Used for the password-change code, registration confirmations and receipts (not your Google/LINE email). Saved with your personal info.",
+  "อ่านประกาศ": "Read notice"
 };

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import type { AuthProviderType, UserAccount } from '../types';
 import { getLang, tx, txf } from '../i18n';
+import { PrivacyNoticeModal } from './PrivacyNoticeModal';
 import {
   IconAlert,
-  IconArrowRight,
   IconCheckCircle,
   IconClose,
   IconDevice,
@@ -67,7 +67,6 @@ const PageHead: React.FC<{ title: string; description: string }> = ({
 
 interface AccountSecuritySectionsProps {
   user: UserAccount;
-  phone: string;
   onSetOrChangePassword: (newPassword: string, grant: string) => Promise<ActionResult>;
   onRequestPasswordCode: () => Promise<ActionResult & { sentTo?: string }>;
   onVerifyPasswordCode: (otp: string) => Promise<ActionResult & { grant?: string }>;
@@ -81,7 +80,6 @@ interface AccountSecuritySectionsProps {
 
 export const AccountSecuritySections: React.FC<AccountSecuritySectionsProps> = ({
   user,
-  phone,
   onSetOrChangePassword,
   onRequestPasswordCode,
   onVerifyPasswordCode,
@@ -102,18 +100,6 @@ export const AccountSecuritySections: React.FC<AccountSecuritySectionsProps> = (
   );
   const [deleteReason, setDeleteReason] = useState('');
   const [deleteCode, setDeleteCode] = useState('');
-
-  const linkedMethods = user.identities.length;
-  const checks = [
-    { key: 'password', ok: user.hasPassword, label: tx('ตั้งรหัสผ่านสำหรับเข้าสู่ระบบด้วยอีเมลแล้ว') },
-    {
-      key: 'methods',
-      ok: linkedMethods >= 2,
-      label: tx('มีช่องทางเข้าสู่ระบบมากกว่า 1 ทาง (กันเข้าบัญชีไม่ได้)'),
-    },
-    { key: 'phone', ok: phone.replace(/\D/g, '').length >= 9, label: tx('มีเบอร์โทรศัพท์สำหรับติดต่อกลับ') },
-  ];
-  const passedChecks = checks.filter((c) => c.ok).length;
 
   const passwordChangedText = formatDateTime(user.passwordChangedAt);
   const deletionPending = user.accountStatus === 'deletion_requested';
@@ -190,28 +176,6 @@ export const AccountSecuritySections: React.FC<AccountSecuritySectionsProps> = (
       {/* Password & authentication */}
       <section className="acct-section" aria-labelledby="acct-auth-title">
         <h3 id="acct-auth-title">{tx('รหัสผ่านและความปลอดภัย')}</h3>
-
-        <div className="acct-check-block">
-          <div className="acct-check-head">
-            <strong>{tx('ความปลอดภัยของบัญชี')}</strong>
-            <span
-              className={`status-pill ${passedChecks === checks.length ? 'badge-forest' : 'badge-amber'}`}
-            >
-              {passedChecks === checks.length ? <IconCheckCircle size={14} /> : <IconAlert size={14} />}
-              <span className="mono-num">
-                {passedChecks}/{checks.length}
-              </span>
-            </span>
-          </div>
-          <ul className="acct-check-list">
-            {checks.map((c) => (
-              <li key={c.key} className={c.ok ? 'is-ok' : 'is-missing'}>
-                {c.ok ? <IconCheckCircle size={15} /> : <IconAlert size={15} />}
-                <span>{c.label}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
 
         <div className="acct-setting-row">
           <div className="acct-setting-text">
@@ -818,7 +782,6 @@ interface PrivacyPanelProps {
   securitySections?: React.ReactNode;
   onSetMarketingConsent: (granted: boolean) => Promise<ActionResult>;
   onExportMyData: () => Promise<ActionResult>;
-  onOpenRaceHistory: () => void;
   notify: Notify;
 }
 
@@ -827,7 +790,6 @@ export const PrivacyPanel: React.FC<PrivacyPanelProps> = ({
   securitySections,
   onSetMarketingConsent,
   onExportMyData,
-  onOpenRaceHistory,
   notify,
 }) => {
   const [busy, setBusy] = useState<'marketing' | 'export' | null>(null);
@@ -838,13 +800,21 @@ export const PrivacyPanel: React.FC<PrivacyPanelProps> = ({
   const terms = latest('terms');
   const privacy = latest('privacy');
 
+  const [noticeOpen, setNoticeOpen] = useState(false);
+
   const docRow = (
     title: string,
-    rec: ReturnType<typeof latest>
+    rec: ReturnType<typeof latest>,
+    onRead?: () => void
   ) => (
     <div className="acct-setting-row">
       <div className="acct-setting-text">
         <strong>{title}</strong>
+        {onRead && (
+          <button type="button" className="inline-text-link acct-doc-read" onClick={onRead}>
+            {tx('อ่านประกาศ')}
+          </button>
+        )}
         <span className="muted-inline">
           {rec
             ? txf('ยอมรับเวอร์ชัน {0} เมื่อ {1}', rec.version ?? '-', formatDateTime(rec.recordedAt) ?? '-')
@@ -917,20 +887,9 @@ export const PrivacyPanel: React.FC<PrivacyPanelProps> = ({
         </div>
 
         {docRow(tx('ข้อกำหนดการใช้งาน'), terms)}
-        {docRow(tx('นโยบายความเป็นส่วนตัว'), privacy)}
+        {docRow(tx('นโยบายความเป็นส่วนตัว'), privacy, () => setNoticeOpen(true))}
+        <PrivacyNoticeModal open={noticeOpen} mode="read" onCancel={() => setNoticeOpen(false)} />
 
-        <div className="acct-setting-row">
-          <div className="acct-setting-text">
-            <strong>{tx('กติกาของแต่ละงานวิ่ง')}</strong>
-            <span className="muted-inline">
-              {tx('ยอมรับแยกตอนสมัครแต่ละงาน ดูได้ในใบสมัครของงานนั้น')}
-            </span>
-          </div>
-          <button type="button" className="btn-secondary" onClick={onOpenRaceHistory}>
-            <span>{tx('ดูใบสมัคร')}</span>
-            <IconArrowRight size={15} />
-          </button>
-        </div>
       </section>
 
       <section className="acct-section" aria-labelledby="acct-mydata">
@@ -962,14 +921,6 @@ export const PrivacyPanel: React.FC<PrivacyPanelProps> = ({
           </button>
         </div>
 
-        <div className="acct-setting-row">
-          <div className="acct-setting-text">
-            <strong>{tx('ระยะเวลาเก็บข้อมูล')}</strong>
-            <span className="muted-inline">
-              {tx('ยังไม่ได้กำหนดนโยบายระยะเวลาเก็บข้อมูล (รอยืนยัน) รายการชำระเงินและใบสมัครที่ชำระแล้วจะถูกเก็บไว้ตามกฎหมายแม้ลบบัญชี')}
-            </span>
-          </div>
-        </div>
       </section>
 
       {securitySections}

@@ -4533,12 +4533,10 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
               user={user}
               onSetMarketingConsent={onSetMarketingConsent}
               onExportMyData={onExportMyData}
-              onOpenRaceHistory={() => requestSwitchProfileTab('history')}
               notify={notifyResult}
               securitySections={
                 <AccountSecuritySections
                   user={user}
-                  phone={user.runnerProfile?.phone ?? ''}
                   onSetOrChangePassword={onSetOrChangePassword}
                   onRequestPasswordCode={onRequestPasswordCode}
                   onVerifyPasswordCode={onVerifyPasswordCode}
