@@ -384,7 +384,6 @@ export interface ReturnIntent {
   surface:
   | 'events'
   | 'my_orders'
-  | 'custom_production'
   | 'organizer'
   | 'platform_admin'
   | 'account_security'

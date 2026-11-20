@@ -93,7 +93,6 @@ import {
   IconLock,
   IconMenu,
   IconShield,
-  IconShirt,
   IconSliders,
   IconSwitch,
   IconUsers,
@@ -288,15 +287,6 @@ function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
     return {
       surface: 'customer',
       customerSubView: 'calendar',
-      eventSlug: null,
-      eventTab: 'register',
-      authTab: 'signin',
-    };
-  }
-  if (cleanPath === '/custom-production') {
-    return {
-      surface: 'customer',
-      customerSubView: 'custom_production',
       eventSlug: null,
       eventTab: 'register',
       authTab: 'signin',
@@ -758,8 +748,6 @@ export const App: React.FC = () => {
 
       if (view === 'directory') {
         pushUrl('/');
-      } else if (view === 'custom_production') {
-        pushUrl('/custom-production');
       } else if (view === 'calendar') {
         pushUrl('/calendar');
       } else if (view === 'my_orders') {
@@ -1020,12 +1008,6 @@ export const App: React.FC = () => {
         setCustomerSubView('my_orders');
         setSurface('customer');
         pushUrl('/my-orders');
-        return;
-      }
-      if (intent.surface === 'custom_production') {
-        setCustomerSubView('custom_production');
-        setSurface('customer');
-        pushUrl('/custom-production');
         return;
       }
       if (intent.surface === 'runner_profile') {
@@ -2524,44 +2506,6 @@ export const App: React.FC = () => {
     void syncApi('PATCH', `/api/registrations/${regId}/shirt-size`, { newSize });
   };
 
-  const handleCreateClubProductionInquiry = (payload: {
-    requesterName: string;
-    requesterContact: string;
-    itemType: ProductionInquiry['itemType'];
-    estimatedQty: number;
-    targetDeliveryDate: string;
-  }): ProductionInquiry => {
-    const rfq: ProductionInquiry = {
-      id: `rfq-club-${Date.now()}`,
-      inquiryCode: `RFQ-CLB-${sys.productionInquiries.length + 11}`,
-      requesterName: payload.requesterName,
-      requesterContact: payload.requesterContact,
-      contextType: 'club_or_company',
-      itemType: payload.itemType,
-      serviceModel: 'produce_bulk',
-      packageEntitlementQty: 0,
-      addonStoreQty: 0,
-      organizerBufferQty: payload.estimatedQty,
-      existingStockDeductedQty: 0,
-      netQtyToProduce: payload.estimatedQty,
-      artworkVersion: 'รอส่งไฟล์แบบให้ทีมงานตรวจ',
-      targetDeliveryDate: payload.targetDeliveryDate,
-      quoteStatus: 'submitted',
-      productionStatus: 'awaiting_approval',
-      createdAt: '2026-11-17 09:47',
-    };
-    setSys((prev) => ({
-      ...prev,
-      productionInquiries: [rfq, ...prev.productionInquiries],
-    }));
-    void syncApi('POST', '/api/production-inquiries', {
-      ...payload,
-      contextType: 'club_or_company',
-      id: rfq.id,
-      inquiryCode: rfq.inquiryCode,
-    });
-    return rfq;
-  };
 
   /* ---- Organizer Operations ---- */
   const handleCreateDraftEvent = (payload: {
@@ -3590,18 +3534,6 @@ export const App: React.FC = () => {
 
           <button
             type="button"
-            className={`surface-switch-btn ${surface === 'customer' && customerSubView === 'custom_production'
-              ? 'active'
-              : ''
-              }`}
-            onClick={() => navigateCustomer('custom_production')}
-          >
-            <IconShirt size={15} />
-            <span>{tx("สั่งผลิตเสื้อ/เหรียญ")}</span>
-          </button>
-
-          <button
-            type="button"
             className={`surface-switch-btn ${surface === 'customer' && customerSubView === 'my_orders'
               ? 'active'
               : ''
@@ -3922,26 +3854,6 @@ export const App: React.FC = () => {
                 <button
                   type="button"
                   className={`mobile-drawer-link ${
-                    surface === 'customer' &&
-                    customerSubView === 'custom_production'
-                      ? 'active'
-                      : ''
-                  }`}
-                  onClick={() => navigateCustomer('custom_production')}
-                >
-                  <span className="mobile-drawer-link-label">
-                    <IconShirt size={16} />
-                    <span>{tx("สั่งผลิตเสื้อ/เหรียญ")}</span>
-                  </span>
-                  {surface === 'customer' &&
-                    customerSubView === 'custom_production' && (
-                      <span className="mobile-drawer-dot" aria-hidden="true" />
-                    )}
-                </button>
-
-                <button
-                  type="button"
-                  className={`mobile-drawer-link ${
                     surface === 'customer' && customerSubView === 'my_orders'
                       ? 'active'
                       : ''
@@ -4092,7 +4004,6 @@ export const App: React.FC = () => {
           organizations={sys.organizations}
           registrations={sys.registrations}
           merchOrders={sys.merchOrders}
-          productionInquiries={sys.productionInquiries}
           registrationSteps={sys.registrationSteps}
           platformProfileConfig={
             sys.platformProfileConfig ?? DEFAULT_PLATFORM_PROFILE_CONFIG
@@ -4117,7 +4028,6 @@ export const App: React.FC = () => {
           onCreateStandaloneMerchOrder={handleCreateStandaloneMerchOrder}
           onUpdateRunnerShirtSize={handleUpdateRunnerShirtSize}
           onCompletePendingPayment={handleSimulateWebhookConfirm}
-          onCreateClubProductionInquiry={handleCreateClubProductionInquiry}
         />
       )}
 

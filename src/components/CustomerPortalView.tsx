@@ -5,7 +5,6 @@ import {
   MerchOrderRecord,
   Organization,
   PlatformProfileConfig,
-  ProductionInquiry,
   RaceCategory,
   RaceEvent,
   RegistrationRecord,
@@ -92,7 +91,6 @@ export type CustomerSubView =
   | 'event_detail'
   | 'event_register'
   | 'my_orders'
-  | 'custom_production'
   | 'calendar';
 
 interface CustomerPortalViewProps {
@@ -103,7 +101,6 @@ interface CustomerPortalViewProps {
   organizations: Organization[];
   registrations: RegistrationRecord[];
   merchOrders: MerchOrderRecord[];
-  productionInquiries: ProductionInquiry[];
   registrationSteps?: RegistrationStepDef[];
   platformProfileConfig?: PlatformProfileConfig;
   currentUser: UserAccount | null;
@@ -150,13 +147,6 @@ interface CustomerPortalViewProps {
     newSize: ShirtSizeCode
   ) => void;
   onCompletePendingPayment: (regId: string) => void;
-  onCreateClubProductionInquiry: (payload: {
-    requesterName: string;
-    requesterContact: string;
-    itemType: ProductionInquiry['itemType'];
-    estimatedQty: number;
-    targetDeliveryDate: string;
-  }) => ProductionInquiry;
 }
 
 export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
@@ -167,7 +157,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   organizations,
   registrations,
   merchOrders,
-  productionInquiries,
   registrationSteps = [],
   platformProfileConfig,
   currentUser,
@@ -181,7 +170,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   onCreateStandaloneMerchOrder,
   onUpdateRunnerShirtSize,
   onCompletePendingPayment,
-  onCreateClubProductionInquiry,
 }) => {
   // Directory filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -331,16 +319,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   const [createdMerchReceipt, setCreatedMerchReceipt] =
     useState<MerchOrderRecord | null>(null);
 
-  // Club/Company custom production inquiry state (no race event needed)
-  const [clubName, setClubName] = useState('');
-  const [clubContact, setClubContact] = useState('');
-  const [clubItemType, setClubItemType] = useState<
-    ProductionInquiry['itemType']
-  >('เสื้อแข่งขันและเสื้อที่ระลึก');
-  const [clubQty, setClubQty] = useState<number>(150);
-  const [clubDate, setClubDate] = useState('2027-01-20');
-  const [createdClubRfq, setCreatedClubRfq] =
-    useState<ProductionInquiry | null>(null);
 
   React.useEffect(() => {
     setDetailTab(initialEventTab);
@@ -928,182 +906,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     });
     setCreatedMerchReceipt(receipt);
   };
-
-  /* ================= SUBVIEW 4: CLUB / COMPANY CUSTOM PRODUCTION ================= */
-  if (subView === 'custom_production') {
-    return (
-      <main className="customer-container">
-        <div className="detail-back-bar">
-          <button
-            type="button"
-            className="btn-ghost-sm"
-            onClick={() => onNavigate('directory', null)}
-          >
-            <IconArrowLeft size={15} />
-            <span>{tx("กลับหน้ารวมงานวิ่ง")}</span>
-          </button>
-        </div>
-
-        <section className="clean-panel">
-          <h1>{tx("บริการสั่งผลิตเสื้อวิ่งและเหรียญรางวัลสำหรับชมรม ทีม และองค์กร")}</h1>
-          <p className="muted-block">
-            {tx("ส่งความต้องการเพื่อขอใบเสนอราคาได้โดยไม่จำเป็นต้องเปิดรับสมัครงานวิ่งในระบบ (คำขอราคายังไม่ใช่คำสั่งเริ่มผลิตจริง จนกว่าจะยืนยันแบบ จำนวน ราคา และเงื่อนไขชำระ)")}
-          </p>
-
-          <form
-            className="wizard-stack"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const created = onCreateClubProductionInquiry({
-                requesterName: clubName.trim(),
-                requesterContact: clubContact.trim(),
-                itemType: clubItemType,
-                estimatedQty: clubQty,
-                targetDeliveryDate: clubDate,
-              });
-              setCreatedClubRfq(created);
-            }}
-          >
-            <div className="form-grid-2">
-              <div className="form-row">
-                <label htmlFor="clb-name">{tx("ชื่อชมรม / บริษัท / ผู้ติดต่อ")}</label>
-                <input
-                  id="clb-name"
-                  type="text"
-                  value={clubName}
-                  onChange={(e) => setClubName(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="form-row">
-                <label htmlFor="clb-mail">{tx("อีเมลหรือเบอร์ติดต่อกลับ")}</label>
-                <input
-                  id="clb-mail"
-                  type="text"
-                  value={clubContact}
-                  onChange={(e) => setClubContact(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="form-grid-3">
-              <div className="form-row">
-                <label htmlFor="clb-item">{tx("ประเภทสินค้าที่ต้องการสั่งผลิต")}</label>
-                <select
-                  id="clb-item"
-                  value={clubItemType}
-                  onChange={(e) =>
-                    setClubItemType(
-                      e.target.value as ProductionInquiry['itemType']
-                    )
-                  }
-                >
-                  <option value="เสื้อแข่งขันและเสื้อที่ระลึก">
-                    {tx("เสื้อวิ่งชมรม / เสื้อกิจกรรมองค์กร")}
-                  </option>
-                  <option value="เหรียญรางวัลและสายคล้อง">
-                    {tx("เหรียญที่ระลึกพร้อมสายคล้องพิมพ์ลาย")}
-                  </option>
-                  <option value="ชุดเสื้อพร้อมเหรียญครบวงจร">
-                    {tx("ชุดเสื้อพร้อมเหรียญครบวงจร")}
-                  </option>
-                </select>
-              </div>
-              <div className="form-row">
-                <label htmlFor="clb-qty">{tx("จำนวนประมาณการ (ชิ้น)")}</label>
-                <input
-                  id="clb-qty"
-                  type="text"
-                  inputMode="numeric"
-                  className="mono-num"
-                  value={clubQty}
-                  onChange={(e) =>
-                    setClubQty(Math.max(10, Number(e.target.value) || 50))
-                  }
-                />
-              </div>
-              <div className="form-row">
-                <label htmlFor="clb-date">{tx("วันที่ต้องการใช้งานสินค้า")}</label>
-                <input
-                  id="clb-date"
-                  type="text"
-                  className="mono-num"
-                  value={clubDate}
-                  onChange={(e) => setClubDate(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div>
-              <button type="submit" className="btn-primary">
-                {tx("ส่งคำขอใบเสนอราคาสั่งผลิต")}
-              </button>
-            </div>
-
-            {createdClubRfq && (
-              <div className="success-callout" role="status">
-                <IconCheckCircle size={18} />
-                <div>
-                  <strong>
-                    {tx("บันทึกคำขอราคา ")} {tx(createdClubRfq.inquiryCode)} {tx(" เรียบร้อยแล้ว")}
-                  </strong>
-                  <p>
-                    {tx("ทีมประสานงานจะตรวจสอบแบบและส่งใบเสนอราคาให้พิจารณาอนุมัติก่อนเริ่มผลิตจริง")}
-                  </p>
-                </div>
-              </div>
-            )}
-          </form>
-
-          {productionInquiries.filter((q) => q.contextType === 'club_or_company')
-            .length > 0 && (
-            <div style={{ marginTop: '1.25rem' }}>
-              <h2>{tx("รายการคำขอราคาของชมรม/บริษัทที่ส่งแล้ว")}</h2>
-              <div className="table-scroll">
-                <table className="ops-table">
-                  <thead>
-                    <tr>
-                      <th>{tx("รหัสคำขอ")}</th>
-                      <th>{tx("ผู้ขอ / ช่องทางติดต่อ")}</th>
-                      <th>{tx("รายการ")}</th>
-                      <th className="num-col">{tx("จำนวนประมาณการ")}</th>
-                      <th>{tx("สถานะใบเสนอราคา")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {productionInquiries
-                      .filter((q) => q.contextType === 'club_or_company')
-                      .map((rfq) => (
-                        <tr key={rfq.id}>
-                          <td className="mono-code">{tx(rfq.inquiryCode)}</td>
-                          <td>
-                            <strong>{tx(rfq.requesterName)}</strong>
-                            <div className="muted-inline">
-                              {tx(rfq.requesterContact)}
-                            </div>
-                          </td>
-                          <td>{tx(rfq.itemType)}</td>
-                          <td className="num-col mono-num">
-                            {tx(rfq.netQtyToProduce)} {tx(" ชิ้น")}
-                          </td>
-                          <td>
-                            <span className="status-pill badge-amber">
-                              <IconClock size={13} />
-                              <span>{tx("รอทีมงานส่งใบเสนอราคา")}</span>
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </section>
-      </main>
-    );
-  }
 
   /* ================= SUBVIEW 3: MY TICKETS & MERCH ORDERS ================= */
   if (subView === 'my_orders') {
@@ -4878,26 +4680,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         </section>
       )}
 
-      {/* Banner for Club / Company Custom Shirt & Medal Production without Race Event */}
-      <section
-        className="custom-order-callout"
-        aria-label={tx("บริการสั่งทำเสื้อและเหรียญสำหรับชมรมหรือองค์กร")}
-      >
-        <div>
-          <h2>{tx("ต้องการสั่งทำเสื้อวิ่งหรือเหรียญที่ระลึกสำหรับชมรม ทีม หรือกิจกรรมบริษัท?")}</h2>
-          <p className="muted-block">
-            {tx("ส่งแบบหรือความต้องการเพื่อขอใบเสนอราคาผลิตกับทีมงานได้โดยไม่จำเป็นต้องเปิดงานวิ่งบนแพลตฟอร์ม")}
-          </p>
-        </div>
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={() => onNavigate('custom_production', null)}
-        >
-          <IconShirt size={16} />
-          <span>{tx("ขอใบเสนอราคาสั่งผลิต")}</span>
-        </button>
-      </section>
     </main>
   );
 };
