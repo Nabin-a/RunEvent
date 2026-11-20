@@ -4048,6 +4048,9 @@ textarea::placeholder {
    DEDICATED EVENT REGISTRATION PAGE (/events/:code/register — SPLIT POSTER + 6-STEP CIRCLE STEPPER)
    ========================================================================= */
 .event-reg-page-shell {
+  /* full width so the form keeps the same size on every step
+     (it used to shrink to the widest element of the current step) */
+  width: 100%;
   max-width: 78rem;
   margin: 0 auto;
   padding: 1.5rem 1.25rem 3rem;
@@ -4233,6 +4236,8 @@ textarea::placeholder {
   max-width: 42rem;
   margin: 0 auto;
   padding-bottom: 0.4rem;
+  /* step change scrolls here; keep it clear of the sticky top bar */
+  scroll-margin-top: calc(var(--topbar-height, 0px) + 1rem);
 }
 
 .circle-step-node {
@@ -8658,3 +8663,1008 @@ input[type="radio"][aria-invalid="true"] {
   font-size: 0.8125rem;
 }
 
+
+/* ======================================================================= */
+/* Registration form redesign (20 Nov 2026): banner on top, one font,      */
+/* price / availability tags, fits one screen on desktop                   */
+/* ======================================================================= */
+
+/* one font for the whole form, digits keep equal widths */
+.event-reg-page-shell,
+.event-reg-page-shell *:not(i):not(svg):not([class^="fa"]) {
+  font-family: var(--font-body);
+}
+
+.event-reg-page-shell .mono-num,
+.event-reg-page-shell .mono-code {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: normal;
+}
+
+.event-reg-page-shell {
+  padding: 0.75rem 1.25rem 1rem;
+}
+
+.event-reg-split-frame {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* banner: cover image + scrim behind one line of event facts */
+.reg-banner {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-height: 4.5rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--shell-navy);
+  color: var(--on-accent);
+}
+
+.reg-banner .poster-cover-scrim {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--ink-primary) 92%, transparent) 0%,
+    color-mix(in srgb, var(--ink-primary) 70%, transparent) 100%
+  );
+}
+
+.reg-banner-back {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  padding: 0 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--on-accent) 40%, transparent);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--on-accent);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reg-banner-back:hover {
+  background: color-mix(in srgb, var(--on-accent) 12%, transparent);
+}
+
+.reg-banner-back:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 2px;
+}
+
+.reg-banner-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.reg-banner-org {
+  margin: 0;
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--on-accent) 85%, transparent);
+}
+
+.reg-banner-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--on-accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reg-banner-meta {
+  margin: 0.15rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 1rem;
+  font-size: 0.8125rem;
+}
+
+.reg-banner-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* wizard below the banner, full width */
+.event-reg-wizard-pane {
+  padding: 1rem 1.5rem 0;
+  gap: 0.5rem;
+  min-height: 0;
+}
+
+.circle-stepper-bar,
+.mascot-step-track {
+  max-width: 48rem;
+}
+
+.event-reg-wizard-pane .mascot-step-track {
+  height: 2.9rem;
+  margin-top: 0;
+}
+
+.event-reg-wizard-pane .reg-step-body {
+  max-width: none;
+  gap: 0.85rem;
+  padding-top: 0.25rem;
+}
+
+.event-reg-wizard-pane .reg-step-accent-heading {
+  font-size: 1.125rem;
+}
+
+/* compact option cards inside the wizard */
+.event-reg-wizard-pane .reg-category-radio-card {
+  max-width: none;
+  align-items: flex-start;
+  padding: 0.7rem 0.9rem;
+}
+
+.event-reg-wizard-pane .reg-category-radio-card .custom-radio-circle {
+  margin-top: 0.15rem;
+}
+
+.event-reg-wizard-pane .reg-category-radio-card.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.reg-banner-meta {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.reg-banner-meta span {
+  white-space: nowrap;
+}
+
+/* option cards flow into columns instead of one tall stack */
+.event-reg-wizard-pane .reg-radio-cards-stack {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  gap: 0.6rem;
+}
+
+/* participant step: groups flow into balanced columns (no tall empty gaps) */
+.reg-step-grid {
+  columns: 3 17rem;
+  column-gap: 1rem;
+}
+
+.reg-step-grid > * {
+  break-inside: avoid;
+  margin: 0 0 0.75rem;
+}
+
+.reg-step-grid > fieldset {
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.reg-step-grid .form-grid-3,
+.reg-step-grid .form-grid-2 {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+}
+
+.reg-step-grid .reg-field-group {
+  padding: 0.65rem 0.85rem 0.8rem;
+  gap: 0.55rem;
+}
+
+/* footer buttons stay at the bottom of the form */
+.event-reg-wizard-pane .reg-step-footer-between,
+.event-reg-wizard-pane .reg-step-footer-center {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin-top: auto;
+  padding: 0.75rem 0;
+  background: var(--bg-card);
+}
+
+/* price / availability tags */
+.reg-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.3rem;
+}
+
+.reg-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.reg-tag-price {
+  background: var(--bg-subtle);
+  color: var(--ink-primary);
+  box-shadow: inset 0 0 0 1px var(--line-medium);
+}
+
+.reg-tag-neutral {
+  background: var(--bg-subtle);
+  color: var(--ink-secondary);
+}
+
+.reg-tag-ok {
+  background: var(--forest-soft);
+  color: var(--forest-ink);
+}
+
+.reg-tag-low {
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+}
+
+.reg-tag-full {
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
+
+.reg-tag-on-dark {
+  flex: none;
+  background: color-mix(in srgb, var(--on-accent) 16%, transparent);
+  color: var(--on-accent);
+  font-size: 0.875rem;
+}
+
+/* desktop with enough height: the whole form fits one screen, the step body
+   scrolls on its own only when a step is unusually long */
+@media (min-width: 48rem) and (min-height: 40rem) {
+  .event-reg-split-frame {
+    height: calc(100dvh - var(--app-header-height, 3.5rem) - 1.75rem);
+    min-height: 34rem;
+  }
+
+  body:has(.dev-demo-dock) .event-reg-split-frame {
+    height: calc(100dvh - var(--app-header-height, 3.5rem) - 4.25rem);
+  }
+
+  .event-reg-wizard-pane {
+    flex: 1;
+  }
+
+  .event-reg-wizard-pane .reg-step-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+@media (max-width: 40rem) {
+  .event-reg-page-shell {
+    padding: 0.5rem 0.75rem 1rem;
+  }
+
+  .reg-banner {
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    padding: 0.75rem 1rem;
+  }
+
+  .reg-banner-title {
+    white-space: normal;
+  }
+
+  .event-reg-wizard-pane {
+    padding: 0.85rem 1rem 0;
+  }
+}
+
+/* denser fields inside the registration wizard so a step fits one screen */
+.event-reg-wizard-pane .form-row {
+  gap: 0.2rem;
+}
+
+.event-reg-wizard-pane .form-row > label,
+.event-reg-wizard-pane .reg-field-group label {
+  font-size: 0.8125rem;
+}
+
+.event-reg-wizard-pane input:not([type="radio"]):not([type="checkbox"]):not([type="range"]),
+.event-reg-wizard-pane select,
+.event-reg-wizard-pane .wheel-trigger {
+  min-height: 2.25rem;
+  height: 2.25rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.event-reg-wizard-pane textarea {
+  font-size: 0.875rem;
+}
+
+.event-reg-wizard-pane .reg-field-group legend {
+  font-size: 0.8125rem;
+}
+
+.reg-step-grid .reg-field-group {
+  padding: 0.5rem 0.75rem 0.65rem;
+  gap: 0.45rem;
+}
+
+.reg-step-grid .form-grid-3,
+.reg-step-grid .form-grid-2 {
+  gap: 0.45rem 0.6rem;
+}
+
+/* register-for-self / for-someone-else: one compact row */
+.event-reg-wizard-pane .reg-mode-choice .reg-category-radio-card {
+  padding: 0.5rem 0.8rem;
+}
+
+.event-reg-wizard-pane .reg-mode-choice .muted-inline {
+  font-size: 0.75rem;
+}
+
+.event-reg-wizard-pane .circle-step-ring {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.event-reg-wizard-pane .mascot-step-track {
+  height: 2.6rem;
+}
+
+.event-reg-wizard-pane .reg-step-footer-between,
+.event-reg-wizard-pane .reg-step-footer-center {
+  padding: 0.6rem 0;
+}
+
+@media (min-width: 80rem) {
+  .reg-step-grid {
+    columns: 4 15rem;
+  }
+}
+
+/* participant step: three explicit columns (names · personal · emergency + extra fields) */
+.reg-step-grid,
+.reg-step-grid:is(*) {
+  columns: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  gap: 0.75rem 1rem;
+  align-items: start;
+}
+
+.reg-step-grid > * {
+  margin: 0;
+}
+
+.reg-step-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.reg-step-col > * {
+  margin: 0;
+}
+
+.reg-step-col > fieldset {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (min-width: 64rem) {
+  .reg-step-grid,
+  .reg-step-grid:is(*) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr);
+  }
+}
+
+.reg-step-grid .form-grid-3 {
+  grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+}
+
+.reg-step-grid .form-grid-3:has(#p2-dob) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.reg-span-all {
+  grid-column: 1 / -1;
+}
+
+/* heading and the self / someone-else choice share one row */
+.reg-step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.reg-step-head .reg-step-accent-heading {
+  margin: 0;
+}
+
+.reg-step-head .reg-mode-choice:not(.is-compact) {
+  flex: 1 1 100%;
+}
+
+.reg-mode-choice.is-compact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.event-reg-wizard-pane .reg-mode-choice.is-compact .reg-category-radio-card {
+  padding: 0.4rem 0.85rem;
+}
+
+.reg-mode-choice.is-compact .muted-inline {
+  display: none;
+}
+
+.event-reg-wizard-pane .reg-mode-choice.is-compact {
+  display: flex;
+  flex-direction: row;
+  width: auto;
+}
+
+.event-reg-wizard-pane .reg-mode-choice.is-compact .reg-category-radio-card {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+/* the form-template version is organizer bookkeeping, not something the runner acts on */
+.event-reg-wizard-pane .runner-custom-fields > .cta-inline-row .mono-code {
+  display: none;
+}
+
+.event-reg-wizard-pane .runner-custom-fields > .cta-inline-row {
+  margin-bottom: 0.4rem !important;
+}
+
+.event-reg-wizard-pane .runner-custom-fields > .cta-inline-row h3 {
+  font-size: 0.8125rem;
+}
+
+.reg-ec-pick {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+}
+
+.reg-ec-pick select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.reg-ec-pick .inline-text-link {
+  flex: 0 0 auto;
+  font-size: 0.8125rem;
+}
+
+/* slimmer banner while filling the form */
+.reg-banner {
+  min-height: 0;
+}
+
+/* vertical budget for the one-screen form */
+.event-reg-wizard-pane .reg-step-body {
+  gap: 0.75rem;
+}
+
+.reg-banner {
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+}
+
+.reg-banner-org {
+  line-height: 1.25;
+}
+
+.event-reg-wizard-pane .circle-stepper-bar {
+  padding-bottom: 0.2rem;
+}
+
+.event-reg-wizard-pane .reg-step-footer-between,
+.event-reg-wizard-pane .reg-step-footer-center {
+  padding: 0.5rem 0;
+}
+
+.reg-step-head .login-prompt-inline {
+  order: 3;
+  flex: 1 1 100%;
+}
+
+.reg-legend-note {
+  font-weight: 400;
+  color: var(--ink-secondary);
+}
+
+.event-reg-wizard-pane .reg-step-body {
+  gap: 0.6rem;
+}
+
+.event-reg-wizard-pane .mascot-step-track {
+  height: 2.45rem;
+}
+
+.event-reg-wizard-pane .reg-step-footer-between,
+.event-reg-wizard-pane .reg-step-footer-center {
+  padding: 0.4rem 0;
+}
+
+.reg-step-head .login-prompt-inline {
+  padding: 0.45rem 0.75rem;
+  gap: 0.75rem;
+}
+
+.event-reg-wizard-pane .reg-step-body {
+  gap: 0.5rem;
+}
+
+.reg-step-col {
+  gap: 0.6rem;
+}
+
+.event-reg-page-shell {
+  scroll-margin-top: calc(var(--topbar-height, 0px) + 0.75rem);
+}
+
+/* phones: event facts wrap instead of being clipped */
+@media (max-width: 48rem) {
+  .reg-banner-meta {
+    flex-wrap: wrap;
+  }
+
+  .reg-banner-meta span {
+    white-space: normal;
+  }
+}
+
+@media (max-width: 48rem) {
+  .reg-banner {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+  }
+
+  .reg-banner-back {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .reg-banner > .reg-tag {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .reg-banner-copy {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-width: 0;
+  }
+
+  .reg-banner-title {
+    white-space: normal;
+  }
+}
+
+/* participant name: two roomy fields per row instead of three cramped ones */
+.reg-name-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.6rem;
+}
+
+@media (max-width: 22rem) {
+  .reg-name-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* organizer now sits in the facts row of the banner */
+.reg-banner-meta .reg-banner-org {
+  font-size: inherit;
+  font-weight: 600;
+}
+
+/* age hint spans DOB + gender: one line instead of two */
+.reg-step-grid .reg-age-hint.reg-span-all {
+  margin: -0.15rem 0 0;
+}
+
+/* third column carries the event's extra fields side by side; give it the most room */
+@media (min-width: 64rem) {
+  .reg-step-grid,
+  .reg-step-grid:is(*) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.3fr);
+  }
+}
+
+@media (max-width: 64rem) {
+  .reg-banner-meta {
+    flex-wrap: wrap;
+  }
+}
+
+/* ---- phones: compact step progress (replaces the circle stepper below 48rem) ---- */
+.mstep {
+  display: none;
+}
+
+@media (max-width: 48rem) {
+  .event-reg-wizard-pane .circle-stepper-bar,
+  .event-reg-wizard-pane .mascot-step-track {
+    display: none;
+  }
+
+  .mstep {
+    display: block;
+    margin: 0 0 0.75rem;
+  }
+}
+
+.mstep-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.mstep-title {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.mstep-title strong {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--ink-primary);
+}
+
+.mstep-count {
+  font-size: 0.8125rem;
+  color: var(--ink-secondary);
+}
+
+.mstep-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 2.75rem;
+  padding: 0 0.25rem;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--brand);
+  cursor: pointer;
+}
+
+.mstep-toggle svg {
+  transition: transform 0.2s ease;
+}
+
+.mstep-toggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.mstep-toggle:focus-visible,
+.mstep-list-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.mstep-lane {
+  position: relative;
+  padding-top: 2.1rem;
+}
+
+.mstep-runner {
+  position: absolute;
+  bottom: 0.2rem;
+  transform: translateX(-50%);
+  transition: left 0.9s ease-in-out;
+  line-height: 0;
+}
+
+.mstep-segs {
+  display: flex;
+  gap: 3px;
+}
+
+.mstep-seg {
+  flex: 1;
+  height: 6px;
+  border-radius: 6px;
+  background: var(--line-light);
+}
+
+.mstep-seg.is-done {
+  background: var(--forest);
+}
+
+.mstep-seg.is-current {
+  background: var(--brand);
+}
+
+.mstep-next {
+  margin: 0.4rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--ink-secondary);
+}
+
+.mstep-list {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0.25rem;
+  border: 1px solid var(--line-light);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+}
+
+.mstep-list-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0 0.6rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+button.mstep-list-btn:hover {
+  background: var(--mint-soft);
+}
+
+.mstep-list-btn.is-static {
+  cursor: default;
+}
+
+.mstep-list-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-medium);
+  font-size: 0.75rem;
+  color: var(--ink-secondary);
+}
+
+.mstep-list-item.is-done .mstep-list-mark {
+  border-color: transparent;
+  color: var(--forest);
+}
+
+.mstep-list-item.is-current .mstep-list-mark {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--on-accent);
+}
+
+.mstep-list-item.is-current .mstep-list-label {
+  font-weight: 700;
+}
+
+.mstep-list-label {
+  flex: 1;
+}
+
+.mstep-list-state {
+  font-size: 0.75rem;
+  color: var(--ink-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mstep-runner,
+  .mstep-toggle svg {
+    transition: none;
+  }
+}
+
+/* keep the 44px tap area without making the header row that tall */
+.mstep-toggle {
+  margin-block: -0.5rem;
+}
+
+.mstep-lane {
+  padding-top: 1.9rem;
+}
+
+/* banner facts wrap onto a second line when the venue is long, never clipped */
+.reg-banner-meta {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.reg-banner-meta span {
+  white-space: normal;
+}
+
+.reg-banner-meta > span:not(.reg-banner-org) {
+  align-items: flex-start;
+}
+
+.reg-banner-meta > span svg {
+  flex: none;
+  margin-top: 0.2em;
+}
+
+/* the facts row is a <p>: lift the global reading-measure cap so it uses the banner width */
+.reg-banner-meta {
+  max-width: none;
+}
+
+.event-reg-wizard-pane .runner-custom-fields > .cta-inline-row h3 {
+  margin: 0;
+}
+
+/* ID type + number stay side by side inside the participant columns */
+@media (min-width: 64rem) {
+  .reg-step-grid .form-grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---- date of birth: three select-style fields (day · month · year) ---- */
+.dob-split {
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.45fr) minmax(0, 1fr);
+  gap: 0.4rem;
+}
+
+.dob-split .wheel-trigger-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dob-split .wheel-trigger {
+  padding-left: 0.6rem;
+  padding-right: 0.5rem;
+}
+
+.wheel-grid-one {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+}
+
+/* one wheel needs far less room than the old three-wheel sheet */
+.wheel-sheet.wheel-sheet-single {
+  width: max(100%, 11rem);
+}
+
+.wheel-sheet.wheel-sheet-single.is-end {
+  left: auto;
+  right: 0;
+}
+
+.wheel-sheet-single .wheel-header .wheel-year-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  text-align: center;
+}
+
+/* pickers without Cancel / Done: the toolbar only names the field */
+.wheel-toolbar.is-title-only {
+  justify-content: center;
+  padding: 0.55rem 0.75rem;
+}
+
+/* DOB parts: a text input inside the select-style frame */
+.dob-part {
+  cursor: text;
+}
+
+.dob-part:focus-within {
+  outline: 2px solid var(--ink-primary);
+  outline-offset: 1px;
+}
+
+.dob-split .dob-part .dob-part-input,
+.event-reg-wizard-pane .dob-split .dob-part .dob-part-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  font: inherit;
+  color: inherit;
+}
+
+.dob-part .dob-part-input::placeholder {
+  color: var(--ink-placeholder);
+}
+
+.dob-part-chevron {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-width: 1.5rem;
+  min-height: 1.5rem;
+  cursor: pointer;
+}
+
+/* phones: the chevron is the wheel's tap target, keep it at least 44px tall with the field */
+@media (max-width: 40rem) {
+  .dob-part-chevron {
+    min-width: 2rem;
+    align-self: stretch;
+  }
+}
+
+@media (max-width: 40rem) {
+  .dob-part .dob-part-chevron {
+    align-self: stretch;
+    margin: -0.5rem -0.5rem -0.5rem 0;
+    padding: 0 0.5rem;
+    min-height: 2.75rem;
+  }
+}
+
+@media (min-width: 40.0625rem) {
+  .dob-split .dob-part {
+    gap: 0.3rem;
+  }
+
+  .dob-split .dob-part-chevron {
+    min-width: 0.9rem;
+  }
+}
+
+/* date of birth: the checklist flash rings each of day / month / year, not the gaps between */
+.dob-split[data-attention-flash] {
+  animation: none;
+  background: none;
+  box-shadow: none;
+}
+
+.dob-split[data-attention-flash] .dob-part {
+  animation: field-attention-pulse 2.4s ease-out 1 both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dob-split[data-attention-flash] .dob-part {
+    animation: field-attention-fade 2.4s linear 1 both;
+  }
+}

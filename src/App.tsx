@@ -369,6 +369,8 @@ export const App: React.FC = () => {
         '--topbar-height',
         isSticky ? `${header.offsetHeight}px` : '0px'
       );
+      // always the real header height (used by full-height layouts such as the registration form)
+      document.documentElement.style.setProperty('--app-header-height', `${header.offsetHeight}px`);
     };
     apply();
     const ro = new ResizeObserver(apply);

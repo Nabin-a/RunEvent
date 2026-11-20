@@ -28,6 +28,8 @@ interface WheelColumnProps {
   ariaLabel: string;
   className?: string;
   autoFocus?: boolean;
+  /** a row was clicked / tapped (after onChange); lets a picker close on pick */
+  onPick?: (index: number) => void;
 }
 
 export const WheelColumn: React.FC<WheelColumnProps> = ({
@@ -37,6 +39,7 @@ export const WheelColumn: React.FC<WheelColumnProps> = ({
   ariaLabel,
   className,
   autoFocus = false,
+  onPick,
 }) => {
   const ref = useRef<HTMLDivElement | null>(null);
   const settleTimer = useRef<number | null>(null);
@@ -122,7 +125,10 @@ export const WheelColumn: React.FC<WheelColumnProps> = ({
             role="option"
             aria-selected={i === selectedIndex}
             className={`wheel-item ${i === selectedIndex ? 'is-selected' : ''}`}
-            onClick={() => move(i)}
+            onClick={() => {
+              move(i);
+              onPick?.(i);
+            }}
           >
             {item.label}
           </div>
@@ -142,6 +148,14 @@ interface WheelSheetProps {
   onCancel: () => void;
   onDone: () => void;
   onClear?: () => void;
+  /** extra class on the sheet (e.g. a narrow single-wheel popover) */
+  className?: string;
+  /** false: no Cancel / Done buttons (the picker commits as the wheel moves) */
+  actions?: boolean;
+  /** Escape key; defaults to onCancel */
+  onEscape?: () => void;
+  /** a press on this element is not "outside" (e.g. the field's own text input) */
+  ignoreRef?: React.RefObject<HTMLElement | null>;
 }
 
 export const WheelSheet: React.FC<WheelSheetProps> = ({
@@ -152,6 +166,10 @@ export const WheelSheet: React.FC<WheelSheetProps> = ({
   onCancel,
   onDone,
   onClear,
+  className,
+  actions = true,
+  onEscape,
+  ignoreRef,
 }) => {
   const sheetRef = useRef<HTMLDivElement | null>(null);
   // Desktop popover opens upward when there is no room below (like a native select).
@@ -179,14 +197,16 @@ export const WheelSheet: React.FC<WheelSheetProps> = ({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onCancel();
+        (onEscape ?? onCancel)();
       } else if (e.key === 'Enter') {
         e.preventDefault();
         onDone();
       }
     };
     const onPointer = (e: PointerEvent) => {
-      if (sheetRef.current && !sheetRef.current.contains(e.target as Node)) onCancel();
+      const target = e.target as Node;
+      if (ignoreRef?.current?.contains(target)) return;
+      if (sheetRef.current && !sheetRef.current.contains(target)) onCancel();
     };
     window.addEventListener('keydown', onKey);
     // Defer so the click that opened the sheet does not immediately close it.
@@ -196,7 +216,7 @@ export const WheelSheet: React.FC<WheelSheetProps> = ({
       window.removeEventListener('pointerdown', onPointer);
       window.clearTimeout(t);
     };
-  }, [open, onCancel, onDone]);
+  }, [open, onCancel, onDone, onEscape]);
 
   if (!open) return null;
 
@@ -205,18 +225,22 @@ export const WheelSheet: React.FC<WheelSheetProps> = ({
       <div className="wheel-backdrop" aria-hidden="true" />
       <div
         ref={sheetRef}
-        className={`wheel-sheet ${above ? 'is-above' : ''}`}
+        className={`wheel-sheet ${above ? 'is-above' : ''} ${className ?? ''}`}
         role="dialog"
         aria-label={title}
       >
-        <div className="wheel-toolbar">
-          <button type="button" className="wheel-tool-btn" onClick={onCancel}>
-            {tx('ยกเลิก')}
-          </button>
+        <div className={`wheel-toolbar ${actions ? '' : 'is-title-only'}`}>
+          {actions && (
+            <button type="button" className="wheel-tool-btn" onClick={onCancel}>
+              {tx('ยกเลิก')}
+            </button>
+          )}
           <strong className="wheel-title">{title}</strong>
-          <button type="button" className="wheel-tool-btn is-done" onClick={onDone}>
-            {tx('เสร็จ')}
-          </button>
+          {actions && (
+            <button type="button" className="wheel-tool-btn is-done" onClick={onDone}>
+              {tx('เสร็จ')}
+            </button>
+          )}
         </div>
         {header && <div className="wheel-header">{header}</div>}
         <div className="wheel-body">
@@ -252,11 +276,14 @@ export const WheelTrigger: React.FC<{
   expanded: boolean;
   onOpen: () => void;
   describedBy?: string;
-}> = ({ id, label, placeholder, hasValue, expanded, onOpen, describedBy }) => (
+  /** accessible name when the visible value alone is not enough (e.g. "วัน 12") */
+  ariaLabel?: string;
+}> = ({ id, label, placeholder, hasValue, expanded, onOpen, describedBy, ariaLabel }) => (
   <button
     id={id}
     type="button"
     className={`wheel-trigger ${hasValue ? '' : 'is-empty'}`}
+    aria-label={ariaLabel}
     aria-haspopup="dialog"
     aria-expanded={expanded}
     aria-describedby={describedBy}

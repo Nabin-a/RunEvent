@@ -160,6 +160,7 @@ The visual system rejects generic SaaS decorative charts, eyebrow kickers above 
 - **The Slate-Tinted Ink Rule.** Muted text, borders, and placeholders derive from the `#34495f` brand slate rather than pure neutral grey.
 - **The Icon-Plus-Label Status Rule.** Every status pairs a `1.75px` stroke SVG icon (tinted with the base hue, e.g. `#157347`) with an explicit Thai status phrase in the matching ink (e.g. `#0d4f30`); color never carries meaning alone.
 - **The Frameless Status Rule (20 Nov 2026, user-confirmed).** Statuses, tags, category labels, and ID codes (`.mono-code`, e.g. `USR-104`, `EVT-CMI-2601`) render without capsule or box frames: no pill radius, no border, no tinted fill. Text-only statuses get a small leading dot; distance/category labels get a small square swatch. The only exception is a status laid over imagery (event cover), which sits on a plain `#ffffff` plate with `6px` radius and a soft shadow for legibility.
+- **Registration tag exception (20 Nov 2026, user-confirmed).** On the race registration form only, price and availability are soft-filled pill tags (`.reg-tag`) so runners can scan them: price is neutral with a 1px hairline; availability is green (more than 20% left), amber (20% or less, "เหลือ x") or red ("เต็มแล้ว", option disabled), always with an icon and words, never colour alone. The registration form also uses one font (`--font-body`, tabular digits) and fits one screen on desktop (banner on top, step body scrolls only when a step is unusually long).
 
 ## Typography
 

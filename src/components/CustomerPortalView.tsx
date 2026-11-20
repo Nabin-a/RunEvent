@@ -1,5 +1,5 @@
 import { RequiredFieldText } from './RequiredFieldText';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   EventProduct,
   MerchOrderRecord,
@@ -46,6 +46,8 @@ import {
 import { DateOfBirthInput } from './DateOfBirthInput';
 import { EventAgeGroupsSection } from './EventAgeGroupsSection';
 import { RaceCalendarView } from './RaceCalendarView';
+import { NoteTag, PriceTag, SeatTag } from './RegTags';
+import { MobileStepProgress } from './MobileStepProgress';
 import { MascotHeroLane, MascotStepTrack } from './MascotRunner';
 import { reportInvalidFieldsWithin } from '../utils/formValidation';
 import {
@@ -81,6 +83,10 @@ import {
   formatAgeLimit,
   formatBasisDate,
 } from '../utils/age';
+/** Registration wizard steps: 1 start, 2 participant, 3 race-kit shirt, 4 souvenirs,
+ *  5 address, 6 payment, 7 done. Step 4 is skipped when the event sells nothing. */
+type RegStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
 export type CustomerSubView =
   | 'directory'
   | 'event_detail'
@@ -190,8 +196,20 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     'register' | 'storefront' | 'info_results'
   >(initialEventTab);
   const [showRegForm, setShowRegForm] = useState(false);
-  const [regStep, setRegStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
+  const [regStep, setRegStep] = useState<RegStep>(1);
   const stepperRef = useRef<HTMLElement | null>(null);
+  // Every step change (next / back / clicking a done step) brings the form back to its top.
+  const prevRegStep = useRef(regStep);
+  useEffect(() => {
+    if (prevRegStep.current === regStep) return;
+    prevRegStep.current = regStep;
+    // the whole form frame (banner included) comes back into view, not just the stepper
+    const top =
+      stepperRef.current?.closest<HTMLElement>('.event-reg-page-shell') ?? stepperRef.current;
+    if (!top) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    top.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+  }, [regStep]);
   const [selectedCatId, setSelectedCatId] = useState<string>('');
   const [selectedDivisionOption, setSelectedDivisionOption] =
     useState<string>('');
@@ -869,7 +887,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       onSaveProfilePatch?.(profilePatch);
     }
     setCreatedResult(res);
-    setRegStep(6);
+    setRegStep(7);
   };
 
   const handleRegistrationSubmit = (e: React.FormEvent) => {
@@ -1370,13 +1388,15 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     const org = organizations.find(
       (o) => o.id === selectedEvent.organizationId
     );
-    const stepLabels: { step: 1 | 2 | 3 | 4 | 5 | 6; label: string }[] = [
+    const hasSouvenirs = selectedEvent.products.length > 0;
+    const stepLabels: { step: RegStep; label: string }[] = [
       { step: 1, label: 'เริ่ม' },
       { step: 2, label: 'ข้อมูล' },
       { step: 3, label: 'สินค้า' },
-      { step: 4, label: 'ที่อยู่' },
-      { step: 5, label: 'ชำระเงิน' },
-      { step: 6, label: 'สำเร็จ' },
+      ...(hasSouvenirs ? [{ step: 4 as RegStep, label: 'ของที่ระลึก' }] : []),
+      { step: 5, label: 'ที่อยู่' },
+      { step: 6, label: 'ชำระเงิน' },
+      { step: 7, label: 'สำเร็จ' },
     ];
 
     const getShirtSpec = (size: ShirtSizeCode) =>
@@ -1423,9 +1443,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     return (
       <main className="event-reg-page-shell">
         <div className="event-reg-split-frame">
-          {/* LEFT POSTER COLUMN */}
-          <aside
-            className={`event-reg-poster-pane ${
+          {/* EVENT BANNER (top): cover + scrim, back, title and key facts */}
+          <header
+            className={`reg-banner ${
               selectedEvent.coverImageUrl ? 'has-cover-photo' : 'has-cover-motif'
             }`}
             aria-label={tx("ข้อมูลงานวิ่งที่กำลังสมัคร")}
@@ -1437,66 +1457,55 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               />
               <div className="poster-cover-scrim" />
             </div>
-
-            <div className="poster-top-copy">
-              <p className="poster-org-name">
-                {tx(org?.nameTh ?? "องค์กรผู้จัดงานวิ่ง กระต่าย")}
-              </p>
-              <h1 className="poster-event-title">
+            <button
+              type="button"
+              className="reg-banner-back"
+              aria-label={tx("กลับหน้ารายละเอียดงานวิ่ง")}
+              onClick={() =>
+                onNavigate('event_detail', selectedEvent.id, 'info_results')
+              }
+            >
+              <IconArrowLeft size={15} />
+              <span>{tx("กลับ")}</span>
+            </button>
+            <div className="reg-banner-copy">
+              <h1 className="reg-banner-title">
                 {selectedEvent.titleEn || selectedEvent.titleTh}
               </h1>
-              <p className="poster-event-sub">{tx(selectedEvent.titleTh)}</p>
-              <ul className="poster-meta-list">
-                <li>
+              <p className="reg-banner-meta">
+                <span className="reg-banner-org">
+                  {tx(org?.nameTh ?? "องค์กรผู้จัดงานวิ่ง กระต่าย")}
+                </span>
+                <span>
                   <IconCalendar size={14} />
-                  <span className="mono-num">{tx(selectedEvent.eventDate)}</span>
-                </li>
-                <li>
+                  {tx(selectedEvent.eventDate)}
+                </span>
+                <span>
                   <IconMapPin size={14} />
-                  <span>
-                    {tx(selectedEvent.venue)} · {tx(selectedEvent.province)}
-                  </span>
-                </li>
+                  {tx(selectedEvent.venue)} · {tx(selectedEvent.province)}
+                </span>
                 {activeCategory && (
-                  <li>
+                  <span>
                     <IconFlag size={14} />
-                    <span>
-                      {tx(activeCategory.name)} ({tx(activeCategory.code)})
-                    </span>
-                  </li>
+                    {tx(activeCategory.name)}
+                  </span>
                 )}
-              </ul>
+              </p>
             </div>
-
-            {(selectedEvent.galleryImageUrls ?? []).length > 0 && (
-              <div className="poster-gallery-strip" aria-label={tx("ภาพประกอบงานวิ่ง")}>
-                {(selectedEvent.galleryImageUrls ?? []).slice(0, 3).map((src, i) => (
-                  <img
-                    key={`${src}-${i}`}
-                    src={src}
-                    alt={txf("{0} ภาพที่ {1}", selectedEvent.titleTh, i + 1)}
-                    loading="lazy"
-                    decoding="async"
-                  />
-                ))}
-              </div>
-            )}
-
-            <div className="poster-bottom-bar">
-              <button
-                type="button"
-                className="poster-back-btn"
-                onClick={() =>
-                  onNavigate('event_detail', selectedEvent.id, 'info_results')
+            {activeCategory && (
+              <PriceTag
+                onDark
+                satang={
+                  calculateFeeQuote(
+                    getCurrentTier(activeCategory).priceSatang,
+                    selectedEvent.feeBearerPolicy
+                  ).runnerNetPaySatang
                 }
-              >
-                <IconArrowLeft size={15} />
-                <span>{tx("กลับหน้ารายละเอียดงานวิ่ง")}</span>
-              </button>
-            </div>
-          </aside>
+              />
+            )}
+          </header>
 
-          {/* RIGHT STEP-BY-STEP WIZARD COLUMN */}
+          {/* STEP-BY-STEP WIZARD (below the banner) */}
           <section
             className="event-reg-wizard-pane"
             aria-label={tx("ขั้นตอนการสมัครเข้าร่วมงานวิ่ง")}
@@ -1542,8 +1551,17 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             </nav>
             <MascotStepTrack
               stepperRef={stepperRef}
-              stepIndex={regStep - 1}
-              complete={regStep === 6}
+              stepIndex={Math.max(0, stepLabels.findIndex((s) => s.step === regStep))}
+              complete={regStep === 7}
+            />
+            {/* phones: current step + segmented bar instead of 7 squeezed circles */}
+            <MobileStepProgress
+              steps={stepLabels}
+              current={regStep}
+              complete={regStep === 7}
+              onJump={(step) => {
+                if (step < regStep) setRegStep(step);
+              }}
             />
 
             {/* STEP 1: เริ่ม — เลือกประเภทการสมัคร */}
@@ -1573,16 +1591,18 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       : 0;
                     const isSelected = currentPickedOptionId === opt.optionId;
 
+                    const isFull = openCatSeats <= 0;
                     return (
                       <label
                         key={opt.optionId}
                         className={`reg-category-radio-card ${
                           isSelected ? 'selected' : ''
-                        }`}
+                        } ${isFull ? 'disabled' : ''}`}
                       >
                         <input
                           type="radio"
                           name="event-reg-cat-option"
+                          disabled={isFull}
                           checked={isSelected}
                           onChange={() => {
                             setSelectedDivisionOption(opt.optionId);
@@ -1592,13 +1612,19 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         <span className="custom-radio-circle" aria-hidden="true" />
                         <div className="reg-radio-card-copy">
                           <strong>{tx(opt.label)}</strong>
-                          <span className="muted-inline mono-num">
-                            {tx(opt.subLabel)} ·{' '}
-                            {quote
-                              ? formatThb(quote.runnerNetPaySatang, true)
-                              : ''}{' '}
-                            {` · ${txf('ว่าง {0} สิทธิ์', openCatSeats)}`}
-                            {cat && formatAgeLimit(cat) ? ` · ${formatAgeLimit(cat)}` : ''}
+                          <span className="muted-inline">{tx(opt.subLabel)}</span>
+                          <span className="reg-tag-row">
+                            {quote && <PriceTag satang={quote.runnerNetPaySatang} />}
+                            {cat && (
+                              <SeatTag
+                                left={openCatSeats}
+                                total={cat.categoryQuota}
+                                unit="ที่"
+                              />
+                            )}
+                            {cat && formatAgeLimit(cat) && (
+                              <NoteTag>{formatAgeLimit(cat)}</NoteTag>
+                            )}
                           </span>
                         </div>
                       </label>
@@ -1626,6 +1652,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             {/* STEP 2: ข้อมูล — ข้อมูลผู้สมัคร & คำถามเฉพาะงาน */}
             {regStep === 2 && activeCategory && (
               <div className="reg-step-body">
+                <div className="reg-step-head">
                 <h2 className="reg-step-accent-heading">
                   {tx("กรอกข้อมูลผู้เข้าแข่งขัน (")}{tx(activeCategory.name)})
                 </h2>
@@ -1655,7 +1682,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
                 {/* เลือกก่อนเข้าฟอร์ม: สมัครให้ตนเอง / สมัครให้ผู้อื่น */}
                 <div
-                  className="reg-radio-cards-stack reg-mode-choice"
+                  className={`reg-radio-cards-stack reg-mode-choice ${
+                    regModeChosen ? 'is-compact' : ''
+                  }`}
                   role="radiogroup"
                   aria-label={tx("เลือกผู้เข้าแข่งขัน")}
                 >
@@ -1723,50 +1752,52 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   </label>
                 </div>
 
-                {regModeChosen && !registerForSelf && (
-                  <div className="form-row">
-                    <label htmlFor="p2-saved-part">
-                      {tx("เลือกผู้สมัครที่เคยกรอกไว้")}
-                    </label>
-                    <select
-                      id="p2-saved-part"
-                      value={selectedParticipantId}
-                      onChange={(e) => {
-                        const id = e.target.value;
-                        setSelectedParticipantId(id);
-                        const found = (
-                          currentUser?.runnerProfile?.savedParticipants ?? []
-                        ).find((x) => x.id === id);
-                        applySavedParticipant(found ?? null);
-                        setShirtTouched(false);
-                        applyPreferredShirt(found?.preferredShirtSize);
-                      }}
-                    >
-                      {(currentUser?.runnerProfile?.savedParticipants ?? []).map(
-                        (pt) => {
-                          const enName =
-                            `${pt.firstNameEn ?? ''} ${pt.lastNameEn ?? ''}`.trim();
-                          const thName = `${pt.firstName} ${pt.lastName}`.trim();
-                          const disp =
-                            enName && thName
-                              ? `${enName} (${thName})`
-                              : enName || thName;
-                          const nick = pt.nicknameEn || pt.nickname;
-                          return (
-                            <option key={pt.id} value={pt.id}>
-                              {disp}
-                              {nick ? ` · ${nick}` : ''}
-                            </option>
-                          );
-                        }
-                      )}
-                      <option value="new">{tx("+ เพิ่มผู้สมัครใหม่")}</option>
-                    </select>
-                  </div>
-                )}
+                </div>
 
                 {regModeChosen && (
-                  <>
+                  <div className="reg-step-grid">
+                    <div className="reg-step-col">
+                  {regModeChosen && !registerForSelf && (
+                    <div className="form-row">
+                      <label htmlFor="p2-saved-part">
+                        {tx("เลือกผู้สมัครที่เคยกรอกไว้")}
+                      </label>
+                      <select
+                        id="p2-saved-part"
+                        value={selectedParticipantId}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          setSelectedParticipantId(id);
+                          const found = (
+                            currentUser?.runnerProfile?.savedParticipants ?? []
+                          ).find((x) => x.id === id);
+                          applySavedParticipant(found ?? null);
+                          setShirtTouched(false);
+                          applyPreferredShirt(found?.preferredShirtSize);
+                        }}
+                      >
+                        {(currentUser?.runnerProfile?.savedParticipants ?? []).map(
+                          (pt) => {
+                            const enName =
+                              `${pt.firstNameEn ?? ''} ${pt.lastNameEn ?? ''}`.trim();
+                            const thName = `${pt.firstName} ${pt.lastName}`.trim();
+                            const disp =
+                              enName && thName
+                                ? `${enName} (${thName})`
+                                : enName || thName;
+                            const nick = pt.nicknameEn || pt.nickname;
+                            return (
+                              <option key={pt.id} value={pt.id}>
+                                {disp}
+                                {nick ? ` · ${nick}` : ''}
+                              </option>
+                            );
+                          }
+                        )}
+                        <option value="new">{tx("+ เพิ่มผู้สมัครใหม่")}</option>
+                      </select>
+                    </div>
+                  )}
                     {!registerForSelf && (
                       <div className="form-row">
                         <label htmlFor="p2-buyer">
@@ -1783,8 +1814,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     )}
 
                     <fieldset className="reg-field-group">
-                      <legend>{tx("ชื่อผู้เข้าแข่งขัน (ภาษาไทย)")}</legend>
-                      <div className="form-grid-3">
+                      <legend>
+                        {tx("ชื่อผู้เข้าแข่งขัน")}{' '}
+                        <span className="reg-legend-note">
+                          · {tx("ชื่ออังกฤษแสดงบนป้าย BIB")}
+                        </span>
+                      </legend>
+                      {/* two fields per row: Thai name, English name (printed on the BIB), nicknames */}
+                      <div className="reg-name-grid">
                         <div className="form-row">
                           <label htmlFor="p2-fname-th">{<RequiredFieldText text={tx("ชื่อจริง *")} />}</label>
                           <input
@@ -1820,26 +1857,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           />
                         </div>
                         <div className="form-row">
-                          <label htmlFor="p2-nick-th">{tx("ชื่อเล่น")}</label>
-                          <input
-                            id="p2-nick-th"
-                            type="text"
-                            value={regNicknameTh}
-                            onChange={(e) =>
-                              setRegNicknameTh(
-                                sanitizeThaiNameInput(e.target.value)
-                              )
-                            }
-                            placeholder={tx("เช่น กานต์")}
-                          />
-                        </div>
-                      </div>
-                    </fieldset>
-
-                    <fieldset className="reg-field-group">
-                      <legend>{tx("ชื่อภาษาอังกฤษ (แสดงบนป้าย BIB)")}</legend>
-                      <div className="form-grid-3">
-                        <div className="form-row">
                           <label htmlFor="p2-fname-en">First Name (EN)</label>
                           <input
                             id="p2-fname-en"
@@ -1868,6 +1885,20 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           />
                         </div>
                         <div className="form-row">
+                          <label htmlFor="p2-nick-th">{tx("ชื่อเล่น")}</label>
+                          <input
+                            id="p2-nick-th"
+                            type="text"
+                            value={regNicknameTh}
+                            onChange={(e) =>
+                              setRegNicknameTh(
+                                sanitizeThaiNameInput(e.target.value)
+                              )
+                            }
+                            placeholder={tx("เช่น กานต์")}
+                          />
+                        </div>
+                        <div className="form-row">
                           <label htmlFor="p2-nick-en">Nickname (EN)</label>
                           <input
                             id="p2-nick-en"
@@ -1884,10 +1915,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       </div>
                     </fieldset>
 
+
+                    </div>
+
+                    <div className="reg-step-col">
                     <fieldset className="reg-field-group">
                       <legend>{tx("ข้อมูลส่วนตัวและเอกสารยืนยันตัวตน")}</legend>
                       <div className="form-grid-3">
-                        <div className="form-row">
+                        <div className="form-row reg-span-all">
                           <label htmlFor="p2-dob">
                             {tx("วันเกิด")}
                           </label>
@@ -1897,10 +1932,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                             onChangeIso={setRegDob}
                             ariaDescribedBy="p2-dob-age"
                           />
+                        </div>
                           {regAgeCheck && (
                             <p
                               id="p2-dob-age"
-                              className={`reg-age-hint ${
+                              className={`reg-age-hint reg-span-all ${
                                 regAgeCheck.eligible ? '' : 'is-error'
                               }`}
                               aria-live="polite"
@@ -1930,7 +1966,16 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               ) : null}
                             </p>
                           )}
+                        <div className="form-row reg-span-all">
+                          <label htmlFor="p2-phone">{tx("เบอร์โทรศัพท์ผู้เข้าแข่งขัน")}</label>
+                          <PhoneInput
+                            id="p2-phone"
+                            value={regPhone}
+                            onChange={(next) => setRegPhone(next)}
+                          />
                         </div>
+                      </div>
+                      <div className="form-grid-2">
                         <div className="form-row">
                           <label htmlFor="p2-gender">{tx("เพศ")}</label>
                           <select
@@ -1947,16 +1992,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                             <option value="หญิง">{tx("หญิง")}</option>
                           </select>
                         </div>
-                        <div className="form-row">
-                          <label htmlFor="p2-phone">{tx("เบอร์โทรศัพท์ผู้เข้าแข่งขัน")}</label>
-                          <PhoneInput
-                            id="p2-phone"
-                            value={regPhone}
-                            onChange={(next) => setRegPhone(next)}
-                          />
-                        </div>
-                      </div>
-                      <div className="form-grid-2">
                         <div className="form-row">
                           <label htmlFor="p2-idtype">{tx("ประเภทเอกสาร")}</label>
                           <select
@@ -1976,7 +2011,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                             </option>
                           </select>
                         </div>
-                        <div className="form-row">
+                        <div className="form-row reg-span-all">
                           <label htmlFor="p2-idnum">
                             {regIdType === 'thai_id'
                               ? tx("เลขบัตรประจำตัวประชาชน")
@@ -2003,8 +2038,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       </div>
                     </fieldset>
 
-                    <fieldset className="reg-field-group">
-                      <legend>{tx("ผู้ติดต่อกรณีฉุกเฉิน")}</legend>
+                    </div>
+
+                    <div className="reg-step-col">
+                    <div className="reg-field-group">
                       <div className="form-row">
                         <label htmlFor="p2-emerg">
                           {<RequiredFieldText text={tx("ชื่อและเบอร์โทรผู้ติดต่อฉุกเฉิน *")} />}
@@ -2018,31 +2055,34 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         />
                         {registerForSelf &&
                           (currentUser?.runnerProfile?.emergencyContacts ?? []).length > 0 && (
-                          <div className="cta-inline-row" style={{ marginTop: '0.25rem' }}>
-                            <span className="muted-inline">
-                              {tx("เลือกจากโปรไฟล์:")}
-                            </span>
-                            {(currentUser?.runnerProfile?.emergencyContacts ?? []).map(
-                              (ec) => (
-                                <button
-                                  key={ec.id}
-                                  type="button"
-                                  className="btn-ghost-sm"
-                                  onClick={() =>
-                                    setEmergencyContactText(
-                                      `${ec.contactName} (${ec.relationship}) ${ec.phone}`
-                                    )
-                                  }
-                                >
-                                  {ec.contactName} ({tx(ec.relationship)})
-                                  {ec.isPrimary ? ` · ${tx("หลัก")}` : ''}
-                                </button>
-                              )
-                            )}
+                          <div className="reg-ec-pick">
+                            <select
+                              aria-label={tx("เลือกผู้ติดต่อฉุกเฉินจากโปรไฟล์")}
+                              value=""
+                              onChange={(e) => {
+                                const ec = (
+                                  currentUser?.runnerProfile?.emergencyContacts ?? []
+                                ).find((x) => x.id === e.target.value);
+                                if (ec)
+                                  setEmergencyContactText(
+                                    `${ec.contactName} (${ec.relationship}) ${ec.phone}`
+                                  );
+                              }}
+                            >
+                              <option value="">{tx("เลือกจากโปรไฟล์…")}</option>
+                              {(currentUser?.runnerProfile?.emergencyContacts ?? []).map(
+                                (ec) => (
+                                  <option key={ec.id} value={ec.id}>
+                                    {ec.contactName} ({tx(ec.relationship)})
+                                    {ec.isPrimary ? ` · ${tx("หลัก")}` : ''}
+                                  </option>
+                                )
+                              )}
+                            </select>
                             {onOpenRunnerProfile && (
                               <button
                                 type="button"
-                                className="btn-ghost-sm"
+                                className="inline-text-link"
                                 onClick={onOpenRunnerProfile}
                               >
                                 {tx("จัดการโปรไฟล์")}
@@ -2051,7 +2091,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           </div>
                         )}
                       </div>
-                    </fieldset>
+                    </div>
 
                     <RunnerCustomFieldsInputs
                       fields={selectedEvent.customFields}
@@ -2069,7 +2109,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         }));
                       }}
                     />
-                  </>
+                    </div>
+                  </div>
                 )}
 
                 {step2Error && (
@@ -2156,11 +2197,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               </div>
             )}
 
-            {/* STEP 3: สินค้า — เลือกไซส์เสื้อตามสิทธิ์ & สินค้าซื้อเพิ่ม */}
+            {/* STEP 3: สินค้า — เลือกไซส์เสื้อตามสิทธิ์สมัคร */}
             {regStep === 3 && activeCategory && (
               <div className="reg-step-body">
                 <h2 className="reg-step-accent-heading">
-                  {tx("เลือกไซส์เสื้อตามสิทธิ์สมัครและของที่ระลึก")}
+                  {tx("เลือกไซส์เสื้อตามสิทธิ์สมัคร")}
                 </h2>
 
                 {registerForSelf && currentUser?.runnerProfile?.preferredShirtSize && (
@@ -2218,10 +2259,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               {tx("เสื้อวิ่งไซส์ ")} {tx(st.size)} {tx(" (รอบอก")} {tx(spec.chestInch)} {tx(" · ยาว")}{' '}
                               {tx(spec.lengthInch)})
                             </strong>
-                            <span className="muted-inline mono-num">
-                              {left > 0
-                                ? txf("คงเหลือ {0} ตัว (รวมในสิทธิ์ค่าสมัครแล้ว)", left)
-                                : tx("สต็อกไซส์นี้เต็มแล้ว")}
+                            <span className="reg-tag-row">
+                              <SeatTag left={left} total={st.total} unit="ตัว" />
+                              <NoteTag>{tx("รวมในค่าสมัครแล้ว")}</NoteTag>
                             </span>
                           </div>
                         </label>
@@ -2230,8 +2270,32 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   </div>
                 </div>
 
-                {selectedEvent.products.length > 0 && (
-                  <div className="addon-merch-box">
+                <div className="reg-step-footer-between">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setRegStep(2)}
+                  >
+                    {tx("ย้อนกลับ")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary reg-next-pill-btn"
+                    onClick={() => setRegStep(hasSouvenirs ? 4 : 5)}
+                  >
+                    {tx("ถัดไป")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 4: ของที่ระลึก — สินค้าซื้อเพิ่ม (ไม่บังคับ) */}
+            {regStep === 4 && hasSouvenirs && (
+              <div className="reg-step-body">
+                <h2 className="reg-step-accent-heading">
+                  {tx("ของที่ระลึก (ไม่บังคับ)")}
+                </h2>
+                <div className="addon-merch-box">
                     <div className="addon-head">
                       <IconShirt size={16} />
                       <strong>
@@ -2273,21 +2337,25 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         </div>
                       )}
                     </div>
+                    {selectedAddonProduct && (
+                      <span className="reg-tag-row">
+                        <PriceTag prefix="+" satang={selectedAddonProduct.priceSatang} />
+                        <NoteTag>{tx("ชำระพร้อมค่าสมัคร")}</NoteTag>
+                      </span>
+                    )}
                   </div>
-                )}
-
                 <div className="reg-step-footer-between">
                   <button
                     type="button"
                     className="btn-secondary"
-                    onClick={() => setRegStep(2)}
+                    onClick={() => setRegStep(3)}
                   >
                     {tx("ย้อนกลับ")}
                   </button>
                   <button
                     type="button"
                     className="btn-primary reg-next-pill-btn"
-                    onClick={() => setRegStep(4)}
+                    onClick={() => setRegStep(5)}
                   >
                     {tx("ถัดไป")}
                   </button>
@@ -2295,8 +2363,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               </div>
             )}
 
-            {/* STEP 4: ที่อยู่ — วิธีรับอุปกรณ์ Race Kit & ที่อยู่จัดส่ง */}
-            {regStep === 4 && (
+            {/* STEP 5: ที่อยู่ — วิธีรับอุปกรณ์ Race Kit & ที่อยู่จัดส่ง */}
+            {regStep === 5 && (
               <div className="reg-step-body">
                 <h2 className="reg-step-accent-heading">
                   {tx("เลือกวิธีรับอุปกรณ์ (Race Kit) และที่อยู่ติดต่อ")}
@@ -2317,11 +2385,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     <span className="custom-radio-circle" aria-hidden="true" />
                     <div className="reg-radio-card-copy">
                       <strong>
-                        {tx("รับเสื้อและป้าย BIB ด้วยตนเองที่หน้างาน (QR Check-in · ไม่มีค่าจัดส่ง)")}
+                        {tx("รับเสื้อและป้าย BIB ด้วยตนเองที่หน้างาน (QR Check-in)")}
                       </strong>
                       <span className="muted-inline">
                         {tx("กำหนดการรับอุปกรณ์: ")} {tx(selectedEvent.kitPickupWindow)} {tx(" ณ")}{' '}
                         {tx(selectedEvent.venue)}
+                      </span>
+                      <span className="reg-tag-row">
+                        <NoteTag tone="ok">{tx("ไม่มีค่าจัดส่ง")}</NoteTag>
                       </span>
                     </div>
                   </label>
@@ -2349,6 +2420,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   </label>
                 </div>
 
+                {/* Pick-up at the venue needs no address: the form only shows for postal delivery */}
+                {kitDeliveryOption === 'postal' && (
                 <div className="custom-field-creator canvas-stack" style={{ marginTop: '0.6rem' }}>
                   <strong>{<RequiredFieldText text={tx("ที่อยู่ติดต่อ / ที่อยู่สำหรับจัดส่งพัสดุ *")} />}</strong>
                   {(currentUser?.runnerProfile?.savedAddresses ?? []).length > 0 && (
@@ -2490,19 +2563,20 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     </>
                   )}
                 </div>
+                )}
 
                 <div className="reg-step-footer-between">
                   <button
                     type="button"
                     className="btn-secondary"
-                    onClick={() => setRegStep(3)}
+                    onClick={() => setRegStep(hasSouvenirs ? 4 : 3)}
                   >
                     {tx("ย้อนกลับ")}
                   </button>
                   <button
                     type="button"
                     className="btn-primary reg-next-pill-btn"
-                    onClick={() => setRegStep(5)}
+                    onClick={() => setRegStep(6)}
                   >
                     {tx("ถัดไป")}
                   </button>
@@ -2511,7 +2585,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             )}
 
             {/* STEP 5: ชำระเงิน — ตรวจสอบยอดชำระ & ยืนยันการสมัคร */}
-            {regStep === 5 && activeCategory && (
+            {regStep === 6 && activeCategory && (
               <form
                 onSubmit={handleRegistrationSubmit}
                 className="reg-step-body"
@@ -2644,7 +2718,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   <button
                     type="button"
                     className="btn-secondary"
-                    onClick={() => setRegStep(4)}
+                    onClick={() => setRegStep(5)}
                   >
                     {tx("ย้อนกลับ")}
                   </button>
@@ -2665,7 +2739,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             )}
 
             {/* STEP 6: สำเร็จ — ใบยืนยันสิทธิ์และ QR Token */}
-            {regStep === 6 && createdResult && (
+            {regStep === 7 && createdResult && (
               <div className="reg-step-body">
                 <div className="receipt-success-panel">
                   <div className="receipt-head">

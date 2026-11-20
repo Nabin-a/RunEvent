@@ -59,7 +59,7 @@ export function RunnerCustomFieldsInputs({
         style={{ justifyContent: 'space-between', marginBottom: '0.55rem' }}
       >
         <h3>
-          {tx("ข้อมูลเพิ่มเติมตามแม่แบบใบสมัครของงานวิ่ง (")}{tx(visibleFields.length)} {tx(" ข้อ)")}
+          {txf('ข้อมูลเพิ่มเติมที่ผู้จัดขอ ({0} ข้อ)', visibleFields.length)}
         </h3>
         {publishedFormVersion && (
           <span className="mono-code">

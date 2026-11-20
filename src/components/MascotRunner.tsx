@@ -51,6 +51,25 @@ export const MascotSprite: React.FC<{
 /* ------------------------------------------------------------------------ */
 const STEP_RUN_MS = 900;
 
+/**
+ * Run state for a mascot that moves between steps: `running` is true for one
+ * run cycle after `stepIndex` changes, and `flip` says it is running back.
+ */
+export function useStepRun(stepIndex: number): { running: boolean; flip: boolean } {
+  const [running, setRunning] = useState(false);
+  const [flip, setFlip] = useState(false);
+  const prevIndex = useRef(stepIndex);
+  useEffect(() => {
+    if (prevIndex.current === stepIndex) return;
+    setFlip(stepIndex < prevIndex.current);
+    prevIndex.current = stepIndex;
+    setRunning(true);
+    const t = window.setTimeout(() => setRunning(false), STEP_RUN_MS);
+    return () => window.clearTimeout(t);
+  }, [stepIndex]);
+  return { running, flip };
+}
+
 export const MascotStepTrack: React.FC<{
   /** the stepper <nav>; its `.circle-step-node` children give the x positions */
   stepperRef: React.RefObject<HTMLElement | null>;
@@ -58,9 +77,7 @@ export const MascotStepTrack: React.FC<{
   complete: boolean;
 }> = ({ stepperRef, stepIndex, complete }) => {
   const [x, setX] = useState<number | null>(null);
-  const [running, setRunning] = useState(false);
-  const [flip, setFlip] = useState(false);
-  const prevIndex = useRef(stepIndex);
+  const { running, flip } = useStepRun(stepIndex);
 
   useLayoutEffect(() => {
     const nav = stepperRef.current;
@@ -73,7 +90,7 @@ export const MascotStepTrack: React.FC<{
       const ring = node.querySelector<HTMLElement>('.circle-step-ring') ?? node;
       const box = ring.getBoundingClientRect();
       // keep the whole rabbit inside the track at the first / last step
-      const half = 30;
+      const half = 24;
       setX(Math.min(Math.max(box.left + box.width / 2 - navBox.left, half), navBox.width - half));
     };
     measure();
@@ -82,21 +99,12 @@ export const MascotStepTrack: React.FC<{
     return () => ro.disconnect();
   }, [stepperRef, stepIndex]);
 
-  useEffect(() => {
-    if (prevIndex.current === stepIndex) return;
-    setFlip(stepIndex < prevIndex.current);
-    prevIndex.current = stepIndex;
-    setRunning(true);
-    const t = window.setTimeout(() => setRunning(false), STEP_RUN_MS);
-    return () => window.clearTimeout(t);
-  }, [stepIndex]);
-
   const pose: MascotPose = running ? 'run' : complete ? 'cheer' : 'stand';
   return (
     <div className="mascot-step-track" aria-hidden="true">
       {x !== null && (
         <span className="mascot-step-runner" style={{ left: `${x}px` }}>
-          <MascotSprite pose={pose} size={56} flip={running && flip} />
+          <MascotSprite pose={pose} size={44} flip={running && flip} />
         </span>
       )}
     </div>
