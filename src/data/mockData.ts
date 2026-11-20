@@ -17,6 +17,7 @@ import {
   SEEDED_RUNNER_901_PROFILE,
 } from './runnerProfileDefaults';
 import { calculateFeeQuote } from '../utils/pricing';
+import { buildAgeSnapshot, buildStandardAgeGroups, evaluateCategoryAge } from '../utils/age';
 
 export const DEMO_ORGANIZATIONS: Organization[] = [
   {
@@ -394,7 +395,7 @@ export const DEMO_CUSTOM_FIELDS = [
   },
 ];
 
-export const INITIAL_EVENTS: RaceEvent[] = [
+const BASE_EVENTS: RaceEvent[] = [
   {
     id: 'evt-doisuthep-2026',
     code: 'EVT-CMI-2601',
@@ -1089,6 +1090,23 @@ export const INITIAL_EVENTS: RaceEvent[] = [
   },
 ];
 
+/**
+ * Demo age rules (fictional, for the local prototype only). Organizers set real
+ * limits and divisions per event in the dashboard.
+ */
+const SEED_AGE_RULES: Record<string, Pick<RaceEvent['categories'][number], 'ageBasis' | 'minAge' | 'maxAge' | 'ageGroups'>> = {
+  'cat-ds-21k': { ageBasis: 'race_day', minAge: 18, maxAge: null, ageGroups: buildStandardAgeGroups(18, null) },
+  'cat-ds-10k': { ageBasis: 'race_day', minAge: 12, maxAge: null, ageGroups: buildStandardAgeGroups(12, null) },
+  'cat-pk-21k': { ageBasis: 'year_end', minAge: 18, maxAge: null, ageGroups: buildStandardAgeGroups(18, null) },
+  'cat-pk-10k': { ageBasis: 'year_end', minAge: 15, maxAge: null, ageGroups: buildStandardAgeGroups(15, null) },
+  'cat-om-10k': { ageBasis: 'race_day', minAge: 15, maxAge: null, ageGroups: buildStandardAgeGroups(15, null) },
+};
+
+export const INITIAL_EVENTS: RaceEvent[] = BASE_EVENTS.map((ev) => ({
+  ...ev,
+  categories: ev.categories.map((cat) => ({ ...cat, ...(SEED_AGE_RULES[cat.id] ?? {}) })),
+}));
+
 function buildReg(params: {
   id: string;
   regCode: string;
@@ -1174,7 +1192,7 @@ function buildReg(params: {
   };
 }
 
-export const INITIAL_REGISTRATIONS: RegistrationRecord[] = [
+const BASE_REGISTRATIONS: RegistrationRecord[] = [
   buildReg({
     id: 'reg-01',
     regCode: 'REG-2611-001',
@@ -1449,6 +1467,38 @@ export const INITIAL_REGISTRATIONS: RegistrationRecord[] = [
     fulfillmentStatus: 'not_ready',
   }),
 ];
+
+/** Fictional dates of birth and genders for seeded registrations (demo data). */
+const SEED_DOBS = [
+  '1994-05-14', '1988-02-03', '1999-07-21', '1979-11-30', '2002-01-09',
+  '1985-09-17', '1972-04-25', '1996-12-02', '1990-06-11', '1965-03-28',
+];
+
+export const INITIAL_REGISTRATIONS: RegistrationRecord[] = BASE_REGISTRATIONS.map((reg, idx) => {
+  const ev = INITIAL_EVENTS.find((e) => e.id === reg.eventId);
+  const cat = ev?.categories.find((c) => c.id === reg.categoryId);
+  const dateOfBirth =
+    reg.runnerUserId === 'usr-runner'
+      ? SEEDED_RUNNER_901_PROFILE.dateOfBirth ?? SEED_DOBS[0]
+      : SEED_DOBS[idx % SEED_DOBS.length];
+  const profileGender = SEEDED_RUNNER_901_PROFILE.gender;
+  const gender: 'ชาย' | 'หญิง' =
+    reg.runnerUserId === 'usr-runner' && (profileGender === 'ชาย' || profileGender === 'หญิง')
+      ? profileGender
+      : idx % 3 === 1
+        ? 'หญิง'
+        : 'ชาย';
+  if (!ev || !cat) return reg;
+  const check = evaluateCategoryAge(ev, cat, dateOfBirth, gender);
+  const ageSnapshot = buildAgeSnapshot(check, dateOfBirth, reg.createdAt);
+  return {
+    ...reg,
+    gender,
+    age: ageSnapshot?.ageYears,
+    ageSnapshot,
+    participantSnapshot: { ...(reg.participantSnapshot ?? {}), dateOfBirth, gender },
+  };
+});
 
 export const INITIAL_MERCH_ORDERS: MerchOrderRecord[] = [
   {

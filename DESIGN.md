@@ -150,7 +150,8 @@ The visual system rejects generic SaaS decorative charts, eyebrow kickers above 
 
 ### Named Rules
 - **The Slate-Tinted Ink Rule.** Muted text, borders, and placeholders derive from `#0f172a` slate rather than pure neutral grey.
-- **The Icon-Plus-Label Status Rule.** Every status pill pairs a `1.75px` stroke SVG icon with an explicit Thai status phrase; color never carries meaning alone.
+- **The Icon-Plus-Label Status Rule.** Every status pairs a `1.75px` stroke SVG icon (tinted with the base hue, e.g. `#157347`) with an explicit Thai status phrase in the matching ink (e.g. `#0d4f30`); color never carries meaning alone.
+- **The Frameless Status Rule (20 Nov 2026, user-confirmed).** Statuses, tags, category labels, and ID codes (`.mono-code`, e.g. `USR-104`, `EVT-CMI-2601`) render without capsule or box frames: no pill radius, no border, no tinted fill. Text-only statuses get a small leading dot; distance/category labels get a small square swatch. The only exception is a status laid over imagery (event cover), which sits on a plain `#ffffff` plate with `6px` radius and a soft shadow for legibility.
 
 ## Typography
 
@@ -165,12 +166,13 @@ The visual system rejects generic SaaS decorative charts, eyebrow kickers above 
 4. **Body** (`1rem`, 400): Base document reading copy (`65–72ch` max measure).
 5. **Dense Body** (`0.9375rem`, 400–600): Form inputs, lead descriptions, and drawer items.
 6. **Compact UI** (`0.875rem`, 600): Buttons, navigation items, and dense table cells (`white-space: nowrap` on interactive affordances).
-7. **Label / Mono** (`0.8125rem`, 600): Status pills, filter labels, table headers, and tabular ratios.
+7. **Label / Mono** (`0.8125rem`, 600): Status labels, filter labels, table headers, and tabular ratios.
 8. **Caption / Code** (`0.75rem`, 600): Inline IDs, BIB prefixes, and micro-badges.
 
 ### Named Rules
 - **The Self-Sufficient Heading Rule.** Never stack uppercase kickers or eyebrow labels above `h1`, `h2`, or `h3`.
-- **The Single-Line Affordance Rule.** Buttons, nav pills, and filter chips enforce `white-space: nowrap` so Thai/English labels never wrap awkwardly mid-phrase.
+- **The Single-Line Affordance Rule.** Buttons, nav tabs, and filter tabs enforce `white-space: nowrap` so Thai/English labels never wrap awkwardly mid-phrase.
+- **The Underline Selection Rule.** Top navigation, filter bars, detail tabs, and wizard steps are text tabs: inactive in `#475569`, active in `#0f172a` with a `2px` bottom rule. The language switch is a `TH | EN` text toggle with the active code underlined. The account trigger is avatar + name + chevron with no outline.
 
 ## Layout & Responsive Discipline
 
@@ -193,5 +195,6 @@ The visual system rejects generic SaaS decorative charts, eyebrow kickers above 
 
 ### Don't
 - **Don't** place eyebrow kickers above headings or thick (`>1px`) side/top borders on rounded cards.
+- **Don't** wrap statuses, tags, or navigation items in pill/capsule frames (bordered or tinted rounded chips); use icon + tinted text or underline tabs instead.
 - **Don't** auto-merge accounts on email collision or allow unlinking a user's last remaining login method.
 - **Don't** imply real server persistence, real Google/LINE OAuth, or live payment processing in demo copy.

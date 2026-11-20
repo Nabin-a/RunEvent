@@ -42,6 +42,8 @@ import {
 import { BibLedgerStrip } from './BibLedgerStrip';
 import { EventMediaManager, EventMediaPatch } from './EventMediaManager';
 import { OrganizerAnalyticsCharts } from './OrganizerAnalyticsCharts';
+import { CategoryAgeRulesPanel } from './CategoryAgeRulesPanel';
+import { formatAgeGroupLabel, type AgeConfigValid } from '../utils/age';
 import {
   IconAlert,
   IconArrowLeft,
@@ -152,6 +154,11 @@ interface OrganizerDashboardViewProps {
   onOpenPublicPreview: (eventId?: string) => void;
   onUpdateEventTotalQuota: (eventId: string, newTotalQuota: number) => void;
   onUpdateCategoryQuota: (eventId: string, categoryId: string, newCategoryQuota: number) => void;
+  onUpdateCategoryAgeRules: (
+    eventId: string,
+    categoryId: string,
+    config: AgeConfigValid
+  ) => Promise<{ ok: boolean; error?: string }>;
   onUpdateCustomFields: (eventId: string, nextFields: CustomRegistrationField[]) => void;
   formTemplates?: FormTemplate[];
   registrationSteps?: RegistrationStepDef[];
@@ -828,6 +835,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
   onOpenPublicPreview,
   onUpdateEventTotalQuota,
   onUpdateCategoryQuota,
+  onUpdateCategoryAgeRules,
   onUpdateCustomFields,
   formTemplates = [],
   registrationSteps = [],
@@ -1294,7 +1302,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             <span>
               {currentUser.isPlatformAdmin
                 ? tx("Platform Owner (ดูและจัดการแทนผู้จัด)")
-                : roleNameMap[role]}
+                : tx(roleNameMap[role])}
             </span>
           </div>
         </div>
@@ -3100,6 +3108,15 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                   </div>
                 </section>
 
+                <CategoryAgeRulesPanel
+                  event={selectedEvent}
+                  registrations={orgRegistrations}
+                  canEdit={canManageEventConfig}
+                  onSave={(categoryId, config) =>
+                    onUpdateCategoryAgeRules(selectedEvent.id, categoryId, config)
+                  }
+                />
+
                 <CustomFieldsManager
                   event={selectedEvent}
                   fields={selectedEvent.customFields}
@@ -3571,7 +3588,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                             <tr>
                               <th>{tx("รหัสใบสมัคร")}</th>
                               <th>{tx("ผู้เข้าแข่งขัน / เสื้อ")}</th>
-                              <th>{tx("ระยะ")}</th>
+                              <th>{tx("ระยะ / รุ่นอายุ")}</th>
                               <th>{tx("สถานะสิทธิ์")}</th>
                               <th>{tx("สถานะเงิน")}</th>
                               <th>BIB</th>
@@ -3600,7 +3617,24 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                       {tx("เสื้อไซส์ ")} <strong>{tx(reg.shirtSize)}</strong>
                                     </div>
                                   </td>
-                                  <td>{tx(cat?.code)}</td>
+                                  <td>
+                                    {tx(cat?.code)}
+                                    <div className="muted-inline">
+                                      {reg.ageSnapshot
+                                        ? reg.ageSnapshot.groupId && cat?.ageGroups?.some((g) => g.id === reg.ageSnapshot!.groupId)
+                                          ? txf(
+                                              '{0} ปี · {1}',
+                                              reg.ageSnapshot.ageYears,
+                                              formatAgeGroupLabel(
+                                                cat.ageGroups.find((g) => g.id === reg.ageSnapshot!.groupId)!
+                                              )
+                                            )
+                                          : reg.ageSnapshot.groupLabelTh
+                                          ? txf('{0} ปี · {1}', reg.ageSnapshot.ageYears, tx(reg.ageSnapshot.groupLabelTh))
+                                          : txf('{0} ปี · ไม่เข้ารุ่น', reg.ageSnapshot.ageYears)
+                                        : tx('ไม่มีวันเกิด')}
+                                    </div>
+                                  </td>
                                   <td>
                                     <RegStatusBadge
                                       status={reg.registrationStatus}

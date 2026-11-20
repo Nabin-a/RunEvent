@@ -1,136 +1,166 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { IconCalendar } from './Icons';
-import {
-  autoMaskDdMmYyyy,
-  ddMmYyyyToIso,
-  isoToDdMmYyyy,
-} from '../utils/dateFormat';
-import { tx } from '../i18n';
+import React, { useMemo } from 'react';
+import { getLang, tx } from '../i18n';
+import { WheelColumn, WheelSheet, WheelTrigger, useDraft, type WheelItem } from './WheelPicker';
 
 interface DateOfBirthInputProps {
+  /** id of the trigger button so an outer <label htmlFor> still points at the field. */
   id: string;
+  /** Stored value: ISO yyyy-mm-dd in the Gregorian calendar (ค.ศ.), or '' when not set. */
   valueIso: string;
   onChangeIso: (nextIso: string) => void;
   required?: boolean;
+  /** id of a hint element read with the trigger (for example the computed age). */
+  ariaDescribedBy?: string;
 }
 
+const BE_OFFSET = 543;
+const MAX_AGE_YEARS = 100;
+const DEFAULT_AGE = 25;
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const daysInMonth = (year: number, month: number) => new Date(year, month, 0).getDate();
+
+const parseIso = (iso: string): { d: number; m: number; y: number } | null => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return null;
+  return { y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) };
+};
+
+const currentYearBangkok = (): number =>
+  Number(
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric' }).format(
+      new Date()
+    )
+  );
+
 /**
- * ช่องวันเกิดมาตรฐาน dd/mm/yyyy ทั้งการแสดงผลและการพิมพ์ (ไม่เพี้ยนตาม Locale ของ OS)
- * รองรับทั้งการพิมพ์ตัวเลข (เติม / อัตโนมัติ) และการกดปุ่มปฏิทินช่วยเลือก
+ * Date of birth as an iOS-style wheel picker (day / month / year in one sheet).
+ * The year wheel shows Buddhist and Gregorian years side by side under a sticky
+ * "พ.ศ. | ค.ศ." header. The emitted value stays ISO (Gregorian); BE = CE + 543.
  */
 export const DateOfBirthInput: React.FC<DateOfBirthInputProps> = ({
   id,
   valueIso,
   onChangeIso,
-  required = false,
+  ariaDescribedBy,
 }) => {
-  const [displayText, setDisplayText] = useState<string>(() =>
-    isoToDdMmYyyy(valueIso)
+  const lang = getLang();
+  const thisYear = currentYearBangkok();
+  const current = parseIso(valueIso);
+  const sheet = useDraft<{ d: number; m: number; y: number }>(
+    current ?? { d: 1, m: 1, y: thisYear - DEFAULT_AGE }
   );
-  const [invalidHint, setInvalidHint] = useState(false);
-  const nativeDateRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    setDisplayText(isoToDdMmYyyy(valueIso));
-    setInvalidHint(false);
-  }, [valueIso]);
+  const monthNames = useMemo(() => {
+    const fmt = new Intl.DateTimeFormat(lang === 'en' ? 'en-GB' : 'th-TH', {
+      month: 'long',
+      timeZone: 'UTC',
+    });
+    return Array.from({ length: 12 }, (_, i) => fmt.format(new Date(Date.UTC(2000, i, 1))));
+  }, [lang]);
 
-  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const masked = autoMaskDdMmYyyy(e.target.value);
-    setDisplayText(masked);
+  const years = useMemo(
+    () => Array.from({ length: MAX_AGE_YEARS + 1 }, (_, i) => thisYear - i),
+    [thisYear]
+  );
 
-    if (!masked) {
-      setInvalidHint(false);
-      onChangeIso('');
-      return;
-    }
+  const draft = sheet.draft;
+  const maxDay = daysInMonth(draft.y, draft.m);
+  const dayItems: WheelItem[] = Array.from({ length: maxDay }, (_, i) => ({
+    value: String(i + 1),
+    label: i + 1,
+  }));
+  const monthItems: WheelItem[] = monthNames.map((name, i) => ({ value: String(i + 1), label: name }));
+  const yearItems: WheelItem[] = years.map((y) => ({
+    value: String(y),
+    text: `${y + BE_OFFSET}/${y}`,
+    label: (
+      <span className="wheel-year-pair">
+        <span>{y + BE_OFFSET}</span>
+        <span>{y}</span>
+      </span>
+    ),
+  }));
 
-    if (masked.length === 10) {
-      const parsedIso = ddMmYyyyToIso(masked);
-      if (parsedIso) {
-        setInvalidHint(false);
-        onChangeIso(parsedIso);
-      } else {
-        setInvalidHint(true);
-      }
-    } else {
-      setInvalidHint(false);
-    }
+  // Changing month/year can make the day impossible (31 Apr, 29 Feb): clamp to the last day.
+  const setDraft = (next: Partial<{ d: number; m: number; y: number }>) => {
+    // Functional update: several wheels can settle in the same tick.
+    sheet.setDraft((prev) => {
+      const merged = { ...prev, ...next };
+      const limit = daysInMonth(merged.y, merged.m);
+      if (merged.d > limit) merged.d = limit;
+      return merged;
+    });
   };
 
-  const handleBlur = () => {
-    if (!displayText.trim()) {
-      setInvalidHint(false);
-      onChangeIso('');
-      return;
-    }
-    const parsedIso = ddMmYyyyToIso(displayText);
-    if (parsedIso) {
-      setInvalidHint(false);
-      setDisplayText(isoToDdMmYyyy(parsedIso));
-      onChangeIso(parsedIso);
-    } else {
-      setInvalidHint(true);
-    }
+  const open = () => sheet.openWith(current ?? { d: 1, m: 1, y: thisYear - DEFAULT_AGE });
+  const done = () => {
+    onChangeIso(`${draft.y}-${pad2(draft.m)}-${pad2(draft.d)}`);
+    sheet.setOpen(false);
   };
+
+  const display = current
+    ? `${current.d} ${monthNames[current.m - 1]} ${current.y + BE_OFFSET}/${current.y}`
+    : '';
 
   return (
-    <div className="dob-field-stack">
-      <div className="dob-input-wrap">
-        <input
-          id={id}
-          type="text"
-          inputMode="numeric"
-          className="mono-num"
-          placeholder={tx('วว/ดด/ปปปป')}
-          value={displayText}
-          onChange={handleTextChange}
-          onBlur={handleBlur}
-          maxLength={10}
-          required={required}
-          aria-invalid={invalidHint}
-        />
-        <button
-          type="button"
-          className="dob-picker-trigger"
-          aria-label={tx('เลือกวันเกิดจากปฏิทิน')}
-          onClick={() => {
-            const el = nativeDateRef.current;
-            if (!el) return;
-            if (typeof el.showPicker === 'function') {
-              el.showPicker();
-            } else {
-              el.focus();
-              el.click();
+    <div className="wheel-field">
+      <WheelTrigger
+        id={id}
+        label={display}
+        placeholder={tx('เลือกวันเกิด')}
+        hasValue={Boolean(current)}
+        expanded={sheet.open}
+        onOpen={open}
+        describedBy={ariaDescribedBy}
+      />
+      <WheelSheet
+        open={sheet.open}
+        title={tx('วันเกิด')}
+        header={
+          <div className="wheel-header-grid wheel-grid-dob">
+            <span>{tx('วัน')}</span>
+            <span>{tx('เดือน')}</span>
+            <span className="wheel-year-pair">
+              <span>{tx('พ.ศ.')}</span>
+              <span>{tx('ค.ศ.')}</span>
+            </span>
+          </div>
+        }
+        onCancel={() => sheet.setOpen(false)}
+        onDone={done}
+        onClear={
+          current
+            ? () => {
+              onChangeIso('');
+              sheet.setOpen(false);
             }
-          }}
-        >
-          <IconCalendar size={15} />
-        </button>
-        <input
-          ref={nativeDateRef}
-          type="date"
-          tabIndex={-1}
-          aria-hidden="true"
-          className="dob-hidden-native"
-          value={/^\d{4}-\d{2}-\d{2}$/.test(valueIso) ? valueIso : ''}
-          max="2026-12-31"
-          min="1920-01-01"
-          onChange={(e) => {
-            const nextIso = e.target.value;
-            if (nextIso) {
-              setInvalidHint(false);
-              setDisplayText(isoToDdMmYyyy(nextIso));
-              onChangeIso(nextIso);
-            }
-          }}
-        />
-      </div>
-      {invalidHint && (
-        <span className="text-danger" style={{ fontSize: '0.75rem' }}>
-          {tx('กรุณาระบุวันเกิดรูปแบบ วว/ดด/ปปปป ที่ถูกต้อง (เช่น 14/05/1994)')}
-        </span>
-      )}
+            : undefined
+        }
+      >
+        <div className="wheel-grid-dob">
+          <WheelColumn
+            items={dayItems}
+            selectedIndex={draft.d - 1}
+            onChange={(i) => setDraft({ d: i + 1 })}
+            ariaLabel={tx('วัน')}
+            autoFocus
+          />
+          <WheelColumn
+            items={monthItems}
+            selectedIndex={draft.m - 1}
+            onChange={(i) => setDraft({ m: i + 1 })}
+            ariaLabel={tx('เดือน')}
+          />
+          <WheelColumn
+            items={yearItems}
+            selectedIndex={Math.max(0, years.indexOf(draft.y))}
+            onChange={(i) => setDraft({ y: years[i] })}
+            ariaLabel={tx('ปี (พ.ศ./ค.ศ.)')}
+            className="wheel-col-year"
+          />
+        </div>
+      </WheelSheet>
     </div>
   );
 };

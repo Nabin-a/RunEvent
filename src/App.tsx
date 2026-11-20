@@ -23,7 +23,12 @@ import {
   DEFAULT_PLATFORM_PROFILE_CONFIG,
   deriveProviderSocialHandle,
   enrichSocialLinksFromIdentities,
+  evaluatePersonalInfoCompletion,
 } from './data/runnerProfileDefaults';
+import { ProfileCompletionStatusText } from './components/ProfileCompletionMeter';
+import { FEATURES } from './config/features';
+import { PrivacyNoticeModal } from './components/PrivacyNoticeModal';
+import { PRIVACY_NOTICE_VERSION } from './data/privacyNotice';
 import {
   AuditLogEntry,
   AuthProviderType,
@@ -58,6 +63,7 @@ import {
   UserAccount,
 } from './types';
 import { calculateFeeQuote, getCurrentTier } from './utils/pricing';
+import { buildAgeSnapshot, evaluateCategoryAge, type AgeConfigValid } from './utils/age';
 import { cloneCustomFieldsSchema } from './utils/eventConfig';
 import { AuthScreen } from './components/AuthViews';
 import {
@@ -76,6 +82,7 @@ import {
   IconBib,
   IconBuilding,
   IconCheckCircle,
+  IconChevronDown,
   IconClose,
   IconFlag,
   IconGlobe,
@@ -220,7 +227,11 @@ function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
       authTab: 'signin',
     };
   }
-  if (cleanPath === '/account/security') {
+  if (
+    cleanPath === '/account/security' ||
+    // Email verification is shelved: old /verify-email links land on account security.
+    (cleanPath === '/verify-email' && !FEATURES.emailVerification)
+  ) {
     return {
       surface: 'account_security',
       customerSubView: 'directory',
@@ -390,6 +401,7 @@ export const App: React.FC = () => {
     loadInitialSessionUserId
   );
   const [returnIntent, setReturnIntent] = useState<ReturnIntent | null>(null);
+  const [privacyAckBusy, setPrivacyAckBusy] = useState(false);
 
   const [activeOrgId, setActiveOrgId] = useState<string>('org-lanna');
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
@@ -678,6 +690,16 @@ export const App: React.FC = () => {
         setSurface('auth');
         pushUrl('/login', true);
       }
+    } else if (surface === 'auth') {
+      // Signed-in visitors never see the sign-in / sign-up / forgot-password forms
+      // (/login, /login?mode=signup|forgot). Every successful auth path already
+      // navigates away inside handleAuthenticated, so this only catches direct
+      // visits, stale links, and Back-button returns. Replace history so Back
+      // cannot land on the form again.
+      setReturnIntent(null);
+      setCustomerSubView('directory');
+      setSurface('customer');
+      pushUrl('/', true);
     }
   }, [apiBootstrapped, currentUser, surface, customerSubView]);
 
@@ -1230,14 +1252,27 @@ export const App: React.FC = () => {
     return { ok: res.ok, error: res.error };
   };
 
+  // Email verification is shelved (FEATURES.emailVerification = false). The local API
+  // has no unverified-email endpoint, so this reuses /verify-email without an OTP,
+  // which stores the address and flags it verified in the sandbox DB.
+  const handleSaveContactEmail = async (
+    email: string
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!currentUser) return { ok: false, error: tx("กรุณาเข้าสู่ระบบก่อน") };
+    const res = await syncApi('POST', '/api/account/verify-email', { email });
+    return { ok: res.ok, error: res.error };
+  };
+
   const handleManageAccountStatus = async (
     action: 'deactivate' | 'request_deletion' | 'cancel_deletion',
-    reason?: string
+    reason?: string,
+    confirmCode?: string
   ): Promise<{ ok: boolean; error?: string }> => {
     if (!currentUser) return { ok: false, error: tx("กรุณาเข้าสู่ระบบก่อน") };
     const res = await syncApi('POST', '/api/account/status', {
       action,
       reason,
+      confirmCode,
     });
     if (res.ok && action === 'deactivate') {
       setCurrentUserId(null);
@@ -1422,33 +1457,74 @@ export const App: React.FC = () => {
     return { user: targetUser, organization: newOrg };
   };
 
-  const handleSetOrChangePassword = () => {
-    if (!currentUser) return;
-    setSys((prev) => ({
-      ...prev,
-      users: prev.users.map((u) => {
-        if (u.id !== currentUser.id) return u;
-        const hasPwIdentity = u.identities.some(
-          (i) => i.provider === 'password'
-        );
-        return {
-          ...u,
-          hasPassword: true,
-          identities: hasPwIdentity
-            ? u.identities
-            : [
-              ...u.identities,
-              {
-                id: `id-pw-${Date.now()}`,
-                provider: 'password',
-                providerSubject: u.contactEmail ?? u.code,
-                linkedAt: '2026-11-17 09:46',
-              },
-            ],
-        };
-      }),
-    }));
-    void syncApi('POST', '/api/account/password', {});
+  // Sends the typed password; the server hashes it and stamps passwordChangedAt.
+  const handleSetOrChangePassword = async (
+    newPassword: string,
+    grant: string
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!currentUser) return { ok: false, error: tx("กรุณาเข้าสู่ระบบก่อน") };
+    const res = await syncApi('POST', '/api/account/password', { newPassword, grant });
+    return { ok: res.ok, error: res.error };
+  };
+
+  // Password change step 1: ask the API to "send" a code to the contact email (sandbox, no real email).
+  const handleRequestPasswordCode = async (): Promise<{
+    ok: boolean;
+    error?: string;
+    sentTo?: string;
+  }> => {
+    if (!currentUser) return { ok: false, error: tx("กรุณาเข้าสู่ระบบก่อน") };
+    const res = await apiRequest('POST', '/api/account/password/request-code', {});
+    const data = res.data as { sentTo?: string } | undefined;
+    return { ok: res.ok, error: res.error, sentTo: data?.sentTo };
+  };
+
+  // Password change step 2: verify the code; the API returns a one-time grant for step 3.
+  const handleVerifyPasswordCode = async (
+    otp: string
+  ): Promise<{ ok: boolean; error?: string; grant?: string }> => {
+    if (!currentUser) return { ok: false, error: tx("กรุณาเข้าสู่ระบบก่อน") };
+    const res = await apiRequest('POST', '/api/account/password/verify-code', { otp });
+    const data = res.data as { grant?: string } | undefined;
+    return { ok: res.ok, error: res.error, grant: data?.grant };
+  };
+
+  const handleRevokeSession = async (
+    sessionId: string
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!currentUser) return { ok: false, error: tx("กรุณาเข้าสู่ระบบก่อน") };
+    const res = await syncApi('DELETE', `/api/account/sessions/${encodeURIComponent(sessionId)}`);
+    return { ok: res.ok, error: res.error };
+  };
+
+  const handleSetMarketingConsent = async (
+    granted: boolean
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!currentUser) return { ok: false, error: tx("กรุณาเข้าสู่ระบบก่อน") };
+    const res = await syncApi('POST', '/api/account/consents', {
+      type: 'marketing',
+      granted,
+    });
+    return { ok: res.ok, error: res.error };
+  };
+
+  // Downloads the signed-in user's own data as a JSON file (PDPA right of access).
+  const handleExportMyData = async (): Promise<{ ok: boolean; error?: string }> => {
+    if (!currentUser) return { ok: false, error: tx("กรุณาเข้าสู่ระบบก่อน") };
+    const res = await apiRequest('GET', '/api/account/export');
+    if (!res.ok || !res.data) return { ok: false, error: res.error };
+    const blob = new Blob([JSON.stringify(res.data, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `runevent-my-data-${currentUser.code}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    return { ok: true };
   };
 
   const handleLinkProvider = (provider: 'google' | 'line' | 'facebook') => {
@@ -1738,6 +1814,23 @@ export const App: React.FC = () => {
       snapshotTotalChargedSatang: quote.runnerNetPaySatang,
       snapshotRefundedSatang: 0,
     };
+    // Same age rules as the server; the server's snapshot replaces this after sync.
+    const dob = payload.participantSnapshot?.dateOfBirth;
+    const participantGender = payload.participantSnapshot?.gender;
+    if (dob) {
+      const ageSnapshot = buildAgeSnapshot(
+        evaluateCategoryAge(ev, cat, dob, participantGender),
+        dob,
+        newReg.createdAt
+      );
+      if (ageSnapshot) {
+        newReg.ageSnapshot = ageSnapshot;
+        newReg.age = ageSnapshot.ageYears;
+      }
+    }
+    if (participantGender === 'ชาย' || participantGender === 'หญิง' || participantGender === 'ไม่ระบุ') {
+      newReg.gender = participantGender;
+    }
 
     let addonOrder: MerchOrderRecord | undefined;
     if (payload.addonProduct) {
@@ -1920,6 +2013,18 @@ export const App: React.FC = () => {
       target.id
     );
     void syncApi('PATCH', `/api/events/${eventId}`, { totalEventQuota: newTotalQuota });
+  };
+
+  // Server validates and stores the age rules; the returned snapshot replaces local state.
+  const handleUpdateCategoryAgeRules = async (
+    eventId: string,
+    categoryId: string,
+    config: AgeConfigValid
+  ): Promise<{ ok: boolean; error?: string }> => {
+    const res = await syncApi('PATCH', `/api/events/${eventId}`, {
+      categoryAgeUpdate: { categoryId, ...config },
+    });
+    return res.ok ? { ok: true } : { ok: false, error: res.error };
   };
 
   const handleUpdateCategoryQuota = (
@@ -3357,6 +3462,20 @@ export const App: React.FC = () => {
       : currentUser.fullNameTh
     : '';
   const currentUserAvatarUrl = currentUser?.runnerProfile?.avatarDataUrl ?? '';
+  const currentUserCompletion = currentUser
+    ? evaluatePersonalInfoCompletion(currentUser)
+    : null;
+
+  // PDPA: after sign-in, ask the user to acknowledge the privacy notice again when the
+  // current version differs from the latest one they accepted (or none is recorded).
+  const latestPrivacyAck = currentUser
+    ? [...(currentUser.consents ?? [])].reverse().find((c) => c.type === 'privacy')
+    : undefined;
+  const needsPrivacyAck = Boolean(
+    currentUser &&
+      surface !== 'auth' &&
+      latestPrivacyAck?.version !== PRIVACY_NOTICE_VERSION
+  );
   const currentUserInitial = (
     (lang === 'en'
       ? currentUser?.runnerProfile?.firstNameEn?.trim()[0] ??
@@ -3371,6 +3490,29 @@ export const App: React.FC = () => {
 
   return (
     <div className="app-root">
+      <PrivacyNoticeModal
+        open={needsPrivacyAck}
+        mode="reconsent"
+        busy={privacyAckBusy}
+        onAccept={async () => {
+          setPrivacyAckBusy(true);
+          const res = await syncApi('POST', '/api/account/consents', {
+            type: 'privacy',
+            version: PRIVACY_NOTICE_VERSION,
+          });
+          setPrivacyAckBusy(false);
+          if (!res.ok) {
+            void Swal.fire({
+              icon: 'error',
+              title: tx("ไม่สามารถบันทึกได้"),
+              text: tx(res.error ?? 'ไม่สามารถดำเนินการได้'),
+              confirmButtonText: tx("ตกลง"),
+              heightAuto: false,
+            });
+          }
+        }}
+        onCancel={handleLogout}
+      />
       {/* PRODUCTION ROLE-BASED TOP HEADER */}
       <header
         className="global-topbar"
@@ -3537,6 +3679,7 @@ export const App: React.FC = () => {
                 <span className="btn-account-pill-name">
                   {currentUserDisplayName}
                 </span>
+                <IconChevronDown size={14} className="btn-account-pill-chevron" />
               </button>
 
               {showProfileMenu && (
@@ -3568,6 +3711,27 @@ export const App: React.FC = () => {
                     </div>
                   </div>
 
+                  {currentUserCompletion && (
+                    <button
+                      type="button"
+                      className={`profile-completion-status ${currentUserCompletion.isComplete
+                        ? 'is-complete'
+                        : 'is-warning'
+                        }`}
+                      onClick={() => navigateRunnerProfile('personal')}
+                    >
+                      <ProfileCompletionStatusText
+                        isComplete={currentUserCompletion.isComplete}
+                        pct={currentUserCompletion.pct}
+                      />
+                      <span className="profile-completion-status-meter" aria-hidden="true">
+                        <span
+                          style={{ width: `${currentUserCompletion.pct}%` }}
+                        />
+                      </span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     className="profile-menu-item"
@@ -3592,7 +3756,7 @@ export const App: React.FC = () => {
                     onClick={navigateAccountSecurity}
                   >
                     <IconShield size={15} />
-                    <span>{tx("บัญชีและความปลอดภัย")}</span>
+                    <span>{tx("ตั้งค่าบัญชี")}</span>
                   </button>
 
                   {isPlatformOwner && (
@@ -3766,7 +3930,7 @@ export const App: React.FC = () => {
                     >
                       <span className="mobile-drawer-link-label">
                         <IconShield size={16} />
-                        <span>{tx("บัญชีและความปลอดภัย")}</span>
+                        <span>{tx("ตั้งค่าบัญชี")}</span>
                       </span>
                       {surface === 'account_security' && (
                         <span className="mobile-drawer-dot" aria-hidden="true" />
@@ -3905,7 +4069,6 @@ export const App: React.FC = () => {
       {surface === 'auth' && (
         <AuthScreen
           users={sys.users}
-          currentUser={currentUser}
           returnIntent={returnIntent}
           initialTab={authInitialTab}
           externalSocialScenario={externalSocialScenario}
@@ -3919,7 +4082,6 @@ export const App: React.FC = () => {
           onNavigateOrganizerWorkspace={(orgId) =>
             navigateOrganizer(orgId, null)
           }
-          onLogout={handleLogout}
         />
       )}
 
@@ -3944,12 +4106,18 @@ export const App: React.FC = () => {
               setSurface('verify_email');
               pushUrl(`/verify-email?email=${encodeURIComponent(email)}`);
             }}
+            onSaveContactEmail={handleSaveContactEmail}
             verifiedEmailNotice={verifiedEmailNotice}
             onClearVerifiedEmailNotice={() => setVerifiedEmailNotice(null)}
             onSetOrChangePassword={handleSetOrChangePassword}
+            onRequestPasswordCode={handleRequestPasswordCode}
+            onVerifyPasswordCode={handleVerifyPasswordCode}
             onLinkProvider={handleLinkProvider}
             onUnlinkProvider={handleUnlinkProvider}
             onRevokeOtherSessions={handleRevokeOtherSessions}
+            onRevokeSession={handleRevokeSession}
+            onSetMarketingConsent={handleSetMarketingConsent}
+            onExportMyData={handleExportMyData}
             onAcceptTeamInvitation={handleAcceptTeamInvitation}
             onApplyNewOrganizerOrg={handleApplyNewOrganizerOrg}
             onEnterOrganizerOrg={(orgId) => navigateOrganizer(orgId, null)}
@@ -3963,7 +4131,7 @@ export const App: React.FC = () => {
           />
         )}
 
-      {surface === 'verify_email' && currentUser && (
+      {FEATURES.emailVerification && surface === 'verify_email' && currentUser && (
         <EmailOtpVerifyView
           targetEmail={pendingVerifyEmail || currentUser.contactEmail || ''}
           onVerifyEmailWithOtp={handleVerifyEmailWithOtp}
@@ -4035,6 +4203,7 @@ export const App: React.FC = () => {
             }}
             onUpdateEventTotalQuota={handleUpdateEventTotalQuota}
             onUpdateCategoryQuota={handleUpdateCategoryQuota}
+            onUpdateCategoryAgeRules={handleUpdateCategoryAgeRules}
             onUpdateCustomFields={handleUpdateCustomFields}
             formTemplates={sys.formTemplates}
             registrationSteps={sys.registrationSteps}

@@ -66,6 +66,15 @@ import {
 } from './PublicEventView';
 
 import { tx, txf } from '../i18n';
+import { FEATURES } from '../config/features';
+import {
+  ageCheckMessage,
+  evaluateCategoryAge,
+  formatAgeBasis,
+  formatAgeGroupLabel,
+  formatAgeLimit,
+  formatBasisDate,
+} from '../utils/age';
 export type CustomerSubView =
   | 'directory'
   | 'event_detail'
@@ -548,6 +557,15 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     );
   }, [selectedEvent, selectedCatId]);
 
+  // Age on the category's basis date and the matching age group (same rules as the server).
+  const regAgeCheck = useMemo(
+    () =>
+      selectedEvent && activeCategory
+        ? evaluateCategoryAge(selectedEvent, activeCategory, regDob, regGender)
+        : null,
+    [selectedEvent, activeCategory, regDob, regGender]
+  );
+
   const activeProduct: EventProduct | null = useMemo(() => {
     if (!selectedEvent || selectedEvent.products.length === 0) return null;
     return (
@@ -634,9 +652,15 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       return;
     }
 
-    if (!currentUser.contactEmail || !currentUser.emailVerified) {
+    // Email verification is shelved: a saved contact email is enough to register.
+    if (
+      !currentUser.contactEmail ||
+      (FEATURES.emailVerification && !currentUser.emailVerified)
+    ) {
       setCheckoutError(
-        tx("บัญชีของคุณยังไม่ได้ยืนยันอีเมลติดต่อ กรุณากดปุ่ม \"เพิ่มและยืนยันอีเมล\" ด้านล่างก่อนออกใบยืนยันสิทธิ์แข่งขัน")
+        FEATURES.emailVerification
+          ? tx("บัญชีของคุณยังไม่ได้ยืนยันอีเมลติดต่อ กรุณากดปุ่ม \"เพิ่มและยืนยันอีเมล\" ด้านล่างก่อนออกใบยืนยันสิทธิ์แข่งขัน")
+          : tx("บัญชีของคุณยังไม่มีอีเมลติดต่อ กรุณากดปุ่ม \"เพิ่มอีเมล\" ด้านล่างก่อนออกใบยืนยันสิทธิ์แข่งขัน")
       );
       return;
     }
@@ -677,6 +701,12 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       setCheckoutError(
         txf("กรุณากรอกข้อมูลเพิ่มเติมที่จำเป็น: \"{0}\" ในขั้นตอนที่ 2", missingCustom.label)
       );
+      return;
+    }
+
+    const ageCheck = evaluateCategoryAge(selectedEvent, activeCategory, regDob, regGender);
+    if (!ageCheck.eligible) {
+      setCheckoutError(ageCheckMessage(ageCheck, activeCategory));
       return;
     }
 
@@ -1542,7 +1572,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                             {quote
                               ? formatThb(quote.runnerNetPaySatang, true)
                               : ''}{' '}
-                            {tx("· ว่าง ")} {tx(openCatSeats)} {tx(" สิทธิ์")}
+                            {` · ${txf('ว่าง {0} สิทธิ์', openCatSeats)}`}
+                            {cat && formatAgeLimit(cat) ? ` · ${formatAgeLimit(cat)}` : ''}
                           </span>
                         </div>
                       </label>
@@ -1833,13 +1864,47 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       <div className="form-grid-3">
                         <div className="form-row">
                           <label htmlFor="p2-dob">
-                            {tx("วันเกิด (dd/mm/yyyy)")}
+                            {tx("วันเกิด")}
                           </label>
                           <DateOfBirthInput
                             id="p2-dob"
                             valueIso={regDob}
                             onChangeIso={setRegDob}
+                            ariaDescribedBy="p2-dob-age"
                           />
+                          {regAgeCheck && (
+                            <p
+                              id="p2-dob-age"
+                              className={`reg-age-hint ${
+                                regAgeCheck.eligible ? '' : 'is-error'
+                              }`}
+                              aria-live="polite"
+                            >
+                              {regAgeCheck.ageYears !== null ? (
+                                <>
+                                  {txf(
+                                    'อายุ {0} ปี ณ {1}',
+                                    regAgeCheck.ageYears,
+                                    formatBasisDate(regAgeCheck.basisDate)
+                                  )}
+                                  {regAgeCheck.group &&
+                                    ` · ${txf('รุ่น {0}', formatAgeGroupLabel(regAgeCheck.group))}`}
+                                  {regAgeCheck.unassigned &&
+                                    ` · ${tx('ยังไม่เข้ารุ่นอายุ (ระบุเพศชายหรือหญิงเพื่อจัดรุ่น)')}`}
+                                  {!regAgeCheck.eligible &&
+                                    ` · ${txf('ระยะนี้รับ{0}', formatAgeLimit(activeCategory) ?? '')}`}
+                                </>
+                              ) : regAgeCheck.status === 'missing_dob' ? (
+                                txf(
+                                  'ระยะนี้กำหนด{0} · {1} กรุณาระบุวันเกิด',
+                                  formatAgeLimit(activeCategory) ?? tx('รุ่นอายุ'),
+                                  formatAgeBasis(regAgeCheck.basis)
+                                )
+                              ) : regAgeCheck.status === 'invalid_dob' ? (
+                                tx('วันเกิดไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง')
+                              ) : null}
+                            </p>
+                          )}
                         </div>
                         <div className="form-row">
                           <label htmlFor="p2-gender">{tx("เพศ")}</label>
@@ -2013,6 +2078,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       }
                       if (regIdType === 'thai_id' && regIdNumber.trim() && regIdNumber.trim().length !== 13) {
                         setStep2Error(tx("เลขบัตรประจำตัวประชาชนต้องครบ 13 หลัก"));
+                        return;
+                      }
+                      if (regAgeCheck && !regAgeCheck.eligible) {
+                        setStep2Error(ageCheckMessage(regAgeCheck, activeCategory));
                         return;
                       }
                       const missingField = (
@@ -2526,13 +2595,18 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     <IconAlert size={17} />
                     <div className="callout-flex">
                       <span>{tx(checkoutError)}</span>
-                      {currentUser && !currentUser.emailVerified && (
+                      {currentUser &&
+                        (FEATURES.emailVerification
+                          ? !currentUser.emailVerified
+                          : !currentUser.contactEmail) && (
                         <button
                           type="button"
                           className="btn-secondary"
                           onClick={onOpenAccountSecurity}
                         >
-                          {tx("เพิ่มและยืนยันอีเมล")}
+                          {FEATURES.emailVerification
+                            ? tx("เพิ่มและยืนยันอีเมล")
+                            : tx("เพิ่มอีเมล")}
                         </button>
                       )}
                     </div>
@@ -2840,8 +2914,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   <strong className="mono-num">{tx(selectedEvent.eventDate)}</strong>{' '}
                   {tx("· เปิดรับสมัคร:")}{' '}
                   <strong>
-                    {selectedEvent.registrationPeriodLabel ??
-                      txf("ถึง {0}", selectedEvent.editDeadlineDate)}
+                    {selectedEvent.registrationPeriodLabel
+                      ? tx(selectedEvent.registrationPeriodLabel)
+                      : txf("ถึง {0}", selectedEvent.editDeadlineDate)}
                   </strong>
                 </span>
               </div>
@@ -3065,6 +3140,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               </strong>{' '}
                               {tx("สิทธิ์")}
                             </span>
+                            {formatAgeLimit(cat) && (
+                              <span>
+                                <strong>{formatAgeLimit(cat)}</strong>{' '}
+                                <span className="muted-inline">
+                                  ({formatAgeBasis(cat.ageBasis ?? 'race_day')})
+                                </span>
+                              </span>
+                            )}
                           </div>
 
                           <div className="editorial-tier-strip">
@@ -3527,6 +3610,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               {tx("ปล่อยตัว ")} {tx(cat.startTimeLocal)} {tx(" น. · Cut-off")}{' '}
                               {tx(cat.cutoffHours)} {tx(" ชม.")}
                             </span>
+                            {formatAgeLimit(cat) && (
+                              <span className="muted-inline">{formatAgeLimit(cat)}</span>
+                            )}
                             <div className="dist-opt-price">
                               <strong className="mono-num">
                                 {formatThb(quote.runnerNetPaySatang, true)}
@@ -3879,13 +3965,18 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         <IconAlert size={16} />
                         <div className="callout-flex">
                           <span>{tx(checkoutError)}</span>
-                          {currentUser && !currentUser.emailVerified && (
+                          {currentUser &&
+                            (FEATURES.emailVerification
+                              ? !currentUser.emailVerified
+                              : !currentUser.contactEmail) && (
                             <button
                               type="button"
                               className="btn-secondary"
                               onClick={onOpenAccountSecurity}
                             >
-                              {tx("ไปหน้าเพิ่มและยืนยันอีเมล")}
+                              {FEATURES.emailVerification
+                                ? tx("ไปหน้าเพิ่มและยืนยันอีเมล")
+                                : tx("ไปหน้าเพิ่มอีเมล")}
                             </button>
                           )}
                         </div>

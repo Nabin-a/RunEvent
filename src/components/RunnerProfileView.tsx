@@ -23,8 +23,19 @@ import {
   DEFAULT_NOTIFICATION_PREFS,
   DEFAULT_PLATFORM_PROFILE_CONFIG,
   enrichSocialLinksFromIdentities,
-  evaluateRunnerProfileCompletion,
+  evaluatePersonalInfoCompletion,
 } from '../data/runnerProfileDefaults';
+import {
+  ProfileCompletionBar,
+  ProfileCompletionRing,
+} from './ProfileCompletionMeter';
+import { FEATURES } from '../config/features';
+import {
+  AccountSecuritySections,
+  ConnectionsPanel,
+  DevicesPanel,
+  PrivacyPanel,
+} from './AccountSettingsPanels';
 import {
   IconAlert,
   IconArrowRight,
@@ -38,13 +49,10 @@ import {
   IconChevronDown,
   IconDevice,
   IconDownload,
-  IconFacebookMark,
   IconFlag,
   IconGlobe,
-  IconGoogleMark,
-  IconLineMark,
+  IconLink,
   IconLock,
-  IconMail,
   IconMapPin,
   IconPlus,
   IconQr,
@@ -58,6 +66,7 @@ import {
   RegStatusBadge,
 } from './StatusBadges';
 import { DateOfBirthInput } from './DateOfBirthInput';
+import { NationalitySelect } from './NationalitySelect';
 import { ThaiPostalAddressSelector } from './ThaiPostalAddressSelector';
 import { ALL_THAI_PROVINCES } from '../data/thaiPostalAddresses';
 import {
@@ -67,6 +76,7 @@ import {
   sanitizeThaiNameInput,
 } from '../utils/dateFormat';
 import { getLang, tx, txf } from '../i18n';
+import { ageOn, formatAgeGroupLabel, formatBasisDate, todayIsoInTimeZone } from '../utils/age';
 
 function localizeCountryName(raw?: string): string {
   const v = (raw ?? '').trim();
@@ -102,7 +112,10 @@ export type RunnerProfileTab =
   | 'social'
   | 'notifications'
   | 'organizer'
-  | 'security';
+  | 'security'
+  | 'connections'
+  | 'devices'
+  | 'privacy';
 
 function resizeAvatarFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -196,20 +209,33 @@ export interface RunnerProfileViewProps {
     names?: { fullNameTh?: string; fullNameEn?: string }
   ) => Promise<{ ok: boolean; error?: string }>;
   onOpenEmailVerifyPage: (email: string) => void;
+  /** Used while FEATURES.emailVerification is off: saves the contact email directly. */
+  onSaveContactEmail?: (email: string) => Promise<{ ok: boolean; error?: string }>;
   verifiedEmailNotice?: string | null;
   onClearVerifiedEmailNotice?: () => void;
-  onSetOrChangePassword: (newPassword?: string) => void;
+  onSetOrChangePassword: (
+    newPassword: string,
+    grant: string
+  ) => Promise<{ ok: boolean; error?: string }>;
+  onRequestPasswordCode: () => Promise<{ ok: boolean; error?: string; sentTo?: string }>;
+  onVerifyPasswordCode: (
+    otp: string
+  ) => Promise<{ ok: boolean; error?: string; grant?: string }>;
   onLinkProvider: (provider: 'google' | 'line' | 'facebook') => void;
   onUnlinkProvider: (
     provider: AuthProviderType
   ) => { ok: boolean; error?: string };
   onRevokeOtherSessions: () => void;
+  onRevokeSession: (sessionId: string) => Promise<{ ok: boolean; error?: string }>;
+  onSetMarketingConsent: (granted: boolean) => Promise<{ ok: boolean; error?: string }>;
+  onExportMyData: () => Promise<{ ok: boolean; error?: string }>;
   onAcceptTeamInvitation: (code: string) => { ok: boolean; message: string };
   onApplyNewOrganizerOrg: (orgNameTh: string, province: string) => Organization;
   onEnterOrganizerOrg: (orgId: string) => void;
   onManageAccountStatus: (
     action: 'deactivate' | 'request_deletion' | 'cancel_deletion',
-    reason?: string
+    reason?: string,
+    confirmCode?: string
   ) => Promise<{ ok: boolean; error?: string }>;
   onNavigateDiscoverEvents: () => void;
   onNavigateEventDetail: (eventId: string) => void;
@@ -219,19 +245,25 @@ export interface RunnerProfileViewProps {
 
 export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
   user,
-  initialTab = 'personal',
+  initialTab: rawInitialTab = 'personal',
   events,
   organizations,
   registrations,
   platformProfileConfig = DEFAULT_PLATFORM_PROFILE_CONFIG,
   onSaveProfile,
   onOpenEmailVerifyPage,
+  onSaveContactEmail,
   verifiedEmailNotice = null,
   onClearVerifiedEmailNotice,
   onSetOrChangePassword,
+  onRequestPasswordCode,
+  onVerifyPasswordCode,
   onLinkProvider,
   onUnlinkProvider,
   onRevokeOtherSessions,
+  onRevokeSession,
+  onSetMarketingConsent,
+  onExportMyData,
   onAcceptTeamInvitation,
   onApplyNewOrganizerOrg,
   onEnterOrganizerOrg,
@@ -241,6 +273,9 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
   onPersonalDirtyChange,
   discardSignal = 0,
 }) => {
+  // 'security' (old /account/security target) now lives inside the Privacy & data page.
+  const initialTab: RunnerProfileTab =
+    rawInitialTab === 'security' ? 'privacy' : rawInitialTab;
   const [activeTab, setActiveTab] = useState<RunnerProfileTab>(initialTab);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [showShelvedNav, setShowShelvedNav] = useState(true);
@@ -339,6 +374,28 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
         confirmButton: 'btn-primary',
       },
     });
+  };
+
+  const [savingContactEmail, setSavingContactEmail] = useState(false);
+
+  // Email verification is shelved (FEATURES.emailVerification = false): save directly.
+  const handleSaveContactEmail = async () => {
+    const target = emailInput.trim();
+    if (!target || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) {
+      const errMsg = tx('กรุณากรอกที่อยู่อีเมลให้ถูกต้อง');
+      setBanner({ tone: 'err', text: errMsg });
+      showResultModalAlert(false, errMsg);
+      return;
+    }
+    if (!onSaveContactEmail) return;
+    setSavingContactEmail(true);
+    const res = await onSaveContactEmail(target);
+    setSavingContactEmail(false);
+    const msg = res.ok
+      ? txf('บันทึกอีเมล {0} แล้ว', target)
+      : tx(res.error ?? 'ไม่สามารถบันทึกอีเมลได้');
+    setBanner({ tone: res.ok ? 'ok' : 'err', text: msg });
+    showResultModalAlert(res.ok, msg);
   };
 
   useEffect(() => {
@@ -509,13 +566,9 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
   );
 
   /* ---- 8. Account & Security State ---- */
-  const [newPass, setNewPass] = useState('');
-  const [confirmPass, setConfirmPass] = useState('');
   const [inviteInput, setInviteInput] = useState('INV-LANNA-STAFF26');
   const [newOrgName, setNewOrgName] = useState('');
   const [newOrgProv, setNewOrgProv] = useState('ขอนแก่น');
-  const [deleteReason, setDeleteReason] = useState('');
-  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
 
   // Sync local state if user switches via Dev/Demo dock
   useEffect(() => {
@@ -925,10 +978,44 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     setBanner(null);
   };
 
-  const completion = useMemo(
-    () => evaluateRunnerProfileCompletion(user, platformProfileConfig),
-    [user, platformProfileConfig]
+  const completion = useMemo(() => evaluatePersonalInfoCompletion(user), [user]);
+  const firstMissingItem = completion.items.find((item) => !item.complete);
+
+  // Focus target requested from the completion box / floating ring; applied once
+  // the personal tab has rendered (the switch may be deferred by tab navigation).
+  const [pendingFocusSelector, setPendingFocusSelector] = useState<string | null>(
+    null
   );
+
+  useEffect(() => {
+    if (!pendingFocusSelector || activeTab !== 'personal') return;
+    const frame = window.requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLElement>(pendingFocusSelector);
+      if (el) {
+        const reduceMotion = window.matchMedia(
+          '(prefers-reduced-motion: reduce)'
+        ).matches;
+        el.scrollIntoView({
+          behavior: reduceMotion ? 'auto' : 'smooth',
+          block: 'center',
+        });
+        el.focus({ preventScroll: true });
+      }
+      setPendingFocusSelector(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [pendingFocusSelector, activeTab]);
+
+  const goToPersonalField = (selector: string | undefined) => {
+    if (activeTab !== 'personal') requestSwitchProfileTab('personal');
+    if (selector) {
+      setPendingFocusSelector(selector);
+    } else {
+      document
+        .querySelector('.runner-completion-box')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
   const myRegistrations = useMemo(
     () =>
@@ -1033,7 +1120,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     e.preventDefault();
     if (!firstNameEn.trim() || !lastNameEn.trim()) {
       const errMsg = tx(
-        'กรุณากรอกชื่อจริงและนามสกุลภาษาอังกฤษ (First Name & Last Name EN) ให้ครบถ้วน'
+        'กรุณากรอกชื่อจริงและนามสกุลภาษาอังกฤษให้ครบถ้วน'
       );
       setBanner({ tone: 'err', text: errMsg });
       showResultModalAlert(false, errMsg);
@@ -1049,10 +1136,41 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     }
     const composedEn = `${firstNameEn.trim()} ${lastNameEn.trim()}`.trim();
     const composedTh = `${firstName.trim()} ${lastName.trim()}`.trim();
-    const okMsg = tx('บันทึกข้อมูลส่วนตัวเรียบร้อยแล้ว');
+
+    // First save of a complete current address while the shipping-address tab is still
+    // empty: copy it into saved addresses as the default shipping address.
+    const currentAddressComplete = Boolean(
+      streetAddress.trim() &&
+      postalCode.trim() &&
+      subdistrict.trim() &&
+      district.trim() &&
+      province.trim()
+    );
+    const autoShippingAddress: RunnerSavedAddress | null =
+      addressList.length === 0 && currentAddressComplete
+        ? {
+          id: `addr-${Date.now()}`,
+          addressName: 'ที่อยู่ปัจจุบัน',
+          recipientName: composedTh || composedEn,
+          phone: phoneInput.trim(),
+          address: streetAddress.trim(),
+          province,
+          district,
+          subdistrict,
+          postalCode: postalCode.trim(),
+          country: country.trim() || 'Thailand',
+          isDefault: true,
+        }
+        : null;
+
+    const okMsg = autoShippingAddress
+      ? tx('บันทึกข้อมูลส่วนตัวแล้ว และเพิ่มที่อยู่ปัจจุบันเป็นที่อยู่จัดส่งหลักให้อัตโนมัติ')
+      : tx('บันทึกข้อมูลส่วนตัวเรียบร้อยแล้ว');
     if (
       !(await saveProfileWithFeedback(
-        buildMergedProfile(),
+        buildMergedProfile(
+          autoShippingAddress ? { savedAddresses: [autoShippingAddress] } : {}
+        ),
         {
           fullNameTh: composedTh || composedEn,
           fullNameEn: composedEn,
@@ -1061,6 +1179,9 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
       ))
     )
       return;
+    if (autoShippingAddress) {
+      setAddressList([autoShippingAddress]);
+    }
     setBanner({
       tone: 'ok',
       text: okMsg,
@@ -1262,6 +1383,8 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     label: string;
     icon: React.ReactNode;
     shelved?: false;
+    /** Sidebar group, rendered as a small section label (Discord-style settings nav). */
+    group?: 'account';
   }[] = [
       {
         key: 'personal',
@@ -1289,9 +1412,22 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
         icon: <IconBib size={16} />,
       },
       {
-        key: 'security',
-        label: tx('บัญชีและความปลอดภัย'),
-        icon: <IconShield size={16} />,
+        key: 'connections',
+        label: tx('การเชื่อมต่อ'),
+        icon: <IconLink size={16} />,
+        group: 'account',
+      },
+      {
+        key: 'devices',
+        label: tx('อุปกรณ์'),
+        icon: <IconDevice size={16} />,
+        group: 'account',
+      },
+      {
+        key: 'privacy',
+        label: tx('ความเป็นส่วนตัวและข้อมูล'),
+        icon: <IconLock size={16} />,
+        group: 'account',
       },
     ];
 
@@ -1348,12 +1484,10 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
       ? firstNameEn.trim()[0] ?? user.fullNameEn?.[0]
       : firstName.trim()[0] ?? user.fullNameTh[0]) ?? 'R'
   ).toUpperCase();
-  const hasGoogle = user.identities.some((i) => i.provider === 'google');
-  const hasFacebook = user.identities.some((i) => i.provider === 'facebook');
-  const hasLine = user.identities.some((i) => i.provider === 'line');
-  const otherSessionsCount = user.sessions.filter(
-    (s) => !s.isCurrentDevice
-  ).length;
+  const notifyResult = (ok: boolean, message: string) => {
+    setBanner({ tone: ok ? 'ok' : 'err', text: message });
+    showResultModalAlert(ok, message);
+  };
 
   return (
     <main className="customer-container">
@@ -1414,56 +1548,73 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
         </div>
 
         {/* Profile Completion Strip */}
-        <div className="runner-completion-box">
+        <div
+          className={`runner-completion-box ${completion.isComplete ? 'is-complete' : 'is-incomplete'
+            }`}
+        >
           <div className="runner-completion-head">
-            <strong>{tx('ความครบถ้วนของข้อมูลโปรไฟล์')}</strong>
-            <strong className="mono-num text-forest">
-              {completion.pct}% ({completion.completedCount}/
-              {completion.totalRequired} {tx('หมวดที่ระบบกำหนด')})
-            </strong>
+            <div className="runner-completion-title">
+              <strong id="runner-completion-label">
+                {tx('ความครบถ้วนของข้อมูลส่วนตัว')}
+              </strong>
+              <span className="muted-inline">
+                {tx('นับเฉพาะข้อมูลในแท็บ “ข้อมูลส่วนตัว” ที่บันทึกแล้ว')}
+              </span>
+            </div>
+            <span className="runner-completion-score">
+              <strong className="mono-num">
+                {completion.completedCount}/{completion.total}
+              </strong>
+              <span
+                className={`status-pill ${completion.isComplete ? 'badge-forest' : 'badge-amber'
+                  }`}
+              >
+                {completion.isComplete ? (
+                  <IconCheckCircle size={15} />
+                ) : (
+                  <IconAlert size={15} />
+                )}
+                <span>
+                  {completion.isComplete
+                    ? tx('ครบถ้วนแล้ว')
+                    : txf(
+                      'ขาดอีก {0} รายการ',
+                      completion.total - completion.completedCount
+                    )}
+                </span>
+              </span>
+            </span>
           </div>
-          <div className="hbar-track">
-            <div
-              className="hbar-fill fill-forest"
-              style={{ width: `${Math.max(8, completion.pct)}%` }}
-            />
-          </div>
-          <div className="runner-completion-pills">
-            {completion.sections.map((sec) => {
-              const targetTabMap: Record<typeof sec.key, RunnerProfileTab> = {
-                personal: 'personal',
-                contact:
-                  !user.contactEmail || !user.emailVerified
-                    ? 'security'
-                    : 'personal',
-                running_prefs: 'preferences',
-                emergency: 'emergency',
-                address: 'addresses',
-              };
-              return (
+          <ProfileCompletionBar
+            pct={completion.pct}
+            completedCount={completion.completedCount}
+            total={completion.total}
+            label={tx('ความครบถ้วนของข้อมูลส่วนตัว')}
+          />
+          <ul
+            className="runner-completion-checklist"
+            aria-labelledby="runner-completion-label"
+          >
+            {completion.items.map((item) => (
+              <li key={item.key}>
                 <button
-                  key={sec.key}
                   type="button"
-                  className={`completion-check-pill ${sec.complete ? 'is-complete' : 'is-missing'
+                  className={`completion-check-item ${item.complete ? 'is-complete' : 'is-missing'
                     }`}
-                  onClick={() => {
-                    requestSwitchProfileTab(targetTabMap[sec.key]);
-                  }}
-                  title={sec.complete ? tx('ข้อมูลครบถ้วน') : tx(sec.missingHintTh)}
+                  onClick={() => goToPersonalField(item.focusSelector)}
+                  aria-label={`${tx(item.labelTh)}: ${item.complete ? tx('ครบแล้ว') : tx('ยังไม่ได้กรอก')
+                    }`}
                 >
-                  {sec.complete ? (
-                    <IconCheckCircle size={13} />
+                  {item.complete ? (
+                    <IconCheckCircle size={15} />
                   ) : (
-                    <IconAlert size={13} />
+                    <IconAlert size={15} />
                   )}
-                  <span>{tx(sec.labelTh)}</span>
-                  {!sec.required && (
-                    <small>({tx('ไม่บังคับ')})</small>
-                  )}
+                  <span>{tx(item.labelTh)}</span>
                 </button>
-              );
-            })}
-          </div>
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
 
@@ -1482,6 +1633,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
           <span>{banner.text}</span>
         </div>
       )}
+
 
       {/* WORKSPACE LAYOUT: STICKY SUB-NAVIGATION + ACTIVE MODULE */}
       <div className="runner-profile-grid">
@@ -1535,10 +1687,62 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
             );
           })()}
 
+          {/* Personal-info completion lives inside the sticky menu on every screen size:
+              a card at the top of the sidebar on desktop, a slim row under the collapsed
+              menu bar on mobile. Nothing floats over the page content. */}
+          <button
+            type="button"
+            className={`completion-nav-card ${completion.isComplete ? 'is-complete' : 'is-incomplete'
+              }`}
+            onClick={() => goToPersonalField(firstMissingItem?.focusSelector)}
+            aria-label={
+              completion.isComplete
+                ? tx('ข้อมูลส่วนตัวครบถ้วน')
+                : txf(
+                  'ข้อมูลส่วนตัวครบ {0}% — ไปกรอก{1}',
+                  completion.pct,
+                  tx(firstMissingItem?.labelTh ?? '')
+                )
+            }
+          >
+            <ProfileCompletionRing
+              pct={completion.pct}
+              completedCount={completion.completedCount}
+              total={completion.total}
+              label={tx('ความครบถ้วนของข้อมูลส่วนตัว')}
+              size={40}
+              decorative
+            />
+            <span className="completion-nav-text" aria-hidden="true">
+              <strong>
+                {tx('ข้อมูลส่วนตัว')}{' '}
+                <span className="completion-nav-count mono-num">
+                  {completion.completedCount}/{completion.total}
+                </span>
+              </strong>
+              <span className="completion-nav-status">
+                {completion.isComplete
+                  ? tx('ครบถ้วนแล้ว')
+                  : txf('ขาดอีก {0} รายการ', completion.total - completion.completedCount)}
+              </span>
+            </span>
+            {!completion.isComplete && (
+              <span className="completion-nav-go" aria-hidden="true">
+                {tx('ไปกรอก')}
+                <IconArrowRight size={13} />
+              </span>
+            )}
+          </button>
+
           <div id="runner-profile-nav-list" className="runner-profile-nav-list">
-            {activeNavItems.map((item) => (
+            {activeNavItems.map((item, idx) => (
+              <React.Fragment key={item.key}>
+              {(idx === 0 || activeNavItems[idx - 1].group !== item.group) && (
+                <span className="runner-nav-group-label">
+                  {item.group === 'account' ? tx('ตั้งค่าบัญชี') : tx('ข้อมูลนักวิ่ง')}
+                </span>
+              )}
               <button
-                key={item.key}
                 type="button"
                 aria-current={activeTab === item.key ? 'page' : undefined}
                 className={`runner-nav-btn ${activeTab === item.key ? 'active' : ''
@@ -1552,6 +1756,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                   <span>{item.label}</span>
                 </span>
               </button>
+              </React.Fragment>
             ))}
 
             {/* SHELVED / DIMMED NON-PUBLIC ITEMS MOVED TO THE VERY BOTTOM */}
@@ -1774,7 +1979,17 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                     id="rp-dob"
                     valueIso={dob}
                     onChangeIso={setDob}
+                    ariaDescribedBy="rp-dob-age"
                   />
+                  {ageOn(dob, todayIsoInTimeZone()) !== null && (
+                    <p id="rp-dob-age" className="reg-age-hint" aria-live="polite">
+                      {txf('อายุปัจจุบัน {0} ปี', ageOn(dob, todayIsoInTimeZone()))}
+                      <span className="muted-inline">
+                        {' · '}
+                        {tx('รุ่นอายุขึ้นกับเกณฑ์ของแต่ละงาน')}
+                      </span>
+                    </p>
+                  )}
                 </div>
                 <fieldset className="runner-gender-field">
                   <legend>{tx('เพศ')}</legend>
@@ -1795,17 +2010,10 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                 </fieldset>
                 <div className="form-row">
                   <label htmlFor="rp-nat">{tx('สัญชาติ')}</label>
-                  <input
+                  <NationalitySelect
                     id="rp-nat"
-                    type="text"
-                    value={
-                      !isEn && nationality.trim().toLowerCase() === 'thailand'
-                        ? 'ไทย'
-                        : isEn && nationality.trim() === 'ไทย'
-                          ? 'Thailand'
-                          : nationality
-                    }
-                    onChange={(e) => setNationality(e.target.value)}
+                    value={nationality}
+                    onChange={setNationality}
                   />
                 </div>
               </div>
@@ -1827,7 +2035,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                 <div className="form-row">
                   <div className="email-readonly-head">
                     <label htmlFor="rp-email-ro">{tx('อีเมลติดต่อ')}</label>
-                    {user.emailVerified && user.contactEmail ? (
+                    {!FEATURES.emailVerification ? null : user.emailVerified && user.contactEmail ? (
                       <span
                         className="status-pill badge-forest status-pill-verify-icon"
                         title={tx('ยืนยันแล้ว')}
@@ -1855,11 +2063,15 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                     <button
                       type="button"
                       className="btn-secondary"
-                      onClick={() => requestSwitchProfileTab('security')}
+                      onClick={() => requestSwitchProfileTab('privacy')}
                     >
-                      {user.contactEmail && user.emailVerified
-                        ? tx('เปลี่ยนอีเมล')
-                        : tx('ยืนยันอีเมล')}
+                      {!FEATURES.emailVerification
+                        ? user.contactEmail
+                          ? tx('เปลี่ยนอีเมล')
+                          : tx('เพิ่มอีเมล')
+                        : user.contactEmail && user.emailVerified
+                          ? tx('เปลี่ยนอีเมล')
+                          : tx('ยืนยันอีเมล')}
                     </button>
                   </div>
                 </div>
@@ -2935,6 +3147,37 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                             {tx(cat?.name ?? '-')} ({cat?.distanceKm ?? '-'}{' '}
                             {tx('กม.')})
                           </strong>
+                        </div>
+                        <div>
+                          <span className="muted-inline">
+                            {tx('อายุ / รุ่นอายุ')}
+                          </span>
+                          {reg.ageSnapshot ? (
+                            <strong className="mono-num">
+                              {txf(
+                                'อายุ {0} ปี ณ {1}',
+                                reg.ageSnapshot.ageYears,
+                                formatBasisDate(reg.ageSnapshot.basisDate)
+                              )}
+                              {' · '}
+                              {(() => {
+                                const snap = reg.ageSnapshot;
+                                if (!snap.groupId) {
+                                  return cat?.ageGroups?.length
+                                    ? tx('ไม่เข้ารุ่นใด')
+                                    : tx('งานนี้ไม่แบ่งรุ่นอายุ');
+                                }
+                                const g = cat?.ageGroups?.find((x) => x.id === snap.groupId);
+                                return g
+                                  ? formatAgeGroupLabel(g)
+                                  : tx(snap.groupLabelTh ?? '');
+                              })()}
+                            </strong>
+                          ) : (
+                            <span className="muted-inline">
+                              {tx('ไม่มีข้อมูลวันเกิดในใบสมัครนี้')}
+                            </span>
+                          )}
                         </div>
                         <div>
                           <span className="muted-inline">
@@ -4249,470 +4492,48 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
             </section>
           )}
 
-          {activeTab === 'security' && (
-            <div className="canvas-stack">
-              {/* Verification & Password */}
-              <section className="clean-panel canvas-stack">
-                <h2>{tx('บัญชีและความปลอดภัย')}</h2>
+          {activeTab === 'connections' && (
+            <ConnectionsPanel
+              user={user}
+              onLinkProvider={onLinkProvider}
+              onUnlinkProvider={onUnlinkProvider}
+              notify={notifyResult}
+            />
+          )}
 
-                <div className="receipt-summary-box">
-                  <div>
-                    <span className="muted-inline">{tx('การยืนยันอีเมล')}</span>
-                    <strong
-                      className={
-                        user.emailVerified ? 'text-forest' : 'text-amber'
-                      }
-                    >
-                      {user.emailVerified ? (
-                        <span className="verify-icon-inline">
-                          <i
-                            className="fa-solid fa-circle-check"
-                            title={tx('ยืนยันแล้ว')}
-                            aria-label={tx('ยืนยันแล้ว')}
-                          />
-                          <span>({user.contactEmail})</span>
-                        </span>
-                      ) : (
-                        tx('ยังไม่ได้ยืนยันอีเมล')
-                      )}
-                    </strong>
-                  </div>
-                  <div>
-                    <span className="muted-inline">{tx('สถานะบัญชี')}</span>
-                    <strong>
-                      {user.accountStatus === 'deletion_requested'
-                        ? tx('ส่งคำขอลบบัญชีแล้ว')
-                        : tx('ใช้งานปกติ')}
-                    </strong>
-                  </div>
-                </div>
+          {activeTab === 'devices' && (
+            <DevicesPanel
+              user={user}
+              onRevokeSession={onRevokeSession}
+              onRevokeOtherSessions={onRevokeOtherSessions}
+              notify={notifyResult}
+            />
+          )}
 
-                {/* Email Contact & Trigger to Dedicated OTP Page (/verify-email) */}
-                <div className="custom-field-creator canvas-stack">
-                  <div className="section-title-bar">
-                    <div>
-                      <strong>{tx('อีเมลติดต่อของบัญชี')}</strong>
-                      <div className="muted-inline">
-                        {tx(
-                          'ระบุอีเมลแล้วกดปุ่มยืนยันเพื่อไปยังหน้ากรอกรหัส 6 หลักแยกเฉพาะ'
-                        )}
-                      </div>
-                    </div>
-                    {user.emailVerified &&
-                      user.contactEmail &&
-                      emailInput.trim().toLowerCase() ===
-                      user.contactEmail.toLowerCase() ? (
-                      <span
-                        className="status-pill badge-forest status-pill-verify-icon"
-                        title={tx('ยืนยันแล้ว')}
-                        aria-label={tx('ยืนยันแล้ว')}
-                      >
-                        <i
-                          className="fa-solid fa-circle-check"
-                          aria-hidden="true"
-                        />
-                      </span>
-                    ) : (
-                      <span className="status-pill badge-amber">
-                        <span>{tx('รอยืนยันอีเมล')}</span>
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="security-email-verify-row">
-                    <div className="form-row">
-                      <label htmlFor="sec-email">{tx('อีเมลติดต่อ')}</label>
-                      <input
-                        id="sec-email"
-                        type="email"
-                        value={emailInput}
-                        onChange={(e) => setEmailInput(e.target.value)}
-                        placeholder={tx('กรอกอีเมลติดต่อ')}
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      className={
-                        user.emailVerified &&
-                          user.contactEmail &&
-                          emailInput.trim().toLowerCase() ===
-                          user.contactEmail.toLowerCase()
-                          ? 'btn-secondary'
-                          : 'btn-primary'
-                      }
-                      onClick={() => {
-                        const target = emailInput.trim();
-                        if (!target || !target.includes('@')) {
-                          const errMsg = tx(
-                            'กรุณากรอกที่อยู่อีเมลให้ถูกต้องก่อนกดยืนยัน'
-                          );
-                          setBanner({ tone: 'err', text: errMsg });
-                          showResultModalAlert(false, errMsg);
-                          return;
-                        }
-                        onOpenEmailVerifyPage(target);
-                      }}
-                    >
-                      <IconMail size={15} />
-                      <span>
-                        {user.emailVerified &&
-                          user.contactEmail &&
-                          emailInput.trim().toLowerCase() ===
-                          user.contactEmail.toLowerCase()
-                          ? tx('ส่งรหัสยืนยันอีกครั้ง')
-                          : tx('ยืนยันอีเมลด้วยรหัส')}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Change Password */}
-                <div className="custom-field-creator canvas-stack">
-                  <strong>
-                    {user.hasPassword
-                      ? tx('เปลี่ยนรหัสผ่าน')
-                      : tx('ตั้งรหัสผ่านเพิ่มเติมสำหรับเข้าด้วยอีเมล')}
-                  </strong>
-                  <div className="form-grid-2">
-                    <div className="form-row">
-                      <label htmlFor="sec-npw">
-                        {tx('รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)')}
-                      </label>
-                      <input
-                        id="sec-npw"
-                        type="password"
-                        value={newPass}
-                        onChange={(e) => setNewPass(e.target.value)}
-                      />
-                    </div>
-                    <div className="form-row">
-                      <label htmlFor="sec-cpw">{tx('ยืนยันรหัสผ่านใหม่')}</label>
-                      <input
-                        id="sec-cpw"
-                        type="password"
-                        value={confirmPass}
-                        onChange={(e) => setConfirmPass(e.target.value)}
-                      />
-                    </div>
-                    <div
-                      className="form-row"
-                      style={{ justifyContent: 'flex-end' }}
-                    >
-                      <button
-                        type="button"
-                        className="btn-primary"
-                        onClick={() => {
-                          if (newPass.length < 8 || newPass !== confirmPass) {
-                            const errMsg = tx(
-                              'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษรและตรงกันทั้งสองช่อง'
-                            );
-                            setBanner({ tone: 'err', text: errMsg });
-                            showResultModalAlert(false, errMsg);
-                            return;
-                          }
-                          onSetOrChangePassword(newPass);
-                          setNewPass('');
-                          setConfirmPass('');
-                          const okMsg = tx('อัปเดตรหัสผ่านลงฐานข้อมูลเรียบร้อยแล้ว');
-                          setBanner({ tone: 'ok', text: okMsg });
-                          showResultModalAlert(true, okMsg);
-                        }}
-                      >
-                        <IconLock size={15} />
-                        <span>
-                          {user.hasPassword
-                            ? tx('บันทึกรหัสผ่านใหม่')
-                            : tx('ตั้งรหัสผ่าน')}
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Connected Accounts */}
-                <div>
-                  <h3>
-                    {tx(
-                      'บัญชีภายนอกที่เชื่อมต่อ (ป้องกันการถอดช่องทางสุดท้าย)'
-                    )}
-                  </h3>
-                  <div className="linked-provider-list">
-                    {(
-                      [
-                        {
-                          key: 'google' as const,
-                          title: tx('บัญชี Google'),
-                          linked: hasGoogle,
-                          icon: <IconGoogleMark size={18} />,
-                        },
-                        {
-                          key: 'facebook' as const,
-                          title: tx('บัญชี Facebook'),
-                          linked: hasFacebook,
-                          icon: <IconFacebookMark size={18} />,
-                        },
-                        {
-                          key: 'line' as const,
-                          title: tx('บัญชี LINE'),
-                          linked: hasLine,
-                          icon: <IconLineMark size={18} />,
-                        },
-                      ] as const
-                    ).map((p) => (
-                      <div key={p.key} className="linked-provider-row">
-                        <div className="persona-identity">
-                          {p.icon}
-                          <div>
-                            <strong>{p.title}</strong>
-                            <div className="muted-inline">
-                              {p.linked ? (
-                                <span className="provider-connected-inline">
-                                  <i
-                                    className="fa-solid fa-circle-check"
-                                    aria-hidden="true"
-                                  />
-                                  <span>{tx('เชื่อมต่อกับบัญชีนี้แล้ว')}</span>
-                                </span>
-                              ) : (
-                                tx('ยังไม่ได้เชื่อมต่อ')
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        {p.linked ? (
-                          <button
-                            type="button"
-                            className="btn-ghost-sm"
-                            onClick={() => {
-                              const r = onUnlinkProvider(p.key);
-                              const msg = r.ok
-                                ? txf('ถอดการเชื่อม {0} เรียบร้อยแล้ว', p.title)
-                                : r.error ?? tx('ไม่สามารถถอดช่องทางสุดท้ายได้');
-                              setBanner({
-                                tone: r.ok ? 'ok' : 'err',
-                                text: msg,
-                              });
-                              showResultModalAlert(r.ok, msg);
-                            }}
-                          >
-                            {tx('ถอดการเชื่อม')}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            onClick={() => {
-                              onLinkProvider(p.key);
-                              const msg = txf('เชื่อม {0} สำเร็จ', p.title);
-                              setBanner({
-                                tone: 'ok',
-                                text: msg,
-                              });
-                              showResultModalAlert(true, msg);
-                            }}
-                          >
-                            {txf('เชื่อม {0}', p.title)}
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Active Sessions & Login History */}
-                <div>
-                  <div className="section-title-bar">
-                    <h3>{tx('อุปกรณ์ที่เข้าสู่ระบบและประวัติการใช้งาน')}</h3>
-                    {otherSessionsCount > 0 && (
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() => {
-                          onRevokeOtherSessions();
-                          const okMsg = tx(
-                            'ออกจากระบบอุปกรณ์อื่นทั้งหมดเรียบร้อยแล้ว'
-                          );
-                          setBanner({ tone: 'ok', text: okMsg });
-                          showResultModalAlert(true, okMsg);
-                        }}
-                      >
-                        {tx('ออกจากระบบอุปกรณ์อื่น')} ({otherSessionsCount})
-                      </button>
-                    )}
-                  </div>
-                  <div className="linked-provider-list">
-                    {user.sessions.map((ses) => (
-                      <div key={ses.id} className="linked-provider-row">
-                        <div className="persona-identity">
-                          <IconDevice size={18} />
-                          <div>
-                            <strong>{tx(ses.deviceLabel)}</strong>
-                            <div className="muted-inline">
-                              {tx(ses.locationHint)} · {tx(ses.lastActiveAt)}
-                            </div>
-                          </div>
-                        </div>
-                        {ses.isCurrentDevice && (
-                          <span className="status-pill badge-forest">
-                            {tx('เครื่องนี้')}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  {(user.loginHistory ?? []).length > 0 && (
-                    <div
-                      className="table-scroll-wrap"
-                      style={{ marginTop: '0.65rem' }}
-                    >
-                      <table className="data-table">
-                        <thead>
-                          <tr>
-                            <th>{tx('วัน-เวลา')}</th>
-                            <th>{tx('ช่องทาง')}</th>
-                            <th>{tx('อุปกรณ์')}</th>
-                            <th>{tx('สถานที่อ้างอิง')}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(user.loginHistory ?? []).map((lh) => (
-                            <tr key={lh.id}>
-                              <td className="mono-num">{lh.timestamp}</td>
-                              <td>{lh.method}</td>
-                              <td>{tx(lh.deviceLabel)}</td>
-                              <td>{tx(lh.ipOrLocation)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </section>
-
-              {/* Account Deactivation & PDPA Deletion Request */}
-              <section className="clean-panel canvas-stack">
-                <h3>
-                  {tx(
-                    'การปิดพักบัญชีและคำขอลบบัญชีตามนโยบายความเป็นส่วนตัว'
-                  )}
-                </h3>
-                <div className="form-grid-2">
-                  <div className="custom-field-creator canvas-stack">
-                    <strong>{tx('ปิดพักการใช้งานบัญชีชั่วคราว')}</strong>
-                    <span className="muted-inline">
-                      {tx(
-                        'ออกจากระบบทุกอุปกรณ์และพักการแสดงโปรไฟล์ชั่วคราว โดยยังเก็บบัตรวิ่งเดิมไว้ให้กู้คืนเมื่อเข้าสู่ระบบใหม่'
-                      )}
-                    </span>
-                    {!confirmDeactivate ? (
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() => setConfirmDeactivate(true)}
-                      >
-                        {tx('ขอปิดพักบัญชีชั่วคราว')}
-                      </button>
-                    ) : (
-                      <div className="cta-inline-row">
-                        <button
-                          type="button"
-                          className="btn-primary"
-                          onClick={() => {
-                            void onManageAccountStatus(
-                              'deactivate',
-                              'ผู้ใช้กดยืนยันปิดพักบัญชีชั่วคราว'
-                            );
-                          }}
-                        >
-                          {tx('ยืนยันปิดพักบัญชีและออกจากระบบ')}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-ghost-sm"
-                          onClick={() => setConfirmDeactivate(false)}
-                        >
-                          {tx('ยกเลิก')}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="custom-field-creator canvas-stack">
-                    <strong>{tx('ส่งคำขอลบบัญชีถาวร')}</strong>
-                    {user.accountStatus === 'deletion_requested' ? (
-                      <>
-                        <div className="status-explanation-banner">
-                          <IconMail size={15} />
-                          <span>
-                            {tx('ส่งคำขอลบบัญชีเมื่อ')}{' '}
-                            <span className="mono-num">
-                              {user.deletionRequestedAt}
-                            </span>{' '}
-                            ({user.deletionRequestReason})
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          onClick={async () => {
-                            const r = await onManageAccountStatus(
-                              'cancel_deletion'
-                            );
-                            const msg = r.ok
-                              ? tx('ยกเลิกคำขอลบบัญชีเรียบร้อยแล้ว')
-                              : r.error ?? tx('ไม่สามารถดำเนินการได้');
-                            setBanner({
-                              tone: r.ok ? 'ok' : 'err',
-                              text: msg,
-                            });
-                            showResultModalAlert(r.ok, msg);
-                          }}
-                        >
-                          {tx('ยกเลิกคำขอลบบัญชี')}
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <input
-                          type="text"
-                          value={deleteReason}
-                          onChange={(e) => setDeleteReason(e.target.value)}
-                          placeholder={tx(
-                            'ระบุเหตุผลประกอบคำขอลบข้อมูลส่วนบุคคล...'
-                          )}
-                        />
-                        <button
-                          type="button"
-                          className="btn-ghost-sm"
-                          onClick={async () => {
-                            const r = await onManageAccountStatus(
-                              'request_deletion',
-                              deleteReason.trim() ||
-                              'ขอลบข้อมูลตามสิทธิ์เจ้าของข้อมูลส่วนบุคคล'
-                            );
-                            const msg = r.ok
-                              ? tx('บันทึกคำขอลบบัญชีลงระบบเรียบร้อยแล้ว')
-                              : r.error ?? tx('ไม่สามารถดำเนินการได้');
-                            if (r.ok) {
-                              setDeleteReason('');
-                            }
-                            setBanner({
-                              tone: r.ok ? 'ok' : 'err',
-                              text: msg,
-                            });
-                            showResultModalAlert(r.ok, msg);
-                          }}
-                        >
-                          {tx('ส่งคำขอลบบัญชี')}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </section>
-            </div>
+          {activeTab === 'privacy' && (
+            <PrivacyPanel
+              user={user}
+              onSetMarketingConsent={onSetMarketingConsent}
+              onExportMyData={onExportMyData}
+              onOpenRaceHistory={() => requestSwitchProfileTab('history')}
+              notify={notifyResult}
+              securitySections={
+                <AccountSecuritySections
+                  user={user}
+                  phone={user.runnerProfile?.phone ?? ''}
+                  emailInput={emailInput}
+                  onEmailInputChange={setEmailInput}
+                  savingContactEmail={savingContactEmail}
+                  onSaveContactEmail={handleSaveContactEmail}
+                  onOpenEmailVerifyPage={onOpenEmailVerifyPage}
+                  onSetOrChangePassword={onSetOrChangePassword}
+                  onRequestPasswordCode={onRequestPasswordCode}
+                  onVerifyPasswordCode={onVerifyPasswordCode}
+                  onManageAccountStatus={onManageAccountStatus}
+                  notify={notifyResult}
+                />
+              }
+            />
           )}
         </div>
       </div>

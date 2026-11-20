@@ -28,7 +28,15 @@ import {
   upsertUserRow,
 } from './db';
 import { calculateFeeQuote, getCurrentTier } from '../src/utils/pricing';
+import { PRIVACY_NOTICE_VERSION } from '../src/data/privacyNotice';
 import { cloneCustomFieldsSchema, validateQuotaUpdate } from '../src/utils/eventConfig';
+import {
+  ageCheckMessage,
+  buildAgeSnapshot,
+  evaluateCategoryAge,
+  validateAgeConfig,
+  type AgeConfigInput,
+} from '../src/utils/age';
 import type {
   AuditLogEntry,
   AuthProviderType,
@@ -220,6 +228,95 @@ function okSnapshot(res: Response, currentUserId: string | null, extra: Record<s
   });
 }
 
+/* ==================== ACCOUNT ACTIVITY HELPERS ==================== */
+
+// Version label of the terms/privacy text shown at sign-up in this local sandbox build.
+// Placeholder until legal-approved documents exist; never treat it as a published policy.
+const TERMS_VERSION = 'sandbox-2026-11';
+const LOGIN_HISTORY_LIMIT = 50;
+
+function describeDevice(req: Request): string {
+  const ua = String(req.headers['user-agent'] || '');
+  const browser = /Edg\//.test(ua)
+    ? 'Edge'
+    : /Chrome\//.test(ua)
+      ? 'Chrome'
+      : /Firefox\//.test(ua)
+        ? 'Firefox'
+        : /Safari\//.test(ua)
+          ? 'Safari'
+          : 'เบราว์เซอร์';
+  const os = /Android/.test(ua)
+    ? 'Android'
+    : /iPhone|iPad/.test(ua)
+      ? 'iOS'
+      : /Windows/.test(ua)
+        ? 'Windows'
+        : /Mac OS X/.test(ua)
+          ? 'macOS'
+          : /Linux/.test(ua)
+            ? 'Linux'
+            : 'ไม่ทราบระบบ';
+  return `${browser} บน ${os}`;
+}
+
+function withLoginEvent(
+  user: UserAccount,
+  req: Request,
+  method: string,
+  status: 'success' | 'failed'
+): UserAccount {
+  const entry = {
+    id: `lh-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    timestamp: nowThaiStamp(),
+    method,
+    deviceLabel: describeDevice(req),
+    // Local sandbox: no IP geolocation. Show a coarse label only, never a raw IP.
+    ipOrLocation: 'เครือข่ายในเครื่อง (Local)',
+    status,
+  };
+  return {
+    ...user,
+    loginHistory: [entry, ...(user.loginHistory ?? [])].slice(0, LOGIN_HISTORY_LIMIT),
+    lastLoginAt: status === 'success' ? new Date().toISOString() : user.lastLoginAt,
+  };
+}
+
+/*
+ * Password change re-verification (sandbox).
+ * Step 1: request a 6-digit code "sent" to the contact email (no real email in the local build;
+ *         the sandbox code is SANDBOX_EMAIL_OTP, same as the existing email OTP page).
+ * Step 2: verify the code -> server issues a one-time grant (10 min).
+ * Step 3: POST /api/account/password must present that grant.
+ * Stored in memory only: restarting the API clears pending codes and grants.
+ */
+const SANDBOX_EMAIL_OTP = '123456';
+const PW_CODE_TTL_MS = 10 * 60 * 1000;
+const PW_CODE_MAX_ATTEMPTS = 5;
+const PW_CODE_RESEND_MS = 30 * 1000;
+const pendingPasswordCodes = new Map<
+  string,
+  { issuedAt: number; expiresAt: number; attempts: number }
+>();
+const passwordChangeGrants = new Map<string, { grant: string; expiresAt: number }>();
+
+function maskEmailForNotice(email: string): string {
+  const [local, domain] = email.split('@');
+  if (!domain) return email;
+  return `${local.slice(0, 2)}${'•'.repeat(Math.max(3, local.length - 2))}@${domain}`;
+}
+
+function signupConsents(marketingConsent: boolean) {
+  const at = new Date().toISOString();
+  const base = Date.now();
+  return [
+    { id: `cs-${base}-t`, type: 'terms' as const, granted: true, version: TERMS_VERSION, recordedAt: at, source: 'signup' as const },
+    // Privacy notice acknowledged in the sign-up popup (PrivacyNoticeModal).
+    { id: `cs-${base}-p`, type: 'privacy' as const, granted: true, version: PRIVACY_NOTICE_VERSION, recordedAt: at, source: 'signup' as const },
+    { id: `cs-${base}-m`, type: 'marketing' as const, granted: marketingConsent, recordedAt: at, source: 'signup' as const },
+  ];
+}
+
 /* ==================== HEALTH & BOOTSTRAP ==================== */
 
 app.get('/api/health', (_req, res) => {
@@ -272,6 +369,15 @@ app.post('/api/auth/login', (req, res) => {
   });
 
   if (!row || !row.has_password || !verifyPassword(password, row.password_hash)) {
+    // Record the failed attempt on the matched account so its owner can spot it.
+    if (row) {
+      const target = getUserById(row.id);
+      if (target) {
+        upsertUserRow(withLoginEvent(target, req, 'อีเมล + รหัสผ่าน', 'failed'), {
+          preservePasswordHash: true,
+        });
+      }
+    }
     return res.status(401).json({
       ok: false,
       error:
@@ -279,7 +385,8 @@ app.post('/api/auth/login', (req, res) => {
     });
   }
 
-  const user = getUserById(row.id)!;
+  const user = withLoginEvent(getUserById(row.id)!, req, 'อีเมล + รหัสผ่าน', 'success');
+  upsertUserRow(user, { preservePasswordHash: true });
   issueSession(req, res, user.id);
   return okSnapshot(res, user.id, { user });
 });
@@ -325,10 +432,18 @@ app.post('/api/auth/verify-collision-password', (req, res) => {
 
 app.post('/api/auth/social-login', (req, res) => {
   const userId = String(req.body?.userId ?? '');
-  const user = getUserById(userId);
-  if (!user) {
+  const found = getUserById(userId);
+  if (!found) {
     return res.status(404).json({ ok: false, error: 'ไม่พบบัญชีผู้ใช้' });
   }
+  const provider = String(req.body?.provider ?? '').trim();
+  const user = withLoginEvent(
+    found,
+    req,
+    provider ? provider.charAt(0).toUpperCase() + provider.slice(1) : 'บัญชีโซเชียล',
+    'success'
+  );
+  upsertUserRow(user, { preservePasswordHash: true });
   issueSession(req, res, user.id);
   return okSnapshot(res, user.id, { user });
 });
@@ -343,10 +458,13 @@ app.post('/api/auth/dev-switch', (req, res) => {
     clearSessionCookie(res);
     return okSnapshot(res, null);
   }
-  const user = getUserById(userId);
-  if (!user) {
+  const found = getUserById(userId);
+  if (!found) {
     return res.status(404).json({ ok: false, error: 'ไม่พบบัญชีทดสอบที่เลือก' });
   }
+  // Simulated Google/LINE/Facebook sign-in and the Dev / Demo switcher both land here.
+  const user = withLoginEvent(found, req, 'เข้าสู่ระบบแบบจำลอง (Sandbox)', 'success');
+  upsertUserRow(user, { preservePasswordHash: true });
   issueSession(req, res, user.id);
   return okSnapshot(res, user.id, { user });
 });
@@ -414,9 +532,15 @@ app.post('/api/auth/register-runner', (req, res) => {
     memberships: [],
     demoRoleSummary: 'สมาชิกใหม่สมัครด้วยอีเมล (Runner 2-Step Wizard)',
     isDemoPreset: false,
+    createdAt: new Date().toISOString(),
+    passwordChangedAt: new Date().toISOString(),
+    consents: signupConsents(Boolean(req.body?.marketingConsent)),
   };
 
-  upsertUserRow(newUser, { passwordPlain: password, sortOrder: totalUsers + 10 });
+  upsertUserRow(withLoginEvent(newUser, req, 'สมัครสมาชิกด้วยอีเมล', 'success'), {
+    passwordPlain: password,
+    sortOrder: totalUsers + 10,
+  });
   issueSession(req, res, newUser.id);
   return okSnapshot(res, newUser.id, { user: newUser });
 });
@@ -478,9 +602,14 @@ app.post('/api/auth/register-social', (req, res) => {
     memberships: [],
     demoRoleSummary: `สมาชิกใหม่ผ่าน ${provider.toUpperCase()}`,
     isDemoPreset: false,
+    createdAt: new Date().toISOString(),
+    consents: signupConsents(Boolean(req.body?.marketingConsent)),
   };
 
-  upsertUserRow(newUser, { sortOrder: totalUsers + 10 });
+  upsertUserRow(
+    withLoginEvent(newUser, req, `สมัครสมาชิกผ่าน ${provider.toUpperCase()} (จำลอง)`, 'success'),
+    { sortOrder: totalUsers + 10 }
+  );
   issueSession(req, res, newUser.id);
   return okSnapshot(res, newUser.id, { user: newUser });
 });
@@ -716,6 +845,13 @@ app.post('/api/account/status', (req, res) => {
   }
 
   if (action === 'request_deletion') {
+    const confirmCode = String(req.body?.confirmCode ?? '').trim().toUpperCase();
+    if (confirmCode !== user.code.toUpperCase()) {
+      return res.status(400).json({
+        ok: false,
+        error: `กรุณาพิมพ์รหัสบัญชี ${user.code} ให้ถูกต้องเพื่อยืนยันคำขอลบบัญชี`,
+      });
+    }
     const updated: UserAccount = {
       ...user,
       accountStatus: 'deletion_requested',
@@ -768,14 +904,78 @@ app.post('/api/account/verify-email', (req, res) => {
   return okSnapshot(res, updated.id, { user: updated });
 });
 
+app.post('/api/account/password/request-code', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  if (!user.contactEmail) {
+    return res.status(400).json({
+      ok: false,
+      error: 'บัญชีนี้ยังไม่มีอีเมลติดต่อ กรุณาเพิ่มอีเมลก่อนเปลี่ยนรหัสผ่าน',
+    });
+  }
+  const prev = pendingPasswordCodes.get(user.id);
+  const now = Date.now();
+  if (prev && now - prev.issuedAt < PW_CODE_RESEND_MS) {
+    const wait = Math.ceil((PW_CODE_RESEND_MS - (now - prev.issuedAt)) / 1000);
+    return res.status(429).json({ ok: false, error: `กรุณารอ ${wait} วินาทีก่อนขอรหัสใหม่` });
+  }
+  pendingPasswordCodes.set(user.id, { issuedAt: now, expiresAt: now + PW_CODE_TTL_MS, attempts: 0 });
+  passwordChangeGrants.delete(user.id);
+  recordAudit(user, 'PLATFORM-HQ', `ขอรหัสยืนยันเพื่อเปลี่ยนรหัสผ่าน (${user.code})`, 'sandbox-email');
+  return res.json({
+    ok: true,
+    data: { sentTo: maskEmailForNotice(user.contactEmail), expiresInSec: PW_CODE_TTL_MS / 1000 },
+  });
+});
+
+app.post('/api/account/password/verify-code', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const pending = pendingPasswordCodes.get(user.id);
+  if (!pending || pending.expiresAt < Date.now()) {
+    pendingPasswordCodes.delete(user.id);
+    return res.status(400).json({ ok: false, error: 'รหัสหมดอายุแล้ว กรุณาขอรหัสใหม่' });
+  }
+  if (pending.attempts >= PW_CODE_MAX_ATTEMPTS) {
+    pendingPasswordCodes.delete(user.id);
+    return res.status(429).json({ ok: false, error: 'กรอกรหัสผิดเกินกำหนด กรุณาขอรหัสใหม่' });
+  }
+  const otp = String(req.body?.otp ?? '').trim();
+  if (otp !== SANDBOX_EMAIL_OTP) {
+    pending.attempts += 1;
+    const left = PW_CODE_MAX_ATTEMPTS - pending.attempts;
+    return res.status(400).json({
+      ok: false,
+      error: `รหัสยืนยันไม่ถูกต้อง (เหลืออีก ${left} ครั้ง)`,
+    });
+  }
+  pendingPasswordCodes.delete(user.id);
+  const grant = generateSessionToken();
+  passwordChangeGrants.set(user.id, { grant, expiresAt: Date.now() + PW_CODE_TTL_MS });
+  return res.json({ ok: true, data: { grant } });
+});
+
 app.post('/api/account/password', (req, res) => {
   const { user } = resolveSessionUser(req);
   if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
   const newPassword = String(req.body?.newPassword ?? 'demo1234');
   const hasPwIdentity = user.identities.some((i) => i.provider === 'password');
+  if (newPassword.length < 8) {
+    return res.status(400).json({ ok: false, error: 'รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร' });
+  }
+  const grant = String(req.body?.grant ?? '');
+  const stored = passwordChangeGrants.get(user.id);
+  if (!stored || stored.grant !== grant || stored.expiresAt < Date.now()) {
+    return res.status(403).json({
+      ok: false,
+      error: 'กรุณายืนยันตัวตนด้วยรหัสทางอีเมลก่อนเปลี่ยนรหัสผ่าน (สิทธิ์หมดอายุหรือไม่ถูกต้อง)',
+    });
+  }
+  passwordChangeGrants.delete(user.id);
   const updated: UserAccount = {
     ...user,
     hasPassword: true,
+    passwordChangedAt: new Date().toISOString(),
     identities: hasPwIdentity
       ? user.identities
       : [
@@ -788,15 +988,9 @@ app.post('/api/account/password', (req, res) => {
           },
         ],
   };
-  upsertUserRow(updated, {
-    passwordPlain: newPassword.length >= 8 ? newPassword : hashPasswordFallback(newPassword),
-  });
+  upsertUserRow(updated, { passwordPlain: newPassword });
   return okSnapshot(res, updated.id, { user: updated });
 });
-
-function hashPasswordFallback(pw: string): string {
-  return pw && pw.trim().length > 0 ? pw.trim() : 'demo1234';
-}
 
 app.post('/api/account/providers', (req, res) => {
   const { user } = resolveSessionUser(req);
@@ -842,6 +1036,105 @@ app.delete('/api/account/providers/:provider', (req, res) => {
   };
   upsertUserRow(updated, { preservePasswordHash: provider !== 'password' });
   return okSnapshot(res, updated.id);
+});
+
+app.delete('/api/account/sessions/:id', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const target = user.sessions.find((s) => s.id === req.params.id);
+  if (!target) return res.status(404).json({ ok: false, error: 'ไม่พบอุปกรณ์นี้ในบัญชี' });
+  if (target.isCurrentDevice) {
+    return res.status(400).json({
+      ok: false,
+      error: 'ออกจากระบบเครื่องที่กำลังใช้งานอยู่ได้จากเมนูบัญชี (ออกจากระบบ)',
+    });
+  }
+  const updated: UserAccount = {
+    ...user,
+    sessions: user.sessions.filter((s) => s.id !== target.id),
+  };
+  upsertUserRow(updated, { preservePasswordHash: true });
+  recordAudit(updated, 'PLATFORM-HQ', `ออกจากระบบอุปกรณ์ (${updated.code})`, target.deviceLabel);
+  return okSnapshot(res, updated.id);
+});
+
+app.post('/api/account/consents', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const type = String(req.body?.type ?? '');
+  // Privacy notice acknowledgement after sign-in (new version or no record yet).
+  // Only the current version can be acknowledged, and it cannot be "withdrawn" here.
+  if (type === 'privacy') {
+    const version = String(req.body?.version ?? '');
+    if (version !== PRIVACY_NOTICE_VERSION) {
+      return res.status(400).json({ ok: false, error: 'เวอร์ชันประกาศความเป็นส่วนตัวไม่ตรงกับฉบับปัจจุบัน' });
+    }
+    const acknowledged: UserAccount = {
+      ...user,
+      consents: [
+        ...(user.consents ?? []),
+        {
+          id: `cs-${Date.now()}-p`,
+          type: 'privacy',
+          granted: true,
+          version: PRIVACY_NOTICE_VERSION,
+          recordedAt: new Date().toISOString(),
+          source: 'login_prompt',
+        },
+      ],
+    };
+    upsertUserRow(acknowledged, { preservePasswordHash: true });
+    recordAudit(acknowledged, 'PLATFORM-HQ', `รับทราบประกาศความเป็นส่วนตัว (${acknowledged.code})`, PRIVACY_NOTICE_VERSION);
+    return okSnapshot(res, acknowledged.id);
+  }
+  if (type !== 'marketing') {
+    // Terms acceptance is captured at sign-up only; it cannot be toggled here.
+    return res.status(400).json({ ok: false, error: 'ปรับได้เฉพาะการยินยอมรับข่าวสารการตลาด' });
+  }
+  const granted = Boolean(req.body?.granted);
+  const updated: UserAccount = {
+    ...user,
+    consents: [
+      ...(user.consents ?? []),
+      {
+        id: `cs-${Date.now()}-m`,
+        type: 'marketing',
+        granted,
+        recordedAt: new Date().toISOString(),
+        source: 'account_settings',
+      },
+    ],
+  };
+  upsertUserRow(updated, { preservePasswordHash: true });
+  recordAudit(
+    updated,
+    'PLATFORM-HQ',
+    `${granted ? 'ยินยอม' : 'ยกเลิกการยินยอม'}รับข่าวสารการตลาด (${updated.code})`,
+    'marketing'
+  );
+  return okSnapshot(res, updated.id);
+});
+
+// Personal data copy (PDPA right of access). Returns only the signed-in user's own records.
+app.get('/api/account/export', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const state = readSystemState();
+  const email = (user.contactEmail ?? '').toLowerCase();
+  const registrations = state.registrations.filter(
+    (r) => r.runnerUserId === user.id || (email !== '' && r.email.toLowerCase() === email)
+  );
+  const { demoPasswordHint: _hint, ...safeUser } = user;
+  recordAudit(user, 'PLATFORM-HQ', `ดาวน์โหลดสำเนาข้อมูลส่วนบุคคล (${user.code})`, 'export');
+  return res.json({
+    ok: true,
+    data: {
+      exportedAt: new Date().toISOString(),
+      note: 'สำเนาข้อมูลจากระบบ RunEvent บนเครื่อง (Local sandbox) — ไม่รวมรหัสผ่านหรือข้อมูลลับ',
+      account: safeUser,
+      registrations,
+    },
+  });
 });
 
 app.post('/api/account/revoke-sessions', (req, res) => {
@@ -1005,6 +1298,20 @@ app.post('/api/registrations', (req, res) => {
       return res.status(400).json({ ok: false, error: 'ไม่พบระยะการแข่งขันที่เลือก' });
     }
 
+    // Age eligibility is checked on the server too; the browser check is only a hint.
+    const participantDob = String(payload.participantSnapshot?.dateOfBirth ?? '').trim();
+    const participantGender = payload.participantSnapshot?.gender
+      ? String(payload.participantSnapshot.gender)
+      : null;
+    const ageCheck = evaluateCategoryAge(ev, cat, participantDob, participantGender);
+    if (!ageCheck.eligible) {
+      db.exec('ROLLBACK');
+      return res.status(400).json({
+        ok: false,
+        error: ageCheckMessage(ageCheck, cat) ?? 'ผู้เข้าแข่งขันไม่ผ่านเกณฑ์อายุของระยะนี้',
+      });
+    }
+
     // Atomic quota checks inside SQLite transaction
     const activeEventSeats = (
       db
@@ -1106,6 +1413,16 @@ app.post('/api/registrations', (req, res) => {
       snapshotTotalChargedSatang: quote.runnerNetPaySatang,
       snapshotRefundedSatang: 0,
     };
+    const ageSnapshot = participantDob
+      ? buildAgeSnapshot(ageCheck, participantDob, createdIso)
+      : undefined;
+    if (ageSnapshot) {
+      newReg.ageSnapshot = ageSnapshot;
+      newReg.age = ageSnapshot.ageYears;
+    }
+    if (participantGender === 'ชาย' || participantGender === 'หญิง' || participantGender === 'ไม่ระบุ') {
+      newReg.gender = participantGender;
+    }
 
     let addonOrder: MerchOrderRecord | undefined;
     if (payload.addonProductId || payload.addonProduct) {
@@ -1894,6 +2211,40 @@ app.patch('/api/events/:id', (req, res) => {
         target.id
       );
     }
+  }
+
+  if (patch.categoryAgeUpdate) {
+    if (!hasOrgRole(user, target.organizationId, ['owner', 'event_manager'], target.id)) {
+      return res.status(403).json({
+        ok: false,
+        error: 'เฉพาะเจ้าขององค์กรหรือผู้จัดการงานจึงตั้งเกณฑ์อายุและรุ่นอายุได้',
+      });
+    }
+    const upd = patch.categoryAgeUpdate as AgeConfigInput & { categoryId?: string };
+    const cat = nextEv.categories.find((c) => c.id === upd.categoryId);
+    if (!cat) return res.status(400).json({ ok: false, error: 'ไม่พบระยะการแข่งขันที่เลือก' });
+    const checked = validateAgeConfig(upd);
+    if (!checked.ok) return res.status(400).json({ ok: false, error: checked.message });
+    const v = checked.value;
+    nextEv = {
+      ...nextEv,
+      categories: nextEv.categories.map((c) =>
+        c.id === cat.id
+          ? { ...c, ageBasis: v.ageBasis, minAge: v.minAge, maxAge: v.maxAge, ageGroups: v.ageGroups }
+          : c
+      ),
+    };
+    const limitText =
+      v.minAge === null && v.maxAge === null
+        ? 'ไม่จำกัดอายุ'
+        : `อายุ ${v.minAge ?? 0}–${v.maxAge ?? 'ไม่จำกัด'} ปี`;
+    recordAudit(
+      user,
+      target.organizationId,
+      `ตั้งเกณฑ์อายุระยะ ${cat.code} งาน ${target.code}`,
+      `${v.ageBasis === 'year_end' ? 'นับ ณ 31 ธ.ค.' : 'นับ ณ วันแข่ง'} · ${limitText} · ${v.ageGroups.length} รุ่น (ใบสมัครเดิมคงรุ่นเดิม)`,
+      target.id
+    );
   }
 
   if (Array.isArray(patch.customFields)) {

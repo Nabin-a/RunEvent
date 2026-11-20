@@ -48,6 +48,7 @@ import {
 } from './StatusBadges';
 
 import { tx, txf } from '../i18n';
+import { FEATURES } from '../config/features';
 export type PlatformSection =
   | 'plat_overview'
   | 'plat_orgs'
@@ -2024,7 +2025,9 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
             <div className="page-guide-header">
               <h1>{tx("บริหารบัญชีผู้ใช้งาน สิทธิ์สมาชิกองค์กร และตรวจสอบ Audit Log ทั้งแพลตฟอร์ม")}</h1>
               <p className="page-purpose-desc">
-                {tx("ตรวจสอบบัญชีผู้ใช้ทั้งหมด ช่วยยืนยันอีเมลกรณีติดปัญหา กำหนดหรือเพิกถอนสิทธิ์ในองค์กรผู้จัด และตรวจสอบประวัติการทำงานย้อนหลังของทุกบทบาท")}
+                {FEATURES.emailVerification
+                  ? tx("ตรวจสอบบัญชีผู้ใช้ทั้งหมด ช่วยยืนยันอีเมลกรณีติดปัญหา กำหนดหรือเพิกถอนสิทธิ์ในองค์กรผู้จัด และตรวจสอบประวัติการทำงานย้อนหลังของทุกบทบาท")
+                  : tx("ตรวจสอบบัญชีผู้ใช้ทั้งหมด กำหนดหรือเพิกถอนสิทธิ์ในองค์กรผู้จัด และตรวจสอบประวัติการทำงานย้อนหลังของทุกบทบาท")}
               </p>
             </div>
 
@@ -2062,7 +2065,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                 <span>Platform Owner</span>
                               </span>
                             )}
-                            {u.emailVerified ? (
+                            {!FEATURES.emailVerification ? null : u.emailVerified ? (
                               <span className="status-pill badge-forest">
                                 <IconCheckCircle size={13} />
                                 <span>{tx("อีเมลยืนยันแล้ว")}</span>
@@ -2076,7 +2079,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                           </div>
 
                           <div className="cta-inline-row">
-                            {!u.emailVerified && (
+                            {FEATURES.emailVerification && !u.emailVerified && (
                               <button
                                 type="button"
                                 className="btn-secondary"

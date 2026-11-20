@@ -377,8 +377,13 @@ export function upsertUserRow(
   options?: { passwordPlain?: string; preservePasswordHash?: boolean; sortOrder?: number }
 ): void {
   const existing = db
-    .prepare('SELECT password_hash, sort_order FROM users WHERE id = ?')
-    .get(user.id) as { password_hash: string | null; sort_order: number } | undefined;
+    .prepare('SELECT password_hash, sort_order, user_meta_json FROM users WHERE id = ?')
+    .get(user.id) as
+    | { password_hash: string | null; sort_order: number; user_meta_json: string | null }
+    | undefined;
+  const existingMeta = existing?.user_meta_json
+    ? (JSON.parse(existing.user_meta_json) as { createdAt?: string })
+    : {};
 
   let pwHash: string | null = existing?.password_hash ?? null;
   if (options?.passwordPlain) {
@@ -396,6 +401,12 @@ export function upsertUserRow(
     deletionRequestedAt: user.deletionRequestedAt,
     loginHistory: user.loginHistory ?? [],
     achievements: user.achievements ?? [],
+    // Keep the first-seen creation time; brand-new rows get "now". Rows that predate
+    // this field keep it unset rather than inventing a date.
+    createdAt: user.createdAt ?? existingMeta.createdAt ?? (existing ? undefined : new Date().toISOString()),
+    passwordChangedAt: user.passwordChangedAt,
+    lastLoginAt: user.lastLoginAt,
+    consents: user.consents ?? [],
   };
 
   db.prepare(`
@@ -990,6 +1001,10 @@ function mapUserRow(uRow: Record<string, unknown>): UserAccount {
         deletionRequestedAt?: string;
         loginHistory?: UserAccount['loginHistory'];
         achievements?: UserAccount['achievements'];
+        createdAt?: string;
+        passwordChangedAt?: string;
+        lastLoginAt?: string;
+        consents?: UserAccount['consents'];
       })
     : {};
 
@@ -1014,6 +1029,10 @@ function mapUserRow(uRow: Record<string, unknown>): UserAccount {
     deletionRequestedAt: meta.deletionRequestedAt,
     loginHistory: meta.loginHistory ?? [],
     achievements: meta.achievements ?? [],
+    createdAt: meta.createdAt,
+    passwordChangedAt: meta.passwordChangedAt,
+    lastLoginAt: meta.lastLoginAt,
+    consents: meta.consents ?? [],
     isPlatformAdmin: Boolean(uRow.is_platform_admin),
     demoRoleSummary: String(uRow.demo_role_summary || ''),
     isDemoPreset: Boolean(uRow.is_demo_preset),

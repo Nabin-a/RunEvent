@@ -1,7 +1,6 @@
 import { RequiredFieldText } from './RequiredFieldText';
 import React, { useMemo, useState } from 'react';
 import {
-  ALL_THAI_PROVINCES,
   findPostalCodeForLocation,
   getDistrictsForPostalAndProvince,
   getEntriesByPostalCode,
@@ -36,7 +35,8 @@ interface ThaiPostalAddressSelectorProps {
 
 /**
  * ชุดข้อมูลที่อยู่แบบ 2 คอลัมน์:
- * - Column 1: ช่อง input text ทั้งหมดเรียงตามลำดับ ที่อยู่ -> รหัสไปรษณีย์ -> แขวง/ตำบล -> เขต/อำเภอ -> จังหวัด
+ * - Column 1: ช่องกรอกและ dropdown select แบบเดิมเรียงในคอลัมน์เดียวตามลำดับ
+ *   ที่อยู่ -> รหัสไปรษณีย์ -> แขวง/ตำบล -> เขต/อำเภอ -> จังหวัด
  * - Column 2: สรุปที่อยู่อัตโนมัติแบบ disabled
  */
 export const ThaiPostalAddressSelector: React.FC<
@@ -68,12 +68,11 @@ export const ThaiPostalAddressSelector: React.FC<
   }, [value.postalCode]);
 
   const provinceOptions = useMemo(() => {
-    const fromZip = getProvincesForPostalCode(value.postalCode);
-    const base = fromZip.length > 0 ? fromZip : ALL_THAI_PROVINCES;
-    if (value.province && !base.includes(value.province)) {
-      return [value.province, ...base];
+    const opts = getProvincesForPostalCode(value.postalCode);
+    if (value.province && !opts.includes(value.province)) {
+      return [value.province, ...opts];
     }
-    return base;
+    return opts;
   }, [value.postalCode, value.province]);
 
   const districtOptions = useMemo(() => {
@@ -100,9 +99,8 @@ export const ThaiPostalAddressSelector: React.FC<
   }, [value.postalCode, value.province, value.district, value.subdistrict]);
 
   const applyPostalCascade = (rawZip: string) => {
-    const cleanZip = rawZip.replace(/\D/g, '').slice(0, 5);
     const cascaded = resolveCascadeFromPostal(
-      cleanZip,
+      rawZip,
       value.province,
       value.district,
       value.subdistrict
@@ -117,64 +115,13 @@ export const ThaiPostalAddressSelector: React.FC<
     });
   };
 
-  const handleSubdistrictInput = (nextSub: string) => {
-    const syncedZip = findPostalCodeForLocation(
-      value.province,
-      value.district,
-      nextSub.trim()
-    );
-    onChange({
-      ...value,
-      country: value.country || 'Thailand',
-      postalCode: syncedZip ?? value.postalCode,
-      subdistrict: nextSub,
-    });
-  };
-
-  const handleDistrictInput = (nextDist: string) => {
-    const trimmed = nextDist.trim();
-    const exactInZip = getEntriesByPostalCode(value.postalCode).find(
-      (e) => e.province === value.province && e.district === trimmed
-    );
-    if (exactInZip) {
-      onChange({
-        ...value,
-        country: value.country || 'Thailand',
-        district: nextDist,
-        subdistrict: exactInZip.subdistricts.includes(value.subdistrict)
-          ? value.subdistrict
-          : exactInZip.subdistricts[0] ?? value.subdistrict,
-      });
-      return;
-    }
-    const fallbackEntry = THAI_POSTAL_ENTRIES.find(
-      (e) => e.province === value.province && e.district === trimmed
-    );
-    if (fallbackEntry) {
-      onChange({
-        ...value,
-        country: value.country || 'Thailand',
-        postalCode: fallbackEntry.postalCode,
-        district: nextDist,
-        subdistrict: fallbackEntry.subdistricts[0] ?? value.subdistrict,
-      });
-      return;
-    }
-    onChange({
-      ...value,
-      country: value.country || 'Thailand',
-      district: nextDist,
-    });
-  };
-
-  const handleProvinceInput = (nextProv: string) => {
-    const trimmed = nextProv.trim();
+  const handleProvinceChange = (nextProv: string) => {
     const districtsInZip = getEntriesByPostalCode(value.postalCode).filter(
-      (e) => e.province === trimmed
+      (e) => e.province === nextProv
     );
     if (districtsInZip.length > 0) {
       const nextDist = districtsInZip[0].district;
-      const nextSub = districtsInZip[0].subdistricts[0] ?? value.subdistrict;
+      const nextSub = districtsInZip[0].subdistricts[0] ?? '';
       onChange({
         ...value,
         country: value.country || 'Thailand',
@@ -184,24 +131,42 @@ export const ThaiPostalAddressSelector: React.FC<
       });
       return;
     }
+    // Fallback when user changes province outside current zip: sync zip + district + subdistrict cleanly
     const firstProvEntry = THAI_POSTAL_ENTRIES.find(
-      (e) => e.province === trimmed
+      (e) => e.province === nextProv
     );
-    if (firstProvEntry) {
-      onChange({
-        ...value,
-        country: value.country || 'Thailand',
-        postalCode: firstProvEntry.postalCode,
-        province: nextProv,
-        district: firstProvEntry.district,
-        subdistrict: firstProvEntry.subdistricts[0] ?? value.subdistrict,
-      });
-      return;
-    }
     onChange({
       ...value,
       country: value.country || 'Thailand',
+      postalCode: firstProvEntry?.postalCode ?? value.postalCode,
       province: nextProv,
+      district: firstProvEntry?.district ?? '',
+      subdistrict: firstProvEntry?.subdistricts[0] ?? '',
+    });
+  };
+
+  const handleDistrictChange = (nextDist: string) => {
+    const exactInZip = getEntriesByPostalCode(value.postalCode).find(
+      (e) => e.province === value.province && e.district === nextDist
+    );
+    if (exactInZip) {
+      onChange({
+        ...value,
+        country: value.country || 'Thailand',
+        district: nextDist,
+        subdistrict: exactInZip.subdistricts[0] ?? '',
+      });
+      return;
+    }
+    const fallbackEntry = THAI_POSTAL_ENTRIES.find(
+      (e) => e.province === value.province && e.district === nextDist
+    );
+    onChange({
+      ...value,
+      country: value.country || 'Thailand',
+      postalCode: fallbackEntry?.postalCode ?? value.postalCode,
+      district: nextDist,
+      subdistrict: fallbackEntry?.subdistricts[0] ?? '',
     });
   };
 
@@ -234,7 +199,7 @@ export const ThaiPostalAddressSelector: React.FC<
 
   return (
     <div className="postal-two-col-grid">
-      {/* COLUMN 1: All Input Text Controls in Exact Order */}
+      {/* COLUMN 1: All Fields Stacked in Column 1 (Original Dropdown Selects Preserved) */}
       <div className="postal-inputs-col">
         {/* 1. ที่อยู่ */}
         {showStreetAddress && (
@@ -315,76 +280,111 @@ export const ThaiPostalAddressSelector: React.FC<
           )}
         </div>
 
-        {/* 3. แขวง / ตำบล */}
+        {/* 3. แขวง / ตำบล (Original <select> Dropdown) */}
         <div className="form-row">
           <label htmlFor={`${idPrefix}-subd`}>
             {tx('แขวง / ตำบล')}{' '}
             {required ? <RequiredFieldText text="*" /> : ''}
           </label>
-          <input
-            id={`${idPrefix}-subd`}
-            type="text"
-            list={`${idPrefix}-subd-list`}
-            value={value.subdistrict}
-            onChange={(e) => handleSubdistrictInput(e.target.value)}
-            placeholder={tx('ระบุแขวง / ตำบล')}
-            required={required}
-          />
-          <datalist id={`${idPrefix}-subd-list`}>
-            {subdistrictOptions.map((s) => (
-              <option key={s} value={s}>
-                {tx(s)}
-              </option>
-            ))}
-          </datalist>
+          {subdistrictOptions.length > 0 ? (
+            <select
+              id={`${idPrefix}-subd`}
+              value={value.subdistrict}
+              onChange={(e) => {
+                const nextSub = e.target.value;
+                const syncedZip = findPostalCodeForLocation(
+                  value.province,
+                  value.district,
+                  nextSub
+                );
+                onChange({
+                  ...value,
+                  country: value.country || 'Thailand',
+                  postalCode: syncedZip ?? value.postalCode,
+                  subdistrict: nextSub,
+                });
+              }}
+              required={required}
+            >
+              {subdistrictOptions.map((s) => (
+                <option key={s} value={s}>
+                  {tx(s)}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              id={`${idPrefix}-subd`}
+              type="text"
+              value={value.subdistrict}
+              onChange={(e) =>
+                onChange({
+                  ...value,
+                  country: value.country || 'Thailand',
+                  subdistrict: e.target.value,
+                })
+              }
+              placeholder={tx('ระบุแขวง / ตำบล')}
+              required={required}
+            />
+          )}
         </div>
 
-        {/* 4. เขต / อำเภอ */}
+        {/* 4. เขต / อำเภอ (Original <select> Dropdown) */}
         <div className="form-row">
           <label htmlFor={`${idPrefix}-dist`}>
             {tx('เขต / อำเภอ')}{' '}
             {required ? <RequiredFieldText text="*" /> : ''}
           </label>
-          <input
-            id={`${idPrefix}-dist`}
-            type="text"
-            list={`${idPrefix}-dist-list`}
-            value={value.district}
-            onChange={(e) => handleDistrictInput(e.target.value)}
-            placeholder={tx('ระบุเขต / อำเภอ')}
-            required={required}
-          />
-          <datalist id={`${idPrefix}-dist-list`}>
-            {districtOptions.map((d) => (
-              <option key={d} value={d}>
-                {tx(d)}
-              </option>
-            ))}
-          </datalist>
+          {districtOptions.length > 0 ? (
+            <select
+              id={`${idPrefix}-dist`}
+              value={value.district}
+              onChange={(e) => handleDistrictChange(e.target.value)}
+              required={required}
+            >
+              {districtOptions.map((d) => (
+                <option key={d} value={d}>
+                  {tx(d)}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              id={`${idPrefix}-dist`}
+              type="text"
+              value={value.district}
+              onChange={(e) =>
+                onChange({
+                  ...value,
+                  country: value.country || 'Thailand',
+                  district: e.target.value,
+                })
+              }
+              placeholder={tx('ระบุเขต / อำเภอ')}
+              required={required}
+            />
+          )}
         </div>
 
-        {/* 5. จังหวัด */}
+        {/* 5. จังหวัด (Original <select> Dropdown) */}
         <div className="form-row">
           <label htmlFor={`${idPrefix}-prov`}>
             {tx('จังหวัด')}{' '}
             {required ? <RequiredFieldText text="*" /> : ''}
           </label>
-          <input
+          <select
             id={`${idPrefix}-prov`}
-            type="text"
-            list={`${idPrefix}-prov-list`}
             value={value.province}
-            onChange={(e) => handleProvinceInput(e.target.value)}
-            placeholder={tx('ระบุจังหวัด')}
+            onChange={(e) => handleProvinceChange(e.target.value)}
             required={required}
-          />
-          <datalist id={`${idPrefix}-prov-list`}>
+          >
             {provinceOptions.map((p) => (
               <option key={p} value={p}>
                 {tx(p)}
               </option>
             ))}
-          </datalist>
+          </select>
         </div>
       </div>
 
@@ -405,38 +405,6 @@ export const ThaiPostalAddressSelector: React.FC<
           disabled
           readOnly
         />
-
-        <div className="postal-summary-breakdown" aria-disabled="true">
-          <div className="postal-summary-breakdown-title">
-            {tx('ตรวจสอบแยกรายช่อง')}
-          </div>
-          <div className="postal-summary-dl">
-            <span className="muted-inline">{tx('ที่อยู่:')}</span>
-            <span className="postal-summary-val">
-              {addrTrim ? (isEn ? tx(addrTrim) : addrTrim) : '-'}
-            </span>
-
-            <span className="muted-inline">{tx('รหัสไปรษณีย์:')}</span>
-            <span className="postal-summary-val mono-num">
-              {zipTrim || '-'}
-            </span>
-
-            <span className="muted-inline">{tx('แขวง / ตำบล:')}</span>
-            <span className="postal-summary-val">
-              {subdTrim ? (isEn ? tx(subdTrim) : subdTrim) : '-'}
-            </span>
-
-            <span className="muted-inline">{tx('เขต / อำเภอ:')}</span>
-            <span className="postal-summary-val">
-              {distTrim ? (isEn ? tx(distTrim) : distTrim) : '-'}
-            </span>
-
-            <span className="muted-inline">{tx('จังหวัด:')}</span>
-            <span className="postal-summary-val">
-              {provTrim ? (isEn ? tx(provTrim) : provTrim) : '-'}
-            </span>
-          </div>
-        </div>
       </div>
     </div>
   );

@@ -47,6 +47,8 @@ export interface ApiSnapshotResponse {
   order?: MerchOrderRecord;
   inquiry?: ProductionInquiry;
   invitation?: TeamInvitation;
+  /** Generic payload (e.g. /api/account/export). */
+  data?: unknown;
 }
 
 let cachedApiOrigin = '';

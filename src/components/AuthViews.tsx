@@ -31,6 +31,8 @@ import {
 import { tx, txf } from '../i18n';
 import { RequiredFieldText } from './RequiredFieldText';
 import { DateOfBirthInput } from './DateOfBirthInput';
+import { PrivacyNoticeModal } from './PrivacyNoticeModal';
+import { NationalitySelect } from './NationalitySelect';
 import { ThaiPostalAddressSelector } from './ThaiPostalAddressSelector';
 import {
   detectNameScript,
@@ -98,7 +100,6 @@ export function computeRunnerProfileCompletion(
 
 interface AuthScreenProps {
   users: UserAccount[];
-  currentUser: UserAccount | null;
   returnIntent: ReturnIntent | null;
   initialTab?: 'signin' | 'signup' | 'forgot';
   externalSocialScenario?: {
@@ -159,7 +160,6 @@ interface AuthScreenProps {
   onNavigateExploreEvents?: () => void;
   onNavigateRunnerDashboard?: () => void;
   onNavigateOrganizerWorkspace?: (orgId: string) => void;
-  onLogout: () => void;
 }
 
 const ORG_DRAFT_STORAGE_KEY = 'runevent_v2_org_onboarding_draft';
@@ -167,7 +167,6 @@ const ENABLE_ORGANIZER_SELF_ONBOARDING = false;
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({
   users,
-  currentUser,
   returnIntent,
   initialTab = 'signin',
   externalSocialScenario,
@@ -178,7 +177,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   onSubmitOrganizerOnboarding,
   onNavigateExploreEvents,
   onNavigateOrganizerWorkspace,
-  onLogout,
 }) => {
   const [authTab, setAuthTab] = useState<'signin' | 'signup' | 'forgot'>(
     initialTab
@@ -304,6 +302,32 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     }
   >(null);
   const [socialTermsAccepted, setSocialTermsAccepted] = useState(false);
+
+  // PDPA privacy notice: shown once before the first account is created in this session.
+  // The pending action (create account) runs only after the user acknowledges it.
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [privacyModalOpen, setPrivacyModalOpen] = useState(false);
+  const [privacyReadOpen, setPrivacyReadOpen] = useState(false);
+  const pendingAfterPrivacyRef = React.useRef<(() => void) | null>(null);
+  const requirePrivacyConsent = (proceed: () => void) => {
+    if (privacyAccepted) {
+      proceed();
+      return;
+    }
+    pendingAfterPrivacyRef.current = proceed;
+    setPrivacyModalOpen(true);
+  };
+  const handlePrivacyAccept = () => {
+    setPrivacyAccepted(true);
+    setPrivacyModalOpen(false);
+    const next = pendingAfterPrivacyRef.current;
+    pendingAfterPrivacyRef.current = null;
+    next?.();
+  };
+  const handlePrivacyCancel = React.useCallback(() => {
+    pendingAfterPrivacyRef.current = null;
+    setPrivacyModalOpen(false);
+  }, []);
   const [collisionPasswordCheck, setCollisionPasswordCheck] = useState('');
 
   // Forgot password simulation
@@ -376,7 +400,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     if (!firstName.trim() || !lastName.trim()) {
       setStatusAlert({
         tone: 'err',
-        text: tx("กรุณากรอกชื่อจริง (First Name) และนามสกุล (Last Name) ให้ครบถ้วน"),
+        text: tx("กรุณากรอกชื่อจริงและนามสกุลให้ครบถ้วน"),
       });
       return false;
     }
@@ -437,7 +461,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       setStatusAlert({
         tone: 'err',
         text: tx(
-          "กรุณากรอกชื่อจริงและนามสกุลภาษาอังกฤษ (First Name & Last Name EN) ให้ครบถ้วน"
+          "กรุณากรอกชื่อจริงและนามสกุลภาษาอังกฤษให้ครบถ้วน"
         ),
       });
       return;
@@ -764,6 +788,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       className={`auth-page-shell ${isWideOrganizerFlow ? 'auth-signup-shell' : 'auth-single-shell'
         }`}
     >
+      <PrivacyNoticeModal
+        open={privacyModalOpen}
+        onAccept={handlePrivacyAccept}
+        onCancel={handlePrivacyCancel}
+      />
       {returnIntent && (
         <div className="intent-return-banner" role="status">
           <IconArrowRight size={16} />
@@ -788,7 +817,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   ? tx("ข้อมูลโปรไฟล์นักวิ่ง (ข้ามไปเติมภายหลังได้)")
                   : tx("สมัครสมาชิก RunEvent")
                 : authTab === 'forgot'
-                  ? tx("ลืมรหัสผ่าน (Forgot Password)")
+                  ? tx("ลืมรหัสผ่าน")
                   : tx("เข้าสู่ระบบ RunEvent")}
             </h1>
             <p className="muted-block">
@@ -802,28 +831,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             </p>
           </div>
 
-          {currentUser && (
-            <div className="active-session-box">
-              <div className="session-box-row">
-                <IconCheckCircle size={18} />
-                <div>
-                  <strong>{tx("เข้าสู่ระบบอยู่:")} {tx(currentUser.fullNameTh)}</strong>
-                  <div className="muted-inline">
-                    {currentUser.contactEmail ??
-                      tx("ยังไม่ได้เพิ่มอีเมลติดต่อ (เข้าผ่าน LINE)")}
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={onLogout}
-              >
-                {tx("ออกจากระบบ")}
-              </button>
-            </div>
-          )}
-
           {authTab === 'forgot' && (
             <div className="auth-back-signin-bar">
               <button
@@ -836,7 +843,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 }}
               >
                 <IconArrowLeft size={14} />
-                <span>{tx("กลับไปหน้าเข้าสู่ระบบ (Sign In)")}</span>
+                <span>{tx("กลับไปหน้าเข้าสู่ระบบ")}</span>
               </button>
             </div>
           )}
@@ -935,7 +942,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 {/* Layer 1: Username / Email */}
                 <div className="form-row">
                   <label htmlFor="signin-email">
-                    {tx("Email")}
+                    {tx("อีเมล")}
                   </label>
                   <input
                     id="signin-email"
@@ -950,7 +957,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
                 {/* Layer 2: Password */}
                 <div className="form-row">
-                  <label htmlFor="signin-pass">{tx("Password (รหัสผ่าน)")}</label>
+                  <label htmlFor="signin-pass">{tx("รหัสผ่าน")}</label>
                   <div className="password-field-wrap">
                     <input
                       id="signin-pass"
@@ -992,13 +999,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       window.history.replaceState({}, '', '/login?mode=forgot');
                     }}
                   >
-                    {tx("ลืมรหัสผ่าน? (Forgot password)")}
+                    {tx("ลืมรหัสผ่าน?")}
                   </button>
                 </div>
 
                 <button type="submit" className="btn-primary btn-full">
                   <IconLock size={16} />
-                  <span>{tx("เข้าสู่ระบบ (Sign In)")}</span>
+                  <span>{tx("เข้าสู่ระบบ")}</span>
                 </button>
               </form>
 
@@ -1007,7 +1014,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   <IconAlert size={16} />
                   <span>
                     {tx("การยืนยันตัวตนผ่าน ")} {socialPendingStep.provider.toUpperCase()}{' '}
-                    {tx("ถูกยกเลิกหรือหมดเวลา (Callback State Expired) — ยังไม่มีการสร้างหรือเปลี่ยนสถานะบัญชี กรุณาเลือกวิธีเข้าสู่ระบบอีกครั้ง")}
+                    {tx("ถูกยกเลิกหรือหมดเวลา — ยังไม่มีการสร้างหรือเปลี่ยนสถานะบัญชี กรุณาเลือกวิธีเข้าสู่ระบบอีกครั้ง")}
                   </span>
                 </div>
               )}
@@ -1047,15 +1054,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     className="btn-primary"
                     disabled={!socialTermsAccepted}
                     onClick={() => {
-                      const created = onRegisterSocialUser({
-                        provider: 'line',
-                        fullNameTh:
-                          socialPendingStep.tempName.trim() || 'ผู้ใช้ LINE ใหม่',
-                        email: null,
-                        marketingConsent: false,
+                      const tempName = socialPendingStep.tempName;
+                      requirePrivacyConsent(() => {
+                        const created = onRegisterSocialUser({
+                          provider: 'line',
+                          fullNameTh: tempName.trim() || 'ผู้ใช้ LINE ใหม่',
+                          email: null,
+                          marketingConsent: false,
+                        });
+                        setSocialPendingStep(null);
+                        onAuthenticated(created);
                       });
-                      setSocialPendingStep(null);
-                      onAuthenticated(created);
                     }}
                   >
                     {tx("ยืนยันสร้างบัญชีและเข้าใช้งาน")}
@@ -1133,12 +1142,28 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     window.history.replaceState({}, '', '/login?mode=signup');
                   }}
                 >
-                  <span>{tx("สมัครสมาชิกใหม่ (Register)")}</span>
+                  <span>{tx("สมัครสมาชิกใหม่")}</span>
                   <IconArrowRight size={14} />
                 </button>
               </div>
             </>
           )}
+
+          {/* The notice is always readable from the sign-in / sign-up screen (no acknowledgement). */}
+          <p className="auth-privacy-link-row">
+            <button
+              type="button"
+              className="auth-inline-link-btn"
+              onClick={() => setPrivacyReadOpen(true)}
+            >
+              {tx("ประกาศความเป็นส่วนตัว (PDPA)")}
+            </button>
+          </p>
+          <PrivacyNoticeModal
+            open={privacyReadOpen}
+            mode="read"
+            onCancel={() => setPrivacyReadOpen(false)}
+          />
 
           {/* =================================================================
               TAB 2: COMPLETE REGISTRATION SYSTEM (ACCOUNT SELECTION + WIZARDS)
@@ -1278,7 +1303,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                             setSocialAuthPrepopulated('google');
                             setStatusAlert({
                               tone: 'ok',
-                              text: tx("ดึงชื่อและอีเมลจาก Google Account เรียบร้อยแล้ว ตรวจสอบข้อมูลแล้วกดสมัครสมาชิกเพื่อไปต่อ"),
+                              text: tx("ดึงชื่อและอีเมลจากบัญชี Google แล้ว ตรวจสอบข้อมูลแล้วกดสมัครสมาชิกเพื่อไปต่อ"),
                             });
                           }}
                         >
@@ -1340,7 +1365,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         {/* 1. First Name (Accepts EN or TH — Auto-mapped on Save) */}
                         <div className="form-row">
                           <label htmlFor="rn-fname">
-                            {<RequiredFieldText text={tx("ชื่อจริง (First Name · ไทย หรือ อังกฤษ) *")} />}
+                            {<RequiredFieldText text={tx("ชื่อจริง (ภาษาไทยหรืออังกฤษ) *")} />}
                           </label>
                           <input
                             id="rn-fname"
@@ -1351,7 +1376,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                                 sanitizeSingleLanguageNameInput(e.target.value)
                               )
                             }
-                            placeholder="Kanpitcha หรือ กานต์พิชชา"
+                            placeholder={tx("Kanpitcha หรือ กานต์พิชชา")}
                             required
                           />
                         </div>
@@ -1359,7 +1384,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         {/* 2. Last Name (Accepts EN or TH — Auto-mapped on Save) */}
                         <div className="form-row">
                           <label htmlFor="rn-lname">
-                            {<RequiredFieldText text={tx("นามสกุล (Last Name · ไทย หรือ อังกฤษ) *")} />}
+                            {<RequiredFieldText text={tx("นามสกุล (ภาษาไทยหรืออังกฤษ) *")} />}
                           </label>
                           <input
                             id="rn-lname"
@@ -1370,7 +1395,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                                 sanitizeSingleLanguageNameInput(e.target.value)
                               )
                             }
-                            placeholder="Wattanakul หรือ วัฒนากูล"
+                            placeholder={tx("Wattanakul หรือ วัฒนากูล")}
                             required
                           />
                         </div>
@@ -1378,7 +1403,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         {/* 3. Email */}
                         <div className="form-row">
                           <label htmlFor="rn-email">
-                            {<RequiredFieldText text={tx("Email (อีเมล) *")} />}
+                            {<RequiredFieldText text={tx("อีเมล *")} />}
                           </label>
                           <input
                             id="rn-email"
@@ -1411,7 +1436,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           <>
                             <div className="form-row">
                               <label htmlFor="rn-pass">
-                                {<RequiredFieldText text={tx("Password (รหัสผ่านอย่างน้อย 8 ตัวอักษร) *")} />}
+                                {<RequiredFieldText text={tx("รหัสผ่าน (อย่างน้อย 8 ตัวอักษร) *")} />}
                               </label>
                               <div className="password-field-wrap">
                                 <input
@@ -1449,7 +1474,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
                             <div className="form-row">
                               <label htmlFor="rn-cpass">
-                                {<RequiredFieldText text={tx("Confirm Password (ยืนยันรหัสผ่าน) *")} />}
+                                {<RequiredFieldText text={tx("ยืนยันรหัสผ่าน *")} />}
                               </label>
                               <div className="password-field-wrap">
                                 <input
@@ -1504,7 +1529,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         )}
 
                         <button type="submit" className="btn-primary btn-full">
-                          <span>{tx("สมัครสมาชิก (Register)")}</span>
+                          <span>{tx("สมัครสมาชิก")}</span>
                           <IconArrowRight size={15} />
                         </button>
                       </form>
@@ -1523,7 +1548,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                             window.history.replaceState({}, '', '/login');
                           }}
                         >
-                          <span>{tx("เข้าสู่ระบบ (Sign In)")}</span>
+                          <span>{tx("เข้าสู่ระบบ")}</span>
                           <IconArrowRight size={14} />
                         </button>
                       </div>
@@ -1537,7 +1562,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         <>
                           <div className="form-row">
                             <label htmlFor="rn-alt-fn-th">
-                              {tx("ชื่อจริงภาษาไทย (First Name TH · ไม่บังคับ)")}
+                              {tx("ชื่อจริงภาษาไทย (ไม่บังคับ)")}
                             </label>
                             <input
                               id="rn-alt-fn-th"
@@ -1554,7 +1579,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
                           <div className="form-row">
                             <label htmlFor="rn-alt-ln-th">
-                              {tx("นามสกุลภาษาไทย (Last Name TH · ไม่บังคับ)")}
+                              {tx("นามสกุลภาษาไทย (ไม่บังคับ)")}
                             </label>
                             <input
                               id="rn-alt-ln-th"
@@ -1573,7 +1598,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         <>
                           <div className="form-row">
                             <label htmlFor="rn-fname-en">
-                              {<RequiredFieldText text={tx("ชื่อจริงภาษาอังกฤษ (First Name EN) *")} />}
+                              {<RequiredFieldText text={tx("ชื่อจริงภาษาอังกฤษ *")} />}
                             </label>
                             <input
                               id="rn-fname-en"
@@ -1591,7 +1616,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
                           <div className="form-row">
                             <label htmlFor="rn-lname-en">
-                              {<RequiredFieldText text={tx("นามสกุลภาษาอังกฤษ (Last Name EN) *")} />}
+                              {<RequiredFieldText text={tx("นามสกุลภาษาอังกฤษ *")} />}
                             </label>
                             <input
                               id="rn-lname-en"
@@ -1611,7 +1636,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
                       <div className="form-row">
                         <label htmlFor="rn-dob">
-                          {tx("Date of Birth (วันเกิด dd/mm/yyyy · ไม่บังคับ)")}
+                          {tx("วันเกิด (ไม่บังคับ)")}
                         </label>
                         <DateOfBirthInput
                           id="rn-dob"
@@ -1621,7 +1646,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       </div>
 
                       <fieldset className="runner-gender-field">
-                        <legend>{tx("Gender (เพศ · ไม่บังคับ)")}</legend>
+                        <legend>{tx("เพศ (ไม่บังคับ)")}</legend>
                         <div className="runner-gender-options">
                           {(['ชาย', 'หญิง'] as const).map((opt) => (
                             <label key={opt}>
@@ -1640,13 +1665,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
                       <div className="form-row">
                         <label htmlFor="rn-nat">
-                          {tx("Nationality (สัญชาติ)")}
+                          {tx("สัญชาติ")}
                         </label>
-                        <input
+                        <NationalitySelect
                           id="rn-nat"
-                          type="text"
                           value={runnerNationality}
-                          onChange={(e) => setRunnerNationality(e.target.value)}
+                          onChange={setRunnerNationality}
                         />
                       </div>
 
@@ -1664,7 +1688,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           }
                         >
                           <option value="thai_id">
-                            {tx("บัตรประจำตัวประชาชน 13 หลัก (Thai National ID)")}
+                            {tx("บัตรประจำตัวประชาชน 13 หลัก")}
                           </option>
                           <option value="passport">
                             {tx("หนังสือเดินทาง (Passport)")}
@@ -1680,7 +1704,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           <label htmlFor="rn-idnum">
                             {runnerIdType === 'thai_id'
                               ? tx("เลขบัตรประจำตัวประชาชน (13 หลัก · ไม่บังคับ)")
-                              : tx("เลขหนังสือเดินทาง (Passport Number · ไม่บังคับ)")}
+                              : tx("เลขหนังสือเดินทาง (ไม่บังคับ)")}
                           </label>
                           <input
                             id="rn-idnum"
@@ -1762,7 +1786,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       <button
                         type="button"
                         className="btn-primary btn-full"
-                        onClick={() => handleCompleteRunnerRegistration(false)}
+                        onClick={() =>
+                          requirePrivacyConsent(() => handleCompleteRunnerRegistration(false))
+                        }
                       >
                         <IconCheckCircle size={15} />
                         <span>{tx("บันทึกโปรไฟล์และสร้างบัญชี")}</span>
@@ -1771,7 +1797,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       <button
                         type="button"
                         className="btn-secondary btn-full"
-                        onClick={() => handleCompleteRunnerRegistration(true)}
+                        onClick={() =>
+                          requirePrivacyConsent(() => handleCompleteRunnerRegistration(true))
+                        }
                       >
                         <span>{tx("ข้ามข้อมูลไม่บังคับและสร้างบัญชีทันที")}</span>
                       </button>
@@ -1782,7 +1810,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           className="auth-inline-link-btn"
                           onClick={() => setRunnerStep(1)}
                         >
-                          {tx("← ย้อนกลับไปแก้ไขข้อมูลบัญชี (Step 1)")}
+                          {tx("← ย้อนกลับไปแก้ไขข้อมูลบัญชี (ขั้นตอนที่ 1)")}
                         </button>
                       </div>
                     </div>
@@ -2019,7 +2047,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                             >
                               <div className="form-row">
                                 <label htmlFor="og-pw">
-                                  {<RequiredFieldText text={tx("Password (รหัสผ่านอย่างน้อย 8 ตัวอักษร) *")} />}
+                                  {<RequiredFieldText text={tx("รหัสผ่าน (อย่างน้อย 8 ตัวอักษร) *")} />}
                                 </label>
                                 <input
                                   id="og-pw"
@@ -2030,7 +2058,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                               </div>
                               <div className="form-row">
                                 <label htmlFor="og-cpw">
-                                  {<RequiredFieldText text={tx("Confirm Password (ยืนยันรหัสผ่าน) *")} />}
+                                  {<RequiredFieldText text={tx("ยืนยันรหัสผ่าน *")} />}
                                 </label>
                                 <input
                                   id="og-cpw"

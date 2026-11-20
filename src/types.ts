@@ -217,7 +217,18 @@ export interface LoginHistoryEntry {
   method: string;
   deviceLabel: string;
   ipOrLocation: string;
-  status: 'success' | 'revoked';
+  status: 'success' | 'revoked' | 'failed';
+}
+
+/** One consent decision (PDPA). Terms acceptance and marketing opt-in are recorded separately. */
+export interface ConsentRecord {
+  id: string;
+  type: 'terms' | 'privacy' | 'marketing';
+  granted: boolean;
+  /** Document version the user saw; only set for terms/privacy. */
+  version?: string;
+  recordedAt: string;
+  source: 'signup' | 'account_settings' | 'login_prompt';
 }
 
 export interface SavedParticipant {
@@ -346,6 +357,11 @@ export interface UserAccount {
   accountStatus?: 'active' | 'deactivated' | 'deletion_requested';
   deletionRequestReason?: string;
   deletionRequestedAt?: string;
+  /** ISO time the account row was first created (missing for accounts created before this was tracked). */
+  createdAt?: string;
+  passwordChangedAt?: string;
+  lastLoginAt?: string;
+  consents?: ConsentRecord[];
   loginHistory?: LoginHistoryEntry[];
   achievements?: RunnerAchievement[];
   isPlatformAdmin?: boolean;
@@ -436,6 +452,40 @@ export interface RaceCategory {
   bibPrefix: string;
   colorTag: 'vermilion' | 'navy' | 'forest' | 'amber';
   priceTiers: PriceTier[];
+  /** Which date the runner's age is counted on. Missing = 'race_day'. */
+  ageBasis?: AgeBasis;
+  /** Eligibility: youngest / oldest allowed age (whole years) on the basis date. */
+  minAge?: number | null;
+  maxAge?: number | null;
+  /** Organizer-defined age groups (divisions) used for grouping and results. */
+  ageGroups?: AgeGroupDef[];
+}
+
+/**
+ * race_day  = age on the event date (default)
+ * year_end  = age on 31 December of the event year (age = event year − birth year)
+ */
+export type AgeBasis = 'race_day' | 'year_end';
+
+export type AgeGroupGender = 'all' | 'ชาย' | 'หญิง';
+
+export interface AgeGroupDef {
+  id: string;
+  gender: AgeGroupGender;
+  minAge: number;
+  /** null = no upper bound ("60 ปีขึ้นไป") */
+  maxAge: number | null;
+}
+
+/** Age and division frozen on the registration when it was created. */
+export interface RegistrationAgeSnapshot {
+  ageYears: number;
+  basis: AgeBasis;
+  basisDate: string;
+  dateOfBirth: string;
+  groupId: string | null;
+  groupLabelTh: string | null;
+  computedAt: string;
 }
 
 export interface ShirtStock {
@@ -750,6 +800,7 @@ export interface RegistrationRecord {
   formVersionUsed?: string;
   gender?: 'ชาย' | 'หญิง' | 'ไม่ระบุ';
   age?: number;
+  ageSnapshot?: RegistrationAgeSnapshot;
   paymentMethod?: 'qr_promptpay' | 'credit_card' | 'mobile_banking';
 }
 

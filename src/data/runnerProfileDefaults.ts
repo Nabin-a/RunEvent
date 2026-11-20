@@ -2,7 +2,6 @@ import type {
   LoginHistoryEntry,
   PlatformProfileConfig,
   PlatformShirtSizeOption,
-  ProfileCompletionSectionKey,
   RaceResultSnapshot,
   RunnerAchievement,
   RunnerNotificationPrefs,
@@ -12,6 +11,7 @@ import type {
   ShirtSizeMeasurement,
   UserAccount,
 } from '../types';
+import { FEATURES } from '../config/features';
 
 export const DEFAULT_SHIRT_SIZES: PlatformShirtSizeOption[] = [
   {
@@ -353,89 +353,136 @@ export function resolveShirtSpec(
   return { chestInch: '40 นิ้ว', lengthInch: '27 นิ้ว' };
 }
 
-export interface ProfileCompletionSummary {
-  pct: number;
-  completedCount: number;
-  totalRequired: number;
-  sections: {
-    key: ProfileCompletionSectionKey;
-    labelTh: string;
-    required: boolean;
-    complete: boolean;
-    missingHintTh: string;
-  }[];
+export type PersonalInfoCompletionKey =
+  | 'name_en'
+  | 'name_th'
+  | 'dob'
+  | 'gender'
+  | 'nationality'
+  | 'phone'
+  | 'email'
+  | 'identity'
+  | 'address';
+
+export interface PersonalInfoCompletionItem {
+  key: PersonalInfoCompletionKey;
+  /** Thai source label (translated at render time with tx). */
+  labelTh: string;
+  complete: boolean;
+  /** CSS selector of the field to focus inside the "ข้อมูลส่วนตัว" tab. */
+  focusSelector: string;
 }
 
-export function evaluateRunnerProfileCompletion(
-  user: UserAccount,
-  config: PlatformProfileConfig = DEFAULT_PLATFORM_PROFILE_CONFIG
-): ProfileCompletionSummary {
-  const p = user.runnerProfile;
-  const hasPrimaryEc =
-    Boolean(
-      p?.emergencyContacts?.some((c) => c.contactName.trim() && c.phone.trim())
-    ) || Boolean(p?.emergencyContactName && p?.emergencyContactPhone);
-  const hasDefaultAddr =
-    Boolean(
-      p?.savedAddresses?.some((a) => a.address.trim() && a.province.trim())
-    ) || Boolean(p?.address && p?.province);
+export interface PersonalInfoCompletionSummary {
+  pct: number;
+  completedCount: number;
+  total: number;
+  isComplete: boolean;
+  items: PersonalInfoCompletionItem[];
+}
 
-  const defs: {
-    key: ProfileCompletionSectionKey;
-    labelTh: string;
-    complete: boolean;
-    missingHintTh: string;
-  }[] = [
+const hasText = (v: string | null | undefined): boolean => Boolean(v && v.trim());
+
+/**
+ * Profile completion measured only from the saved fields that live in the
+ * "ข้อมูลส่วนตัว" (personal) tab of the Runner Profile. Emergency contacts,
+ * saved shipping addresses, and running preferences are intentionally excluded.
+ * Optional fields (avatar, nicknames) are not counted.
+ */
+export function evaluatePersonalInfoCompletion(
+  user: UserAccount
+): PersonalInfoCompletionSummary {
+  const p = user.runnerProfile ?? {};
+
+  // Mirror the personal form's fallback: names saved on the account itself count.
+  const thParts = (user.fullNameTh ?? '').trim().split(/\s+/).filter(Boolean);
+  const enParts = /^[A-Za-z.\s-]+$/.test(user.fullNameEn ?? '')
+    ? (user.fullNameEn ?? '').trim().split(/\s+/).filter(Boolean)
+    : [];
+  const firstNameEn = p.firstNameEn ?? enParts[0] ?? '';
+  const lastNameEn = p.lastNameEn ?? enParts.slice(1).join(' ');
+  const firstNameTh = p.firstName ?? thParts[0] ?? '';
+  const lastNameTh = p.lastName ?? thParts.slice(1).join(' ');
+
+  const idType = p.idType && p.idType !== 'none' ? p.idType : 'thai_id';
+  const idDigits = (p.idNumber ?? '').replace(/\D/g, '');
+  const identityComplete =
+    idType === 'thai_id' ? idDigits.length === 13 : hasText(p.idNumber);
+
+  const items: PersonalInfoCompletionItem[] = [
     {
-      key: 'personal',
-      labelTh: 'ข้อมูลส่วนตัว',
-      complete: Boolean(
-        ((p?.firstNameEn && p?.lastNameEn) ||
-          user.fullNameEn ||
-          p?.firstName ||
-          user.fullNameTh) &&
-          p?.dateOfBirth &&
-          p?.gender &&
-          p?.nationality
-      ),
-      missingHintTh: 'ขาดชื่อภาษาอังกฤษ วันเกิด เพศ หรือสัญชาติ',
+      key: 'name_en',
+      labelTh: 'ชื่อ-นามสกุล (ภาษาอังกฤษ)',
+      complete: hasText(firstNameEn) && hasText(lastNameEn),
+      focusSelector: '#rp-fnen',
     },
     {
-      key: 'contact',
-      labelTh: 'อีเมลที่ยืนยันแล้วและเบอร์โทรศัพท์',
-      complete: Boolean(user.contactEmail && user.emailVerified && p?.phone),
-      missingHintTh: 'ยังไม่ได้ยืนยันอีเมลหรือยังไม่ได้ระบุเบอร์โทรศัพท์',
+      key: 'name_th',
+      labelTh: 'ชื่อ-นามสกุล (ภาษาไทย)',
+      complete: hasText(firstNameTh) && hasText(lastNameTh),
+      focusSelector: '#rp-fn',
     },
     {
-      key: 'emergency',
-      labelTh: 'ผู้ติดต่อฉุกเฉิน',
-      complete: hasPrimaryEc,
-      missingHintTh: 'ยังไม่ได้เพิ่มผู้ติดต่อฉุกเฉินหลัก',
+      key: 'dob',
+      labelTh: 'วันเกิด',
+      complete: hasText(p.dateOfBirth),
+      focusSelector: '#rp-dob',
+    },
+    {
+      key: 'gender',
+      labelTh: 'เพศ',
+      complete: p.gender === 'ชาย' || p.gender === 'หญิง',
+      focusSelector: 'input[name="profile-gender"]',
+    },
+    {
+      key: 'nationality',
+      labelTh: 'สัญชาติ',
+      // The personal form pre-fills "Thailand" when nothing is saved yet, so the
+      // meter mirrors what the runner sees instead of flagging a filled field.
+      complete: hasText(p.nationality ?? 'Thailand'),
+      focusSelector: '#rp-nat',
+    },
+    {
+      key: 'phone',
+      labelTh: 'เบอร์โทรศัพท์',
+      complete: (p.phone ?? '').replace(/\D/g, '').length >= 9,
+      focusSelector: '#rp-phone',
+    },
+    {
+      key: 'email',
+      labelTh: FEATURES.emailVerification ? 'อีเมลที่ยืนยันแล้ว' : 'อีเมลติดต่อ',
+      complete:
+        hasText(user.contactEmail) &&
+        (!FEATURES.emailVerification || Boolean(user.emailVerified)),
+      focusSelector: '#rp-email-ro',
+    },
+    {
+      key: 'identity',
+      labelTh: 'เอกสารระบุตัวตน',
+      complete: identityComplete,
+      focusSelector: '#rp-idn',
     },
     {
       key: 'address',
-      labelTh: 'ที่อยู่จัดส่ง',
-      complete: hasDefaultAddr,
-      missingHintTh: 'ยังไม่ได้บันทึกที่อยู่เริ่มต้นสำหรับจัดส่งอุปกรณ์',
+      labelTh: 'ที่อยู่ปัจจุบัน',
+      complete:
+        hasText(p.address) &&
+        hasText(p.postalCode) &&
+        hasText(p.subdistrict) &&
+        hasText(p.district) &&
+        hasText(p.province),
+      focusSelector: '#rp-res-addr',
     },
   ];
 
-  const reqSet = new Set(config.requiredProfileSections);
-  const sections = defs.map((d) => ({
-    ...d,
-    required: reqSet.has(d.key),
-  }));
-  const requiredItems = sections.filter((s) => s.required);
-  const denom = requiredItems.length || sections.length;
-  const numer = (requiredItems.length ? requiredItems : sections).filter(
-    (s) => s.complete
-  ).length;
-
+  const completedCount = items.filter((i) => i.complete).length;
+  const total = items.length;
   return {
-    pct: Math.round((numer / denom) * 100),
-    completedCount: numer,
-    totalRequired: denom,
-    sections,
+    pct: Math.round((completedCount / total) * 100),
+    completedCount,
+    total,
+    isComplete: completedCount === total,
+    items,
   };
 }
 
