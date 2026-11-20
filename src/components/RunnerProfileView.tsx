@@ -25,6 +25,7 @@ import {
   DEFAULT_PLATFORM_PROFILE_CONFIG,
   enrichSocialLinksFromIdentities,
   evaluatePersonalInfoCompletion,
+  MAX_EMERGENCY_CONTACTS,
 } from '../data/runnerProfileDefaults';
 import {
   ProfileCompletionBar,
@@ -1214,6 +1215,12 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
 
   const handleSaveEmergencyContact = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editingEcId && emergencyList.length >= MAX_EMERGENCY_CONTACTS) {
+      const errMsg = txf('บันทึกผู้ติดต่อฉุกเฉินได้สูงสุด {0} คน', MAX_EMERGENCY_CONTACTS);
+      setBanner({ tone: 'err', text: errMsg });
+      showResultModalAlert(false, errMsg);
+      return;
+    }
     if (!ecName.trim() || ecPhone.trim().replace(/\D/g, '').length < 9) {
       const errMsg = tx('กรุณาระบุชื่อและเบอร์โทรผู้ติดต่อฉุกเฉิน (9–10 หลัก)');
       setBanner({ tone: 'err', text: errMsg });
@@ -2507,8 +2514,9 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
               <div>
                 <h2>{tx('ผู้ติดต่อฉุกเฉิน')}</h2>
                 <p className="muted-block">
-                  {tx(
-                    'บันทึกได้มากกว่า 1 รายชื่อ และกำหนดผู้ติดต่อหลักเพื่อเติมในใบสมัครงานวิ่งอัตโนมัติ'
+                  {txf(
+                    'บันทึกได้สูงสุด {0} รายชื่อ และกำหนดผู้ติดต่อหลักเพื่อเติมในใบสมัครงานวิ่งอัตโนมัติ',
+                    MAX_EMERGENCY_CONTACTS
                   )}
                 </p>
               </div>
@@ -2517,10 +2525,17 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                   type="button"
                   className="btn-primary"
                   onClick={() => openEcModal()}
+                  disabled={emergencyList.length >= MAX_EMERGENCY_CONTACTS}
+                  aria-describedby="ec-limit-note"
                 >
                   <IconPlus size={15} />
                   <span>{tx('เพิ่มผู้ติดต่อฉุกเฉิน')}</span>
                 </button>
+                <span id="ec-limit-note" className="muted-inline mono-num">
+                  {emergencyList.length >= MAX_EMERGENCY_CONTACTS
+                    ? txf('ครบ {0} คนแล้ว ลบรายชื่อเดิมก่อนเพิ่มใหม่', MAX_EMERGENCY_CONTACTS)
+                    : txf('{0}/{1} คน', emergencyList.length, MAX_EMERGENCY_CONTACTS)}
+                </span>
               </div>
 
               {emergencyList.length === 0 ? (

@@ -2992,5 +2992,9 @@ export const EN_DICT: Record<string, string> = {
   "รหัสประเทศของเบอร์โทร": "Phone country code",
   "กรุณาเพิ่มอีเมลติดต่อในแท็บข้อมูลส่วนตัวก่อน ระบบจะส่งรหัสยืนยันไปที่อีเมลนี้ก่อนเปลี่ยนรหัสผ่าน": "Add a contact email in the Personal info tab first. The verification code is sent there before you can change your password.",
   "ใช้รับรหัสยืนยันก่อนเปลี่ยนรหัสผ่าน ใบยืนยันการสมัคร และใบเสร็จ (ไม่ใช่อีเมลของ Google/LINE) บันทึกพร้อมข้อมูลส่วนตัว": "Used for the password-change code, registration confirmations and receipts (not your Google/LINE email). Saved with your personal info.",
-  "อ่านประกาศ": "Read notice"
+  "อ่านประกาศ": "Read notice",
+  "บันทึกผู้ติดต่อฉุกเฉินได้สูงสุด {0} คน": "You can save up to {0} emergency contacts.",
+  "บันทึกได้สูงสุด {0} รายชื่อ และกำหนดผู้ติดต่อหลักเพื่อเติมในใบสมัครงานวิ่งอัตโนมัติ": "Save up to {0} contacts and pick a primary one to fill in race registrations automatically.",
+  "ครบ {0} คนแล้ว ลบรายชื่อเดิมก่อนเพิ่มใหม่": "Limit of {0} reached. Remove a contact to add a new one.",
+  "{0}/{1} คน": "{0}/{1}"
 };

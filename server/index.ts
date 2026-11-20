@@ -29,6 +29,7 @@ import {
 } from './db';
 import { calculateFeeQuote, getCurrentTier } from '../src/utils/pricing';
 import { PRIVACY_NOTICE_VERSION } from '../src/data/privacyNotice';
+import { MAX_EMERGENCY_CONTACTS } from '../src/data/runnerProfileDefaults';
 import { cloneCustomFieldsSchema, validateQuotaUpdate } from '../src/utils/eventConfig';
 import {
   ageCheckMessage,
@@ -771,6 +772,12 @@ app.patch('/api/account/profile', (req, res) => {
   const { user } = resolveSessionUser(req);
   if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
   const incoming = (req.body?.profile ?? {}) as RunnerProfileData;
+  if ((incoming.emergencyContacts?.length ?? 0) > MAX_EMERGENCY_CONTACTS) {
+    return res.status(400).json({
+      ok: false,
+      error: `บันทึกผู้ติดต่อฉุกเฉินได้สูงสุด ${MAX_EMERGENCY_CONTACTS} คน`,
+    });
+  }
   const fullNameTh = String(
     req.body?.fullNameTh ||
       (incoming.firstName && incoming.lastName

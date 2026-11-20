@@ -390,6 +390,9 @@ const hasText = (v: string | null | undefined): boolean => Boolean(v && v.trim()
  * saved shipping addresses, and running preferences are intentionally excluded.
  * Optional fields (avatar, nicknames) are not counted.
  */
+/** Most emergency contacts one runner profile may keep (checked in the UI and by the API). */
+export const MAX_EMERGENCY_CONTACTS = 5;
+
 export function evaluatePersonalInfoCompletion(
   user: UserAccount
 ): PersonalInfoCompletionSummary {
