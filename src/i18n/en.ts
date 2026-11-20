@@ -2920,7 +2920,7 @@ export const EN_DICT: Record<string, string> = {
   "ระยะนี้รับ{0}": "Allowed: {0}",
   "ว่าง {0} สิทธิ์": "{0} spots left",
   "อายุปัจจุบัน {0} ปี": "Current age: {0}",
-  "รุ่นอายุขึ้นกับเกณฑ์ของแต่ละงาน": "Age group depends on each event’s rules",
+  "ดูรุ่นอายุของแต่ละงานได้ใน": "See each event’s age group in",
   "อายุ / รุ่นอายุ": "Age / age group",
   "ไม่เข้ารุ่นใด": "No age group",
   "งานนี้ไม่แบ่งรุ่นอายุ": "This event has no age groups",

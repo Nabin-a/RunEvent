@@ -1986,7 +1986,14 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                       {txf('อายุปัจจุบัน {0} ปี', ageOn(dob, todayIsoInTimeZone()))}
                       <span className="muted-inline">
                         {' · '}
-                        {tx('รุ่นอายุขึ้นกับเกณฑ์ของแต่ละงาน')}
+                        {tx('ดูรุ่นอายุของแต่ละงานได้ใน')}{' '}
+                        <button
+                          type="button"
+                          className="inline-text-link"
+                          onClick={() => requestSwitchProfileTab('history')}
+                        >
+                          {tx('ประวัติการวิ่ง')}
+                        </button>
                       </span>
                     </p>
                   )}

@@ -7806,3 +7806,27 @@ body.swal2-iosfix {
     width: 3rem;
   }
 }
+
+/* Text-style button used inline inside a sentence (e.g. DOB hint → race history tab) */
+.inline-text-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.inline-text-link:hover {
+  color: var(--accent-primary-hover);
+}
+
+.inline-text-link:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
