@@ -1890,3 +1890,139 @@
     margin: 0.25rem 0 0;
   }
 }
+
+/* ===================================================================== */
+/* Navbar + footer on the theme slate, white text and logo               */
+/* (21 Nov 2026, user request; every page, public and organizer).        */
+/* White on #34495f is 9.3:1; muted white (82%) is 6.9:1; mint 6.2:1.    */
+/* ===================================================================== */
+.app-root .global-topbar {
+  border-bottom: 0;
+  background: var(--brand);
+  color: #ffffff;
+}
+
+.app-root .global-topbar .brand-name {
+  color: #ffffff;
+}
+
+.app-root .global-topbar .brand-rabbit-mark,
+.app-root .global-topbar .brand-home-btn:hover .brand-rabbit-mark {
+  background-color: #ffffff;
+}
+
+.app-root .global-topbar .surface-switch-btn {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.app-root .global-topbar .surface-switch-btn:hover,
+.app-root .global-topbar .surface-switch-btn.active {
+  color: #ffffff;
+  border-bottom-color: var(--mint);
+}
+
+.app-root .global-topbar .surface-switch-btn svg {
+  color: currentColor;
+}
+
+/* TH / EN and the globe */
+.app-root .global-topbar .lang-switch svg,
+.app-root .global-topbar .lang-switch button {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.app-root .global-topbar .lang-switch button + button {
+  border-left-color: rgba(255, 255, 255, 0.3);
+}
+
+.app-root .global-topbar .lang-switch button:hover {
+  color: #ffffff;
+}
+
+.app-root .global-topbar .lang-switch button[aria-pressed='true'] {
+  color: #ffffff;
+}
+
+.app-root.is-public .global-topbar .lang-switch button[aria-pressed='true'] {
+  background: var(--mint);
+  color: var(--brand);
+}
+
+/* sign-in button: white pill on the slate bar */
+.app-root .global-topbar .topbar-user-actions > .btn-primary {
+  border-color: #ffffff;
+  background: #ffffff;
+  color: var(--brand);
+}
+
+.app-root .global-topbar .topbar-user-actions > .btn-primary:hover {
+  border-color: var(--mint);
+  background: var(--mint);
+}
+
+/* signed-in account pill */
+.app-root .global-topbar .btn-account-pill {
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #ffffff;
+}
+
+.app-root .global-topbar .btn-account-pill:hover,
+.app-root .global-topbar .btn-account-pill[aria-expanded='true'] {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.app-root .global-topbar .btn-account-pill-name,
+.app-root .global-topbar .btn-account-pill-chevron {
+  color: #ffffff;
+}
+
+.app-root .global-topbar .btn-account-pill .runner-avatar-frame {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+
+/* phone menu button */
+.app-root .global-topbar .mobile-hamburger-btn {
+  border-color: rgba(255, 255, 255, 0.35);
+  background: transparent;
+  color: #ffffff;
+}
+
+.app-root .global-topbar .mobile-hamburger-btn:hover,
+.app-root .global-topbar .mobile-hamburger-btn.is-open {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* focus rings stay visible on the dark bar */
+.app-root .global-topbar button:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 2px;
+}
+
+/* footer */
+.app-root .minimal-footer {
+  border-top: 0;
+  background: var(--brand);
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.app-root .minimal-footer strong {
+  color: #ffffff;
+}
+
+.app-root .minimal-footer .muted-inline {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.app-root .minimal-footer .footer-text-link {
+  color: #ffffff;
+}
+
+.app-root .minimal-footer .footer-text-link:hover {
+  color: var(--mint);
+}
+
+.app-root .minimal-footer .footer-text-link:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 2px;
+}
