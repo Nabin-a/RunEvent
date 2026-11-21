@@ -83,7 +83,6 @@ import {
   IconArrowRight,
   IconBag,
   IconCalendar,
-  IconBib,
   IconBuilding,
   IconCheckCircle,
   IconChevronDown,
@@ -3498,9 +3497,7 @@ export const App: React.FC = () => {
             className="brand-home-btn"
             onClick={() => navigateCustomer('directory', null)}
           >
-            <span className="brand-bib-mark" aria-hidden="true">
-              <IconBib size={17} />
-            </span>
+            <span className="brand-rabbit-mark" aria-hidden="true" />
             <strong className="brand-name">{tx('กระต่าย')}</strong>
           </button>
         </div>
