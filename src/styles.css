@@ -103,9 +103,10 @@
   --topbar-height: 3.6rem;
 
   /* Typography Stacks */
-  --font-display: 'Plus Jakarta Sans', 'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif;
+  /* one family everywhere (21 Nov 2026, user request): Anuphan for headings, body, numbers and codes */
+  --font-display: 'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif;
   --font-body: 'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  --font-mono: 'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif;
 
   --ease-clean: cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -221,10 +222,25 @@ p {
   max-width: 70ch;
 }
 
+/* native controls and code samples follow the one site font (they default to Arial / monospace) */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--font-mono);
+}
+
 .mono-num {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 .mono-code {
@@ -233,7 +249,7 @@ p {
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--navy-ink);
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 .muted-block {

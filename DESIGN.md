@@ -44,19 +44,19 @@ colors:
   line-social-green: "#068a3c"
 typography:
   hero:
-    fontFamily: "'Plus Jakarta Sans', 'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif"
+    fontFamily: "'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif"
     fontSize: "clamp(1.5rem, 2.5vw, 2.125rem)"
     fontWeight: 700
     lineHeight: 1.25
     letterSpacing: "-0.02em"
   display:
-    fontFamily: "'Plus Jakarta Sans', 'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif"
+    fontFamily: "'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif"
     fontSize: "1.375rem"
     fontWeight: 700
     lineHeight: 1.3
     letterSpacing: "-0.015em"
   headline:
-    fontFamily: "'Plus Jakarta Sans', 'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif"
+    fontFamily: "'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif"
     fontSize: "1.125rem"
     fontWeight: 700
     lineHeight: 1.32
@@ -77,46 +77,46 @@ typography:
     fontWeight: 600
     lineHeight: 1.4
   label:
-    fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace"
+    fontFamily: "'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif"
     fontSize: "0.8125rem"
     fontWeight: 600
     letterSpacing: "-0.015em"
     fontFeature: "tnum"
   caption:
-    fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace"
+    fontFamily: "'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif"
     fontSize: "0.75rem"
     fontWeight: 600
     letterSpacing: "-0.01em"
     fontFeature: "tnum"
   publicHero:
-    fontFamily: "'Kanit', 'Anuphan', system-ui, sans-serif"
+    fontFamily: "'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif"
     fontSize: "clamp(2.5rem, 5.4vw, 4.25rem)"
     fontWeight: 700
     lineHeight: 1.12
   publicHeroCompact:
-    fontFamily: "'Kanit', 'Anuphan', system-ui, sans-serif"
+    fontFamily: "'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif"
     fontSize: "2.25rem"
     fontWeight: 700
     lineHeight: 1.15
   publicPageTitle:
-    fontFamily: "'Kanit', 'Anuphan', system-ui, sans-serif"
+    fontFamily: "'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif"
     fontSize: "clamp(2rem, 4vw, 3rem)"
     fontWeight: 700
     lineHeight: 1.15
   publicPageTitleSmall:
-    fontFamily: "'Kanit', 'Anuphan', system-ui, sans-serif"
+    fontFamily: "'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif"
     fontSize: "clamp(1.75rem, 3.5vw, 2.5rem)"
     fontWeight: 700
   publicArtTitle:
-    fontFamily: "'Kanit', 'Anuphan', system-ui, sans-serif"
+    fontFamily: "'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif"
     fontSize: "clamp(2rem, 3.6vw, 3rem)"
     fontWeight: 700
   publicSection:
-    fontFamily: "'Kanit', 'Anuphan', system-ui, sans-serif"
+    fontFamily: "'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif"
     fontSize: "1.75rem"
     fontWeight: 700
   publicPrice:
-    fontFamily: "'Kanit', 'Anuphan', system-ui, sans-serif"
+    fontFamily: "'Anuphan', 'Sarabun', system-ui, -apple-system, sans-serif"
     fontSize: "2rem"
     fontWeight: 700
 rounded:
@@ -190,7 +190,7 @@ The visual system rejects generic SaaS decorative charts, eyebrow kickers above 
 - **Cool Minimal Canvas** (`#f7f8fa`), **Subtle Fill** (`#f1f4f8`), and **Crisp Surface** (`#ffffff`): Low-glare ground and clean card planes separated by `1px` hairlines (`#e2e8f0` / `#cbd5e1`).
 - **Public Mint Page (21 Nov 2026, user request).** Runner-facing pages (event search, event detail, registration, calendar, profile, account, sign-in) sit on a mint-tinted page `#e6f2ec` (`--bg-page`, set on `.app-root.is-public`) instead of near-white. Inner fills there re-tint to `#f3f8f5` / `#eef5f1` / `#e3ede8`, kept lighter than the page so card footers keep their edge. Organizer and platform-admin screens keep the neutral `#f7f8fa` canvas. Text on `#e6f2ec`: ink-primary 8.1:1, secondary 6.6:1, placeholder 5.3:1, forest 5.1:1, amber 5.1:1, danger 5.7:1.
 - **Public redesign (21 Nov 2026, user-confirmed: match the concept boards in `output/ui-preview`).** Runner-facing pages (search, calendar, event detail, results/albums, sign in / sign up / forgot password, my entries and orders, profile and account) follow the boards; the registration form and the shop are excluded. Rules live in `src/public-theme.css`, scoped to `.app-root.is-public`, so organizer and admin screens are untouched.
-  - **Display face:** Kanit 700, upright (the boards' slanted headings are not reproduced: italic headings are banned). Sizes are the `public*` entries in the typography block above.
+  - **Display face:** Anuphan 700, upright (the boards' slanted headings are not reproduced: italic headings are banned). Sizes are the `public*` entries in the typography block above.
   - **Shapes:** cards 18px, inner panels 12px, the sign-in shell 24px; filter chips, search bar, nav highlight and primary pills use 999px.
   - **Pills are allowed on public pages:** distance chips, filter chips, status badges on covers and the TH/EN switch use filled mint pills as on the boards. This overrides the Frameless Status Rule for these pages only; organizer screens keep frameless statuses.
   - **Nav:** existing menu items only (no shop or "my list" link); the active item has a 4px mint underline.

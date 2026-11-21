@@ -1,6 +1,6 @@
 /* Hallmark · genre: playful · theme: studied-DNA (source: output/ui-preview concept boards)
  * paper oklch(95.4% 0.02 165) #e6f2ec · accent mint #9be8c7 · ink slate #34495f
- * display: Kanit 700 (upright; the boards' slanted headings are not reproduced) · body: Anuphan
+ * type: Anuphan only (headings 700, body 400-600, numbers with tabular figures)
  * scope: runner-facing pages only (.app-root.is-public). Organizer / admin keep styles.css.
  * pre-emit critique: P4 H4 E4 S5 R4 V4
  */
@@ -9,7 +9,7 @@
 /* Tokens                                                              */
 /* ------------------------------------------------------------------ */
 .app-root.is-public {
-  --kr-font-display: 'Kanit', 'Anuphan', system-ui, sans-serif;
+  --kr-font-display: var(--font-display); /* Anuphan, same family as the body */
   --kr-mint: #9be8c7;
   --kr-mint-2: #c9f3e1; /* chips and tags */
   --kr-mint-3: #e9f9f1; /* soft panels */
