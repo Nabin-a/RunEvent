@@ -4,6 +4,7 @@ import { App } from './App';
 import { I18nProvider } from './i18n';
 import '@fortawesome/fontawesome-free/css/all.min.css';
 import './styles.css';
+import './public-theme.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

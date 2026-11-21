@@ -55,7 +55,7 @@ const PageHead: React.FC<{ title: string; description: string }> = ({
   title,
   description,
 }) => (
-  <header className="acct-page-head">
+  <header className="acct-page-head kr-sec-head">
     <h2>{title}</h2>
     <p className="muted-block">{description}</p>
   </header>

@@ -3,7 +3,8 @@
  *
  * Stored value: "+<dial> <national number without the trunk 0>", e.g. "+66 81-234-5678".
  * Older values without "+" (e.g. "081-442-9910") are read as Thai numbers.
- * In the input, Thai numbers are shown the way Thais write them (with the leading 0).
+ * In the input, each country's numbers are grouped the way that country writes them,
+ * with the trunk 0 where locals use one (TH 081-234-5678, JP 090-1234-5678, SG 8123 4567).
  */
 
 export interface DialCountry {
@@ -37,9 +38,6 @@ export const DIAL_COUNTRIES: DialCountry[] = [
   { iso: 'US', dial: '+1' },
 ];
 
-const MAX_DIGITS_TH = 10; // with the trunk 0
-const MAX_DIGITS_OTHER = 12;
-
 export const onlyDigits = (s: string) => s.replace(/\D/g, '');
 
 export function countryOf(iso: string): DialCountry {
@@ -65,6 +63,138 @@ export function parsePhone(value: string | null | undefined): { iso: string; nat
   return { iso: 'TH', national: onlyDigits(v) };
 }
 
+/**
+ * How each country writes its own numbers. `groups` and `max` work on the national
+ * number WITHOUT the trunk 0. `trunk: true` means people at home write a leading 0
+ * (081…, 090…, 07…); it is kept in the field as typed and dropped when stored.
+ * Groups follow common local writing; where a country mixes lengths, the first
+ * digits pick the shape (e.g. Thai mobile vs. Bangkok landline).
+ */
+interface PhonePattern {
+  trunk: boolean;
+  sep: string;
+  /** group sizes for these national digits */
+  groups: (d: string) => number[];
+  /** longest national number (without the trunk 0) for these digits */
+  max: (d: string) => number;
+  /** placeholder, written the local way */
+  example: string;
+  /** leading digits no local number starts with (e.g. a typed US "1"); dropped */
+  drop?: RegExp;
+}
+
+const fixed = (sizes: number[]) => () => sizes;
+const len = (n: number) => () => n;
+
+const PATTERNS: Record<string, PhonePattern> = {
+  // 081-234-5678 · 02-123-4567 · 053-123-456
+  TH: {
+    trunk: true,
+    sep: '-',
+    groups: (d) => (d.startsWith('2') ? [1, 3, 4] : /^[689]/.test(d) ? [2, 3, 4] : [2, 3, 3]),
+    max: (d) => (/^[689]/.test(d) ? 9 : 8),
+    example: '081-234-5678',
+  },
+  // 012-345 6789 · 011-1234 5678 · 03-1234 5678 · 04-123 4567
+  MY: {
+    trunk: true,
+    sep: ' ',
+    groups: (d) =>
+      d.startsWith('11') || d.startsWith('15')
+        ? [2, 4, 4]
+        : d.startsWith('1')
+          ? [2, 3, 4]
+          : d.startsWith('3')
+            ? [1, 4, 4]
+            : [1, 3, 4],
+    max: (d) =>
+      d.startsWith('11') || d.startsWith('15') ? 10 : d.startsWith('1') || d.startsWith('3') ? 9 : 8,
+    example: '012-345 6789',
+  },
+  // 8123 4567
+  SG: { trunk: false, sep: ' ', groups: fixed([4, 4]), max: len(8), example: '8123 4567' },
+  // 020 1234 5678 · 021 123 456
+  LA: {
+    trunk: true,
+    sep: ' ',
+    groups: (d) => (d.startsWith('20') ? [2, 4, 4] : [2, 3, 3]),
+    max: (d) => (d.startsWith('20') ? 10 : 8),
+    example: '020 1234 5678',
+  },
+  // 012 345 678
+  KH: { trunk: true, sep: ' ', groups: fixed([2, 3, 4]), max: len(9), example: '012 345 678' },
+  // 09 123 456 789
+  MM: { trunk: true, sep: ' ', groups: fixed([1, 3, 3, 3]), max: len(10), example: '09 123 456 789' },
+  // 091 234 5678
+  VN: { trunk: true, sep: ' ', groups: fixed([2, 3, 4]), max: len(9), example: '091 234 5678' },
+  // 0812-3456-7890
+  ID: { trunk: true, sep: '-', groups: fixed([3, 4, 4]), max: len(12), example: '0812-3456-7890' },
+  // 0917 123 4567
+  PH: { trunk: true, sep: ' ', groups: fixed([3, 3, 4]), max: len(10), example: '0917 123 4567' },
+  // 712 3456
+  BN: { trunk: false, sep: ' ', groups: fixed([3, 4]), max: len(7), example: '712 3456' },
+  // 090-1234-5678 · 03-1234-5678
+  JP: { trunk: true, sep: '-', groups: fixed([2, 4, 4]), max: len(10), example: '090-1234-5678' },
+  // 138 1234 5678
+  CN: { trunk: false, sep: ' ', groups: fixed([3, 4, 4]), max: len(11), example: '138 1234 5678' },
+  // 010-1234-5678 · 02-123-4567 · 02-1234-5678
+  KR: {
+    trunk: true,
+    sep: '-',
+    groups: (d) => (d.startsWith('2') ? (d.length <= 8 ? [1, 3, 4] : [1, 4, 4]) : [2, 4, 4]),
+    max: (d) => (d.startsWith('2') ? 9 : 10),
+    example: '010-1234-5678',
+  },
+  // 9123 4567
+  HK: { trunk: false, sep: ' ', groups: fixed([4, 4]), max: len(8), example: '9123 4567' },
+  // 0912 345 678
+  TW: { trunk: true, sep: ' ', groups: fixed([3, 3, 3]), max: len(9), example: '0912 345 678' },
+  // 98765 43210
+  IN: { trunk: false, sep: ' ', groups: fixed([5, 5]), max: len(10), example: '98765 43210' },
+  // 0412 345 678 · 02 1234 5678
+  AU: {
+    trunk: true,
+    sep: ' ',
+    groups: (d) => (d.startsWith('4') ? [3, 3, 3] : [1, 4, 4]),
+    max: len(9),
+    example: '0412 345 678',
+  },
+  // 021 234 5678 · 09 123 4567
+  NZ: {
+    trunk: true,
+    sep: ' ',
+    groups: (d) => (d.startsWith('2') ? [2, 3, 4] : [1, 3, 4]),
+    max: (d) => (d.startsWith('2') ? 10 : 8),
+    example: '021 234 5678',
+  },
+  // 07123 456789 · 020 1234 5678
+  GB: {
+    trunk: true,
+    sep: ' ',
+    groups: (d) => (d.startsWith('7') ? [4, 6] : d.startsWith('2') ? [2, 4, 4] : [3, 3, 4]),
+    max: len(10),
+    example: '07123 456789',
+  },
+  // 0151 23456789 (area codes vary in length; the first block is the usual mobile prefix)
+  DE: { trunk: true, sep: ' ', groups: fixed([3, 8]), max: len(11), example: '0151 23456789' },
+  // 06 12 34 56 78
+  FR: { trunk: true, sep: ' ', groups: fixed([1, 2, 2, 2, 2]), max: len(9), example: '06 12 34 56 78' },
+  // 212-555-0123
+  // area codes never start with 0 or 1, so a typed "1" (the country code) is dropped
+  US: {
+    trunk: false,
+    sep: '-',
+    groups: fixed([3, 3, 4]),
+    max: len(10),
+    example: '212-555-0123',
+    drop: /^[01]+/,
+  },
+};
+
+function patternOf(iso: string): PhonePattern {
+  return PATTERNS[iso] ?? PATTERNS.TH;
+}
+
 function group(d: string, sizes: number[], sep: string): string {
   const out: string[] = [];
   let i = 0;
@@ -77,29 +207,39 @@ function group(d: string, sizes: number[], sep: string): string {
   return out.join(sep);
 }
 
-/** Formats national digits as typed (Thai with or without the leading 0). */
-export function formatNational(iso: string, digits: string): string {
-  if (!digits) return '';
-  if (iso === 'TH') {
-    const hasTrunk = digits.startsWith('0');
-    const d = hasTrunk ? digits.slice(1) : digits;
-    let body: string;
-    if (d.startsWith('2')) body = group(d, [1, 3, 4], '-'); // Bangkok landline
-    else if (/^[689]/.test(d)) body = group(d, [2, 3, 4], '-'); // mobile
-    else body = group(d, [2, 3, 3], '-'); // provincial landline
-    if (!hasTrunk) return body;
-    // re-attach the 0 to the first group: 0 + "81" -> "081"
-    return `0${body}`;
+/** Splits typed digits into the trunk 0 (if this country uses one) and the national part. */
+function splitTrunk(iso: string, digits: string): { trunk: string; national: string } {
+  const p = patternOf(iso);
+  if (p.drop) digits = digits.replace(p.drop, '');
+  if (digits.startsWith('0')) {
+    // countries without a trunk prefix never start with 0; drop it
+    return { trunk: p.trunk ? '0' : '', national: digits.replace(/^0+/, '') };
   }
-  if (iso === 'US') return group(digits, [3, 3, 4], ' ');
-  // other countries: keep a typed trunk 0 in front, then 2-4-4 (e.g. JP 090 1234 5678)
-  const hasTrunk = digits.startsWith('0');
-  const body = group(hasTrunk ? digits.slice(1) : digits, [2, 4, 4], ' ');
-  return hasTrunk ? `0${body}` : body;
+  return { trunk: '', national: digits };
 }
 
-export function maxDigitsFor(iso: string): number {
-  return iso === 'TH' ? MAX_DIGITS_TH : MAX_DIGITS_OTHER;
+/**
+ * Keeps only as many digits as the country's numbers have, so a Thai number typed
+ * without the 0 stops at 9 digits (mobile) or 8 (landline) instead of spilling over.
+ */
+export function clampDigits(iso: string, digits: string): string {
+  const { trunk, national } = splitTrunk(iso, digits);
+  return trunk + national.slice(0, patternOf(iso).max(national));
+}
+
+/** Formats national digits as typed, the way that country writes them (trunk 0 kept). */
+export function formatNational(iso: string, digits: string): string {
+  if (!digits) return '';
+  const p = patternOf(iso);
+  const { trunk, national } = splitTrunk(iso, digits);
+  if (!national) return trunk;
+  // the 0 joins the first group: 0 + "81" -> "081"
+  return trunk + group(national, p.groups(national), p.sep);
+}
+
+/** Example number for the placeholder, written the local way. */
+export function phoneExample(iso: string): string {
+  return patternOf(iso).example;
 }
 
 /** Builds the stored value from what the user typed. Empty input -> ''. */

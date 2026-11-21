@@ -40,10 +40,11 @@ import {
   detectNameScript,
   sanitizeEnglishNameInput,
   sanitizeSingleLanguageNameInput,
-  sanitizeThaiIdOrPassport,
   sanitizeThaiNameInput,
 } from '../utils/dateFormat';
 import { DEFAULT_SHIRT_SIZES } from '../data/runnerProfileDefaults';
+import { IdNumberInput } from './IdNumberInput';
+import { MascotAnim } from './MascotAnim';
 
 function computePasswordStrength(pw: string): {
   score: number;
@@ -308,17 +309,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   >(null);
   const [socialTermsAccepted, setSocialTermsAccepted] = useState(false);
 
-  // PDPA privacy notice: shown once before the first account is created in this session.
-  // The pending action (create account) runs only after the user acknowledges it.
-  const [privacyAccepted, setPrivacyAccepted] = useState(false);
-  const [privacyModalOpen, setPrivacyModalOpen] = useState(false);
+  // PDPA privacy notice: readable here; it is acknowledged from the navbar sign-in button.
   const [privacyReadOpen, setPrivacyReadOpen] = useState(false);
 
   const signupPrivacyNote = (includeSocial: boolean) => (
     <p className="auth-privacy-note">
       {includeSocial
-        ? tx("ก่อนสร้างบัญชี (รวมถึงสมัครผ่าน Google, Facebook หรือ LINE) คุณจะได้อ่านและรับทราบ")
-        : tx("ก่อนสร้างบัญชี คุณจะได้อ่านและรับทราบ")}{' '}
+        ? tx("การสร้างบัญชี (รวมถึงสมัครผ่าน Google, Facebook หรือ LINE) เป็นไปตาม")
+        : tx("การสร้างบัญชีเป็นไปตาม")}{' '}
       <button
         type="button"
         className="auth-inline-link-btn"
@@ -328,26 +326,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       </button>
     </p>
   );
-  const pendingAfterPrivacyRef = React.useRef<(() => void) | null>(null);
+  // 21 Nov 2026 (user decision): the PDPA notice is acknowledged in one place only, the
+  // pop-up after the navbar "เข้าสู่ระบบ" button (App.tsx), so sign-up no longer stops here.
   const requirePrivacyConsent = (proceed: () => void) => {
-    if (privacyAccepted) {
-      proceed();
-      return;
-    }
-    pendingAfterPrivacyRef.current = proceed;
-    setPrivacyModalOpen(true);
+    proceed();
   };
-  const handlePrivacyAccept = () => {
-    setPrivacyAccepted(true);
-    setPrivacyModalOpen(false);
-    const next = pendingAfterPrivacyRef.current;
-    pendingAfterPrivacyRef.current = null;
-    next?.();
-  };
-  const handlePrivacyCancel = React.useCallback(() => {
-    pendingAfterPrivacyRef.current = null;
-    setPrivacyModalOpen(false);
-  }, []);
   const [collisionPasswordCheck, setCollisionPasswordCheck] = useState('');
 
   // Forgot password simulation
@@ -808,11 +791,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       className={`auth-page-shell ${isWideOrganizerFlow ? 'auth-signup-shell' : 'auth-single-shell'
         }`}
     >
-      <PrivacyNoticeModal
-        open={privacyModalOpen}
-        onAccept={handlePrivacyAccept}
-        onCancel={handlePrivacyCancel}
-      />
       {returnIntent && (
         <div className="intent-return-banner" role="status">
           <IconArrowRight size={16} />
@@ -823,9 +801,32 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       )}
 
       <div
-        className={`auth-centered-wrap ${isWideOrganizerFlow ? 'is-signup' : ''
+        className={`auth-centered-wrap ${isWideOrganizerFlow ? 'is-signup' : 'kr-auth-split'
           }`}
       >
+        {/* left art panel (boards 05–08): greeting + the rabbit on a mint landscape */}
+        {!isWideOrganizerFlow && (
+          <aside className="kr-auth-art" aria-hidden="true">
+            <p className="kr-auth-art-title">
+              {authTab === 'signup'
+                ? tx("สมัครสมาชิก เริ่มต้นเส้นทางนักวิ่งกับกระต่าย")
+                : authTab === 'forgot'
+                  ? tx("ลืมรหัสผ่าน?")
+                  : tx("ยินดีต้อนรับกลับสู่กระต่าย")}
+            </p>
+            <p className="kr-auth-art-sub">
+              {authTab === 'signup'
+                ? tx("สร้างบัญชีเพื่อสมัครงานวิ่ง และติดตามผลการวิ่งของคุณ")
+                : authTab === 'forgot'
+                  ? tx("ไม่ต้องกังวล เราช่วยตั้งรหัสผ่านใหม่ให้อย่างปลอดภัย")
+                  : tx("แพลตฟอร์มงานวิ่งสำหรับนักวิ่งทุกคน")}
+            </p>
+            <MascotAnim
+              pose={authTab === 'signup' ? 'jump' : authTab === 'forgot' ? 'think' : 'run'}
+              className="kr-auth-mascot"
+            />
+          </aside>
+        )}
         <section
           className="clean-panel auth-primary-card"
           aria-label={tx("เข้าสู่ระบบหรือลงทะเบียนสมาชิก กระต่าย")}
@@ -1740,25 +1741,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                               ? tx("เลขบัตรประจำตัวประชาชน (13 หลัก · ไม่บังคับ)")
                               : tx("เลขหนังสือเดินทาง (ไม่บังคับ)")}
                           </label>
-                          <input
+                          <IdNumberInput
                             id="rn-idnum"
-                            type="text"
-                            inputMode={
-                              runnerIdType === 'thai_id' ? 'numeric' : 'text'
-                            }
+                            idType={runnerIdType}
                             className="mono-code"
                             value={runnerIdNumber}
-                            onChange={(e) =>
-                              setRunnerIdNumber(
-                                sanitizeThaiIdOrPassport(
-                                  e.target.value,
-                                  runnerIdType
-                                )
-                              )
-                            }
+                            onValueChange={setRunnerIdNumber}
                             placeholder={
                               runnerIdType === 'thai_id'
-                                ? 'กรอกตัวเลข 13 หลัก'
+                                ? 'X-XXXX-XXXXX-XX-X'
                                 : 'Passport No.'
                             }
                           />

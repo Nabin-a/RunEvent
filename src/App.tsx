@@ -62,11 +62,10 @@ import {
   TeamInvitation,
   UserAccount,
 } from './types';
-import { calculateFeeQuote, getCurrentTier } from './utils/pricing';
-import { buildAgeSnapshot, evaluateCategoryAge, type AgeConfigValid } from './utils/age';
+import { type AgeConfigValid } from './utils/age';
 import { installInvalidFieldHighlight } from './utils/formValidation';
 import { MascotLoader } from './components/MascotRunner';
-import { maskPhone } from './utils/phone';
+import { ReviewComments } from './components/ReviewComments';
 import { cloneCustomFieldsSchema } from './utils/eventConfig';
 import { AuthScreen } from './components/AuthViews';
 import {
@@ -200,6 +199,23 @@ interface ParsedUrlRoute {
   verifyEmailParam?: string | null;
 }
 
+const PDPA_SESSION_KEY = 'kratai_pdpa_ack';
+/** The privacy notice version accepted at the navbar sign-in pop-up in this browser session. */
+function hasSessionPdpaAck(): boolean {
+  try {
+    return window.sessionStorage.getItem(PDPA_SESSION_KEY) === PRIVACY_NOTICE_VERSION;
+  } catch {
+    return false;
+  }
+}
+function rememberPdpaAck(): void {
+  try {
+    window.sessionStorage.setItem(PDPA_SESSION_KEY, PRIVACY_NOTICE_VERSION);
+  } catch {
+    // storage blocked: the pop-up simply shows again next time
+  }
+}
+
 function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
   const cleanPath = pathname.replace(/\/+$/, '') || '/';
   const params = new URLSearchParams(search);
@@ -295,7 +311,8 @@ function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
     const parts = cleanPath.split('/').filter(Boolean);
     const slug = parts[1] ?? null;
     const sub = parts[2] ?? '';
-    if (sub === 'register' && slug) {
+    // register-b: the alternative form layout kept for side-by-side review (sandbox only)
+    if ((sub === 'register' || sub === 'register-b') && slug) {
       return {
         surface: 'customer',
         customerSubView: 'event_register',
@@ -327,6 +344,8 @@ function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
     authTab: 'signin',
   };
 }
+
+const isRegisterBPath = (pathname: string) => /\/register-b\/?$/.test(pathname);
 
 function findEventBySlug(events: RaceEvent[], slug: string | null): RaceEvent | null {
   if (!slug) return null;
@@ -410,7 +429,10 @@ export const App: React.FC = () => {
     loadInitialSessionUserId
   );
   const [returnIntent, setReturnIntent] = useState<ReturnIntent | null>(null);
-  const [privacyAckBusy, setPrivacyAckBusy] = useState(false);
+  // PDPA (21 Nov 2026, user decision): the notice is acknowledged in one place only, a
+  // pop-up after the navbar "เข้าสู่ระบบ" button. The acknowledgement is kept for this
+  // browser session and written to the account once the user is signed in.
+  const [pdpaGateOpen, setPdpaGateOpen] = useState(false);
 
   const [activeOrgId, setActiveOrgId] = useState<string>('org-lanna');
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
@@ -423,6 +445,10 @@ export const App: React.FC = () => {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showDemoTools, setShowDemoTools] = useState(false);
+  // testers' review comments (sandbox only): drop-a-pin mode, list panel, open count
+  const [reviewPlacing, setReviewPlacing] = useState(false);
+  const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
+  const [reviewOpenCount, setReviewOpenCount] = useState(0);
   const personalDirtyRef = useRef(false);
   const [personalDiscardSeq, setPersonalDiscardSeq] = useState(0);
   const handlePersonalDirtyChange = useCallback((dirty: boolean) => {
@@ -473,8 +499,12 @@ export const App: React.FC = () => {
     scenario: 'new_no_email' | 'collision' | 'cancelled';
   } | null>(null);
 
+  // layout B of the registration form (/events/:id/register-b), sandbox review only
+  const [regLayoutB, setRegLayoutB] = useState(() => isRegisterBPath(window.location.pathname));
+
   const pushUrl = (url: string, replace = false) => {
     const currentFull = `${window.location.pathname}${window.location.search}`;
+    setRegLayoutB(isRegisterBPath(url.split('?')[0]));
     if (currentFull === url) return;
     if (replace) {
       window.history.replaceState({}, '', url);
@@ -485,6 +515,7 @@ export const App: React.FC = () => {
 
   const applyRouteStateFromUrl = (pathname: string, search: string) => {
     const parsed = parseUrlRoute(pathname, search);
+    setRegLayoutB(isRegisterBPath(pathname));
     const matchedEv = findEventBySlug(sys.events, parsed.eventSlug);
     setSurface(parsed.surface);
     setCustomerSubView(
@@ -1737,7 +1768,7 @@ export const App: React.FC = () => {
   };
 
   /* ---- Customer & Runner Operations ---- */
-  const handleCreateRegistrationAndAddon = (payload: {
+  const handleCreateRegistrationAndAddon = async (payload: {
     eventId: string;
     categoryId: string;
     buyerName: string;
@@ -1754,168 +1785,28 @@ export const App: React.FC = () => {
     addonProduct?: EventProduct | null;
     addonSize?: string;
     customAnswers?: Record<string, string | boolean>;
-  }) => {
-    const ev = sys.events.find((e) => e.id === payload.eventId)!;
-    const cat = ev.categories.find((c) => c.id === payload.categoryId)!;
-    const tier = getCurrentTier(cat);
-    const quote = calculateFeeQuote(tier.priceSatang, ev.feeBearerPolicy);
-
-    const seq = sys.registrations.length + 101;
-    const regCode = `REG-2611-${seq}`;
-    const orderCode = `ORD-89${seq}`;
-    const tokenSuffix = Math.random()
-      .toString(36)
-      .substring(2, 8)
-      .toUpperCase();
-
-    const maskedPhone = maskPhone(payload.phone, '081-•••-9900');
-
-    const newReg: RegistrationRecord = {
-      id: `reg-dyn-${Date.now()}`,
-      regCode,
-      orderCode,
-      eventId: ev.id,
-      organizationId: ev.organizationId,
-      categoryId: cat.id,
-      runnerUserId: currentUser?.id,
-      buyerName: payload.buyerName,
-      participantNameTh: payload.participantNameTh,
-      participantNameEn: payload.participantNameEn,
-      email: currentUser?.contactEmail ?? 'verified.runner@demo.local',
-      phoneMasked: maskedPhone,
-      emergencyContact:
-        payload.emergencyContact || 'ผู้ติดต่อฉุกเฉินจำลอง 089-•••-0011',
-      shirtSize: payload.shirtSize,
-      kitDeliveryMethod: payload.kitDeliveryMethod ?? 'pickup_at_expo',
-      shippingAddressSnapshot:
-        payload.kitDeliveryMethod === 'postal_shipping'
-          ? payload.shippingAddressSnapshot
-          : undefined,
-      participantSnapshot: payload.participantSnapshot,
-      customAnswers: payload.customAnswers,
-      bibNumber: null,
-      qrCheckInToken: `TKN-${cat.bibPrefix}${seq}-${tokenSuffix}`,
-      acceptedRulesVersion: ev.rulesVersion,
-      marketingConsent: payload.marketingConsent,
-      createdAt: '2026-11-17T09:45:00+07:00',
-      paidAt: payload.simulateImmediateWebhook
-        ? '2026-11-17T09:45:05+07:00'
-        : null,
-      refundedAt: null,
-      reservationExpiresAt: payload.simulateImmediateWebhook
-        ? null
-        : '2026-11-17T10:00:00+07:00',
-      registrationStatus: payload.simulateImmediateWebhook
-        ? 'confirmed'
-        : 'pending_payment',
-      paymentStatus: payload.simulateImmediateWebhook ? 'succeeded' : 'pending',
-      refundStatus: 'none',
-      fulfillmentStatus: payload.simulateImmediateWebhook
-        ? 'ready'
-        : 'not_ready',
-      snapshotBaseSatang: quote.baseSatang,
-      snapshotPlatformFeeSatang: quote.platformFeeSatang,
-      snapshotRunnerFeeSatang: quote.runnerFeeSatang,
-      snapshotOrganizerFeeSatang: quote.organizerFeeSatang,
-      snapshotTotalChargedSatang: quote.runnerNetPaySatang,
-      snapshotRefundedSatang: 0,
-    };
-    // Same age rules as the server; the server's snapshot replaces this after sync.
-    const dob = payload.participantSnapshot?.dateOfBirth;
-    const participantGender = payload.participantSnapshot?.gender;
-    if (dob) {
-      const ageSnapshot = buildAgeSnapshot(
-        evaluateCategoryAge(ev, cat, dob, participantGender),
-        dob,
-        newReg.createdAt
-      );
-      if (ageSnapshot) {
-        newReg.ageSnapshot = ageSnapshot;
-        newReg.age = ageSnapshot.ageYears;
-      }
-    }
-    if (participantGender === 'ชาย' || participantGender === 'หญิง' || participantGender === 'ไม่ระบุ') {
-      newReg.gender = participantGender;
-    }
-
-    let addonOrder: MerchOrderRecord | undefined;
-    if (payload.addonProduct) {
-      const mSeq = sys.merchOrders.length + 510;
-      addonOrder = {
-        id: `mord-dyn-${Date.now()}`,
-        merchOrderCode: `SHP-2611-${mSeq}`,
-        eventId: ev.id,
-        organizationId: ev.organizationId,
-        buyerUserId: currentUser?.id,
-        buyerName: payload.buyerName,
-        buyerEmail: currentUser?.contactEmail ?? 'ติดต่อผ่านบัญชีผู้ใช้',
-        productId: payload.addonProduct.id,
-        productNameTh: payload.addonProduct.nameTh,
-        sellerLabel: payload.addonProduct.sellerLabel,
-        variantSize: payload.addonSize ?? 'M',
-        quantity: 1,
-        deliveredQty: 0,
-        deliveryMethod: 'pickup_at_expo',
-        unitPriceSatang: payload.addonProduct.priceSatang,
-        shippingSatang: 0,
-        totalPaidSatang: payload.addonProduct.priceSatang,
-        paymentStatus: payload.simulateImmediateWebhook
-          ? 'succeeded'
-          : 'pending',
-        fulfillmentStatus: 'ready_or_shipped',
-        pickupToken: `PICK-SHP-${mSeq}`,
-        linkedRegistrationCode: regCode,
-        createdAt: '2026-11-17T09:45:05+07:00',
+    /** one id per checkout attempt; the same id on a retry so the server never books twice */
+    requestId: string;
+  }): Promise<
+    | { ok: true; reg: RegistrationRecord; addonOrder?: MerchOrderRecord }
+    | { ok: false; error: string }
+  > => {
+    // The seat, shirt and price are decided by the server inside one locked transaction, so
+    // the page waits for its answer instead of showing a booking the server might refuse.
+    const { requestId, addonProduct, ...rest } = payload;
+    const res = await syncApi('POST', '/api/registrations', {
+      ...rest,
+      id: requestId,
+      addonProductId: addonProduct?.id,
+      addonOrderId: addonProduct ? `${requestId}-addon` : undefined,
+    });
+    if (!res.ok || !res.reg) {
+      return {
+        ok: false,
+        error: res.error ?? tx('ระบบยืนยันคำสั่งซื้อไม่สำเร็จ กรุณาลองอีกครั้ง'),
       };
     }
-
-    setSys((prev) => ({
-      ...prev,
-      events: prev.events.map((item) =>
-        item.id === ev.id
-          ? {
-            ...item,
-            shirtStocks: item.shirtStocks.map((st) =>
-              st.size === payload.shirtSize
-                ? { ...st, reservedOrConfirmed: st.reservedOrConfirmed + 1 }
-                : st
-            ),
-            products: payload.addonProduct
-              ? item.products.map((p) =>
-                p.id === payload.addonProduct!.id
-                  ? { ...p, soldCount: p.soldCount + 1 }
-                  : p
-              )
-              : item.products,
-          }
-          : item
-      ),
-      registrations: [newReg, ...prev.registrations],
-      merchOrders: addonOrder
-        ? [addonOrder, ...prev.merchOrders]
-        : prev.merchOrders,
-    }));
-
-    appendAudit(
-      ev.organizationId,
-      `สมัครวิ่งรายการใหม่ (${regCode})${addonOrder ? ` พร้อมซื้อสินค้าเพิ่ม (${addonOrder.merchOrderCode})` : ''
-      }`,
-      `${cat.code} · เสื้อ ${payload.shirtSize}`,
-      ev.id
-    );
-    void syncApi('POST', '/api/registrations', {
-      ...payload,
-      id: newReg.id,
-      regCode: newReg.regCode,
-      orderCode: newReg.orderCode,
-      qrCheckInToken: newReg.qrCheckInToken,
-      addonProductId: payload.addonProduct?.id,
-      addonOrderId: addonOrder?.id,
-      addonOrderCode: addonOrder?.merchOrderCode,
-      addonPickupToken: addonOrder?.pickupToken,
-    });
-
-    return { reg: newReg, addonOrder };
+    return { ok: true, reg: res.reg, addonOrder: res.addonOrder };
   };
 
   const handleCreateStandaloneMerchOrder = (payload: {
@@ -3434,16 +3325,35 @@ export const App: React.FC = () => {
     ? evaluatePersonalInfoCompletion(currentUser)
     : null;
 
-  // PDPA: after sign-in, ask the user to acknowledge the privacy notice again when the
-  // current version differs from the latest one they accepted (or none is recorded).
   const latestPrivacyAck = currentUser
     ? [...(currentUser.consents ?? [])].reverse().find((c) => c.type === 'privacy')
     : undefined;
-  const needsPrivacyAck = Boolean(
-    currentUser &&
-      surface !== 'auth' &&
-      latestPrivacyAck?.version !== PRIVACY_NOTICE_VERSION
+  const accountNeedsPrivacyAck = Boolean(
+    currentUser && latestPrivacyAck?.version !== PRIVACY_NOTICE_VERSION
   );
+  // signed in after accepting at the navbar: store it on the account (once per version)
+  const pdpaRecording = useRef(false);
+  useEffect(() => {
+    if (!accountNeedsPrivacyAck || !hasSessionPdpaAck() || pdpaRecording.current) return;
+    pdpaRecording.current = true;
+    // the sign-in request may still be on its way (no session cookie yet): retry a few times
+    let cancelled = false;
+    void (async () => {
+      for (let attempt = 0; attempt < 5 && !cancelled; attempt += 1) {
+        const res = await syncApi('POST', '/api/account/consents', {
+          type: 'privacy',
+          version: PRIVACY_NOTICE_VERSION,
+        });
+        if (res.ok) break;
+        await new Promise((r) => window.setTimeout(r, 800 * (attempt + 1)));
+      }
+      pdpaRecording.current = false;
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountNeedsPrivacyAck, currentUser?.id]);
   const currentUserInitial = (
     (lang === 'en'
       ? currentUser?.runnerProfile?.firstNameEn?.trim()[0] ??
@@ -3457,29 +3367,20 @@ export const App: React.FC = () => {
   );
 
   return (
-    <div className="app-root">
+    <div
+      className={`app-root ${
+        surface === 'organizer' || surface === 'platform_admin' ? 'is-backoffice' : 'is-public'
+      }`}
+    >
       <PrivacyNoticeModal
-        open={needsPrivacyAck}
-        mode="reconsent"
-        busy={privacyAckBusy}
-        onAccept={async () => {
-          setPrivacyAckBusy(true);
-          const res = await syncApi('POST', '/api/account/consents', {
-            type: 'privacy',
-            version: PRIVACY_NOTICE_VERSION,
-          });
-          setPrivacyAckBusy(false);
-          if (!res.ok) {
-            void Swal.fire({
-              icon: 'error',
-              title: tx("ไม่สามารถบันทึกได้"),
-              text: tx(res.error ?? 'ไม่สามารถดำเนินการได้'),
-              confirmButtonText: tx("ตกลง"),
-              heightAuto: false,
-            });
-          }
+        open={pdpaGateOpen}
+        mode="signin"
+        onAccept={() => {
+          rememberPdpaAck();
+          setPdpaGateOpen(false);
+          navigateLogin('signin');
         }}
-        onCancel={handleLogout}
+        onCancel={() => setPdpaGateOpen(false)}
       />
       {/* PRODUCTION ROLE-BASED TOP HEADER */}
       <header
@@ -3527,18 +3428,6 @@ export const App: React.FC = () => {
           >
             <IconCalendar size={15} />
             <span>{tx("ปฏิทินงานวิ่ง")}</span>
-          </button>
-
-          <button
-            type="button"
-            className={`surface-switch-btn ${surface === 'customer' && customerSubView === 'my_orders'
-              ? 'active'
-              : ''
-              }`}
-            onClick={() => navigateCustomer('my_orders')}
-          >
-            <IconBag size={15} />
-            <span>{tx("บัตรวิ่ง & คำสั่งซื้อ")}</span>
           </button>
 
           {currentUser && (
@@ -3610,7 +3499,10 @@ export const App: React.FC = () => {
             <button
               type="button"
               className="btn-primary"
-              onClick={() => navigateLogin('signin')}
+              onClick={() => {
+                if (hasSessionPdpaAck()) navigateLogin('signin');
+                else setPdpaGateOpen(true);
+              }}
             >
               <IconLock size={14} />
               <span>{tx("เข้าสู่ระบบ")}</span>
@@ -3848,25 +3740,6 @@ export const App: React.FC = () => {
                   )}
                 </button>
 
-                <button
-                  type="button"
-                  className={`mobile-drawer-link ${
-                    surface === 'customer' && customerSubView === 'my_orders'
-                      ? 'active'
-                      : ''
-                  }`}
-                  onClick={() => navigateCustomer('my_orders')}
-                >
-                  <span className="mobile-drawer-link-label">
-                    <IconBag size={16} />
-                    <span>{tx("บัตรวิ่ง & คำสั่งซื้อ")}</span>
-                  </span>
-                  {surface === 'customer' &&
-                    customerSubView === 'my_orders' && (
-                      <span className="mobile-drawer-dot" aria-hidden="true" />
-                    )}
-                </button>
-
                 {currentUser && (
                   <>
                     <button
@@ -3994,6 +3867,7 @@ export const App: React.FC = () => {
       {/* ACTIVE SURFACE */}
       {surface === 'customer' && (
         <CustomerPortalView
+          registrationLayout={sandboxTools && regLayoutB ? 'b' : 'a'}
           subView={customerSubView}
           selectedEventId={selectedPublicEventId}
           initialEventTab={initialEventTab}
@@ -4013,9 +3887,7 @@ export const App: React.FC = () => {
           }}
           onOpenAccountSecurity={navigateAccountSecurity}
           onOpenRunnerProfile={() => navigateRunnerProfile('personal')}
-          onSaveProfilePatch={(patch) => {
-            void handleSaveRunnerProfile(patch);
-          }}
+          onSaveProfilePatch={(patch) => handleSaveRunnerProfile(patch)}
           onOpenOrganizerDashboard={(orgId, evId) =>
             navigateOrganizer(orgId, evId)
           }
@@ -4319,6 +4191,7 @@ export const App: React.FC = () => {
       <aside
         className="dev-demo-dock"
         aria-label={tx("แถบเครื่องมือสำหรับผู้พัฒนาและสลับบัญชีสาธิต")}
+        data-review-ui=""
       >
         {showDemoTools && (
           <div className="dev-demo-drawer">
@@ -4387,6 +4260,35 @@ export const App: React.FC = () => {
                   );
                 })}
             </div>
+
+            {customerSubView === 'event_register' && selectedPublicEventId && (
+              <div className="dev-drawer-section">
+                <div className="dev-section-label">
+                  {tx("เทียบฟอร์มสมัคร (แบบ B ทดลอง ยังส่งใบสมัครไม่ได้)")}
+                </div>
+                <div className="cta-inline-row">
+                  {(['a', 'b'] as const).map((layout) => {
+                    const base = window.location.pathname.replace(/\/register(-b)?\/?$/, '');
+                    const target = `${base}/${layout === 'b' ? 'register-b' : 'register'}`;
+                    const isCur = window.location.pathname.replace(/\/$/, '') === target;
+                    return (
+                      <button
+                        key={layout}
+                        type="button"
+                        className={`btn-ghost-sm ${isCur ? 'active' : ''}`}
+                        aria-pressed={isCur}
+                        onClick={() => {
+                          pushUrl(target);
+                          applyRouteStateFromUrl(target, '');
+                        }}
+                      >
+                        {layout === 'a' ? tx("แบบ A (เดิม)") : tx("แบบ B (โปร่ง)")}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="dev-drawer-section">
               <div className="dev-section-label">
@@ -4494,6 +4396,33 @@ export const App: React.FC = () => {
           </div>
         )}
 
+        <div className="review-dock-actions">
+          <button
+            type="button"
+            className={`review-dock-btn ${reviewPlacing ? 'is-on' : ''}`}
+            aria-pressed={reviewPlacing}
+            onClick={() => {
+              setReviewPanelOpen(false);
+              setReviewPlacing((v) => !v);
+            }}
+          >
+            <i className="fa-regular fa-comment" aria-hidden="true" />
+            <span>{reviewPlacing ? tx("กำลังปักหมุด…") : tx("ปักหมุด comment")}</span>
+          </button>
+          <button
+            type="button"
+            className={`review-dock-btn ${reviewPanelOpen ? 'is-on' : ''}`}
+            aria-pressed={reviewPanelOpen}
+            aria-label={txf("รายการความคิดเห็น ยังเปิดอยู่ {0} รายการ", reviewOpenCount)}
+            onClick={() => {
+              setReviewPlacing(false);
+              setReviewPanelOpen((v) => !v);
+            }}
+          >
+            <i className="fa-regular fa-rectangle-list" aria-hidden="true" />
+            <span className="mono-num">{reviewOpenCount}</span>
+          </button>
+        </div>
         <button
           type="button"
           className="dev-dock-pill"
@@ -4509,6 +4438,21 @@ export const App: React.FC = () => {
           </span>
         </button>
       </aside>
+      )}
+      {sandboxTools && (
+        <ReviewComments
+          path={window.location.pathname}
+          lang={lang}
+          placing={reviewPlacing}
+          onPlacingChange={setReviewPlacing}
+          panelOpen={reviewPanelOpen}
+          onPanelOpenChange={setReviewPanelOpen}
+          onOpenCountChange={setReviewOpenCount}
+          onNavigatePath={(p) => {
+            pushUrl(p);
+            applyRouteStateFromUrl(p, '');
+          }}
+        />
       )}
     </div>
   );

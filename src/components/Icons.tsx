@@ -1,4 +1,7 @@
 import React from 'react';
+import coverChiangMai from '../assets/illustrations/cover-chiang-mai.webp';
+import coverCoast from '../assets/illustrations/cover-coast.webp';
+import coverBangkok from '../assets/illustrations/cover-bangkok.webp';
 import { RaceEvent } from '../types';
 
 interface IconProps {
@@ -511,6 +514,15 @@ export const IconClose: React.FC<IconProps> = ({ size, className }) => (
   </svg>
 );
 
+/** painted cover scenes (public pages) by cover motif; artwork from the Kratai concept set */
+const COVER_ILLUSTRATIONS: Record<string, string> = {
+  mountain: coverChiangMai,
+  heritage: coverChiangMai,
+  trail: coverChiangMai,
+  coast: coverCoast,
+  river: coverBangkok,
+};
+
 /**
  * รูปปกงานวิ่ง: ใช้รูปที่ผู้จัดอัปโหลด/ระบุ URL (coverImageUrl) ก่อน
  * ถ้าไม่มีหรือโหลดไม่ได้ จะ fallback ไปเป็นปก SVG ตาม coverMotif ของงาน
@@ -519,9 +531,23 @@ export const EventCoverMedia: React.FC<{
   event: Pick<RaceEvent, 'coverMotif' | 'coverImageUrl' | 'coverImageAlt' | 'titleTh'>;
   className?: string;
   imgClassName?: string;
-}> = ({ event, className, imgClassName }) => {
+  /** public pages: fall back to the painted scene for the motif instead of the line SVG */
+  illustrated?: boolean;
+}> = ({ event, className, imgClassName, illustrated }) => {
   const [failed, setFailed] = React.useState(false);
   React.useEffect(() => setFailed(false), [event.coverImageUrl]);
+
+  if (illustrated && (!event.coverImageUrl || failed)) {
+    return (
+      <img
+        src={COVER_ILLUSTRATIONS[event.coverMotif] ?? COVER_ILLUSTRATIONS.mountain}
+        alt=""
+        className={imgClassName ?? className}
+        loading="lazy"
+        decoding="async"
+      />
+    );
+  }
 
   if (event.coverImageUrl && !failed) {
     return (

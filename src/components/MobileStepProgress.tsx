@@ -60,11 +60,11 @@ export function MobileStepProgress<S extends number>({
       </div>
 
       <div className="mstep-lane" aria-hidden="true">
-        <span
-          className="mstep-runner"
-          style={{ left: `clamp(1.1rem, ${pct}%, calc(100% - 1.1rem))` }}
-        >
-          <MascotSprite pose={pose} size={34} flip={running && flip} />
+        {/* the track is as wide as the lane, so translateX(n%) moves the rabbit n% along it */}
+        <span className="mstep-runner-track" style={{ transform: `translateX(${pct}%)` }}>
+          <span className="mstep-runner">
+            <MascotSprite pose={pose} size={34} flip={running && flip} />
+          </span>
         </span>
         <div className="mstep-segs">
           {steps.map((s, i) => (

@@ -15,7 +15,7 @@ interface PrivacyNoticeModalProps {
    * reconsent — after sign-in when the notice version changed or was never recorded
    * read     — read-only view (e.g. link on the sign-in page), no acknowledgement
    */
-  mode?: 'signup' | 'reconsent' | 'read';
+  mode?: 'signup' | 'signin' | 'reconsent' | 'read';
   busy?: boolean;
   onAccept?: () => void;
   onCancel: () => void;
@@ -157,7 +157,11 @@ export const PrivacyNoticeModal: React.FC<PrivacyNoticeModalProps> = ({
               disabled={!acknowledged || busy}
               onClick={onAccept}
             >
-              {mode === 'reconsent' ? tx('รับทราบและใช้งานต่อ') : tx('ยอมรับและสร้างบัญชี')}
+              {mode === 'reconsent'
+                ? tx('รับทราบและใช้งานต่อ')
+                : mode === 'signin'
+                  ? tx('ยอมรับและไปหน้าเข้าสู่ระบบ')
+                  : tx('ยอมรับและสร้างบัญชี')}
             </button>
           </div>
         </div>

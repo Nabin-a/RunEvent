@@ -1,0 +1,1892 @@
+/* Hallmark · genre: playful · theme: studied-DNA (source: output/ui-preview concept boards)
+ * paper oklch(95.4% 0.02 165) #e6f2ec · accent mint #9be8c7 · ink slate #34495f
+ * display: Kanit 700 (upright; the boards' slanted headings are not reproduced) · body: Anuphan
+ * scope: runner-facing pages only (.app-root.is-public). Organizer / admin keep styles.css.
+ * pre-emit critique: P4 H4 E4 S5 R4 V4
+ */
+
+/* ------------------------------------------------------------------ */
+/* Tokens                                                              */
+/* ------------------------------------------------------------------ */
+.app-root.is-public {
+  --kr-font-display: 'Kanit', 'Anuphan', system-ui, sans-serif;
+  --kr-mint: #9be8c7;
+  --kr-mint-2: #c9f3e1; /* chips and tags */
+  --kr-mint-3: #e9f9f1; /* soft panels */
+  --kr-mint-line: #cfeadd; /* hairlines on mint pages */
+  --kr-mint-hover: #86e0bb;
+  --kr-auth-sky: #effdfa; /* matches the sky of hero-running-track */
+  --kr-slate: #34495f;
+  --kr-slate-hover: #2a3b4d;
+  --kr-radius-card: 18px;
+  --kr-radius-field: 999px;
+  --kr-shadow-card: 0 10px 28px -14px rgba(52, 73, 95, 0.28);
+  --kr-shadow-raise: 0 16px 34px -16px rgba(52, 73, 95, 0.34);
+  --kr-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ------------------------------------------------------------------ */
+/* Header                                                              */
+/* ------------------------------------------------------------------ */
+.app-root.is-public .global-topbar {
+  min-height: 4.25rem;
+  padding: 0.6rem clamp(1rem, 3vw, 2.25rem);
+  border-bottom: 1px solid var(--kr-mint-line);
+  box-shadow: 0 6px 18px -16px rgba(52, 73, 95, 0.4);
+}
+
+.app-root.is-public .brand-name {
+  font-family: var(--kr-font-display);
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.app-root.is-public .global-surface-nav {
+  gap: 2rem;
+  margin-right: auto;
+  margin-left: clamp(1.5rem, 4vw, 3.5rem);
+}
+
+.app-root.is-public .surface-switch-btn {
+  position: relative;
+  padding: 0.65rem 0.15rem;
+  border-bottom: 0;
+  color: var(--kr-slate);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.app-root.is-public .surface-switch-btn svg {
+  display: none;
+}
+
+.app-root.is-public .surface-switch-btn::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.1rem;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--kr-mint);
+  transform: scaleX(0);
+  transition: transform 0.22s var(--kr-ease);
+}
+
+.app-root.is-public .surface-switch-btn:hover {
+  border-bottom-color: transparent;
+}
+
+.app-root.is-public .surface-switch-btn:hover::after {
+  transform: scaleX(0.5);
+}
+
+.app-root.is-public .surface-switch-btn.active::after {
+  transform: scaleX(1);
+}
+
+/* TH / EN: the active language is a mint pill */
+.app-root.is-public .lang-switch button {
+  min-height: 2rem;
+  padding: 0.2rem 0.7rem;
+  border-radius: 999px;
+  color: var(--kr-slate);
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.app-root.is-public .lang-switch button + button {
+  border-left: 0;
+  border-radius: 999px;
+}
+
+.app-root.is-public .lang-switch button[aria-pressed='true'] {
+  background: var(--kr-mint);
+  text-decoration: none;
+}
+
+.app-root.is-public .topbar-user-actions > .btn-primary {
+  min-height: 2.5rem;
+  padding: 0.45rem 1.35rem;
+  border-radius: 999px;
+}
+
+.app-root.is-public .btn-account-pill {
+  border-radius: 999px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared pieces                                                       */
+/* ------------------------------------------------------------------ */
+.app-root.is-public .mascot-anim {
+  display: block;
+  pointer-events: none;
+}
+
+.app-root.is-public .mascot-anim img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* mint underline swoosh drawn under a phrase */
+.kr-swoosh {
+  position: relative;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.kr-swoosh::after {
+  content: '';
+  position: absolute;
+  left: 2%;
+  right: -2%;
+  bottom: -0.08em;
+  height: 0.34em;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 20' preserveAspectRatio='none'%3E%3Cpath d='M3 14 C 60 4, 140 2, 197 9' fill='none' stroke='%2366d3a6' stroke-width='9' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat center / 100% 100%;
+  z-index: -1;
+}
+
+/* ------------------------------------------------------------------ */
+/* 01 · Event search (home)                                            */
+/* ------------------------------------------------------------------ */
+.kr-hero {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'copy mascot'
+    'search mascot';
+  align-items: end;
+  gap: 1.1rem 1.5rem;
+  margin: calc(-1 * clamp(0.95rem, 2.2vw, 1.65rem)) calc(50% - 50vw) 0;
+  padding: clamp(1.75rem, 4vw, 3rem) max(clamp(1rem, 3vw, 2.25rem), calc(50vw - 620px)) clamp(2rem, 4vw, 2.75rem);
+  background:
+    url('./assets/illustrations/hero-running-track.webp') center bottom / max(100%, 1100px) auto no-repeat,
+    linear-gradient(180deg, #effbf6 0%, #e3f7ee 100%);
+  overflow: hidden;
+}
+
+.kr-hero-copy {
+  grid-area: copy;
+  max-width: 40rem;
+}
+
+.kr-hero-title {
+  margin: 0;
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: clamp(2.5rem, 5.4vw, 4.25rem);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+}
+
+.kr-nowrap {
+  white-space: nowrap;
+}
+
+.kr-hero-sub {
+  margin: 0.5rem 0 0;
+  max-width: none;
+  color: var(--kr-slate);
+  font-size: clamp(1.125rem, 1.6vw, 1.375rem);
+  font-weight: 500;
+}
+
+.kr-hero-mascot {
+  grid-area: mascot;
+  align-self: center;
+  width: clamp(8.5rem, 15vw, 12.5rem);
+  margin-right: clamp(0rem, 4vw, 4rem);
+}
+
+.kr-search {
+  grid-area: search;
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) auto;
+  align-items: center;
+  max-width: 46rem;
+  padding: 0.35rem;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: var(--kr-radius-field);
+  background: var(--bg-surface);
+  box-shadow: var(--kr-shadow-card);
+}
+
+.kr-search-field {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+  min-height: 3rem;
+  padding: 0 1rem;
+  color: var(--kr-slate);
+}
+
+.kr-search-field + .kr-search-field {
+  border-left: 1px solid var(--line-light);
+}
+
+.kr-search-field svg {
+  flex: none;
+}
+
+.kr-search-field input,
+.kr-search-field select {
+  width: 100%;
+  min-width: 0;
+  height: 2.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--kr-slate);
+  font: inherit;
+  font-size: 0.9375rem;
+  box-shadow: none;
+}
+
+.kr-search-field input:focus-visible,
+.kr-search-field select:focus-visible {
+  outline: none;
+}
+
+.kr-search-field:focus-within {
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 2px var(--kr-slate);
+}
+
+.kr-search-btn {
+  min-height: 3rem;
+  padding: 0 1.6rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--kr-mint);
+  color: var(--kr-slate);
+  font: inherit;
+  font-family: var(--kr-font-display);
+  font-size: 1.125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.18s var(--kr-ease), transform 0.18s var(--kr-ease);
+}
+
+.kr-search-btn:hover {
+  background: var(--kr-mint-hover);
+}
+
+.kr-search-btn:active {
+  transform: translateY(1px);
+}
+
+.kr-search-btn:focus-visible,
+.kr-chip:focus-visible,
+.kr-tab:focus-visible,
+.kr-card-go:focus-visible,
+.kr-shop-link:focus-visible {
+  outline: 2px solid var(--kr-slate);
+  outline-offset: 2px;
+}
+
+/* filters */
+.kr-filters {
+  display: grid;
+  gap: 1rem;
+  margin: 1.5rem 0 1.25rem;
+}
+
+.kr-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.kr-chip-label {
+  margin-right: 0.4rem;
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.kr-chip {
+  min-height: 2.75rem;
+  min-width: 4.5rem;
+  padding: 0 1.3rem;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--kr-slate);
+  font: inherit;
+  font-family: var(--kr-font-display);
+  font-size: 1rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 4px 10px -8px rgba(52, 73, 95, 0.4);
+  transition: background-color 0.18s var(--kr-ease), border-color 0.18s var(--kr-ease);
+}
+
+.kr-chip:hover {
+  border-color: var(--kr-mint);
+}
+
+.kr-chip.is-on {
+  border-color: var(--kr-mint);
+  background: var(--kr-mint);
+}
+
+.kr-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  border-bottom: 1px solid var(--kr-mint-line);
+}
+
+.kr-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.35rem;
+}
+
+.kr-tab {
+  position: relative;
+  min-height: 2.75rem;
+  padding: 0 0.1rem;
+  border: 0;
+  background: none;
+  color: var(--ink-secondary);
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.kr-tab .mono-num {
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+}
+
+.kr-tab.is-on {
+  color: var(--kr-slate);
+}
+
+.kr-tab.is-on::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--kr-slate);
+}
+
+.kr-count {
+  color: var(--ink-secondary);
+  font-size: 0.875rem;
+}
+
+/* event cards */
+.app-root.is-public .kr-event-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+  gap: 1.5rem;
+}
+
+.kr-event-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: var(--kr-radius-card);
+  background: var(--bg-surface);
+  box-shadow: var(--kr-shadow-card);
+  transition: transform 0.22s var(--kr-ease), box-shadow 0.22s var(--kr-ease);
+}
+
+.kr-event-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--kr-shadow-raise);
+}
+
+.kr-card-cover {
+  position: relative;
+  display: block;
+  aspect-ratio: 2 / 1;
+  padding: 0;
+  border: 0;
+  background: var(--kr-mint-3);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.kr-card-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kr-card-status {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+}
+
+.kr-card-status .status-badge,
+.kr-card-status > * {
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 4px 10px -6px rgba(52, 73, 95, 0.45);
+}
+
+.kr-card-body {
+  display: grid;
+  gap: 0.3rem;
+  padding: 1rem 1.15rem 0.85rem;
+}
+
+.kr-card-title {
+  margin: 0 0 0.2rem;
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.kr-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: none;
+  margin: 0;
+  color: var(--kr-slate);
+  font-size: 0.9375rem;
+}
+
+.kr-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+
+.kr-dist {
+  padding: 0.2rem 0.75rem;
+  border-radius: 999px;
+  background: var(--kr-mint-2);
+  color: var(--kr-slate);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.kr-shop-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2rem;
+  padding: 0 0.4rem;
+  border: 0;
+  background: none;
+  color: var(--ink-secondary);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.kr-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: auto 0.75rem 0.75rem;
+  padding: 0.55rem 0.55rem 0.55rem 1rem;
+  border-radius: 12px;
+  background: var(--kr-mint-3);
+}
+
+.kr-card-price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.3rem;
+  max-width: none;
+  margin: 0;
+  color: var(--kr-slate);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.kr-card-price strong {
+  font-family: var(--kr-font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.kr-card-price small {
+  flex-basis: 100%;
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.kr-card-go {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--kr-slate);
+  color: #ffffff;
+  cursor: pointer;
+  transition: background-color 0.18s var(--kr-ease), transform 0.18s var(--kr-ease);
+}
+
+.kr-card-go:hover {
+  background: var(--kr-slate-hover);
+  transform: translateX(2px);
+}
+
+@media (max-width: 52rem) {
+  .kr-hero {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'copy mascot'
+      'search search';
+  }
+
+  .kr-search {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    max-width: none;
+    border-radius: 24px;
+  }
+
+  .kr-search-btn {
+    grid-column: 1 / -1;
+  }
+
+  .kr-search-field + .kr-search-field {
+    border-left: 1px solid var(--line-light);
+  }
+}
+
+@media (max-width: 34rem) {
+  .kr-hero-title {
+    font-size: 2.25rem;
+  }
+
+  .kr-hero-mascot {
+    width: 6.5rem;
+    margin-right: 0;
+  }
+
+  .kr-search {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .kr-search-field + .kr-search-field {
+    border-left: 0;
+    border-top: 1px solid var(--line-light);
+  }
+
+  .kr-chip {
+    min-width: 0;
+    padding: 0 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kr-event-card,
+  .kr-card-go,
+  .kr-search-btn,
+  .kr-chip,
+  .app-root.is-public .surface-switch-btn::after {
+    transition: none;
+  }
+
+  .kr-event-card:hover,
+  .kr-card-go:hover {
+    transform: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 02 · Race calendar                                                  */
+/* ------------------------------------------------------------------ */
+.app-root.is-public .kr-cal-head {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'title mascot'
+    'views mascot';
+  align-items: center;
+  margin: calc(-1 * clamp(0.95rem, 2.2vw, 1.65rem)) calc(50% - 50vw) 0;
+  padding: clamp(1.25rem, 3vw, 2rem) max(clamp(1rem, 3vw, 2.25rem), calc(50vw - 620px)) clamp(1rem, 2.5vw, 1.5rem);
+  background:
+    url('./assets/illustrations/hero-running-track.webp') center bottom / max(100%, 1100px) auto no-repeat,
+    linear-gradient(180deg, #effbf6 0%, #e3f7ee 100%);
+  overflow: hidden;
+}
+
+.kr-cal-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.kr-cal-icon {
+  flex: none;
+  margin-top: 0.3rem;
+  color: var(--kr-slate);
+}
+
+.app-root.is-public .kr-cal-head h1 {
+  margin: 0;
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.app-root.is-public .kr-cal-head .muted-block {
+  color: var(--kr-slate);
+  font-size: 1.125rem;
+}
+
+.kr-cal-title {
+  grid-area: title;
+}
+
+.kr-cal-mascot {
+  grid-area: mascot;
+  width: clamp(6rem, 11vw, 8.5rem);
+  margin-right: clamp(0rem, 4vw, 4rem);
+}
+
+.app-root.is-public .race-calendar-views {
+  grid-area: views;
+  justify-self: start;
+  gap: 0.5rem;
+  padding: 0.3rem;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.app-root.is-public .race-calendar-views .detail-tab-btn {
+  min-height: 2.5rem;
+  padding: 0 1.1rem;
+  border: 0;
+  border-radius: 999px;
+  color: var(--kr-slate);
+  font-weight: 600;
+}
+
+.app-root.is-public .race-calendar-views .detail-tab-btn.active {
+  background: var(--kr-mint);
+}
+
+/* two columns: month / week on the left, the day's races on the right */
+.kr-cal-body {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.kr-cal-body.is-dated {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  align-items: start;
+}
+
+.app-root.is-public .race-calendar-month {
+  gap: 1rem;
+  padding: 1.25rem 1.35rem;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: var(--kr-radius-card);
+  box-shadow: var(--kr-shadow-card);
+}
+
+.app-root.is-public .race-calendar-monthbar h2 {
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: 1.375rem;
+  font-weight: 700;
+}
+
+.app-root.is-public .race-calendar-nav {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-color: var(--kr-mint-line);
+  border-radius: 999px;
+}
+
+.app-root.is-public .race-calendar-nav:hover {
+  background: var(--kr-mint-3);
+}
+
+.app-root.is-public .race-calendar-strip .filter-pill {
+  min-height: 2rem;
+  padding: 0 0.75rem;
+  border-radius: 999px;
+}
+
+.app-root.is-public .race-calendar-strip .filter-pill.active {
+  background: var(--kr-mint-2);
+  color: var(--kr-slate);
+}
+
+.app-root.is-public .race-calendar-grid th {
+  padding: 0.4rem 0;
+  color: var(--kr-slate);
+  font-size: 0.9375rem;
+  text-align: center;
+}
+
+.app-root.is-public .race-calendar-grid th:first-child {
+  color: var(--forest);
+}
+
+.app-root.is-public .race-calendar-grid td {
+  height: 3.6rem;
+  padding: 2px;
+  border-top: 0;
+  vertical-align: middle;
+  text-align: center;
+}
+
+.app-root.is-public .race-calendar-day {
+  position: relative;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  margin: 0 auto;
+  padding: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--kr-slate);
+}
+
+.app-root.is-public button.race-calendar-day {
+  background: transparent;
+}
+
+.app-root.is-public button.race-calendar-day:hover {
+  background: var(--kr-mint-3);
+}
+
+.app-root.is-public .race-calendar-daynum {
+  font-family: var(--kr-font-display);
+  font-size: 1.125rem;
+  font-weight: 500;
+}
+
+.app-root.is-public .race-calendar-grid .race-calendar-count {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.kr-cal-dot {
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--forest);
+}
+
+.app-root.is-public .race-calendar-day .kr-cal-dot {
+  position: absolute;
+  bottom: 0.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.app-root.is-public .race-calendar-grid td.is-selected button.race-calendar-day {
+  background: var(--kr-mint);
+  box-shadow: none;
+  font-weight: 700;
+}
+
+.app-root.is-public .race-calendar-grid td.is-today .race-calendar-daynum {
+  color: var(--kr-slate);
+  text-decoration-color: var(--kr-mint);
+  text-decoration-thickness: 3px;
+}
+
+.kr-cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem 1.5rem;
+  margin: 0;
+  padding: 0.75rem 0 0;
+  border-top: 1px solid var(--kr-mint-line);
+  list-style: none;
+  color: var(--ink-secondary);
+  font-size: 0.875rem;
+}
+
+.kr-cal-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.kr-cal-dot.is-selected {
+  width: 0.75rem;
+  height: 0.75rem;
+  background: var(--kr-mint);
+}
+
+.kr-cal-dot.is-none {
+  background: var(--line-medium);
+}
+
+/* the day's races */
+.app-root.is-public .race-calendar-list-head {
+  min-height: 3.25rem;
+  padding: 0.5rem 0.75rem 0.5rem 1.25rem;
+  border-radius: 12px;
+  background: var(--kr-mint-2);
+}
+
+.app-root.is-public .race-calendar-list-head p {
+  margin: 0;
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.app-root.is-public .race-calendar-group h3 {
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-weight: 600;
+}
+
+.app-root.is-public .race-calendar-row {
+  align-items: center;
+  padding: 0.75rem;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: var(--kr-radius-card);
+  background: var(--bg-surface);
+  box-shadow: var(--kr-shadow-card);
+}
+
+.app-root.is-public .race-calendar-thumb {
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.app-root.is-public .race-calendar-thumb-media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.app-root.is-public .race-calendar-title {
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.app-root.is-public .race-calendar-row-side {
+  align-items: flex-end;
+}
+
+.app-root.is-public .race-calendar-empty {
+  border-radius: var(--kr-radius-card);
+}
+
+@media (max-width: 60rem) {
+  .kr-cal-body.is-dated {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 34rem) {
+  .kr-cal-mascot {
+    display: none;
+  }
+
+  .app-root.is-public .race-calendar-day {
+    width: 2.4rem;
+    height: 2.4rem;
+  }
+
+  .app-root.is-public .race-calendar-grid td {
+    height: 2.9rem;
+  }
+}
+
+/* single-letter weekday heads, as on the board */
+.app-root.is-public .race-calendar-grid .race-calendar-wd-long {
+  display: none;
+}
+
+.app-root.is-public .race-calendar-grid .race-calendar-wd-short {
+  display: inline;
+}
+
+.app-root.is-public .race-calendar-thumb {
+  width: clamp(7rem, 12vw, 9.5rem);
+  aspect-ratio: 4 / 3;
+  height: auto;
+}
+
+/* ------------------------------------------------------------------ */
+/* 03 · Event detail                                                   */
+/* ------------------------------------------------------------------ */
+.app-root.is-public .event-detail-page .event-editorial-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* hero: wide painted cover on top, title + date/place underneath */
+.app-root.is-public .event-detail-hero {
+  display: block;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.app-root.is-public .event-detail-page .detail-cover-box {
+  position: relative;
+  aspect-ratio: 2.4 / 1;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--kr-radius-card);
+  box-shadow: var(--kr-shadow-card);
+}
+
+.app-root.is-public .event-detail-page .detail-hero-body {
+  padding: 1.1rem 0.25rem 0;
+}
+
+.app-root.is-public .event-detail-page .detail-hero-body h1 {
+  margin: 0.2rem 0 0.4rem;
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.kr-detail-when {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.75rem;
+  max-width: none;
+  margin: 0 0 0.5rem;
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: 1.125rem;
+  font-weight: 500;
+}
+
+.kr-detail-when > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* mode tabs (details / register / shop) and section shortcuts as pill tabs */
+.app-root.is-public .event-detail-page .detail-mode-tabs {
+  gap: 0.25rem 1.5rem;
+  border-bottom: 1px solid var(--kr-mint-line);
+}
+
+.app-root.is-public .event-detail-page .detail-mode-tabs .detail-tab-btn {
+  position: relative;
+  min-height: 2.75rem;
+  border-bottom: 0;
+  color: var(--ink-secondary);
+}
+
+.app-root.is-public .event-detail-page .detail-mode-tabs .detail-tab-btn.active {
+  color: var(--kr-slate);
+}
+
+.app-root.is-public .event-detail-page .detail-mode-tabs .detail-tab-btn.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--kr-slate);
+}
+
+.app-root.is-public .event-detail-page .editorial-anchor-strip {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  padding: 0.35rem;
+  overflow-x: auto;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  box-shadow: var(--kr-shadow-card);
+  scrollbar-width: none;
+}
+
+.app-root.is-public .event-detail-page .editorial-anchor-strip .filter-pill {
+  flex: none;
+  min-height: 2.5rem;
+  padding: 0 1.1rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--kr-slate);
+  font-weight: 600;
+}
+
+.app-root.is-public .event-detail-page .editorial-anchor-strip .filter-pill:first-child,
+.app-root.is-public .event-detail-page .editorial-anchor-strip .filter-pill:hover {
+  background: var(--kr-mint);
+}
+
+/* content panels */
+.app-root.is-public .event-detail-page .clean-panel {
+  border: 1px solid var(--kr-mint-line);
+  border-radius: var(--kr-radius-card);
+  box-shadow: var(--kr-shadow-card);
+}
+
+.app-root.is-public .event-detail-page .clean-panel h2 {
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: 1.375rem;
+  font-weight: 700;
+}
+
+.app-root.is-public .event-detail-page .clean-panel h3 {
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-weight: 600;
+}
+
+/* summary card */
+.app-root.is-public .event-detail-page .sticky-register-card {
+  border: 1px solid var(--kr-mint-line);
+  border-radius: var(--kr-radius-card);
+  box-shadow: var(--kr-shadow-card);
+}
+
+.kr-sticky-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.5rem;
+}
+
+.app-root.is-public .event-detail-page .sticky-register-card h2 {
+  margin: 0.4rem 0 0;
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.kr-sticky-kicker {
+  display: block;
+}
+
+.kr-sticky-mascot {
+  width: 5.5rem;
+  margin: -0.4rem -0.4rem 0 0;
+}
+
+.app-root.is-public .event-detail-page .sticky-register-card .btn-cta-accent {
+  min-height: 3.25rem;
+  border-radius: 999px;
+  font-family: var(--kr-font-display);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.app-root.is-public .event-detail-page .sticky-price-big {
+  font-family: var(--kr-font-display);
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+/* phones: page reads top-down, the summary card follows the content */
+@media (max-width: 60rem) {
+  .app-root.is-public .event-detail-page .event-detail-two-col.is-editorial-mode .event-sticky-aside {
+    order: 0;
+  }
+
+  .app-root.is-public .event-detail-page .detail-cover-box {
+    aspect-ratio: 16 / 9;
+    max-height: none;
+  }
+}
+
+/* price first, then the register button at the bottom of the card (board 03) */
+.app-root.is-public .event-detail-page .sticky-register-card .sticky-cta-group {
+  order: 4;
+}
+
+.app-root.is-public .event-detail-page .sticky-register-card .sticky-quick-jumps {
+  order: 5;
+}
+
+/* ------------------------------------------------------------------ */
+/* 04 · Results and albums (finished races)                            */
+/* ------------------------------------------------------------------ */
+.kr-results {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 1.25rem;
+}
+
+.kr-results-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: var(--kr-radius-card);
+  background: var(--bg-surface);
+  box-shadow: var(--kr-shadow-card);
+}
+
+.kr-results-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.85rem 1.25rem;
+  background: var(--kr-mint-2);
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.kr-results-empty {
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+  padding: 1.5rem 1.25rem 1.75rem;
+  color: var(--kr-slate);
+  text-align: center;
+}
+
+.kr-results-empty strong {
+  font-family: var(--kr-font-display);
+  font-size: 1.375rem;
+  font-weight: 600;
+}
+
+.kr-results-empty p {
+  max-width: 36ch;
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: 0.9375rem;
+}
+
+.kr-results-mascot {
+  width: 8.5rem;
+}
+
+.kr-album-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0.5rem 1.25rem 1rem;
+  list-style: none;
+}
+
+.kr-album-list li {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--kr-mint-line);
+  color: var(--kr-slate);
+}
+
+.kr-album-list li:last-child {
+  border-bottom: 0;
+}
+
+@media (max-width: 48rem) {
+  .kr-results {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 05–08 · Sign in, sign up, forgot password                           */
+/* ------------------------------------------------------------------ */
+.app-root.is-public .auth-centered-wrap.kr-auth-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0;
+  max-width: 72rem;
+  overflow: hidden;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: 24px;
+  background: var(--bg-surface);
+  box-shadow: var(--kr-shadow-card);
+}
+
+.kr-auth-art {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 32rem;
+  padding: clamp(2rem, 4vw, 3.25rem);
+  background: url('./assets/illustrations/hero-running-track.webp') 30% bottom / cover no-repeat,
+    var(--kr-auth-sky);
+  overflow: hidden;
+}
+
+.kr-auth-art-title {
+  max-width: 14ch;
+  margin: 0;
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: clamp(2rem, 3.6vw, 3rem);
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.kr-auth-art-sub {
+  max-width: 32ch;
+  margin: 0;
+  color: var(--kr-slate);
+  font-size: 1.125rem;
+  font-weight: 500;
+}
+
+.kr-auth-mascot {
+  position: absolute;
+  left: clamp(1.5rem, 5vw, 3.5rem);
+  bottom: 1.25rem;
+  width: clamp(8rem, 13vw, 11rem);
+}
+
+.app-root.is-public .kr-auth-split .auth-primary-card {
+  margin: 0;
+  padding: clamp(1.5rem, 3vw, 2.5rem);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.app-root.is-public .auth-card-head h1 {
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.app-root.is-public .auth-primary-card input:not([type='checkbox']):not([type='radio']),
+.app-root.is-public .auth-primary-card select {
+  min-height: 3rem;
+  border-radius: 12px;
+}
+
+.app-root.is-public .auth-primary-card .btn-primary {
+  min-height: 3.25rem;
+  border-radius: 12px;
+  font-family: var(--kr-font-display);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+@media (max-width: 52rem) {
+  .app-root.is-public .auth-centered-wrap.kr-auth-split {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 34rem;
+  }
+
+  .kr-auth-art {
+    min-height: 13rem;
+    padding: 1.5rem 1.5rem 1.25rem;
+  }
+
+  .kr-auth-art-title {
+    max-width: none;
+    font-size: 1.75rem;
+  }
+
+  .kr-auth-mascot {
+    left: auto;
+    right: 1.25rem;
+    width: 6.5rem;
+  }
+
+  .kr-auth-art-sub {
+    max-width: 60%;
+  }
+}
+
+.app-root.is-public .auth-single-shell:has(.kr-auth-split) {
+  max-width: 76rem;
+}
+
+/* long sign-up forms: the art panel stays in view instead of stretching */
+@media (min-width: 52.01rem) {
+  .app-root.is-public .auth-centered-wrap.kr-auth-split {
+    background: linear-gradient(90deg, var(--kr-auth-sky) 52.38%, var(--bg-surface) 52.38%);
+  }
+
+  .kr-auth-art {
+    position: sticky;
+    top: 5rem;
+    align-self: start;
+    height: min(38rem, calc(100vh - 7rem));
+    min-height: 30rem;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 16 · My race entries and orders                                     */
+/* ------------------------------------------------------------------ */
+.app-root.is-public .kr-orders-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 1rem;
+  margin: calc(-1 * clamp(0.95rem, 2.2vw, 1.65rem)) calc(50% - 50vw) 0;
+  padding: clamp(1.25rem, 3vw, 2rem) max(clamp(1rem, 3vw, 2.25rem), calc(50vw - 620px));
+  border-bottom: 1px solid var(--kr-mint-line);
+  background: linear-gradient(180deg, #effbf6 0%, #e3f7ee 100%);
+}
+
+.kr-orders-icon {
+  color: var(--kr-slate);
+}
+
+.app-root.is-public .kr-orders-head h1 {
+  margin: 0;
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: clamp(1.75rem, 3.5vw, 2.5rem);
+  font-weight: 700;
+}
+
+.app-root.is-public .kr-orders-head .muted-block {
+  margin: 0.25rem 0 0;
+  color: var(--kr-slate);
+}
+
+.kr-orders-mascot {
+  width: clamp(5.5rem, 9vw, 7.5rem);
+}
+
+.kr-orders-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  padding: 0.35rem;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: 18px;
+  background: var(--bg-surface);
+  box-shadow: var(--kr-shadow-card);
+}
+
+.kr-orders-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 3.25rem;
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--kr-slate);
+  font: inherit;
+  font-family: var(--kr-font-display);
+  font-size: 1.125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.kr-orders-tab:hover {
+  background: var(--kr-mint-3);
+}
+
+.kr-orders-tab.is-on {
+  background: var(--kr-mint);
+}
+
+.kr-orders-tab:focus-visible {
+  outline: 2px solid var(--kr-slate);
+  outline-offset: 2px;
+}
+
+.kr-orders-count {
+  min-width: 1.75rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  background: var(--bg-surface);
+  font-size: 0.8125rem;
+}
+
+.app-root.is-public .hub-sections-stack .clean-panel {
+  border: 1px solid var(--kr-mint-line);
+  border-radius: var(--kr-radius-card);
+  box-shadow: var(--kr-shadow-card);
+}
+
+.app-root.is-public .hub-sections-stack .section-title-bar h2 {
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-weight: 700;
+}
+
+.app-root.is-public .kr-pass {
+  display: grid;
+  grid-template-columns: clamp(8rem, 16vw, 11rem) minmax(0, 1fr) minmax(0, 220px);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.kr-pass-thumb {
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
+  background: var(--kr-mint-3);
+}
+
+.app-root.is-public .kr-pass h3 {
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: 1.375rem;
+  font-weight: 700;
+}
+
+@media (max-width: 60rem) {
+  .app-root.is-public .kr-pass {
+    grid-template-columns: clamp(8rem, 22vw, 11rem) minmax(0, 1fr);
+  }
+
+  .app-root.is-public .kr-pass > :last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 40rem) {
+  .app-root.is-public .kr-orders-head {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .kr-orders-mascot {
+    display: none;
+  }
+
+  .app-root.is-public .kr-pass {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .kr-pass-thumb {
+    aspect-ratio: 2 / 1;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 20–28 · Runner profile and account settings                         */
+/* ------------------------------------------------------------------ */
+.app-root.is-public .runner-profile-hero,
+.app-root.is-public .runner-profile-nav,
+.app-root.is-public .runner-profile-content .clean-panel {
+  border: 1px solid var(--kr-mint-line);
+  border-radius: var(--kr-radius-card);
+  box-shadow: var(--kr-shadow-card);
+}
+
+.app-root.is-public .runner-profile-hero h1,
+.app-root.is-public .runner-profile-content .clean-panel h2,
+.app-root.is-public .acct-page-head h2 {
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-weight: 700;
+}
+
+.app-root.is-public .runner-profile-content .clean-panel > div:first-child > h2,
+.app-root.is-public .runner-profile-content .clean-panel > h2 {
+  font-size: 1.75rem;
+}
+
+/* side menu: mint pill for the current page, rabbit at the foot */
+.app-root.is-public .runner-profile-grid {
+  grid-template-columns: 17rem minmax(0, 1fr);
+  gap: 1.5rem;
+}
+
+.app-root.is-public .runner-profile-nav {
+  padding: 0.85rem;
+}
+
+.app-root.is-public .runner-nav-btn {
+  min-height: 2.75rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 999px;
+  color: var(--kr-slate);
+  font-size: 0.9375rem;
+}
+
+.app-root.is-public .runner-nav-btn:hover {
+  background: var(--kr-mint-3);
+}
+
+.app-root.is-public .runner-nav-btn.active {
+  border-color: transparent;
+  background: var(--kr-mint);
+  color: var(--kr-slate);
+}
+
+.app-root.is-public .runner-nav-group-label {
+  color: var(--ink-secondary);
+}
+
+.kr-prof-nav-mascot {
+  width: 7rem;
+  margin: 0.75rem auto 0;
+}
+
+/* content banner */
+.kr-prof-banner {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  height: clamp(6.5rem, 12vw, 8.5rem);
+  margin-bottom: 1rem;
+  padding: 0 clamp(1rem, 4vw, 2.5rem);
+  overflow: hidden;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: var(--kr-radius-card);
+  background:
+    url('./assets/illustrations/hero-running-track.webp') center 85% / cover no-repeat,
+    var(--kr-auth-sky);
+}
+
+.kr-prof-banner-mascot {
+  width: clamp(5rem, 8vw, 6.5rem);
+  margin-bottom: 0.4rem;
+}
+
+@media (max-width: 60rem) {
+  .app-root.is-public .runner-profile-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .kr-prof-nav-mascot {
+    display: none;
+  }
+}
+
+/* scaled mascots keep their own pixel ratio (see MascotAnim `scale`) */
+.app-root.is-public .mascot-anim.is-scaled {
+  display: inline-block;
+  width: auto;
+  max-width: none;
+}
+
+.app-root.is-public .mascot-anim.is-scaled img {
+  max-width: none;
+}
+
+/* profile hero: the open menu's heading and description beside the rabbit */
+.app-root.is-public .runner-profile-content .kr-sec-head {
+  display: none;
+}
+
+.kr-prof-banner {
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  height: auto;
+  min-height: 9.5rem;
+  padding: 1.25rem clamp(1.25rem, 3vw, 2rem) 0;
+}
+
+.kr-prof-banner-copy {
+  align-self: flex-start;
+  max-width: 44rem;
+  padding-bottom: 1.25rem;
+}
+
+.kr-prof-banner-copy h2 {
+  margin: 0 0 0.35rem;
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: clamp(1.75rem, 3.5vw, 2.5rem);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.kr-prof-banner-copy p {
+  max-width: 60ch;
+  margin: 0;
+  color: var(--kr-slate);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.kr-prof-banner .kr-prof-banner-mascot {
+  flex: none;
+  align-self: flex-end;
+  width: auto;
+  margin-bottom: 0.4rem;
+}
+
+.app-root.is-public .kr-prof-nav-mascot {
+  width: auto;
+  margin: 0.75rem auto 0;
+}
+
+@media (max-width: 40rem) {
+  .kr-prof-banner {
+    min-height: 0;
+  }
+
+  .kr-prof-banner .kr-prof-banner-mascot {
+    display: none;
+  }
+}
+
+/* keep the heading and description on clear sky; the landscape shows on the rabbit's side */
+.kr-prof-banner {
+  background:
+    linear-gradient(90deg, var(--kr-auth-sky) 0%, var(--kr-auth-sky) 52%, rgba(239, 253, 250, 0) 78%),
+    url('./assets/illustrations/hero-running-track.webp') right 85% / cover no-repeat,
+    var(--kr-auth-sky);
+}
+
+@media (max-width: 40rem) {
+  .kr-prof-banner {
+    background: var(--kr-auth-sky);
+  }
+}
+
+@media (max-width: 60rem) {
+  .app-root.is-public .kr-prof-nav-mascot.mascot-anim {
+    display: none;
+  }
+}
+
+@media (max-width: 40rem) {
+  .app-root.is-public .kr-prof-banner .kr-prof-banner-mascot.mascot-anim {
+    display: none;
+  }
+}
+
+/* event detail: details / shop / registration as one pill bar (the old section shortcut strip is gone) */
+.app-root.is-public .event-detail-page .detail-mode-tabs.kr-mode-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.35rem;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: 24px;
+  background: var(--bg-surface);
+  box-shadow: var(--kr-shadow-card);
+  scrollbar-width: none;
+}
+
+.app-root.is-public .event-detail-page .kr-mode-tabs .detail-tab-btn {
+  flex: none;
+  min-height: 2.75rem;
+  padding: 0 1.25rem;
+  border: 0;
+  border-radius: 999px;
+  color: var(--kr-slate);
+  font-weight: 600;
+  transition: background-color 0.18s var(--kr-ease);
+}
+
+.app-root.is-public .event-detail-page .kr-mode-tabs .detail-tab-btn:hover {
+  background: var(--kr-mint-3);
+}
+
+.app-root.is-public .event-detail-page .kr-mode-tabs .detail-tab-btn.active {
+  background: var(--kr-mint);
+  color: var(--kr-slate);
+}
+
+.app-root.is-public .event-detail-page .kr-mode-tabs .detail-tab-btn.active::after {
+  content: none;
+}
+
+.app-root.is-public .event-detail-page .kr-mode-tabs .detail-tab-btn:focus-visible {
+  outline: 2px solid var(--kr-slate);
+  outline-offset: 2px;
+}
+
+/* week view: seven day tiles; short weekday on top, then the date, then the race count */
+.app-root.is-public .race-calendar-weekdays {
+  gap: 0.5rem;
+}
+
+.app-root.is-public .race-calendar-weekdays > li {
+  min-height: 0;
+  padding: 0;
+  border-top: 0;
+}
+
+.app-root.is-public .race-calendar-weekdays .race-calendar-wd-long {
+  display: none;
+}
+
+.app-root.is-public .race-calendar-weekdays .race-calendar-wd-short {
+  display: block;
+  color: var(--ink-secondary);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.app-root.is-public .race-calendar-weekdays .race-calendar-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.2rem;
+  width: 100%;
+  height: auto;
+  min-height: 5.25rem;
+  padding: 0.6rem 0.25rem;
+  border-radius: 18px;
+  text-align: center;
+}
+
+.app-root.is-public .race-calendar-weekdays button.race-calendar-day {
+  background: var(--kr-mint-3);
+}
+
+.app-root.is-public .race-calendar-weekdays button.race-calendar-day:hover {
+  background: var(--kr-mint-2);
+}
+
+.app-root.is-public .race-calendar-weekdays .race-calendar-daynum {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 1.375rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.app-root.is-public .race-calendar-weekmonth {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.app-root.is-public .race-calendar-weekdays .race-calendar-count {
+  color: var(--forest-ink);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.app-root.is-public .race-calendar-weekdays li.is-selected button.race-calendar-day {
+  background: var(--kr-mint);
+  box-shadow: none;
+}
+
+.app-root.is-public .race-calendar-weekdays li.is-today .race-calendar-daynum {
+  color: var(--kr-slate);
+  text-decoration: underline;
+  text-decoration-color: var(--kr-mint);
+  text-decoration-thickness: 3px;
+  text-underline-offset: 4px;
+}
+
+@media (max-width: 40rem) {
+  .app-root.is-public .race-calendar-weekdays {
+    gap: 3px;
+  }
+
+  .app-root.is-public .race-calendar-weekdays .race-calendar-day {
+    min-height: 4.25rem;
+    padding: 0.45rem 0.1rem;
+    border-radius: 12px;
+  }
+
+  .app-root.is-public .race-calendar-weekdays .race-calendar-daynum {
+    font-size: 1.125rem;
+  }
+
+  .app-root.is-public .race-calendar-weekdays .race-calendar-count {
+    font-size: 0.75rem;
+  }
+}
+
+/* profile hero: still artwork per menu */
+.kr-prof-banner-still {
+  flex: none;
+  align-self: flex-end;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+@media (max-width: 40rem) {
+  .kr-prof-banner-still {
+    display: none;
+  }
+}
+
+/* profile hero: rabbit stands on the running lanes of the backdrop, not on the bushes at the edge
+   (the backdrop scales with the banner width, so a % offset keeps it on the lanes) */
+.kr-prof-banner .kr-prof-banner-still,
+.kr-prof-banner .kr-prof-banner-mascot {
+  margin-right: clamp(3rem, 16%, 11rem);
+  margin-bottom: 0.6rem;
+}
+
+/* home on phones: title on top, search, then the rabbit running along the track at the bottom */
+@media (max-width: 34rem) {
+  .kr-hero {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'copy'
+      'search'
+      'mascot';
+    padding-bottom: 0.75rem;
+  }
+
+  .kr-hero-mascot {
+    justify-self: center;
+    width: 6rem;
+    margin: 0.25rem 0 0;
+  }
+}

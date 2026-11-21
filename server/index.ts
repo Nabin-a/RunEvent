@@ -30,6 +30,7 @@ import {
 import { calculateFeeQuote, getCurrentTier } from '../src/utils/pricing';
 import { PRIVACY_NOTICE_VERSION } from '../src/data/privacyNotice';
 import { MAX_EMERGENCY_CONTACTS } from '../src/data/runnerProfileDefaults';
+import { registerReviewCommentRoutes } from './reviewComments';
 import { cloneCustomFieldsSchema, validateQuotaUpdate } from '../src/utils/eventConfig';
 import {
   ageCheckMessage,
@@ -1304,8 +1305,41 @@ app.post('/api/registrations', (req, res) => {
   const eventId = String(payload.eventId ?? '');
   const categoryId = String(payload.categoryId ?? '');
 
+  // Idempotency: the browser makes one registration id per checkout attempt and resends the
+  // same id when it retries (slow network, timeout, double click). A repeat must not take a
+  // second seat or shirt, so it gets the registration that already exists instead.
+  const clientRegId = payload.id ? String(payload.id) : '';
+
   db.exec('BEGIN IMMEDIATE');
   try {
+    if (clientRegId) {
+      const prior = db
+        .prepare('SELECT runner_user_id FROM registrations WHERE id = ?')
+        .get(clientRegId) as { runner_user_id: string | null } | undefined;
+      if (prior) {
+        db.exec('ROLLBACK');
+        if ((prior.runner_user_id ?? null) !== (user?.id ?? null)) {
+          return res
+            .status(409)
+            .json({ ok: false, error: 'รหัสคำสั่งซื้อนี้ถูกใช้ไปแล้ว กรุณาเริ่มสมัครใหม่' });
+        }
+        const state = readSystemState();
+        const reg = state.registrations.find((r) => r.id === clientRegId);
+        const addonOrder = reg
+          ? state.merchOrders.find((m) => m.linkedRegistrationCode === reg.regCode)
+          : undefined;
+        return res.json({
+          ok: true,
+          currentUserId: user?.id ?? null,
+          state,
+          config: { sandboxTools: SANDBOX_TOOLS },
+          reg,
+          addonOrder,
+          replayed: true,
+        });
+      }
+    }
+
     const evRow = db
       .prepare('SELECT detail_json FROM events WHERE id = ?')
       .get(eventId) as { detail_json: string } | undefined;
@@ -1378,8 +1412,10 @@ app.post('/api/registrations', (req, res) => {
       db.prepare('SELECT COUNT(*) AS cnt FROM registrations').get() as { cnt: number }
     ).cnt;
     const seq = regCount + 101;
-    const regCode = String(payload.regCode || `REG-2611-${seq}`);
-    const orderCode = String(payload.orderCode || `ORD-89${seq}`);
+    // Codes are issued here, inside the locked transaction, so two runners checking out at the
+    // same moment never get the same number (a browser-made code could collide).
+    const regCode = `REG-2611-${seq}`;
+    const orderCode = `ORD-89${seq}`;
     const tokenSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
     const immediate = Boolean(payload.simulateImmediateWebhook);
     const createdIso = nowIsoBangkok();
@@ -1419,7 +1455,7 @@ app.post('/api/registrations', (req, res) => {
       participantSnapshot: payload.participantSnapshot,
       customAnswers: payload.customAnswers,
       bibNumber: null,
-      qrCheckInToken: String(payload.qrCheckInToken || `TKN-${cat.bibPrefix}${seq}-${tokenSuffix}`),
+      qrCheckInToken: `TKN-${cat.bibPrefix}${seq}-${tokenSuffix}`,
       acceptedRulesVersion: ev.rulesVersion,
       marketingConsent: Boolean(payload.marketingConsent),
       createdAt: createdIso,
@@ -1461,7 +1497,7 @@ app.post('/api/registrations', (req, res) => {
         const mSeq = mCount + 510;
         addonOrder = {
           id: String(payload.addonOrderId || `mord-dyn-${Date.now()}`),
-          merchOrderCode: String(payload.addonOrderCode || `SHP-2611-${mSeq}`),
+          merchOrderCode: `SHP-2611-${mSeq}`,
           eventId: ev.id,
           organizationId: ev.organizationId,
           buyerUserId: user?.id,
@@ -1479,7 +1515,7 @@ app.post('/api/registrations', (req, res) => {
           totalPaidSatang: prd.priceSatang,
           paymentStatus: immediate ? 'succeeded' : 'pending',
           fulfillmentStatus: 'ready_or_shipped',
-          pickupToken: String(payload.addonPickupToken || `PICK-SHP-${mSeq}`),
+          pickupToken: `PICK-SHP-${mSeq}`,
           linkedRegistrationCode: regCode,
           createdAt: createdIso,
         };
@@ -3136,6 +3172,13 @@ app.post('/api/form-builder/field-requests/:id/resolve', (req, res) => {
 });
 
 /* ==================== DEV RESET TO INITIAL TEST SEED ==================== */
+
+/* ==================== REVIEW COMMENTS (testers, sandbox only) ==================== */
+registerReviewCommentRoutes(app, {
+  guard: requireSandboxTools,
+  sessionUser: (req) => resolveSessionUser(req).user,
+  now: nowIsoBangkok,
+});
 
 app.post('/api/dev/reset', requireSandboxTools, (_req, res) => {
   seedDatabase(true);

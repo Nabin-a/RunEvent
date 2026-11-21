@@ -46,6 +46,34 @@ export function ageOn(dateOfBirth?: string | null, onDate?: string | null): numb
   return age < 0 ? null : age;
 }
 
+/**
+ * Exact age as years + months + days between dateOfBirth and onDate (calendar arithmetic:
+ * days borrow from the month before onDate). Null when a date is invalid or DOB is later.
+ */
+export function ageBreakdownOn(
+  dateOfBirth?: string | null,
+  onDate?: string | null
+): { years: number; months: number; days: number } | null {
+  const dob = parseIsoDate(dateOfBirth);
+  const on = parseIsoDate(onDate);
+  if (!dob || !on) return null;
+  let years = on.y - dob.y;
+  let months = on.m - dob.m;
+  let days = on.d - dob.d;
+  if (days < 0) {
+    months -= 1;
+    // borrow the month before onDate; a birthday past that month's end (31 Jan -> Feb)
+    // counts from the month's last day
+    const prevLen = new Date(Date.UTC(on.y, on.m - 1, 0)).getUTCDate();
+    days = prevLen - Math.min(dob.d, prevLen) + on.d;
+  }
+  if (months < 0) {
+    years -= 1;
+    months += 12;
+  }
+  return years < 0 ? null : { years, months, days };
+}
+
 export function resolveAgeBasis(category: Pick<RaceCategory, 'ageBasis'>): AgeBasis {
   return category.ageBasis === 'year_end' ? 'year_end' : 'race_day';
 }

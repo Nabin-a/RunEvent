@@ -1,4 +1,13 @@
 import { PhoneInput } from './PhoneInput';
+import { MascotAnim } from './MascotAnim';
+import personalMascot from '../assets/mascot/profile/personal.webp';
+import emergencyMascot from '../assets/mascot/profile/emergency.webp';
+import addressesMascot from '../assets/mascot/profile/addresses.webp';
+import participantsMascot from '../assets/mascot/profile/participants.webp';
+import historyMascot from '../assets/mascot/profile/history.webp';
+import connectionsMascot from '../assets/mascot/profile/connections.webp';
+import devicesMascot from '../assets/mascot/profile/devices.webp';
+import privacyMascot from '../assets/mascot/profile/privacy.webp';
 import { RequiredFieldText } from './RequiredFieldText';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -75,11 +84,24 @@ import { ALL_THAI_PROVINCES } from '../data/thaiPostalAddresses';
 import {
   isoToDdMmYyyy,
   sanitizeEnglishNameInput,
-  sanitizeThaiIdOrPassport,
   sanitizeThaiNameInput,
 } from '../utils/dateFormat';
 import { getLang, tx, txf } from '../i18n';
-import { ageOn, formatAgeGroupLabel, formatBasisDate, todayIsoInTimeZone } from '../utils/age';
+import { ageBreakdownOn, formatAgeGroupLabel, formatBasisDate, todayIsoInTimeZone } from '../utils/age';
+import { IdNumberInput } from './IdNumberInput';
+
+/** Profile menu artwork (one still per menu), drawn at one scale so the rabbit matches across menus. */
+const PROFILE_MASCOTS: Record<string, { src: string; w: number; h: number }> = {
+  personal: { src: personalMascot, w: 182, h: 300 },
+  emergency: { src: emergencyMascot, w: 169, h: 300 },
+  addresses: { src: addressesMascot, w: 195, h: 285 },
+  participants: { src: participantsMascot, w: 163, h: 300 },
+  history: { src: historyMascot, w: 203, h: 300 },
+  connections: { src: connectionsMascot, w: 159, h: 300 },
+  devices: { src: devicesMascot, w: 185, h: 235 },
+  privacy: { src: privacyMascot, w: 147, h: 300 },
+};
+
 
 function localizeCountryName(raw?: string): string {
   const v = (raw ?? '').trim();
@@ -857,6 +879,36 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     };
   }, [user]);
 
+  // After "save", the stored values (trimmed / normalised) become the form values, so leaving
+  // the page right after saving does not ask to discard changes that were in fact saved.
+  const resyncPersonalAfterSave = useRef(false);
+  const [resyncTick, setResyncTick] = useState(0);
+  useEffect(() => {
+    if (!resyncPersonalAfterSave.current) return;
+    resyncPersonalAfterSave.current = false;
+    const b = savedPersonalBaseline;
+    setAvatarUrl(b.avatarUrl);
+    setFirstName(b.firstName);
+    setLastName(b.lastName);
+    setNickname(b.nickname);
+    setFirstNameEn(b.firstNameEn);
+    setLastNameEn(b.lastNameEn);
+    setNicknameEn(b.nicknameEn);
+    setDob(b.dob);
+    setGender(b.gender);
+    setNationality(b.nationality);
+    setIdType(b.idType);
+    setIdNumber(b.idNumber);
+    setCountry(b.country);
+    setProvince(b.province);
+    setDistrict(b.district);
+    setSubdistrict(b.subdistrict);
+    setPostalCode(b.postalCode);
+    setStreetAddress(b.streetAddress);
+    setPhoneInput(b.phoneInput);
+    setEmailInput(user.contactEmail ?? '');
+  }, [savedPersonalBaseline, user.contactEmail, resyncTick]);
+
   const isPersonalDirty =
     avatarUrl !== savedPersonalBaseline.avatarUrl ||
     firstName !== savedPersonalBaseline.firstName ||
@@ -1194,6 +1246,8 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     if (autoShippingAddress) {
       setAddressList([autoShippingAddress]);
     }
+    resyncPersonalAfterSave.current = true;
+    setResyncTick((n) => n + 1);
     setBanner({
       tone: 'ok',
       text: okMsg,
@@ -1823,6 +1877,91 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
         </nav>
 
         <div className="runner-profile-content">
+          {/* hero for the open menu (boards 21–28): its heading and description sit beside the
+              rabbit; the heading block inside the section (.kr-sec-head) is hidden on public pages */}
+          <div className="kr-prof-banner">
+            {(() => {
+              const heads: Record<string, [string, string]> = {
+                personal: [
+                  tx('ข้อมูลส่วนตัว'),
+                  tx('ข้อมูลพื้นฐานที่นำไปเติมในฟอร์มสมัครงานวิ่งอัตโนมัติ (ช่องเลขบัตรประชาชนหรือหนังสือเดินทางไม่บังคับ เก็บเฉพาะกรณีผู้จัดต้องการใช้ออกประกันอุบัติเหตุ)'),
+                ],
+                preferences: [
+                  tx('2. ไซส์เสื้อและความชอบการวิ่ง (Running & Shirt Preferences)'),
+                  tx('ตั้งค่าไซส์เสื้อและทรงเสื้อเริ่มต้นเพื่อเลือกให้อัตโนมัติตอนสมัครงานวิ่งใหม่'),
+                ],
+                emergency: [
+                  tx('ผู้ติดต่อฉุกเฉิน'),
+                  txf('บันทึกได้สูงสุด {0} รายชื่อ และกำหนดผู้ติดต่อหลักเพื่อเติมในใบสมัครงานวิ่งอัตโนมัติ', MAX_EMERGENCY_CONTACTS),
+                ],
+                addresses: [
+                  tx('ที่อยู่จัดส่ง'),
+                  tx('จัดการหลายที่อยู่และกำหนดที่อยู่หลักสำหรับจัดส่งชุดแข่งขันหรือสินค้าที่ระลึก'),
+                ],
+                history: [
+                  tx('ประวัติการสมัครและผลการแข่งขัน'),
+                  tx('แสดงรายการสมัครทั้งหมด แยกงานที่กำลังจะมาถึงกับงานที่ผ่านมาแล้ว พร้อมดูข้อมูลใบสมัครและดาวน์โหลดใบประกาศนียบัตร'),
+                ],
+                achievements: [
+                  tx('6. ความสำเร็จและรางวัลจากการแข่งขัน (Achievements)'),
+                  tx('บันทึกความสำเร็จที่เชื่อมโยงกับผลการแข่งขันอย่างเป็นทางการของแต่ละอีเวนต์'),
+                ],
+                social: [
+                  tx('7. โซเชียลมีเดียและโปรไฟล์กีฬา (Social Links · ไม่บังคับ)'),
+                  tx('เชื่อมโยงโปรไฟล์โซเชียลมีเดียหรือคลังสถิติการซ้อม เช่น Strava สำหรับแสดงในคอมมูนิตี้นักวิ่ง'),
+                ],
+                notifications: [
+                  tx('9. ตั้งค่าการรับแจ้งเตือน (Notification Preferences)'),
+                  tx('แยกการแจ้งเตือนที่จำเป็นต่อธุรกรรมการสมัครและการชำระเงิน ออกจากข่าวสารประชาสัมพันธ์และการตลาดอย่างชัดเจน'),
+                ],
+                organizer: [
+                  tx('องค์กรผู้จัดงาน: ร่วมเป็นผู้จัดงาน / กรอกรหัสคำเชิญ'),
+                  tx('บัญชีเดียวใช้ได้ทั้งนักวิ่งและผู้จัดงาน กรอกรหัสคำเชิญจากทีมผู้จัด หรือยื่นขอเปิดองค์กรใหม่เพื่อรอ Platform Owner ตรวจสอบ'),
+                ],
+                participants: [
+                  tx('ผู้สมัครที่บันทึกไว้ (สมัครให้ผู้อื่น)'),
+                  tx('รายชื่อบุคคลที่คุณเคยสมัครงานวิ่งให้ ระบบบันทึกให้อัตโนมัติเมื่อสมัครให้ผู้อื่นสำเร็จ สามารถแก้ไขข้อมูลหรือลบรายการได้ที่นี่'),
+                ],
+                connections: [
+                  tx('การเชื่อมต่อ'),
+                  tx('เชื่อมบัญชีภายนอกเพื่อเข้าสู่ระบบ กระต่าย ได้หลายทาง ถ้าลืมรหัสผ่านหรือเข้าบัญชีหนึ่งไม่ได้ ยังเข้าด้วยช่องทางอื่นได้'),
+                ],
+                devices: [
+                  tx('อุปกรณ์'),
+                  tx('อุปกรณ์ที่เข้าสู่ระบบบัญชีนี้อยู่ ถ้าเห็นเครื่องที่ไม่รู้จัก ให้ออกจากระบบเครื่องนั้นแล้วเปลี่ยนรหัสผ่าน'),
+                ],
+                privacy: [
+                  tx('ความเป็นส่วนตัวและข้อมูล'),
+                  tx('จัดการการยินยอม สำเนาข้อมูลส่วนบุคคล (PDPA) รหัสผ่าน และการปิดหรือลบบัญชีของคุณ'),
+                ],
+              };
+              const head = heads[activeTab === 'security' ? 'privacy' : activeTab];
+              return head ? (
+                <div className="kr-prof-banner-copy">
+                  <h2>{head[0]}</h2>
+                  <p>{head[1]}</p>
+                </div>
+              ) : null;
+            })()}
+            {(() => {
+              // still artwork made for each menu (output/profile-mascots); menus without one
+              // (shelved pages) keep the animated rabbit
+              const still = PROFILE_MASCOTS[activeTab === 'security' ? 'privacy' : activeTab];
+              return still ? (
+                <img
+                  src={still.src}
+                  alt=""
+                  aria-hidden="true"
+                  className="kr-prof-banner-still"
+                  width={Math.round(still.w * 0.43)}
+                  height={Math.round(still.h * 0.43)}
+                  decoding="async"
+                />
+              ) : (
+                <MascotAnim pose="wink" className="kr-prof-banner-mascot" scale={0.6} />
+              );
+            })()}
+          </div>
           {shelvedNavItems.some((item) => item.key === activeTab) && (
             <div className="shelved-public-notice" role="note">
               <IconAlert size={17} />
@@ -1843,7 +1982,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
           {/* ==================== 1. PERSONAL INFORMATION ==================== */}
           {activeTab === 'personal' && (
             <form className="clean-panel canvas-stack" onSubmit={handleSavePersonal}>
-              <div>
+              <div className="kr-sec-head">
                 <h2>{tx('ข้อมูลส่วนตัว')}</h2>
                 <p className="muted-block">
                   {tx(
@@ -2016,22 +2155,14 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                     onChangeIso={setDob}
                     ariaDescribedBy="rp-dob-age"
                   />
-                  {ageOn(dob, todayIsoInTimeZone()) !== null && (
-                    <p id="rp-dob-age" className="reg-age-hint" aria-live="polite">
-                      {txf('อายุปัจจุบัน {0} ปี', ageOn(dob, todayIsoInTimeZone()))}
-                      <span className="muted-inline">
-                        {' · '}
-                        {tx('ดูรุ่นอายุของแต่ละงานได้ใน')}{' '}
-                        <button
-                          type="button"
-                          className="inline-text-link"
-                          onClick={() => requestSwitchProfileTab('history')}
-                        >
-                          {tx('ประวัติการวิ่ง')}
-                        </button>
-                      </span>
-                    </p>
-                  )}
+                  {(() => {
+                    const age = ageBreakdownOn(dob, todayIsoInTimeZone());
+                    return age ? (
+                      <p id="rp-dob-age" className="reg-age-hint" aria-live="polite">
+                        {txf('อายุปัจจุบัน {0} ปี {1} เดือน {2} วัน', age.years, age.months, age.days)}
+                      </p>
+                    ) : null;
+                  })()}
                 </div>
                 <fieldset className="runner-gender-field" data-flash-group="">
                   <legend>{tx('เพศ')}</legend>
@@ -2099,11 +2230,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                     onChange={(e) => setEmailInput(e.target.value)}
                     placeholder="name@example.com"
                     autoComplete="email"
-                    aria-describedby="rp-email-help"
                   />
-                  <span id="rp-email-help" className="muted-inline">
-                    {tx('ใช้รับรหัสยืนยันก่อนเปลี่ยนรหัสผ่าน ใบยืนยันการสมัคร และใบเสร็จ (ไม่ใช่อีเมลของ Google/LINE) บันทึกพร้อมข้อมูลส่วนตัว')}
-                  </span>
                 </div>
               </div>
 
@@ -2137,20 +2264,15 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                         ? tx('เลขบัตรประจำตัวประชาชน (13 หลัก)')
                         : tx('เลขหนังสือเดินทาง')}
                     </label>
-                    <input
+                    <IdNumberInput
                       id="rp-idn"
-                      type="text"
-                      inputMode={idType === 'thai_id' ? 'numeric' : 'text'}
+                      idType={idType}
                       className="mono-code"
                       value={idNumber}
-                      onChange={(e) =>
-                        setIdNumber(
-                          sanitizeThaiIdOrPassport(e.target.value, idType)
-                        )
-                      }
+                      onValueChange={setIdNumber}
                       placeholder={
                         idType === 'thai_id'
-                          ? tx('กรอกตัวเลข 13 หลัก')
+                          ? 'X-XXXX-XXXXX-XX-X'
                           : tx('กรอกเลขหนังสือเดินทาง')
                       }
                     />
@@ -2204,7 +2326,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
               onSubmit={handleSavePreferences}
             >
               <div className="section-title-bar">
-                <div>
+                <div className="kr-sec-head">
                   <h2>
                     {tx('2. ไซส์เสื้อและความชอบการวิ่ง (Running & Shirt Preferences)')}
                   </h2>
@@ -2511,7 +2633,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
           {/* ==================== 3. EMERGENCY CONTACTS ==================== */}
           {activeTab === 'emergency' && (
             <section className="clean-panel canvas-stack">
-              <div>
+              <div className="kr-sec-head">
                 <h2>{tx('ผู้ติดต่อฉุกเฉิน')}</h2>
                 <p className="muted-block">
                   {txf(
@@ -2787,7 +2909,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
           {/* ==================== 4. ADDRESS MANAGEMENT ==================== */}
           {activeTab === 'addresses' && (
             <section className="clean-panel canvas-stack">
-              <div>
+              <div className="kr-sec-head">
                 <h2>{tx('ที่อยู่จัดส่ง')}</h2>
                 <p className="muted-block">
                   {tx(
@@ -3071,7 +3193,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
           {activeTab === 'history' && (
             <section className="clean-panel canvas-stack">
               <div className="section-title-bar">
-                <div>
+                <div className="kr-sec-head">
                   <h2>{tx('ประวัติการสมัครและผลการแข่งขัน')}</h2>
                   <p className="muted-block">
                     {tx(
@@ -3409,7 +3531,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
           {/* ==================== 6. ACHIEVEMENTS (READ-ONLY) ==================== */}
           {activeTab === 'achievements' && (
             <section className="clean-panel canvas-stack">
-              <div>
+              <div className="kr-sec-head">
                 <h2>
                   {tx('6. ความสำเร็จและรางวัลจากการแข่งขัน (Achievements)')}
                 </h2>
@@ -3486,7 +3608,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
               className="clean-panel canvas-stack"
               onSubmit={handleSaveSocialLinks}
             >
-              <div>
+              <div className="kr-sec-head">
                 <h2>{tx('7. โซเชียลมีเดียและโปรไฟล์กีฬา (Social Links · ไม่บังคับ)')}</h2>
                 <p className="muted-block">
                   {tx(
@@ -3622,7 +3744,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
           {/* ==================== 9. NOTIFICATION PREFERENCES ==================== */}
           {activeTab === 'notifications' && (
             <section className="clean-panel canvas-stack">
-              <div>
+              <div className="kr-sec-head">
                 <h2>
                   {tx('9. ตั้งค่าการรับแจ้งเตือน (Notification Preferences)')}
                 </h2>
@@ -3776,10 +3898,12 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
             <div className="canvas-stack">
               {/* Organizer Memberships & Invitations (Unified Single Account) */}
               <section className="clean-panel canvas-stack">
+                <div className="kr-sec-head">
                 <h2>{tx('องค์กรผู้จัดงาน: ร่วมเป็นผู้จัดงาน / กรอกรหัสคำเชิญ')}</h2>
                 <p className="muted-block">
                   {tx('บัญชีเดียวใช้ได้ทั้งนักวิ่งและผู้จัดงาน กรอกรหัสคำเชิญจากทีมผู้จัด หรือยื่นขอเปิดองค์กรใหม่เพื่อรอ Platform Owner ตรวจสอบ')}
                 </p>
+                </div>
                 {user.memberships.length === 0 && (
                   <div className="subtle-empty-note">
                     {tx('บัญชีนี้ยังไม่ได้สังกัดองค์กรผู้จัดงาน')}
@@ -3893,7 +4017,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
 
           {activeTab === 'participants' && (
             <section className="clean-panel canvas-stack">
-              <div>
+              <div className="kr-sec-head">
                 <h2>{tx('ผู้สมัครที่บันทึกไว้ (สมัครให้ผู้อื่น)')}</h2>
                 <p className="muted-block">
                   {tx(
@@ -4392,22 +4516,22 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                               <label htmlFor="sp-idn">
                                 {tx('เลขบัตร / เลขหนังสือเดินทาง')}
                               </label>
-                              <input
+                              <IdNumberInput
                                 id="sp-idn"
-                                type="text"
+                                idType={
+                                  partDraft.idType && partDraft.idType !== 'none'
+                                    ? partDraft.idType
+                                    : 'thai_id'
+                                }
                                 className="mono-code"
                                 value={partDraft.idNumber ?? ''}
-                                onChange={(e) =>
-                                  setPartDraft({
-                                    ...partDraft,
-                                    idNumber: sanitizeThaiIdOrPassport(
-                                      e.target.value,
-                                      partDraft.idType &&
-                                        partDraft.idType !== 'none'
-                                        ? partDraft.idType
-                                        : 'thai_id'
-                                    ),
-                                  })
+                                onValueChange={(next) =>
+                                  setPartDraft({ ...partDraft, idNumber: next })
+                                }
+                                placeholder={
+                                  partDraft.idType === 'passport'
+                                    ? tx('กรอกเลขหนังสือเดินทาง')
+                                    : 'X-XXXX-XXXXX-XX-X'
                                 }
                               />
                             </div>

@@ -103,7 +103,8 @@ export const MascotStepTrack: React.FC<{
   return (
     <div className="mascot-step-track" aria-hidden="true">
       {x !== null && (
-        <span className="mascot-step-runner" style={{ left: `${x}px` }}>
+        // transform, not left: the run is composited on the GPU, no layout work per frame
+        <span className="mascot-step-runner" style={{ transform: `translateX(${x}px) translateX(-50%)` }}>
           <MascotSprite pose={pose} size={44} flip={running && flip} />
         </span>
       )}

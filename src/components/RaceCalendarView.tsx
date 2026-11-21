@@ -3,6 +3,7 @@ import type { RaceEvent } from '../types';
 import { getLang, tx, txf } from '../i18n';
 import { todayIsoInTimeZone } from '../utils/age';
 import { EventStatusBadge } from './StatusBadges';
+import { MascotAnim } from './MascotAnim';
 import { EventCoverMedia, IconArrowLeft, IconArrowRight, IconCalendar, IconMapPin } from './Icons';
 
 /**
@@ -236,13 +237,17 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
 
   return (
     <div className="race-calendar">
-      <header className="race-calendar-head">
-        <div>
-          <h1>{tx('ปฏิทินงานวิ่ง')}</h1>
-          <p className="muted-block">
-            {tx('ดูงานวิ่งทั้งหมดตามวันแข่ง แยกตามเดือน สัปดาห์ จังหวัด หรือประเภทงาน แล้วกดเข้าไปดูรายละเอียดและสมัครได้ทันที')}
-          </p>
+      <header className="race-calendar-head kr-cal-head">
+        <div className="kr-cal-title">
+          <IconCalendar size={44} className="kr-cal-icon" />
+          <div>
+            <h1>{tx('ปฏิทินงานวิ่ง')}</h1>
+            <p className="muted-block">
+              {tx('ดูตารางงานวิ่ง เลือกวันที่สนใจ แล้วสมัครได้เลย')}
+            </p>
+          </div>
         </div>
+        <MascotAnim pose="cheer" className="kr-cal-mascot" />
         <div className="race-calendar-views" role="group" aria-label={tx('มุมมองปฏิทิน')}>
           {(
             [
@@ -265,12 +270,13 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
         </div>
       </header>
 
-      <div className="quick-pill-bar race-calendar-buckets" role="group" aria-label={tx('กรองตามระยะ')}>
+      <div className="quick-pill-bar race-calendar-buckets kr-chip-row" role="group" aria-label={tx('กรองตามระยะ')}>
+        <span className="kr-chip-label">{tx('ระยะวิ่ง')}</span>
         {DISTANCE_BUCKETS.map(([b, lbl]) => (
           <button
             key={b}
             type="button"
-            className={`filter-pill ${bucket === b ? 'active' : ''}`}
+            className={`kr-chip ${bucket === b ? 'is-on' : ''}`}
             aria-pressed={bucket === b}
             onClick={() => {
               setBucket(b);
@@ -283,6 +289,7 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
         ))}
       </div>
 
+      <div className={`kr-cal-body ${isDated ? 'is-dated' : ''}`}>
       {view === 'month' && (
         <section className="race-calendar-month" aria-label={formatMonth(monthKey)}>
           <div className="race-calendar-monthbar">
@@ -356,6 +363,7 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
                             >
                               <span className="race-calendar-daynum mono-num">{day}</span>
                               <span className="race-calendar-count">{txf('{0} งาน', n)}</span>
+                              <span className="kr-cal-dot" aria-hidden="true" />
                             </button>
                           ) : (
                             <span className="race-calendar-day is-empty">
@@ -369,6 +377,11 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
               ))}
             </tbody>
           </table>
+          <ul className="kr-cal-legend" aria-hidden="true">
+            <li><span className="kr-cal-dot" /> {tx('มีงานวิ่ง')}</li>
+            <li><span className="kr-cal-dot is-selected" /> {tx('วันที่เลือก')}</li>
+            <li><span className="kr-cal-dot is-none" /> {tx('ไม่มีงานวิ่ง')}</li>
+          </ul>
         </section>
       )}
 
@@ -506,7 +519,7 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
                   <li key={ev.id} className="race-calendar-row">
                     {/* Preview only; the title button is the accessible way in */}
                     <div className="race-calendar-thumb" aria-hidden="true" onClick={() => onOpenEvent(ev)}>
-                      <EventCoverMedia event={ev} className="race-calendar-thumb-media" />
+                      <EventCoverMedia event={ev} illustrated className="race-calendar-thumb-media" />
                     </div>
                     <div className="race-calendar-row-main">
                       <button type="button" className="race-calendar-title" onClick={() => onOpenEvent(ev)}>
@@ -528,18 +541,23 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
                         {isDated && ' · '}
                         {view !== 'type' && tx(ev.raceType)}
                       </p>
-                      <div className="category-chip-group">
+                      <div className="kr-card-chips">
                         {ev.categories.map((c) => (
-                          <span key={c.id} className={`category-bib-chip tone-${c.colorTag}`}>
-                            <strong>{tx(c.code)}</strong>
+                          <span key={c.id} className="kr-dist">
+                            {tx(c.code)}
                           </span>
                         ))}
                       </div>
                     </div>
                     <div className="race-calendar-row-side">
                       <EventStatusBadge status={ev.status} />
-                      <button type="button" className="btn-secondary" onClick={() => onOpenEvent(ev)}>
-                        {tx('ดูรายละเอียด')}
+                      <button
+                        type="button"
+                        className="kr-card-go"
+                        aria-label={txf('ดูรายละเอียด {0}', ev.titleTh)}
+                        onClick={() => onOpenEvent(ev)}
+                      >
+                        <IconArrowRight size={18} />
                       </button>
                     </div>
                   </li>
@@ -549,6 +567,7 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
           ))
         )}
       </section>
+      </div>
     </div>
   );
 };

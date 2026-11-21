@@ -2,16 +2,18 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getLang, tx } from '../i18n';
 import {
   DIAL_COUNTRIES,
+  clampDigits,
   composePhone,
+  countryOf,
   formatNational,
-  maxDigitsFor,
   onlyDigits,
   parsePhone,
+  phoneExample,
 } from '../utils/phone';
 
 /**
  * Phone field: calling-code dropdown (+66 by default) + digits-only number that is
- * formatted while typing (Thai: 081-234-5678 / 02-123-4567, others: 123 456 7890).
+ * formatted while typing in the chosen country's own pattern (see utils/phone.ts).
  * `value` / `onChange` use the stored form "+66 81-234-5678" (see utils/phone.ts).
  */
 interface Props {
@@ -65,13 +67,13 @@ export const PhoneInput: React.FC<Props> = ({
   };
 
   const onType = (raw: string) => {
-    const digits = onlyDigits(raw).slice(0, maxDigitsFor(iso));
+    const digits = clampDigits(iso, onlyDigits(raw));
     setText(formatNational(iso, digits));
     emit(iso, digits);
   };
 
   const onCountry = (nextIso: string) => {
-    const digits = onlyDigits(text).slice(0, maxDigitsFor(nextIso));
+    const digits = clampDigits(nextIso, onlyDigits(text));
     setIso(nextIso);
     setText(formatNational(nextIso, digits));
     emit(nextIso, digits);
@@ -79,19 +81,28 @@ export const PhoneInput: React.FC<Props> = ({
 
   return (
     <div className="phone-input">
-      <select
-        className="phone-input-code"
-        aria-label={tx('รหัสประเทศของเบอร์โทร')}
-        value={iso}
-        disabled={disabled}
-        onChange={(e) => onCountry(e.target.value)}
-      >
-        {DIAL_COUNTRIES.map((c) => (
-          <option key={c.iso} value={c.iso}>
-            {`${c.dial} ${names(c.iso)}`}
-          </option>
-        ))}
-      </select>
+      {/* closed: just "+66"; the list still names each country. The select keeps
+          its own box, arrow, focus ring and keyboard use; only its text is hidden
+          and the dial code is drawn on top of it. */}
+      <span className="phone-input-code-wrap">
+        <select
+          className="phone-input-code"
+          aria-label={tx('รหัสประเทศของเบอร์โทร')}
+          title={`${countryOf(iso).dial} ${names(iso)}`}
+          value={iso}
+          disabled={disabled}
+          onChange={(e) => onCountry(e.target.value)}
+        >
+          {DIAL_COUNTRIES.map((c) => (
+            <option key={c.iso} value={c.iso}>
+              {`${c.dial} ${names(c.iso)}`}
+            </option>
+          ))}
+        </select>
+        <span className="phone-input-code-face mono-num" aria-hidden="true">
+          {countryOf(iso).dial}
+        </span>
+      </span>
       <input
         id={id}
         type="tel"
@@ -101,7 +112,7 @@ export const PhoneInput: React.FC<Props> = ({
         required={required}
         disabled={disabled}
         aria-describedby={ariaDescribedBy}
-        placeholder={placeholder ?? (iso === 'TH' ? '081-234-5678' : '123 456 7890')}
+        placeholder={placeholder ?? phoneExample(iso)}
         onChange={(e) => onType(e.target.value)}
       />
     </div>

@@ -67,6 +67,25 @@ export function sanitizeThaiIdOrPassport(
   return raw.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase().slice(0, 20);
 }
 
+/** Groups of a Thai citizen ID as printed on the card: 1-2345-67890-12-3 */
+const THAI_ID_GROUPS = [1, 4, 5, 2, 1];
+
+/**
+ * Formats up to 13 digits as X-XXXX-XXXXX-XX-X. Works on partial input, so the
+ * hyphens appear as the person types. Non-digits are ignored.
+ */
+export function formatThaiId(raw?: string | null): string {
+  const digits = (raw ?? '').replace(/\D/g, '').slice(0, 13);
+  const parts: string[] = [];
+  let at = 0;
+  for (const size of THAI_ID_GROUPS) {
+    if (at >= digits.length) break;
+    parts.push(digits.slice(at, at + size));
+    at += size;
+  }
+  return parts.join('-');
+}
+
 export function maskIdNumber(raw?: string | null): string {
   if (!raw) return '';
   const clean = raw.trim();
