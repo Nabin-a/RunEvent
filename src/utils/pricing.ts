@@ -239,14 +239,14 @@ export function feePolicyLabel(policy: FeeBearerPolicy): string {
 }
 
 export function sellerModelLabel(
-  model: 'organizer_self_sell' | 'runevent_produce_bulk' | 'runevent_full_service'
+  model: 'organizer_self_sell' | 'kratai_produce_bulk' | 'kratai_full_service'
 ): string {
   switch (model) {
     case 'organizer_self_sell':
-      return tx('ผู้จัดนำสินค้ามาขายและจัดส่งเอง (RunEvent ให้หน้าร้านและรายงาน)');
-    case 'runevent_produce_bulk':
-      return tx('ให้ RunEvent ผลิตตามยอดอนุมัติ ส่งล็อตใหญ่ให้ผู้จัดแจกจ่าย');
-    case 'runevent_full_service':
-      return tx('RunEvent ดูแลครบวงจร (รับพรีออเดอร์ ผลิต แพ็ก และจัดส่งถึงผู้ซื้อ)');
+      return tx('ผู้จัดนำสินค้ามาขายและจัดส่งเอง (กระต่าย ให้หน้าร้านและรายงาน)');
+    case 'kratai_produce_bulk':
+      return tx('ให้ กระต่าย ผลิตตามยอดอนุมัติ ส่งล็อตใหญ่ให้ผู้จัดแจกจ่าย');
+    case 'kratai_full_service':
+      return tx('กระต่าย ดูแลครบวงจร (รับพรีออเดอร์ ผลิต แพ็ก และจัดส่งถึงผู้ซื้อ)');
   }
 }

@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express, { type Request, type Response } from 'express';
 import {
   clearSessionCookie,
@@ -19,12 +22,23 @@ import {
   upsertMerchOrderRow,
   upsertOrganizationRow,
   upsertPayoutRow,
+  upsertPlatformProfileConfig,
   upsertProductionInquiryRow,
   upsertRegistrationRow,
   upsertUserRow,
 } from './db';
 import { calculateFeeQuote, getCurrentTier } from '../src/utils/pricing';
+import { PRIVACY_NOTICE_VERSION } from '../src/data/privacyNotice';
+import { MAX_EMERGENCY_CONTACTS } from '../src/data/runnerProfileDefaults';
+import { registerReviewCommentRoutes } from './reviewComments';
 import { cloneCustomFieldsSchema, validateQuotaUpdate } from '../src/utils/eventConfig';
+import {
+  ageCheckMessage,
+  buildAgeSnapshot,
+  evaluateCategoryAge,
+  validateAgeConfig,
+  type AgeConfigInput,
+} from '../src/utils/age';
 import type {
   AuditLogEntry,
   AuthProviderType,
@@ -43,11 +57,15 @@ import type {
   OrgRole,
   PayoutBatch,
   PayoutStatus,
+  PlatformProfileConfig,
   ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
   RegistrationStepDef,
+  RunnerProfileData,
   SellerServiceModel,
+  ShirtSizeMeasurement,
+  ShirtStock,
   TeamInvitation,
   UserAccount,
 } from '../src/types';
@@ -55,6 +73,41 @@ import type {
 seedDatabase(false);
 
 const app = express();
+// Behind a reverse proxy (Caddy / nginx) set TRUST_PROXY=1 so req.ip and req.secure are the client's.
+if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
+
+// Allow same-host cross-port requests (e.g. Nginx :8090 calling API :3001 on the same VM IP)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    try {
+      const originUrl = new URL(origin);
+      const reqHost = (req.headers.host ?? '').split(':')[0];
+      if (
+        originUrl.hostname === reqHost ||
+        originUrl.hostname === 'localhost' ||
+        originUrl.hostname === '127.0.0.1'
+      ) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader(
+          'Access-Control-Allow-Methods',
+          'GET, POST, PATCH, DELETE, OPTIONS'
+        );
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      }
+    } catch {
+      // ignore malformed origin
+    }
+  }
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  next();
+});
+
 app.use(express.json({ limit: '12mb' }));
 
 function nowThaiStamp(): string {
@@ -170,13 +223,119 @@ function recordAudit(
   insertAuditLog(entry);
 }
 
+/**
+ * Sandbox tools = the Dev / Demo account switcher, the database reset and the
+ * simulated Google / Facebook / LINE sign-in. They let anyone act as any account,
+ * so they are OFF in production unless ENABLE_SANDBOX_TOOLS=1 is set on purpose.
+ */
+const SANDBOX_TOOLS = process.env.ENABLE_SANDBOX_TOOLS
+  ? process.env.ENABLE_SANDBOX_TOOLS === '1'
+  : process.env.NODE_ENV !== 'production';
+
+function requireSandboxTools(_req: Request, res: Response, next: () => void) {
+  if (!SANDBOX_TOOLS) {
+    return res.status(404).json({ ok: false, error: 'ฟังก์ชันนี้ปิดใช้งานในระบบที่เปิดให้ผู้ใช้จริง' });
+  }
+  next();
+}
+
 function okSnapshot(res: Response, currentUserId: string | null, extra: Record<string, unknown> = {}) {
   return res.json({
     ok: true,
     currentUserId,
     state: readSystemState(),
+    config: { sandboxTools: SANDBOX_TOOLS },
     ...extra,
   });
+}
+
+/* ==================== ACCOUNT ACTIVITY HELPERS ==================== */
+
+// Version label of the terms/privacy text shown at sign-up in this local sandbox build.
+// Placeholder until legal-approved documents exist; never treat it as a published policy.
+const TERMS_VERSION = 'sandbox-2026-11';
+const LOGIN_HISTORY_LIMIT = 50;
+
+function describeDevice(req: Request): string {
+  const ua = String(req.headers['user-agent'] || '');
+  const browser = /Edg\//.test(ua)
+    ? 'Edge'
+    : /Chrome\//.test(ua)
+      ? 'Chrome'
+      : /Firefox\//.test(ua)
+        ? 'Firefox'
+        : /Safari\//.test(ua)
+          ? 'Safari'
+          : 'เบราว์เซอร์';
+  const os = /Android/.test(ua)
+    ? 'Android'
+    : /iPhone|iPad/.test(ua)
+      ? 'iOS'
+      : /Windows/.test(ua)
+        ? 'Windows'
+        : /Mac OS X/.test(ua)
+          ? 'macOS'
+          : /Linux/.test(ua)
+            ? 'Linux'
+            : 'ไม่ทราบระบบ';
+  return `${browser} บน ${os}`;
+}
+
+function withLoginEvent(
+  user: UserAccount,
+  req: Request,
+  method: string,
+  status: 'success' | 'failed'
+): UserAccount {
+  const entry = {
+    id: `lh-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    timestamp: nowThaiStamp(),
+    method,
+    deviceLabel: describeDevice(req),
+    // Local sandbox: no IP geolocation. Show a coarse label only, never a raw IP.
+    ipOrLocation: 'เครือข่ายในเครื่อง (Local)',
+    status,
+  };
+  return {
+    ...user,
+    loginHistory: [entry, ...(user.loginHistory ?? [])].slice(0, LOGIN_HISTORY_LIMIT),
+    lastLoginAt: status === 'success' ? new Date().toISOString() : user.lastLoginAt,
+  };
+}
+
+/*
+ * Password change re-verification (sandbox).
+ * Step 1: request a 6-digit code "sent" to the contact email (no real email in the local build;
+ *         the sandbox code is SANDBOX_EMAIL_OTP, same as the existing email OTP page).
+ * Step 2: verify the code -> server issues a one-time grant (10 min).
+ * Step 3: POST /api/account/password must present that grant.
+ * Stored in memory only: restarting the API clears pending codes and grants.
+ */
+const SANDBOX_EMAIL_OTP = '123456';
+const PW_CODE_TTL_MS = 10 * 60 * 1000;
+const PW_CODE_MAX_ATTEMPTS = 5;
+const PW_CODE_RESEND_MS = 30 * 1000;
+const pendingPasswordCodes = new Map<
+  string,
+  { issuedAt: number; expiresAt: number; attempts: number }
+>();
+const passwordChangeGrants = new Map<string, { grant: string; expiresAt: number }>();
+
+function maskEmailForNotice(email: string): string {
+  const [local, domain] = email.split('@');
+  if (!domain) return email;
+  return `${local.slice(0, 2)}${'•'.repeat(Math.max(3, local.length - 2))}@${domain}`;
+}
+
+function signupConsents(marketingConsent: boolean) {
+  const at = new Date().toISOString();
+  const base = Date.now();
+  return [
+    { id: `cs-${base}-t`, type: 'terms' as const, granted: true, version: TERMS_VERSION, recordedAt: at, source: 'signup' as const },
+    // Privacy notice acknowledged in the sign-up popup (PrivacyNoticeModal).
+    { id: `cs-${base}-p`, type: 'privacy' as const, granted: true, version: PRIVACY_NOTICE_VERSION, recordedAt: at, source: 'signup' as const },
+    { id: `cs-${base}-m`, type: 'marketing' as const, granted: marketingConsent, recordedAt: at, source: 'signup' as const },
+  ];
 }
 
 /* ==================== HEALTH & BOOTSTRAP ==================== */
@@ -198,24 +357,57 @@ app.get('/api/bootstrap', (req, res) => {
 /* ==================== AUTH & ACCOUNT SECURITY ==================== */
 
 app.post('/api/auth/login', (req, res) => {
-  const email = String(req.body?.email ?? '').trim().toLowerCase();
+  const identifier = String(req.body?.email ?? req.body?.username ?? '')
+    .trim()
+    .toLowerCase();
   const password = String(req.body?.password ?? '');
-  if (!email || !password) {
-    return res.status(400).json({ ok: false, error: 'กรุณากรอกอีเมลและรหัสผ่านให้ครบถ้วน' });
+  if (!identifier || !password) {
+    return res
+      .status(400)
+      .json({ ok: false, error: 'กรุณากรอกชื่อผู้ใช้/อีเมล และรหัสผ่านให้ครบถ้วน' });
   }
-  const row = db
-    .prepare('SELECT id, has_password, password_hash FROM users WHERE LOWER(contact_email) = ?')
-    .get(email) as { id: string; has_password: number; password_hash: string | null } | undefined;
+  const rows = db
+    .prepare(
+      'SELECT id, code, contact_email, has_password, password_hash FROM users'
+    )
+    .all() as {
+    id: string;
+    code: string;
+    contact_email: string | null;
+    has_password: number;
+    password_hash: string | null;
+  }[];
+
+  const row = rows.find((r) => {
+    const emailLower = (r.contact_email ?? '').toLowerCase();
+    const localPart = emailLower.includes('@') ? emailLower.split('@')[0] : '';
+    const codeLower = (r.code ?? '').toLowerCase();
+    return (
+      emailLower === identifier ||
+      codeLower === identifier ||
+      (localPart !== '' && localPart === identifier)
+    );
+  });
 
   if (!row || !row.has_password || !verifyPassword(password, row.password_hash)) {
+    // Record the failed attempt on the matched account so its owner can spot it.
+    if (row) {
+      const target = getUserById(row.id);
+      if (target) {
+        upsertUserRow(withLoginEvent(target, req, 'อีเมล + รหัสผ่าน', 'failed'), {
+          preservePasswordHash: true,
+        });
+      }
+    }
     return res.status(401).json({
       ok: false,
       error:
-        'อีเมลหรือรหัสผ่านไม่ถูกต้อง (หากสมัครไว้ด้วย LINE หรือ Google อย่างเดียว กรุณาเข้าสู่ระบบด้วยปุ่มช่องทางนั้น)',
+        'ชื่อผู้ใช้/อีเมล หรือรหัสผ่านไม่ถูกต้อง (หากสมัครไว้ด้วย LINE, Facebook หรือ Google อย่างเดียว กรุณาเข้าสู่ระบบด้วยปุ่มช่องทางนั้น)',
     });
   }
 
-  const user = getUserById(row.id)!;
+  const user = withLoginEvent(getUserById(row.id)!, req, 'อีเมล + รหัสผ่าน', 'success');
+  upsertUserRow(user, { preservePasswordHash: true });
   issueSession(req, res, user.id);
   return okSnapshot(res, user.id, { user });
 });
@@ -234,7 +426,10 @@ app.post('/api/auth/verify-collision-password', (req, res) => {
     });
   }
   const user = getUserById(row.id)!;
-  const provider = (req.body?.provider === 'line' ? 'line' : 'google') as 'google' | 'line';
+  const rawProv = String(req.body?.provider ?? 'google');
+  const provider = (
+    rawProv === 'line' ? 'line' : rawProv === 'facebook' ? 'facebook' : 'google'
+  ) as 'google' | 'line' | 'facebook';
   const alreadyLinked = user.identities.some((i) => i.provider === provider);
   const updatedUser: UserAccount = alreadyLinked
     ? user
@@ -256,17 +451,25 @@ app.post('/api/auth/verify-collision-password', (req, res) => {
   return okSnapshot(res, updatedUser.id, { user: updatedUser });
 });
 
-app.post('/api/auth/social-login', (req, res) => {
+app.post('/api/auth/social-login', requireSandboxTools, (req, res) => {
   const userId = String(req.body?.userId ?? '');
-  const user = getUserById(userId);
-  if (!user) {
+  const found = getUserById(userId);
+  if (!found) {
     return res.status(404).json({ ok: false, error: 'ไม่พบบัญชีผู้ใช้' });
   }
+  const provider = String(req.body?.provider ?? '').trim();
+  const user = withLoginEvent(
+    found,
+    req,
+    provider ? provider.charAt(0).toUpperCase() + provider.slice(1) : 'บัญชีโซเชียล',
+    'success'
+  );
+  upsertUserRow(user, { preservePasswordHash: true });
   issueSession(req, res, user.id);
   return okSnapshot(res, user.id, { user });
 });
 
-app.post('/api/auth/dev-switch', (req, res) => {
+app.post('/api/auth/dev-switch', requireSandboxTools, (req, res) => {
   const { tokenHash } = resolveSessionUser(req);
   if (tokenHash) {
     db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(tokenHash);
@@ -276,10 +479,13 @@ app.post('/api/auth/dev-switch', (req, res) => {
     clearSessionCookie(res);
     return okSnapshot(res, null);
   }
-  const user = getUserById(userId);
-  if (!user) {
+  const found = getUserById(userId);
+  if (!found) {
     return res.status(404).json({ ok: false, error: 'ไม่พบบัญชีทดสอบที่เลือก' });
   }
+  // Simulated Google/LINE/Facebook sign-in and the Dev / Demo switcher both land here.
+  const user = withLoginEvent(found, req, 'เข้าสู่ระบบแบบจำลอง (Sandbox)', 'success');
+  upsertUserRow(user, { preservePasswordHash: true });
   issueSession(req, res, user.id);
   return okSnapshot(res, user.id, { user });
 });
@@ -347,16 +553,31 @@ app.post('/api/auth/register-runner', (req, res) => {
     memberships: [],
     demoRoleSummary: 'สมาชิกใหม่สมัครด้วยอีเมล (Runner 2-Step Wizard)',
     isDemoPreset: false,
+    createdAt: new Date().toISOString(),
+    passwordChangedAt: new Date().toISOString(),
+    consents: signupConsents(Boolean(req.body?.marketingConsent)),
   };
 
-  upsertUserRow(newUser, { passwordPlain: password, sortOrder: totalUsers + 10 });
+  upsertUserRow(withLoginEvent(newUser, req, 'สมัครสมาชิกด้วยอีเมล', 'success'), {
+    passwordPlain: password,
+    sortOrder: totalUsers + 10,
+  });
   issueSession(req, res, newUser.id);
   return okSnapshot(res, newUser.id, { user: newUser });
 });
 
-app.post('/api/auth/register-social', (req, res) => {
-  const provider = (req.body?.provider === 'line' ? 'line' : 'google') as 'google' | 'line';
+app.post('/api/auth/register-social', requireSandboxTools, (req, res) => {
+  const rawProv = String(req.body?.provider ?? 'google');
+  const provider = (
+    rawProv === 'line' ? 'line' : rawProv === 'facebook' ? 'facebook' : 'google'
+  ) as 'google' | 'line' | 'facebook';
   const fullNameTh = String(req.body?.fullNameTh ?? 'สมาชิกใหม่').trim();
+  const incomingProf = req.body?.runnerProfile as RunnerProfileData | undefined;
+  const derivedEn =
+    incomingProf?.firstNameEn || incomingProf?.lastNameEn
+      ? `${incomingProf?.firstNameEn ?? ''} ${incomingProf?.lastNameEn ?? ''}`.trim()
+      : '';
+  const fullNameEn = String(req.body?.fullNameEn || derivedEn || fullNameTh).trim();
   const rawEmail = req.body?.email ? String(req.body.email).trim().toLowerCase() : null;
 
   if (rawEmail) {
@@ -376,7 +597,7 @@ app.post('/api/auth/register-social', (req, res) => {
     id: `usr-soc-${Date.now()}`,
     code: `USR-${totalUsers + 920}`,
     fullNameTh,
-    fullNameEn: fullNameTh,
+    fullNameEn,
     contactEmail: rawEmail,
     emailVerified: Boolean(rawEmail),
     hasPassword: false,
@@ -402,9 +623,14 @@ app.post('/api/auth/register-social', (req, res) => {
     memberships: [],
     demoRoleSummary: `สมาชิกใหม่ผ่าน ${provider.toUpperCase()}`,
     isDemoPreset: false,
+    createdAt: new Date().toISOString(),
+    consents: signupConsents(Boolean(req.body?.marketingConsent)),
   };
 
-  upsertUserRow(newUser, { sortOrder: totalUsers + 10 });
+  upsertUserRow(
+    withLoginEvent(newUser, req, `สมัครสมาชิกผ่าน ${provider.toUpperCase()} (จำลอง)`, 'success'),
+    { sortOrder: totalUsers + 10 }
+  );
   issueSession(req, res, newUser.id);
   return okSnapshot(res, newUser.id, { user: newUser });
 });
@@ -546,16 +772,153 @@ app.post('/api/auth/register-organizer', (req, res) => {
 app.patch('/api/account/profile', (req, res) => {
   const { user } = resolveSessionUser(req);
   if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
-  const updated: UserAccount = { ...user, runnerProfile: req.body?.profile };
+  const incoming = (req.body?.profile ?? {}) as RunnerProfileData;
+  if ((incoming.emergencyContacts?.length ?? 0) > MAX_EMERGENCY_CONTACTS) {
+    return res.status(400).json({
+      ok: false,
+      error: `บันทึกผู้ติดต่อฉุกเฉินได้สูงสุด ${MAX_EMERGENCY_CONTACTS} คน`,
+    });
+  }
+  const fullNameTh = String(
+    req.body?.fullNameTh ||
+      (incoming.firstName && incoming.lastName
+        ? `${incoming.firstName.trim()} ${incoming.lastName.trim()}`.trim()
+        : user.fullNameTh)
+  );
+  const fullNameEn = String(
+    req.body?.fullNameEn ||
+      (incoming.firstNameEn || incoming.lastNameEn
+        ? `${incoming.firstNameEn ?? ''} ${incoming.lastNameEn ?? ''}`.trim()
+        : user.fullNameEn)
+  );
+
+  // Sync legacy primary emergency contact fields for backward compatibility
+  const primaryEc =
+    incoming.emergencyContacts?.find((c) => c.isPrimary) ??
+    incoming.emergencyContacts?.[0];
+  const mergedProfile: RunnerProfileData = {
+    ...user.runnerProfile,
+    ...incoming,
+    phoneVerified: Boolean(
+      (incoming.phone ?? user.runnerProfile?.phone ?? '').trim()
+    ),
+    emergencyContactName: primaryEc?.contactName ?? incoming.emergencyContactName,
+    emergencyContactRelation: primaryEc?.relationship ?? incoming.emergencyContactRelation,
+    emergencyContactPhone: primaryEc?.phone ?? incoming.emergencyContactPhone,
+  };
+
+  // Achievements remain strictly server/system controlled (Runner cannot overwrite)
+  const updated: UserAccount = {
+    ...user,
+    fullNameTh,
+    fullNameEn,
+    runnerProfile: mergedProfile,
+  };
   upsertUserRow(updated, { preservePasswordHash: true });
+
+  recordAudit(
+    updated,
+    'PLATFORM-HQ',
+    `อัปเดตข้อมูล Runner Profile (${updated.code})`,
+    `Preferred Shirt: ${mergedProfile.preferredShirtSize ?? '-'} · Addresses: ${
+      mergedProfile.savedAddresses?.length ?? 0
+    } · Emergency Contacts: ${mergedProfile.emergencyContacts?.length ?? 0}`
+  );
   return okSnapshot(res, updated.id, { user: updated });
+});
+
+app.post('/api/account/verify-phone', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const phone = String(req.body?.phone ?? '').trim();
+  const otp = String(req.body?.otp ?? '').trim();
+  if (phone.replace(/\D/g, '').length < 9) {
+    return res.status(400).json({ ok: false, error: 'กรุณาระบุเบอร์โทรศัพท์ให้ครบ 9–10 หลัก' });
+  }
+  if (otp && otp !== '123456') {
+    return res.status(400).json({ ok: false, error: 'รหัสยืนยัน OTP ไม่ถูกต้อง (ทดสอบใช้ 123456)' });
+  }
+  const updatedProfile: RunnerProfileData = {
+    ...user.runnerProfile,
+    phone,
+    phoneVerified: true,
+  };
+  const updated: UserAccount = { ...user, runnerProfile: updatedProfile };
+  upsertUserRow(updated, { preservePasswordHash: true });
+  recordAudit(updated, 'PLATFORM-HQ', `ยืนยันเบอร์โทรศัพท์ใหม่ (${updated.code})`, phone);
+  return okSnapshot(res, updated.id, { user: updated });
+});
+
+app.post('/api/account/status', (req, res) => {
+  const { user, tokenHash } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const action = String(req.body?.action ?? '');
+  const reason = String(req.body?.reason ?? '').trim();
+
+  if (action === 'deactivate') {
+    const updated: UserAccount = { ...user, accountStatus: 'deactivated' };
+    upsertUserRow(updated, { preservePasswordHash: true });
+    recordAudit(
+      updated,
+      'PLATFORM-HQ',
+      `ผู้ใช้สั่งปิดพักบัญชีชั่วคราว (${updated.code})`,
+      reason || 'Account Deactivated by User'
+    );
+    if (tokenHash) {
+      db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(tokenHash);
+    }
+    clearSessionCookie(res);
+    return okSnapshot(res, null);
+  }
+
+  if (action === 'request_deletion') {
+    const confirmCode = String(req.body?.confirmCode ?? '').trim().toUpperCase();
+    if (confirmCode !== user.code.toUpperCase()) {
+      return res.status(400).json({
+        ok: false,
+        error: `กรุณาพิมพ์รหัสบัญชี ${user.code} ให้ถูกต้องเพื่อยืนยันคำขอลบบัญชี`,
+      });
+    }
+    const updated: UserAccount = {
+      ...user,
+      accountStatus: 'deletion_requested',
+      deletionRequestReason: reason || 'ขอลบบัญชีตามนโยบายความเป็นส่วนตัว',
+      deletionRequestedAt: nowThaiStamp(),
+    };
+    upsertUserRow(updated, { preservePasswordHash: true });
+    recordAudit(
+      updated,
+      'PLATFORM-HQ',
+      `ส่งคำขอลบบัญชีผู้ใช้งาน (${updated.code})`,
+      updated.deletionRequestReason!
+    );
+    return okSnapshot(res, updated.id, { user: updated });
+  }
+
+  if (action === 'cancel_deletion') {
+    const updated: UserAccount = {
+      ...user,
+      accountStatus: 'active',
+      deletionRequestReason: undefined,
+      deletionRequestedAt: undefined,
+    };
+    upsertUserRow(updated, { preservePasswordHash: true });
+    recordAudit(updated, 'PLATFORM-HQ', `ยกเลิกคำขอลบบัญชี (${updated.code})`, 'active');
+    return okSnapshot(res, updated.id, { user: updated });
+  }
+
+  return res.status(400).json({ ok: false, error: 'ไม่รู้จักคำสั่งจัดการสถานะบัญชี' });
 });
 
 app.post('/api/account/verify-email', (req, res) => {
   const { user } = resolveSessionUser(req);
   if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
   const email = String(req.body?.email ?? '').trim().toLowerCase();
+  const otp = req.body?.otp !== undefined ? String(req.body.otp).trim() : undefined;
   if (!email) return res.status(400).json({ ok: false, error: 'กรุณาระบุอีเมล' });
+  if (otp !== undefined && otp !== '123456') {
+    return res.status(400).json({ ok: false, error: 'รหัสยืนยัน OTP อีเมลไม่ถูกต้อง (ทดสอบใช้ 123456)' });
+  }
   const dup = db
     .prepare('SELECT id FROM users WHERE LOWER(contact_email) = ? AND id != ?')
     .get(email, user.id) as { id: string } | undefined;
@@ -564,7 +927,59 @@ app.post('/api/account/verify-email', (req, res) => {
   }
   const updated: UserAccount = { ...user, contactEmail: email, emailVerified: true };
   upsertUserRow(updated, { preservePasswordHash: true });
+  recordAudit(updated, 'PLATFORM-HQ', `ยืนยันอีเมลติดต่อ (${updated.code})`, email);
   return okSnapshot(res, updated.id, { user: updated });
+});
+
+app.post('/api/account/password/request-code', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  if (!user.contactEmail) {
+    return res.status(400).json({
+      ok: false,
+      error: 'บัญชีนี้ยังไม่มีอีเมลติดต่อ กรุณาเพิ่มอีเมลก่อนเปลี่ยนรหัสผ่าน',
+    });
+  }
+  const prev = pendingPasswordCodes.get(user.id);
+  const now = Date.now();
+  if (prev && now - prev.issuedAt < PW_CODE_RESEND_MS) {
+    const wait = Math.ceil((PW_CODE_RESEND_MS - (now - prev.issuedAt)) / 1000);
+    return res.status(429).json({ ok: false, error: `กรุณารอ ${wait} วินาทีก่อนขอรหัสใหม่` });
+  }
+  pendingPasswordCodes.set(user.id, { issuedAt: now, expiresAt: now + PW_CODE_TTL_MS, attempts: 0 });
+  passwordChangeGrants.delete(user.id);
+  recordAudit(user, 'PLATFORM-HQ', `ขอรหัสยืนยันเพื่อเปลี่ยนรหัสผ่าน (${user.code})`, 'sandbox-email');
+  return res.json({
+    ok: true,
+    data: { sentTo: maskEmailForNotice(user.contactEmail), expiresInSec: PW_CODE_TTL_MS / 1000 },
+  });
+});
+
+app.post('/api/account/password/verify-code', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const pending = pendingPasswordCodes.get(user.id);
+  if (!pending || pending.expiresAt < Date.now()) {
+    pendingPasswordCodes.delete(user.id);
+    return res.status(400).json({ ok: false, error: 'รหัสหมดอายุแล้ว กรุณาขอรหัสใหม่' });
+  }
+  if (pending.attempts >= PW_CODE_MAX_ATTEMPTS) {
+    pendingPasswordCodes.delete(user.id);
+    return res.status(429).json({ ok: false, error: 'กรอกรหัสผิดเกินกำหนด กรุณาขอรหัสใหม่' });
+  }
+  const otp = String(req.body?.otp ?? '').trim();
+  if (otp !== SANDBOX_EMAIL_OTP) {
+    pending.attempts += 1;
+    const left = PW_CODE_MAX_ATTEMPTS - pending.attempts;
+    return res.status(400).json({
+      ok: false,
+      error: `รหัสยืนยันไม่ถูกต้อง (เหลืออีก ${left} ครั้ง)`,
+    });
+  }
+  pendingPasswordCodes.delete(user.id);
+  const grant = generateSessionToken();
+  passwordChangeGrants.set(user.id, { grant, expiresAt: Date.now() + PW_CODE_TTL_MS });
+  return res.json({ ok: true, data: { grant } });
 });
 
 app.post('/api/account/password', (req, res) => {
@@ -572,9 +987,22 @@ app.post('/api/account/password', (req, res) => {
   if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
   const newPassword = String(req.body?.newPassword ?? 'demo1234');
   const hasPwIdentity = user.identities.some((i) => i.provider === 'password');
+  if (newPassword.length < 8) {
+    return res.status(400).json({ ok: false, error: 'รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร' });
+  }
+  const grant = String(req.body?.grant ?? '');
+  const stored = passwordChangeGrants.get(user.id);
+  if (!stored || stored.grant !== grant || stored.expiresAt < Date.now()) {
+    return res.status(403).json({
+      ok: false,
+      error: 'กรุณายืนยันตัวตนด้วยรหัสทางอีเมลก่อนเปลี่ยนรหัสผ่าน (สิทธิ์หมดอายุหรือไม่ถูกต้อง)',
+    });
+  }
+  passwordChangeGrants.delete(user.id);
   const updated: UserAccount = {
     ...user,
     hasPassword: true,
+    passwordChangedAt: new Date().toISOString(),
     identities: hasPwIdentity
       ? user.identities
       : [
@@ -587,20 +1015,17 @@ app.post('/api/account/password', (req, res) => {
           },
         ],
   };
-  upsertUserRow(updated, {
-    passwordPlain: newPassword.length >= 8 ? newPassword : hashPasswordFallback(newPassword),
-  });
+  upsertUserRow(updated, { passwordPlain: newPassword });
   return okSnapshot(res, updated.id, { user: updated });
 });
-
-function hashPasswordFallback(pw: string): string {
-  return pw && pw.trim().length > 0 ? pw.trim() : 'demo1234';
-}
 
 app.post('/api/account/providers', (req, res) => {
   const { user } = resolveSessionUser(req);
   if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
-  const provider = (req.body?.provider === 'line' ? 'line' : 'google') as 'google' | 'line';
+  const rawProv = String(req.body?.provider ?? 'google');
+  const provider = (
+    rawProv === 'line' ? 'line' : rawProv === 'facebook' ? 'facebook' : 'google'
+  ) as 'google' | 'line' | 'facebook';
   if (user.identities.some((i) => i.provider === provider)) {
     return okSnapshot(res, user.id);
   }
@@ -638,6 +1063,105 @@ app.delete('/api/account/providers/:provider', (req, res) => {
   };
   upsertUserRow(updated, { preservePasswordHash: provider !== 'password' });
   return okSnapshot(res, updated.id);
+});
+
+app.delete('/api/account/sessions/:id', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const target = user.sessions.find((s) => s.id === req.params.id);
+  if (!target) return res.status(404).json({ ok: false, error: 'ไม่พบอุปกรณ์นี้ในบัญชี' });
+  if (target.isCurrentDevice) {
+    return res.status(400).json({
+      ok: false,
+      error: 'ออกจากระบบเครื่องที่กำลังใช้งานอยู่ได้จากเมนูบัญชี (ออกจากระบบ)',
+    });
+  }
+  const updated: UserAccount = {
+    ...user,
+    sessions: user.sessions.filter((s) => s.id !== target.id),
+  };
+  upsertUserRow(updated, { preservePasswordHash: true });
+  recordAudit(updated, 'PLATFORM-HQ', `ออกจากระบบอุปกรณ์ (${updated.code})`, target.deviceLabel);
+  return okSnapshot(res, updated.id);
+});
+
+app.post('/api/account/consents', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const type = String(req.body?.type ?? '');
+  // Privacy notice acknowledgement after sign-in (new version or no record yet).
+  // Only the current version can be acknowledged, and it cannot be "withdrawn" here.
+  if (type === 'privacy') {
+    const version = String(req.body?.version ?? '');
+    if (version !== PRIVACY_NOTICE_VERSION) {
+      return res.status(400).json({ ok: false, error: 'เวอร์ชันประกาศความเป็นส่วนตัวไม่ตรงกับฉบับปัจจุบัน' });
+    }
+    const acknowledged: UserAccount = {
+      ...user,
+      consents: [
+        ...(user.consents ?? []),
+        {
+          id: `cs-${Date.now()}-p`,
+          type: 'privacy',
+          granted: true,
+          version: PRIVACY_NOTICE_VERSION,
+          recordedAt: new Date().toISOString(),
+          source: 'login_prompt',
+        },
+      ],
+    };
+    upsertUserRow(acknowledged, { preservePasswordHash: true });
+    recordAudit(acknowledged, 'PLATFORM-HQ', `รับทราบประกาศความเป็นส่วนตัว (${acknowledged.code})`, PRIVACY_NOTICE_VERSION);
+    return okSnapshot(res, acknowledged.id);
+  }
+  if (type !== 'marketing') {
+    // Terms acceptance is captured at sign-up only; it cannot be toggled here.
+    return res.status(400).json({ ok: false, error: 'ปรับได้เฉพาะการยินยอมรับข่าวสารการตลาด' });
+  }
+  const granted = Boolean(req.body?.granted);
+  const updated: UserAccount = {
+    ...user,
+    consents: [
+      ...(user.consents ?? []),
+      {
+        id: `cs-${Date.now()}-m`,
+        type: 'marketing',
+        granted,
+        recordedAt: new Date().toISOString(),
+        source: 'account_settings',
+      },
+    ],
+  };
+  upsertUserRow(updated, { preservePasswordHash: true });
+  recordAudit(
+    updated,
+    'PLATFORM-HQ',
+    `${granted ? 'ยินยอม' : 'ยกเลิกการยินยอม'}รับข่าวสารการตลาด (${updated.code})`,
+    'marketing'
+  );
+  return okSnapshot(res, updated.id);
+});
+
+// Personal data copy (PDPA right of access). Returns only the signed-in user's own records.
+app.get('/api/account/export', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  const state = readSystemState();
+  const email = (user.contactEmail ?? '').toLowerCase();
+  const registrations = state.registrations.filter(
+    (r) => r.runnerUserId === user.id || (email !== '' && r.email.toLowerCase() === email)
+  );
+  const { demoPasswordHint: _hint, ...safeUser } = user;
+  recordAudit(user, 'PLATFORM-HQ', `ดาวน์โหลดสำเนาข้อมูลส่วนบุคคล (${user.code})`, 'export');
+  return res.json({
+    ok: true,
+    data: {
+      exportedAt: new Date().toISOString(),
+      note: 'สำเนาข้อมูลจากระบบ กระต่าย บนเครื่อง (Local sandbox) — ไม่รวมรหัสผ่านหรือข้อมูลลับ',
+      account: safeUser,
+      registrations,
+    },
+  });
 });
 
 app.post('/api/account/revoke-sessions', (req, res) => {
@@ -781,8 +1305,41 @@ app.post('/api/registrations', (req, res) => {
   const eventId = String(payload.eventId ?? '');
   const categoryId = String(payload.categoryId ?? '');
 
+  // Idempotency: the browser makes one registration id per checkout attempt and resends the
+  // same id when it retries (slow network, timeout, double click). A repeat must not take a
+  // second seat or shirt, so it gets the registration that already exists instead.
+  const clientRegId = payload.id ? String(payload.id) : '';
+
   db.exec('BEGIN IMMEDIATE');
   try {
+    if (clientRegId) {
+      const prior = db
+        .prepare('SELECT runner_user_id FROM registrations WHERE id = ?')
+        .get(clientRegId) as { runner_user_id: string | null } | undefined;
+      if (prior) {
+        db.exec('ROLLBACK');
+        if ((prior.runner_user_id ?? null) !== (user?.id ?? null)) {
+          return res
+            .status(409)
+            .json({ ok: false, error: 'รหัสคำสั่งซื้อนี้ถูกใช้ไปแล้ว กรุณาเริ่มสมัครใหม่' });
+        }
+        const state = readSystemState();
+        const reg = state.registrations.find((r) => r.id === clientRegId);
+        const addonOrder = reg
+          ? state.merchOrders.find((m) => m.linkedRegistrationCode === reg.regCode)
+          : undefined;
+        return res.json({
+          ok: true,
+          currentUserId: user?.id ?? null,
+          state,
+          config: { sandboxTools: SANDBOX_TOOLS },
+          reg,
+          addonOrder,
+          replayed: true,
+        });
+      }
+    }
+
     const evRow = db
       .prepare('SELECT detail_json FROM events WHERE id = ?')
       .get(eventId) as { detail_json: string } | undefined;
@@ -799,6 +1356,20 @@ app.post('/api/registrations', (req, res) => {
     if (!cat) {
       db.exec('ROLLBACK');
       return res.status(400).json({ ok: false, error: 'ไม่พบระยะการแข่งขันที่เลือก' });
+    }
+
+    // Age eligibility is checked on the server too; the browser check is only a hint.
+    const participantDob = String(payload.participantSnapshot?.dateOfBirth ?? '').trim();
+    const participantGender = payload.participantSnapshot?.gender
+      ? String(payload.participantSnapshot.gender)
+      : null;
+    const ageCheck = evaluateCategoryAge(ev, cat, participantDob, participantGender);
+    if (!ageCheck.eligible) {
+      db.exec('ROLLBACK');
+      return res.status(400).json({
+        ok: false,
+        error: ageCheckMessage(ageCheck, cat) ?? 'ผู้เข้าแข่งขันไม่ผ่านเกณฑ์อายุของระยะนี้',
+      });
     }
 
     // Atomic quota checks inside SQLite transaction
@@ -841,8 +1412,10 @@ app.post('/api/registrations', (req, res) => {
       db.prepare('SELECT COUNT(*) AS cnt FROM registrations').get() as { cnt: number }
     ).cnt;
     const seq = regCount + 101;
-    const regCode = String(payload.regCode || `REG-2611-${seq}`);
-    const orderCode = String(payload.orderCode || `ORD-89${seq}`);
+    // Codes are issued here, inside the locked transaction, so two runners checking out at the
+    // same moment never get the same number (a browser-made code could collide).
+    const regCode = `REG-2611-${seq}`;
+    const orderCode = `ORD-89${seq}`;
     const tokenSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
     const immediate = Boolean(payload.simulateImmediateWebhook);
     const createdIso = nowIsoBangkok();
@@ -859,15 +1432,30 @@ app.post('/api/registrations', (req, res) => {
       participantNameTh: String(payload.participantNameTh ?? ''),
       participantNameEn: String(payload.participantNameEn ?? ''),
       email: user?.contactEmail ?? 'verified.runner@demo.local',
-      phoneMasked: user?.runnerProfile?.phone || '081-•••-9900',
-      emergencyContact:
-        user?.runnerProfile?.emergencyContactName && user?.runnerProfile?.emergencyContactPhone
-          ? `${user.runnerProfile.emergencyContactName} ${user.runnerProfile.emergencyContactPhone}`
-          : 'ผู้ติดต่อฉุกเฉินจำลอง 089-•••-0011',
+      phoneMasked: String(
+        payload.phone || user?.runnerProfile?.phone || '081-•••-9900'
+      ),
+      emergencyContact: String(
+        payload.emergencyContact ||
+          (user?.runnerProfile?.emergencyContactName &&
+          user?.runnerProfile?.emergencyContactPhone
+            ? `${user.runnerProfile.emergencyContactName} (${
+                user.runnerProfile.emergencyContactRelation ?? 'ฉุกเฉิน'
+              }) ${user.runnerProfile.emergencyContactPhone}`
+            : 'ผู้ติดต่อฉุกเฉินจำลอง 089-•••-0011')
+      ),
       shirtSize,
+      kitDeliveryMethod:
+        payload.kitDeliveryMethod === 'postal_shipping'
+          ? 'postal_shipping'
+          : 'pickup_at_expo',
+      shippingAddressSnapshot: payload.shippingAddressSnapshot
+        ? String(payload.shippingAddressSnapshot)
+        : undefined,
+      participantSnapshot: payload.participantSnapshot,
       customAnswers: payload.customAnswers,
       bibNumber: null,
-      qrCheckInToken: String(payload.qrCheckInToken || `TKN-${cat.bibPrefix}${seq}-${tokenSuffix}`),
+      qrCheckInToken: `TKN-${cat.bibPrefix}${seq}-${tokenSuffix}`,
       acceptedRulesVersion: ev.rulesVersion,
       marketingConsent: Boolean(payload.marketingConsent),
       createdAt: createdIso,
@@ -887,6 +1475,16 @@ app.post('/api/registrations', (req, res) => {
       snapshotTotalChargedSatang: quote.runnerNetPaySatang,
       snapshotRefundedSatang: 0,
     };
+    const ageSnapshot = participantDob
+      ? buildAgeSnapshot(ageCheck, participantDob, createdIso)
+      : undefined;
+    if (ageSnapshot) {
+      newReg.ageSnapshot = ageSnapshot;
+      newReg.age = ageSnapshot.ageYears;
+    }
+    if (participantGender === 'ชาย' || participantGender === 'หญิง' || participantGender === 'ไม่ระบุ') {
+      newReg.gender = participantGender;
+    }
 
     let addonOrder: MerchOrderRecord | undefined;
     if (payload.addonProductId || payload.addonProduct) {
@@ -899,7 +1497,7 @@ app.post('/api/registrations', (req, res) => {
         const mSeq = mCount + 510;
         addonOrder = {
           id: String(payload.addonOrderId || `mord-dyn-${Date.now()}`),
-          merchOrderCode: String(payload.addonOrderCode || `SHP-2611-${mSeq}`),
+          merchOrderCode: `SHP-2611-${mSeq}`,
           eventId: ev.id,
           organizationId: ev.organizationId,
           buyerUserId: user?.id,
@@ -917,7 +1515,7 @@ app.post('/api/registrations', (req, res) => {
           totalPaidSatang: prd.priceSatang,
           paymentStatus: immediate ? 'succeeded' : 'pending',
           fulfillmentStatus: 'ready_or_shipped',
-          pickupToken: String(payload.addonPickupToken || `PICK-SHP-${mSeq}`),
+          pickupToken: `PICK-SHP-${mSeq}`,
           linkedRegistrationCode: regCode,
           createdAt: createdIso,
         };
@@ -1522,7 +2120,7 @@ app.post('/api/events', (req, res) => {
       organizerBufferQty: 10,
       existingStockDeductedQty: 0,
       netQtyToProduce: 110,
-      artworkVersion: 'ขอคำปรึกษาออกแบบจากทีม RunEvent',
+      artworkVersion: 'ขอคำปรึกษาออกแบบจากทีม กระต่าย',
       targetDeliveryDate: newEv.eventDate,
       quoteStatus: 'submitted',
       productionStatus: 'awaiting_approval',
@@ -1677,6 +2275,40 @@ app.patch('/api/events/:id', (req, res) => {
     }
   }
 
+  if (patch.categoryAgeUpdate) {
+    if (!hasOrgRole(user, target.organizationId, ['owner', 'event_manager'], target.id)) {
+      return res.status(403).json({
+        ok: false,
+        error: 'เฉพาะเจ้าขององค์กรหรือผู้จัดการงานจึงตั้งเกณฑ์อายุและรุ่นอายุได้',
+      });
+    }
+    const upd = patch.categoryAgeUpdate as AgeConfigInput & { categoryId?: string };
+    const cat = nextEv.categories.find((c) => c.id === upd.categoryId);
+    if (!cat) return res.status(400).json({ ok: false, error: 'ไม่พบระยะการแข่งขันที่เลือก' });
+    const checked = validateAgeConfig(upd);
+    if (!checked.ok) return res.status(400).json({ ok: false, error: checked.message });
+    const v = checked.value;
+    nextEv = {
+      ...nextEv,
+      categories: nextEv.categories.map((c) =>
+        c.id === cat.id
+          ? { ...c, ageBasis: v.ageBasis, minAge: v.minAge, maxAge: v.maxAge, ageGroups: v.ageGroups }
+          : c
+      ),
+    };
+    const limitText =
+      v.minAge === null && v.maxAge === null
+        ? 'ไม่จำกัดอายุ'
+        : `อายุ ${v.minAge ?? 0}–${v.maxAge ?? 'ไม่จำกัด'} ปี`;
+    recordAudit(
+      user,
+      target.organizationId,
+      `ตั้งเกณฑ์อายุระยะ ${cat.code} งาน ${target.code}`,
+      `${v.ageBasis === 'year_end' ? 'นับ ณ 31 ธ.ค.' : 'นับ ณ วันแข่ง'} · ${limitText} · ${v.ageGroups.length} รุ่น (ใบสมัครเดิมคงรุ่นเดิม)`,
+      target.id
+    );
+  }
+
   if (Array.isArray(patch.customFields)) {
     nextEv.customFields = patch.customFields as CustomRegistrationField[];
     recordAudit(
@@ -1789,12 +2421,12 @@ app.patch('/api/events/:id', (req, res) => {
       saleMode: ap.saleMode,
       serviceModel: ap.serviceModel,
       sellerLabel:
-        ap.serviceModel === 'runevent_full_service'
-          ? 'ดูแลพรีออเดอร์และจัดส่งโดย RunEvent (จำลอง)'
+        ap.serviceModel === 'kratai_full_service'
+          ? 'ดูแลพรีออเดอร์และจัดส่งโดย กระต่าย (จำลอง)'
           : 'ผู้ขาย: องค์กรผู้จัดงาน (จำลอง)',
       fulfillmentOwnerLabel:
-        ap.serviceModel === 'runevent_full_service'
-          ? 'RunEvent ผลิตและจัดส่ง'
+        ap.serviceModel === 'kratai_full_service'
+          ? 'กระต่าย ผลิตและจัดส่ง'
           : 'ผู้จัดงานส่งมอบ',
       priceSatang: ap.priceBaht * 100,
       shippingFeeSatang: 5000,
@@ -1821,8 +2453,51 @@ app.patch('/api/events/:id', (req, res) => {
     );
   }
 
+  if (patch.customSizeChart) {
+    nextEv.customSizeChart = patch.customSizeChart as Record<string, ShirtSizeMeasurement>;
+    recordAudit(
+      user,
+      target.organizationId,
+      `อัปเดตตารางไซส์เสื้อเฉพาะงาน ${target.code}`,
+      `จำนวน ${Object.keys(nextEv.customSizeChart).length} ไซส์`,
+      target.id
+    );
+  }
+
+  if (Array.isArray(patch.shirtStocks)) {
+    nextEv.shirtStocks = patch.shirtStocks as ShirtStock[];
+    recordAudit(
+      user,
+      target.organizationId,
+      `อัปเดตโควตาและรายการไซส์เสื้อของงาน ${target.code}`,
+      nextEv.shirtStocks.map((s) => `${s.size}:${s.total}`).join(', '),
+      target.id
+    );
+  }
+
   upsertEventRow(nextEv);
   return okSnapshot(res, user!.id);
+});
+
+app.patch('/api/admin/profile-config', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
+  }
+  const nextConfig = req.body?.config as PlatformProfileConfig | undefined;
+  if (!nextConfig || !Array.isArray(nextConfig.shirtSizes)) {
+    return res.status(400).json({ ok: false, error: 'โครงสร้างข้อมูลตั้งค่าไม่ถูกต้อง' });
+  }
+  upsertPlatformProfileConfig(nextConfig);
+  recordAudit(
+    user,
+    'PLATFORM-HQ',
+    'อัปเดตตัวเลือกไซส์เสื้อกลางและเกณฑ์ความสมบูรณ์ Runner Profile',
+    `ไซส์เปิดใช้ ${nextConfig.shirtSizes.filter((s) => s.enabled).length}/${
+      nextConfig.shirtSizes.length
+    } · หมวดบังคับ ${nextConfig.requiredProfileSections.length} หมวด`
+  );
+  return okSnapshot(res, user.id);
 });
 
 /* ==================== PLATFORM OWNER GOVERNANCE & FORM BUILDER ==================== */
@@ -2498,13 +3173,41 @@ app.post('/api/form-builder/field-requests/:id/resolve', (req, res) => {
 
 /* ==================== DEV RESET TO INITIAL TEST SEED ==================== */
 
-app.post('/api/dev/reset', (_req, res) => {
+/* ==================== REVIEW COMMENTS (testers, sandbox only) ==================== */
+registerReviewCommentRoutes(app, {
+  guard: requireSandboxTools,
+  sessionUser: (req) => resolveSessionUser(req).user,
+  now: nowIsoBangkok,
+});
+
+app.post('/api/dev/reset', requireSandboxTools, (_req, res) => {
   seedDatabase(true);
   clearSessionCookie(res);
   return okSnapshot(res, null);
 });
 
+/* ==================== STATIC SPA HOSTING (PRODUCTION / DOCKER) ==================== */
+
+const __serverDir = path.dirname(fileURLToPath(import.meta.url));
+const DIST_DIR = path.resolve(__serverDir, '..', 'dist');
+const INDEX_HTML_PATH = path.join(DIST_DIR, 'index.html');
+
+if (process.env.SERVE_STATIC === '1' || process.env.NODE_ENV === 'production') {
+  if (fs.existsSync(INDEX_HTML_PATH)) {
+    app.use(express.static(DIST_DIR));
+    app.use((req, res, next) => {
+      if (req.method === 'GET' && !req.path.startsWith('/api/')) {
+        res.sendFile(INDEX_HTML_PATH);
+        return;
+      }
+      next();
+    });
+  }
+}
+
 const PORT = Number(process.env.API_PORT || 3001);
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`[RunEvent API] SQLite server listening on http://127.0.0.1:${PORT} (DB: ${DB_FILE_PATH})`);
+const HOST = process.env.API_HOST || '127.0.0.1';
+app.listen(PORT, HOST, () => {
+  console.log(`[Kratai API] SQLite server listening on http://${HOST}:${PORT} (DB: ${DB_FILE_PATH})`);
+  console.log(`[Kratai API] sandbox tools: ${SANDBOX_TOOLS ? 'ON (dev switcher, reset, simulated social sign-in)' : 'OFF'}`);
 });

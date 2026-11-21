@@ -1,7 +1,7 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import type { Response } from 'express';
 
-export const SESSION_COOKIE_NAME = 'runevent_sid';
+export const SESSION_COOKIE_NAME = 'kratai_sid';
 const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
 export function hashPassword(plain: string): string {
@@ -42,16 +42,25 @@ export function parseCookies(cookieHeader: string | undefined): Record<string, s
   return out;
 }
 
+/**
+ * Session cookie is HTTPS-only in production. COOKIE_SECURE=1 / 0 overrides it
+ * (0 only for a throw-away test box served over plain HTTP).
+ */
+export const COOKIE_SECURE = process.env.COOKIE_SECURE
+  ? process.env.COOKIE_SECURE === '1'
+  : process.env.NODE_ENV === 'production';
+const SECURE_ATTR = COOKIE_SECURE ? '; Secure' : '';
+
 export function setSessionCookie(res: Response, token: string): void {
   res.setHeader(
     'Set-Cookie',
-    `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_MAX_AGE_SECONDS}`
+    `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_MAX_AGE_SECONDS}${SECURE_ATTR}`
   );
 }
 
 export function clearSessionCookie(res: Response): void {
   res.setHeader(
     'Set-Cookie',
-    `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+    `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${SECURE_ATTR}`
   );
 }

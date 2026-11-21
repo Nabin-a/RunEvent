@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-11-17T09:59:30+07:00",
-  "title": "Design System: RunEvent",
+  "title": "Design System: Kratai",
   "extensions": {
     "colorMeta": {
       "vermilion": {
@@ -119,7 +119,7 @@
   ],
   "narrative": {
     "northStar": "Modern Minimal Course Atlas & Self-Explanatory Race Ledger",
-    "overview": "RunEvent unites a Modern Minimal public race discovery & merchandise storefront portal (#f7f8fa canvas, #ffffff surface cards, route illustrations, net-price clarity) with a self-explanatory multi-tenant Organizer Dashboard anchored by a #0f172a context rail, urgent action queue, 4-stage lifecycle guide, and satang-accurate BibLedgerStrip.",
+    "overview": "Kratai unites a Modern Minimal public race discovery & merchandise storefront portal (#f7f8fa canvas, #ffffff surface cards, route illustrations, net-price clarity) with a self-explanatory multi-tenant Organizer Dashboard anchored by a #0f172a context rail, urgent action queue, 4-stage lifecycle guide, and satang-accurate BibLedgerStrip.",
     "keyCharacteristics": [
       "Modern minimal public discovery cards with vector route covers and instant net-price clarity",
       "Self-explanatory Organizer Dashboard headers explaining what every screen is and what it controls",

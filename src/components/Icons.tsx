@@ -1,4 +1,7 @@
 import React from 'react';
+import coverChiangMai from '../assets/illustrations/cover-chiang-mai.webp';
+import coverCoast from '../assets/illustrations/cover-coast.webp';
+import coverBangkok from '../assets/illustrations/cover-bangkok.webp';
 import { RaceEvent } from '../types';
 
 interface IconProps {
@@ -226,20 +229,31 @@ export const IconDevice: React.FC<IconProps> = ({ size, className }) => (
   </svg>
 );
 
+/* Provider marks in their official brand colors (login buttons, linked accounts). */
 export const IconGoogleMark: React.FC<IconProps> = ({ size = 18, className }) => (
   <svg
     width={size}
     height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.85"
-    strokeLinecap="round"
-    strokeLinejoin="round"
+    viewBox="0 0 48 48"
     className={className}
     aria-hidden="true"
   >
-    <path d="M20.2 12.2H12v3.4h4.7a4.9 4.9 0 1 1-1.5-5.6l2.4-2.4A8.5 8.5 0 1 0 20.5 12c0-.3-.1-.5-.3-.8Z" />
+    <path
+      fill="#EA4335"
+      d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+    />
+    <path
+      fill="#4285F4"
+      d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+    />
+    <path
+      fill="#FBBC05"
+      d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+    />
+    <path
+      fill="#34A853"
+      d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+    />
   </svg>
 );
 
@@ -248,15 +262,34 @@ export const IconLineMark: React.FC<IconProps> = ({ size = 18, className }) => (
     width={size}
     height={size}
     viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.85"
-    strokeLinecap="round"
-    strokeLinejoin="round"
     className={className}
     aria-hidden="true"
   >
-    <path d="M21 11.2c0-4.4-4-8-9-8s-9 3.6-9 8c0 3.9 3.2 7.2 7.5 7.9.3.1.7.2.8.5.1.3 0 .8-.1 1.2 0 0-.2.8.7.4.9-.4 4.7-2.8 6.4-4.8 1.7-1.7 2.7-3.4 2.7-5.2Z" />
+    <rect width="24" height="24" rx="5.5" fill="#06C755" />
+    <path
+      fill="#FFFFFF"
+      d="M20 11.2c0-3.7-3.6-6.7-8-6.7s-8 3-8 6.7c0 3.3 2.9 6.1 6.9 6.6.3.1.6.2.7.4.1.2.1.5 0 .8l-.1.7c0 .2-.2.8.7.4.9-.4 4.8-2.8 6.5-4.8 1.2-1.3 1.3-2.6 1.3-4.1z"
+    />
+    <path
+      fill="#06C755"
+      d="M7.2 9.4v3.9h2.3v-.8H8.1V9.4zm3 0v3.9h.9V9.4zm1.8 0v3.9h.9v-2.4l1.7 2.4h.8V9.4h-.9v2.4l-1.7-2.4zm4.1 0v3.9h2.4v-.8h-1.5v-.8h1.5v-.8h-1.5v-.7h1.5v-.8z"
+    />
+  </svg>
+);
+
+export const IconFacebookMark: React.FC<IconProps> = ({ size = 18, className }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    className={className}
+    aria-hidden="true"
+  >
+    <circle cx="12" cy="12" r="12" fill="#1877F2" />
+    <path
+      fill="#FFFFFF"
+      d="M16.67 15.47 17.2 12h-3.33V9.75c0-.95.47-1.88 1.95-1.88h1.51V4.92s-1.37-.23-2.68-.23c-2.74 0-4.53 1.66-4.53 4.66V12H7.08v3.47h3.04V24h3.75v-8.53z"
+    />
   </svg>
 );
 
@@ -439,6 +472,57 @@ export const IconGlobe: React.FC<IconProps> = ({ size, className }) => (
   </svg>
 );
 
+export const IconAward: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <circle cx="12" cy="8.5" r="5.5" />
+    <path d="M8.6 13.1 7 21l5-2.6L17 21l-1.6-7.9" />
+  </svg>
+);
+
+export const IconBell: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <path d="M18 8a6 6 0 0 0-12 0c0 6.5-3 8.5-3 8.5h18S18 14.5 18 8Z" />
+    <path d="M13.73 20a2 2 0 0 1-3.46 0" />
+  </svg>
+);
+
+export const IconChevronDown: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <path d="m6 9 6 6 6-6" />
+  </svg>
+);
+
+export const IconLink: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.2 1.2" />
+    <path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.2-1.2" />
+  </svg>
+);
+
+export const IconMenu: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <line x1="4" y1="7" x2="20" y2="7" />
+    <line x1="4" y1="12" x2="20" y2="12" />
+    <line x1="4" y1="17" x2="20" y2="17" />
+  </svg>
+);
+
+export const IconClose: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <line x1="6" y1="6" x2="18" y2="18" />
+    <line x1="18" y1="6" x2="6" y2="18" />
+  </svg>
+);
+
+/** painted cover scenes (public pages) by cover motif; artwork from the Kratai concept set */
+const COVER_ILLUSTRATIONS: Record<string, string> = {
+  mountain: coverChiangMai,
+  heritage: coverChiangMai,
+  trail: coverChiangMai,
+  coast: coverCoast,
+  river: coverBangkok,
+};
+
 /**
  * รูปปกงานวิ่ง: ใช้รูปที่ผู้จัดอัปโหลด/ระบุ URL (coverImageUrl) ก่อน
  * ถ้าไม่มีหรือโหลดไม่ได้ จะ fallback ไปเป็นปก SVG ตาม coverMotif ของงาน
@@ -447,9 +531,23 @@ export const EventCoverMedia: React.FC<{
   event: Pick<RaceEvent, 'coverMotif' | 'coverImageUrl' | 'coverImageAlt' | 'titleTh'>;
   className?: string;
   imgClassName?: string;
-}> = ({ event, className, imgClassName }) => {
+  /** public pages: fall back to the painted scene for the motif instead of the line SVG */
+  illustrated?: boolean;
+}> = ({ event, className, imgClassName, illustrated }) => {
   const [failed, setFailed] = React.useState(false);
   React.useEffect(() => setFailed(false), [event.coverImageUrl]);
+
+  if (illustrated && (!event.coverImageUrl || failed)) {
+    return (
+      <img
+        src={COVER_ILLUSTRATIONS[event.coverMotif] ?? COVER_ILLUSTRATIONS.mountain}
+        alt=""
+        className={imgClassName ?? className}
+        loading="lazy"
+        decoding="async"
+      />
+    );
+  }
 
   if (event.coverImageUrl && !failed) {
     return (

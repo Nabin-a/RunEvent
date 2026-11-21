@@ -12,6 +12,7 @@ import {
   OrgRole,
   PayoutBatch,
   PayoutStatus,
+  PlatformProfileConfig,
   ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
@@ -47,6 +48,7 @@ import {
 } from './StatusBadges';
 
 import { tx, txf } from '../i18n';
+import { FEATURES } from '../config/features';
 export type PlatformSection =
   | 'plat_overview'
   | 'plat_orgs'
@@ -73,6 +75,8 @@ interface PlatformAdminViewProps {
   globalFields: GlobalFormFieldDef[];
   conditionalRules: ConditionalRule[];
   fieldRequests: OrganizerFieldRequest[];
+  platformProfileConfig?: PlatformProfileConfig;
+  onUpdatePlatformProfileConfig?: (next: PlatformProfileConfig) => void;
   onUpsertStep: (step: RegistrationStepDef) => void;
   onReorderStep: (stepId: string, direction: 'up' | 'down') => void;
   onDeleteStep: (stepId: string) => void;
@@ -163,6 +167,8 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
   globalFields,
   conditionalRules,
   fieldRequests,
+  platformProfileConfig,
+  onUpdatePlatformProfileConfig,
   onUpsertStep,
   onReorderStep,
   onDeleteStep,
@@ -340,7 +346,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
           </div>
         </div>
 
-        <nav className="rail-nav-group" aria-label={tx("เมนูบริหารแพลตฟอร์ม RunEvent")}>
+        <nav className="rail-nav-group" aria-label={tx("เมนูบริหารแพลตฟอร์ม กระต่าย")}>
           <div className="rail-group-heading">{tx("ระบบส่วนกลาง (Platform HQ)")}</div>
 
           <button
@@ -436,7 +442,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
           <div className="breadcrumb-trail">
             <span className="mono-code">PLT-HQ-01</span>
             <strong>
-              {tx("ศูนย์ควบคุมแพลตฟอร์มกลาง RunEvent (ครอบคลุม ")} {tx(organizations.length)}{' '}
+              {tx("ศูนย์ควบคุมแพลตฟอร์มกลาง กระต่าย (ครอบคลุม ")} {tx(organizations.length)}{' '}
               {tx("องค์กรผู้จัด · ")} {tx(events.length)} {tx(" งานวิ่ง)")}
             </strong>
           </div>
@@ -1385,7 +1391,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
             <div className="page-guide-header">
               <h1>{tx("บริหารคำขอใบเสนอราคาผลิตเสื้อ/เหรียญ และกำกับร้านค้าทั้งแพลตฟอร์ม")}</h1>
               <p className="page-purpose-desc">
-                {tx("ทีมหลังบ้าน RunEvent ใช้ประเมินราคา ส่งใบเสนอราคาให้ผู้จัดงานหรือชมรมทั่วไป และอัปเดตสถานะการผลิตของโรงงานแยกจากสถานะใบเสนอราคาอย่างชัดเจน")}
+                {tx("ทีมหลังบ้าน กระต่าย ใช้ประเมินราคา ส่งใบเสนอราคาให้ผู้จัดงานหรือชมรมทั่วไป และอัปเดตสถานะการผลิตของโรงงานแยกจากสถานะใบเสนอราคาอย่างชัดเจน")}
               </p>
             </div>
 
@@ -2019,7 +2025,9 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
             <div className="page-guide-header">
               <h1>{tx("บริหารบัญชีผู้ใช้งาน สิทธิ์สมาชิกองค์กร และตรวจสอบ Audit Log ทั้งแพลตฟอร์ม")}</h1>
               <p className="page-purpose-desc">
-                {tx("ตรวจสอบบัญชีผู้ใช้ทั้งหมด ช่วยยืนยันอีเมลกรณีติดปัญหา กำหนดหรือเพิกถอนสิทธิ์ในองค์กรผู้จัด และตรวจสอบประวัติการทำงานย้อนหลังของทุกบทบาท")}
+                {FEATURES.emailVerification
+                  ? tx("ตรวจสอบบัญชีผู้ใช้ทั้งหมด ช่วยยืนยันอีเมลกรณีติดปัญหา กำหนดหรือเพิกถอนสิทธิ์ในองค์กรผู้จัด และตรวจสอบประวัติการทำงานย้อนหลังของทุกบทบาท")
+                  : tx("ตรวจสอบบัญชีผู้ใช้ทั้งหมด กำหนดหรือเพิกถอนสิทธิ์ในองค์กรผู้จัด และตรวจสอบประวัติการทำงานย้อนหลังของทุกบทบาท")}
               </p>
             </div>
 
@@ -2057,7 +2065,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                 <span>Platform Owner</span>
                               </span>
                             )}
-                            {u.emailVerified ? (
+                            {!FEATURES.emailVerification ? null : u.emailVerified ? (
                               <span className="status-pill badge-forest">
                                 <IconCheckCircle size={13} />
                                 <span>{tx("อีเมลยืนยันแล้ว")}</span>
@@ -2071,7 +2079,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                           </div>
 
                           <div className="cta-inline-row">
-                            {!u.emailVerified && (
+                            {FEATURES.emailVerification && !u.emailVerified && (
                               <button
                                 type="button"
                                 className="btn-secondary"
@@ -2254,6 +2262,8 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
             events={events}
             organizations={organizations}
             registrations={registrations}
+            platformProfileConfig={platformProfileConfig}
+            onUpdatePlatformProfileConfig={onUpdatePlatformProfileConfig}
             onUpsertStep={onUpsertStep}
             onReorderStep={onReorderStep}
             onDeleteStep={onDeleteStep}

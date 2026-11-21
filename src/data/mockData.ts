@@ -6,10 +6,18 @@ import {
   ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
+  ShirtSizeCode,
   TeamInvitation,
   UserAccount,
 } from '../types';
+import {
+  SEEDED_OLDMOAT_RACE_RESULT,
+  SEEDED_RUNNER_901_ACHIEVEMENTS,
+  SEEDED_RUNNER_901_LOGIN_HISTORY,
+  SEEDED_RUNNER_901_PROFILE,
+} from './runnerProfileDefaults';
 import { calculateFeeQuote } from '../utils/pricing';
+import { buildAgeSnapshot, buildStandardAgeGroups, evaluateCategoryAge } from '../utils/age';
 
 export const DEMO_ORGANIZATIONS: Organization[] = [
   {
@@ -52,7 +60,7 @@ export const PLATFORM_OWNER_USER: UserAccount = {
   code: 'USR-001',
   fullNameTh: 'อคิราห์ รัตนโชติ',
   fullNameEn: 'Akira Rattanachot',
-  contactEmail: 'akira.admin@demo.runevent.local',
+  contactEmail: 'akira.admin@demo.kratai.local',
   emailVerified: true,
   hasPassword: true,
   demoPasswordHint: 'platform2026',
@@ -60,15 +68,15 @@ export const PLATFORM_OWNER_USER: UserAccount = {
     {
       id: 'id-001-pw',
       provider: 'password',
-      providerSubject: 'akira.admin@demo.runevent.local',
-      providerEmail: 'akira.admin@demo.runevent.local',
+      providerSubject: 'akira.admin@demo.kratai.local',
+      providerEmail: 'akira.admin@demo.kratai.local',
       linkedAt: '2026-08-01 09:00',
     },
     {
       id: 'id-001-gg',
       provider: 'google',
       providerSubject: 'google-sub-platform-001',
-      providerEmail: 'akira.admin@demo.runevent.local',
+      providerEmail: 'akira.admin@demo.kratai.local',
       linkedAt: '2026-08-01 09:05',
     },
   ],
@@ -95,7 +103,7 @@ export const INITIAL_USERS: UserAccount[] = [
     code: 'USR-901',
     fullNameTh: 'กานต์พิชชา วัฒนากูล',
     fullNameEn: 'Kanpitcha Wattanakul',
-    contactEmail: 'kanpitcha.runner@demo.runevent.local',
+    contactEmail: 'kanpitcha.runner@demo.kratai.local',
     emailVerified: true,
     hasPassword: true,
     demoPasswordHint: 'demo1234',
@@ -103,16 +111,23 @@ export const INITIAL_USERS: UserAccount[] = [
       {
         id: 'id-901-pw',
         provider: 'password',
-        providerSubject: 'kanpitcha.runner@demo.runevent.local',
-        providerEmail: 'kanpitcha.runner@demo.runevent.local',
+        providerSubject: 'kanpitcha.runner@demo.kratai.local',
+        providerEmail: 'kanpitcha.runner@demo.kratai.local',
         linkedAt: '2026-09-10 09:00',
       },
       {
         id: 'id-901-gg',
         provider: 'google',
         providerSubject: 'google-sub-901882',
-        providerEmail: 'kanpitcha.runner@demo.runevent.local',
+        providerEmail: 'kanpitcha.runner@demo.kratai.local',
         linkedAt: '2026-10-02 18:15',
+      },
+      {
+        id: 'id-901-fb',
+        provider: 'facebook',
+        providerSubject: 'fb-uid-9014402',
+        providerEmail: 'kanpitcha.runner@demo.kratai.local',
+        linkedAt: '2026-10-14 19:20',
       },
     ],
     sessions: [
@@ -132,6 +147,10 @@ export const INITIAL_USERS: UserAccount[] = [
       },
     ],
     memberships: [],
+    runnerProfile: SEEDED_RUNNER_901_PROFILE,
+    achievements: SEEDED_RUNNER_901_ACHIEVEMENTS,
+    loginHistory: SEEDED_RUNNER_901_LOGIN_HISTORY,
+    accountStatus: 'active',
     demoRoleSummary:
       'นักวิ่งสมาชิก — เชื่อมทั้งอีเมลและ Google แล้ว มีใบสมัครวิ่งและคำสั่งซื้อของที่ระลึก',
     isDemoPreset: true,
@@ -171,7 +190,7 @@ export const INITIAL_USERS: UserAccount[] = [
     code: 'USR-101',
     fullNameTh: 'ทานตะวัน วงศ์เจริญ',
     fullNameEn: 'Tantawan Wongcharoen',
-    contactEmail: 'tantawan.owner@demo.runevent.local',
+    contactEmail: 'tantawan.owner@demo.kratai.local',
     emailVerified: true,
     hasPassword: true,
     demoPasswordHint: 'demo1234',
@@ -179,15 +198,15 @@ export const INITIAL_USERS: UserAccount[] = [
       {
         id: 'id-101-pw',
         provider: 'password',
-        providerSubject: 'tantawan.owner@demo.runevent.local',
-        providerEmail: 'tantawan.owner@demo.runevent.local',
+        providerSubject: 'tantawan.owner@demo.kratai.local',
+        providerEmail: 'tantawan.owner@demo.kratai.local',
         linkedAt: '2026-08-01 10:00',
       },
       {
         id: 'id-101-gg',
         provider: 'google',
         providerSubject: 'google-sub-101774',
-        providerEmail: 'tantawan.owner@demo.runevent.local',
+        providerEmail: 'tantawan.owner@demo.kratai.local',
         linkedAt: '2026-08-05 14:30',
       },
       {
@@ -227,7 +246,7 @@ export const INITIAL_USERS: UserAccount[] = [
     code: 'USR-102',
     fullNameTh: 'ภาคิน อินทรัตน์',
     fullNameEn: 'Phakin Intharat',
-    contactEmail: 'phakin.manager@demo.runevent.local',
+    contactEmail: 'phakin.manager@demo.kratai.local',
     emailVerified: true,
     hasPassword: true,
     demoPasswordHint: 'demo1234',
@@ -235,8 +254,8 @@ export const INITIAL_USERS: UserAccount[] = [
       {
         id: 'id-102-pw',
         provider: 'password',
-        providerSubject: 'phakin.manager@demo.runevent.local',
-        providerEmail: 'phakin.manager@demo.runevent.local',
+        providerSubject: 'phakin.manager@demo.kratai.local',
+        providerEmail: 'phakin.manager@demo.kratai.local',
         linkedAt: '2026-09-01 11:00',
       },
     ],
@@ -265,7 +284,7 @@ export const INITIAL_USERS: UserAccount[] = [
     code: 'USR-103',
     fullNameTh: 'ศศิธร รัตนากร',
     fullNameEn: 'Sasithorn Rattanakorn',
-    contactEmail: 'sasithorn.finance@demo.runevent.local',
+    contactEmail: 'sasithorn.finance@demo.kratai.local',
     emailVerified: true,
     hasPassword: true,
     demoPasswordHint: 'demo1234',
@@ -273,8 +292,8 @@ export const INITIAL_USERS: UserAccount[] = [
       {
         id: 'id-103-pw',
         provider: 'password',
-        providerSubject: 'sasithorn.finance@demo.runevent.local',
-        providerEmail: 'sasithorn.finance@demo.runevent.local',
+        providerSubject: 'sasithorn.finance@demo.kratai.local',
+        providerEmail: 'sasithorn.finance@demo.kratai.local',
         linkedAt: '2026-09-03 09:20',
       },
     ],
@@ -297,7 +316,7 @@ export const INITIAL_USERS: UserAccount[] = [
     code: 'USR-104',
     fullNameTh: 'ณัฐพล ศรีวิชัย',
     fullNameEn: 'Nattapon Sriwichai',
-    contactEmail: 'nattapon.staff@demo.runevent.local',
+    contactEmail: 'nattapon.staff@demo.kratai.local',
     emailVerified: true,
     hasPassword: true,
     demoPasswordHint: 'demo1234',
@@ -305,8 +324,8 @@ export const INITIAL_USERS: UserAccount[] = [
       {
         id: 'id-104-pw',
         provider: 'password',
-        providerSubject: 'nattapon.staff@demo.runevent.local',
-        providerEmail: 'nattapon.staff@demo.runevent.local',
+        providerSubject: 'nattapon.staff@demo.kratai.local',
+        providerEmail: 'nattapon.staff@demo.kratai.local',
         linkedAt: '2026-11-01 08:30',
       },
     ],
@@ -376,7 +395,7 @@ export const DEMO_CUSTOM_FIELDS = [
   },
 ];
 
-export const INITIAL_EVENTS: RaceEvent[] = [
+const BASE_EVENTS: RaceEvent[] = [
   {
     id: 'evt-doisuthep-2026',
     code: 'EVT-CMI-2601',
@@ -585,9 +604,9 @@ export const INITIAL_EVENTS: RaceEvent[] = [
         nameTh: 'กรอบตั้งโต๊ะเหรียญที่ระลึกดอยสุเทพ (พรีออเดอร์ — ไม่ใช่เหรียญ Finisher)',
         categoryLabel: 'เหรียญที่ระลึก',
         saleMode: 'preorder',
-        serviceModel: 'runevent_full_service',
-        sellerLabel: 'ดูแลพรีออเดอร์และจัดส่งโดย RunEvent (จำลองโมเดลบริการครบ)',
-        fulfillmentOwnerLabel: 'RunEvent ประสานผลิตและจัดส่งตามที่อยู่หรือจุดรับ',
+        serviceModel: 'kratai_full_service',
+        sellerLabel: 'ดูแลพรีออเดอร์และจัดส่งโดย กระต่าย (จำลองโมเดลบริการครบ)',
+        fulfillmentOwnerLabel: 'กระต่าย ประสานผลิตและจัดส่งตามที่อยู่หรือจุดรับ',
         priceSatang: 39000,
         shippingFeeSatang: 5000,
         stockOrCeiling: 40,
@@ -1071,6 +1090,23 @@ export const INITIAL_EVENTS: RaceEvent[] = [
   },
 ];
 
+/**
+ * Demo age rules (fictional, for the local prototype only). Organizers set real
+ * limits and divisions per event in the dashboard.
+ */
+const SEED_AGE_RULES: Record<string, Pick<RaceEvent['categories'][number], 'ageBasis' | 'minAge' | 'maxAge' | 'ageGroups'>> = {
+  'cat-ds-21k': { ageBasis: 'race_day', minAge: 18, maxAge: null, ageGroups: buildStandardAgeGroups(18, null) },
+  'cat-ds-10k': { ageBasis: 'race_day', minAge: 12, maxAge: null, ageGroups: buildStandardAgeGroups(12, null) },
+  'cat-pk-21k': { ageBasis: 'year_end', minAge: 18, maxAge: null, ageGroups: buildStandardAgeGroups(18, null) },
+  'cat-pk-10k': { ageBasis: 'year_end', minAge: 15, maxAge: null, ageGroups: buildStandardAgeGroups(15, null) },
+  'cat-om-10k': { ageBasis: 'race_day', minAge: 15, maxAge: null, ageGroups: buildStandardAgeGroups(15, null) },
+};
+
+export const INITIAL_EVENTS: RaceEvent[] = BASE_EVENTS.map((ev) => ({
+  ...ev,
+  categories: ev.categories.map((cat) => ({ ...cat, ...(SEED_AGE_RULES[cat.id] ?? {}) })),
+}));
+
 function buildReg(params: {
   id: string;
   regCode: string;
@@ -1085,7 +1121,7 @@ function buildReg(params: {
   email: string;
   phoneMasked: string;
   emergencyContact: string;
-  shirtSize: 'XS' | 'S' | 'M' | 'L' | 'XL' | '2XL';
+  shirtSize: ShirtSizeCode;
   bibNumber: string | null;
   qrCheckInToken: string;
   baseSatang: number;
@@ -1110,6 +1146,7 @@ function buildReg(params: {
   refundedSatangOverride?: number;
   marketingConsent?: boolean;
   customAnswers?: Record<string, string | boolean>;
+  raceResult?: RegistrationRecord['raceResult'];
 }): RegistrationRecord {
   const quote = calculateFeeQuote(params.baseSatang, params.policy);
   return {
@@ -1151,10 +1188,11 @@ function buildReg(params: {
       params.refundedSatangOverride ??
       (params.refundStatus === 'succeeded' ? quote.baseSatang : 0),
     customAnswers: params.customAnswers,
+    raceResult: params.raceResult,
   };
 }
 
-export const INITIAL_REGISTRATIONS: RegistrationRecord[] = [
+const BASE_REGISTRATIONS: RegistrationRecord[] = [
   buildReg({
     id: 'reg-01',
     regCode: 'REG-2611-001',
@@ -1166,7 +1204,7 @@ export const INITIAL_REGISTRATIONS: RegistrationRecord[] = [
     buyerName: 'กานต์พิชชา วัฒนากูล',
     participantNameTh: 'กานต์พิชชา วัฒนากูล',
     participantNameEn: 'Kanpitcha Wattanakul',
-    email: 'kanpitcha.runner@demo.runevent.local',
+    email: 'kanpitcha.runner@demo.kratai.local',
     phoneMasked: '081-•••-4412',
     emergencyContact: 'วีระ วัฒนากูล (บิดา) 089-•••-1102',
     shirtSize: 'S',
@@ -1335,7 +1373,7 @@ export const INITIAL_REGISTRATIONS: RegistrationRecord[] = [
     buyerName: 'กานต์พิชชา วัฒนากูล',
     participantNameTh: 'กานต์พิชชา วัฒนากูล',
     participantNameEn: 'Kanpitcha Wattanakul',
-    email: 'kanpitcha.runner@demo.runevent.local',
+    email: 'kanpitcha.runner@demo.kratai.local',
     phoneMasked: '081-•••-4412',
     emergencyContact: 'วีระ วัฒนากูล 089-•••-1102',
     shirtSize: 'S',
@@ -1351,6 +1389,7 @@ export const INITIAL_REGISTRATIONS: RegistrationRecord[] = [
     fulfillmentStatus: 'kit_picked_up',
     fulfillmentUpdatedBy: 'ณัฐพล ศรีวิชัย',
     fulfillmentUpdatedAt: '2026-10-24 14:22',
+    raceResult: SEEDED_OLDMOAT_RACE_RESULT,
   }),
   buildReg({
     id: 'reg-08',
@@ -1429,6 +1468,38 @@ export const INITIAL_REGISTRATIONS: RegistrationRecord[] = [
   }),
 ];
 
+/** Fictional dates of birth and genders for seeded registrations (demo data). */
+const SEED_DOBS = [
+  '1994-05-14', '1988-02-03', '1999-07-21', '1979-11-30', '2002-01-09',
+  '1985-09-17', '1972-04-25', '1996-12-02', '1990-06-11', '1965-03-28',
+];
+
+export const INITIAL_REGISTRATIONS: RegistrationRecord[] = BASE_REGISTRATIONS.map((reg, idx) => {
+  const ev = INITIAL_EVENTS.find((e) => e.id === reg.eventId);
+  const cat = ev?.categories.find((c) => c.id === reg.categoryId);
+  const dateOfBirth =
+    reg.runnerUserId === 'usr-runner'
+      ? SEEDED_RUNNER_901_PROFILE.dateOfBirth ?? SEED_DOBS[0]
+      : SEED_DOBS[idx % SEED_DOBS.length];
+  const profileGender = SEEDED_RUNNER_901_PROFILE.gender;
+  const gender: 'ชาย' | 'หญิง' =
+    reg.runnerUserId === 'usr-runner' && (profileGender === 'ชาย' || profileGender === 'หญิง')
+      ? profileGender
+      : idx % 3 === 1
+        ? 'หญิง'
+        : 'ชาย';
+  if (!ev || !cat) return reg;
+  const check = evaluateCategoryAge(ev, cat, dateOfBirth, gender);
+  const ageSnapshot = buildAgeSnapshot(check, dateOfBirth, reg.createdAt);
+  return {
+    ...reg,
+    gender,
+    age: ageSnapshot?.ageYears,
+    ageSnapshot,
+    participantSnapshot: { ...(reg.participantSnapshot ?? {}), dateOfBirth, gender },
+  };
+});
+
 export const INITIAL_MERCH_ORDERS: MerchOrderRecord[] = [
   {
     id: 'mord-01',
@@ -1460,10 +1531,10 @@ export const INITIAL_MERCH_ORDERS: MerchOrderRecord[] = [
     organizationId: 'org-lanna',
     buyerUserId: 'usr-runner',
     buyerName: 'กานต์พิชชา วัฒนากูล',
-    buyerEmail: 'kanpitcha.runner@demo.runevent.local',
+    buyerEmail: 'kanpitcha.runner@demo.kratai.local',
     productId: 'prd-ds-medal',
     productNameTh: 'กรอบตั้งโต๊ะเหรียญที่ระลึกดอยสุเทพ (พรีออเดอร์)',
-    sellerLabel: 'RunEvent Studio (จำลองบริการครบ)',
+    sellerLabel: 'กระต่าย Studio (จำลองบริการครบ)',
     variantSize: 'มาตรฐาน',
     quantity: 1,
     deliveredQty: 0,

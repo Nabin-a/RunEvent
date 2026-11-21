@@ -1,11 +1,11 @@
 {
-  "name": "runevent-local-system",
+  "name": "kratai-local-system",
   "private": true,
   "version": "0.2.0",
-  "description": "RunEvent local full-stack system — Vite + React + TypeScript frontend with Node.js + Express + SQLite backend (seeded test users & sandbox OAuth/payment)",
+  "description": "Kratai local full-stack system — Vite + React + TypeScript frontend with Node.js + Express + SQLite backend (seeded test users & sandbox OAuth/payment)",
   "type": "module",
   "scripts": {
-    "dev:api": "tsx server/index.ts",
+    "dev:api": "tsx watch server/index.ts",
     "dev:web": "vite --port 5173",
     "dev": "concurrently -k -n api,web \"npm run dev:api\" \"npm run dev:web\"",
     "build": "tsc -b && vite build",
@@ -13,9 +13,11 @@
     "preview": "vite preview --port 4173"
   },
   "dependencies": {
+    "@fortawesome/fontawesome-free": "^7.3.1",
     "express": "^5.1.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "sweetalert2": "^11.26.25"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
