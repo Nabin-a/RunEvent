@@ -88,6 +88,9 @@
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-pill: 999px;
+  /* dropdown arrow, drawn by us so every browser and OS shows the same one */
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%23475569' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --select-chevron-on-dark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 
   /* Alias tokens (map short names used by analytics & registration modules to locked palette) */
   --bg-card: var(--bg-surface);
@@ -552,9 +555,39 @@ textarea:focus {
 input:disabled,
 select:disabled,
 textarea:disabled {
-  background: var(--bg-subtle);
+  background-color: var(--bg-subtle);
   color: var(--ink-secondary);
   cursor: not-allowed;
+}
+
+/* Dropdowns: one look across the site, the organizer dashboard and the console.
+   Date of birth is not a <select>; it keeps its own wheel field. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.25rem;
+  background-image: var(--select-chevron);
+  background-position: right 0.75rem center;
+  background-repeat: no-repeat;
+  background-size: 0.75rem;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+select:disabled {
+  opacity: 0.75;
+}
+
+select[multiple],
+select[size]:not([size='1']) {
+  height: auto;
+  padding-right: 0.75rem;
+  background-image: none;
+}
+
+select option {
+  background-color: var(--bg-surface);
+  color: var(--ink-primary);
 }
 
 /* Keep .mono-code inputs visually identical to standard inputs (only monospace numerals/codes) */
@@ -2199,7 +2232,8 @@ textarea::placeholder {
 .rail-org-switcher select,
 .rail-event-context select {
   width: 100%;
-  background: var(--shell-navy-elevated);
+  background-color: var(--shell-navy-elevated);
+  background-image: var(--select-chevron-on-dark);
   color: var(--on-accent);
   border: 1px solid var(--shell-border);
   font-weight: 600;
@@ -7800,6 +7834,11 @@ body.swal2-iosfix {
     padding-inline: 0.4rem;
   }
 
+  .age-group-edit-table select {
+    padding-right: 1.6rem;
+    background-position: right 0.45rem center;
+  }
+
   .age-group-edit-table {
     table-layout: fixed;
   }
@@ -8703,7 +8742,7 @@ input[type="radio"][aria-invalid="true"] {
   color: transparent;
   appearance: none;
   padding-right: 1.6rem;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%23475569' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: var(--select-chevron);
   background-position: right 0.55rem center;
   background-repeat: no-repeat;
   background-size: 0.75rem;

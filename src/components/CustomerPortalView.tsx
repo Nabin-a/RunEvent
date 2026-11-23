@@ -58,6 +58,7 @@ import { NoteTag, PriceTag } from './RegTags';
 import { MobileStepProgress } from './MobileStepProgress';
 import { MobileRegisterBar } from './MobileRegisterBar';
 import { MascotAnim } from './MascotAnim';
+import { DirectoryEmptyState, HeroRegionSelect, HeroSearchField, matchesSearchText, similarSearchTerms } from './DirectorySearch';
 import { RegistrationLabView, type LabShared } from './RegistrationLabView';
 import { ProductPicker, type PickerType } from './ProductPicker';
 import { SHIRT_STYLES, shirtStyleName, type ShirtStyleId } from '../data/mockShirtStyles';
@@ -186,6 +187,26 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 }) => {
   // Directory filters
   const [searchQuery, setSearchQuery] = useState('');
+  // Hero field: what the visitor is typing; the list follows it only once they press search.
+  const [searchDraft, setSearchDraft] = useState('');
+  // Filter bar over the results: filters live, a moment after typing stops.
+  const [filterText, setFilterText] = useState('');
+  useEffect(() => {
+    const t = window.setTimeout(() => setSearchQuery(filterText), 250);
+    return () => window.clearTimeout(t);
+  }, [filterText]);
+  // keep the hero field showing the search that is applied
+  useEffect(() => {
+    setSearchDraft(searchQuery);
+  }, [searchQuery]);
+  const applySearch = (text: string) => {
+    setFilterText(text);
+    setSearchQuery(text);
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    document
+      .getElementById('kr-browse')
+      ?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  };
   // my orders page: race entries or merchandise orders tab
   const [ordersTab, setOrdersTab] = useState<'entries' | 'merch'>('entries');
   const [quickFilter, setQuickFilter] = useState<
@@ -537,13 +558,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     distance: string;
   };
   const matchesDirectoryFilters = (ev: RaceEvent, f: DirectoryFilters) => {
-      const q = searchQuery.trim().toLowerCase();
-      const matchesText =
-        !q ||
-        ev.titleTh.toLowerCase().includes(q) ||
-        ev.titleEn.toLowerCase().includes(q) ||
-        ev.province.toLowerCase().includes(q) ||
-        ev.venue.toLowerCase().includes(q);
+      const matchesText = matchesSearchText(ev, searchQuery);
 
       const matchesQuick =
         f.quick === 'all' ||
@@ -4393,46 +4408,33 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           role="search"
           onSubmit={(e) => {
             e.preventDefault();
-            document
-              .getElementById('kr-results')
-              ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            applySearch(searchDraft);
           }}
         >
-          <label className="kr-search-field kr-search-q">
-            <IconSearch size={18} />
-            <span className="sr-only">{tx("ค้นหาชื่องานวิ่ง จังหวัด หรือสถานที่ปล่อยตัว")}</span>
-            <input
-              id="dir-q"
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={tx("ค้นหาชื่องานวิ่ง, สถานที่, จังหวัด")}
-            />
-          </label>
-          <label className="kr-search-field kr-search-region">
-            <IconMapPin size={18} />
-            <span className="sr-only">{tx("ภูมิภาค")}</span>
-            <select
-              id="flt-reg"
-              value={regionFilter}
-              onChange={(e) => setRegionFilter(e.target.value)}
-            >
-              {(
-                [
-                  ['all', 'ทุกภูมิภาค'],
-                  ['เหนือ', 'ภาคเหนือ'],
-                  ['กลางและกรุงเทพฯ', 'ภาคกลางและกรุงเทพฯ'],
-                  ['อีสาน', 'ภาคอีสาน'],
-                  ['ตะวันออก', 'ภาคตะวันออก'],
-                  ['ใต้', 'ภาคใต้'],
-                ] as const
-              ).map(([v, lbl]) => (
-                <option key={v} value={v}>
-                  {`${tx(lbl)} (${countWith({ region: v })})`}
-                </option>
-              ))}
-            </select>
-          </label>
+          <HeroSearchField
+            events={publicVisibleEvents}
+            value={searchDraft}
+            onChange={setSearchDraft}
+            onPickEvent={(ev) => openEventPage(ev, 'register')}
+            onPickPlace={applySearch}
+            srLabel={tx("ค้นหาชื่องานวิ่ง จังหวัด หรือสถานที่ปล่อยตัว")}
+            placeholder={tx("ค้นหาชื่องานวิ่ง, สถานที่, จังหวัด")}
+          />
+          <HeroRegionSelect
+            label={tx("ภูมิภาค")}
+            value={regionFilter}
+            onChange={setRegionFilter}
+            options={(
+              [
+                ['all', 'ทุกภูมิภาค'],
+                ['เหนือ', 'ภาคเหนือ'],
+                ['กลางและกรุงเทพฯ', 'ภาคกลางและกรุงเทพฯ'],
+                ['อีสาน', 'ภาคอีสาน'],
+                ['ตะวันออก', 'ภาคตะวันออก'],
+                ['ใต้', 'ภาคใต้'],
+              ] as const
+            ).map(([v, lbl]) => ({ value: v, label: tx(lbl), count: countWith({ region: v }) }))}
+          />
           <button type="submit" className="kr-search-btn">
             {tx("ค้นหางานวิ่ง")}
           </button>
@@ -4440,7 +4442,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       </section>
 
       {/* FILTERS: distance chips, then race status chips + result count */}
-      <section className="kr-filters" aria-label={tx("ตัวกรองระยะทางและสถานะงาน")}>
+      <section id="kr-browse" className="kr-filters" aria-label={tx("ตัวกรองระยะทางและสถานะงาน")}>
+        <div className="kr-filter-top">
         <div className="kr-chip-row" role="group" aria-label={tx("ระยะวิ่ง")}>
           <span className="kr-chip-label">{tx("ระยะวิ่ง")}</span>
           {(
@@ -4462,6 +4465,18 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               {tx(lbl)}
             </button>
           ))}
+        </div>
+          <label className="kr-filter-search">
+            <IconSearch size={16} />
+            <span className="sr-only">{tx("ค้นในผลลัพธ์")}</span>
+            <input
+              type="search"
+              autoComplete="off"
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              placeholder={tx("ค้นในผลลัพธ์")}
+            />
+          </label>
         </div>
         <div className="kr-status-row">
           <div className="kr-tabs" role="group" aria-label={tx("หมวดงานวิ่ง")}>
@@ -4491,22 +4506,33 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       </section>
 
       {filteredEvents.length === 0 ? (
-        <div className="empty-state-box">
-          <h2>{tx("ไม่พบงานวิ่งตามตัวกรองที่เลือก")}</h2>
-          <p>{tx("สามารถล้างตัวกรองเพื่อดูงานวิ่งทั้งหมดที่เปิดแสดงผลได้ทันที")}</p>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => {
-              setSearchQuery('');
-              setQuickFilter('all');
-              setDistanceFilter('all');
-              setRegionFilter('all');
-            }}
-          >
-            {tx("ล้างตัวกรองทั้งหมด")}
-          </button>
-        </div>
+        <DirectoryEmptyState
+          query={searchQuery}
+          textOnlyCount={
+            searchQuery.trim()
+              ? publicVisibleEvents.filter((ev) => matchesSearchText(ev, searchQuery)).length
+              : 0
+          }
+          otherFiltersOn={quickFilter !== 'all' || distanceFilter !== 'all' || regionFilter !== 'all'}
+          similar={similarSearchTerms(publicVisibleEvents, searchQuery)}
+          onUseTerm={applySearch}
+          onClearSearch={() => {
+            setFilterText('');
+            setSearchQuery('');
+          }}
+          onClearOthers={() => {
+            setQuickFilter('all');
+            setDistanceFilter('all');
+            setRegionFilter('all');
+          }}
+          onClearAll={() => {
+            setFilterText('');
+            setSearchQuery('');
+            setQuickFilter('all');
+            setDistanceFilter('all');
+            setRegionFilter('all');
+          }}
+        />
       ) : (
         <section id="kr-results" className="modern-event-grid kr-event-grid" aria-label={tx("รายการงานวิ่ง")}>
           {filteredEvents.map((ev) => {
