@@ -52,7 +52,10 @@ import { SouvenirPicker } from './SouvenirPicker';
 import { PAYMENT_TERMS_VERSION, RegistrationTerms } from './RegistrationTerms';
 import { displayPhone } from '../utils/phone';
 import { DateOfBirthInput } from './DateOfBirthInput';
-import { EventAgeGroupsSection } from './EventAgeGroupsSection';
+import { CategoryAgeGroups, categoryHasAgeGroups } from './EventAgeGroupsSection';
+import { ProductArt, souvenirArt } from './ProductArt';
+import { resolveDetailLayout } from '../data/eventDetailLayout';
+import type { EventDetailBlockId } from '../types';
 import { RaceCalendarView } from './RaceCalendarView';
 import { NoteTag, PriceTag } from './RegTags';
 import { MobileStepProgress } from './MobileStepProgress';
@@ -2922,7 +2925,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         ? selectedEvent.overviewParagraphs
         : [
             `${selectedEvent.titleTh} (${selectedEvent.titleEn}) จัดขึ้น ณ ${selectedEvent.venue} จังหวัด${selectedEvent.province} ในรูปแบบ ${selectedEvent.raceType} โดยเน้นมาตรฐานความปลอดภัยของเส้นทาง การจัดการจุดปล่อยตัวตามรหัสสี BIB และความโปร่งใสของราคาค่าสมัครสุทธิ`,
-            'ผู้สมัครทุกคนจะได้รับเสื้อแข่งขันประจำงาน ป้ายหมายเลข BIB พร้อม QR Token สำหรับรับอุปกรณ์ล่วงหน้า และเหรียญรางวัล Finisher เมื่อวิ่งเข้าเส้นชัยตามเวลาที่กำหนด นอกจากนี้ผู้ติดตามหรือลูกค้าทั่วไปยังสามารถสั่งซื้อเสื้อและของที่ระลึกผ่านหน้าร้านค้าประจำงานได้โดยไม่ต้องสมัครวิ่ง',
           ];
 
     const racePackList =
@@ -2932,7 +2934,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             {
               title: 'เสื้อวิ่งประจำงาน (Official Race Jersey)',
               detail:
-                'เนื้อผ้าไมโครโพลีเอสเตอร์ระบายอากาศ แห้งไว เลือกขนาด XS ถึง 2XL ได้ตามโควตาและแก้ไขไซส์ได้ก่อนเส้นตาย',
+                'เนื้อผ้าไมโครโพลีเอสเตอร์ระบายอากาศ แห้งไว เลือกขนาด XS ถึง 2XL ได้ตามโควตาตอนสมัคร',
               scope: 'ผู้สมัครทุกระยะ',
             },
             {
@@ -2961,9 +2963,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         : [
             {
               timeLabel: `วันนี้ – ${selectedEvent.editDeadlineDate}`,
-              title: 'ช่วงเวลาเปิดรับสมัครและแก้ไขขนาดเสื้อออนไลน์',
-              detail:
-                'สมัครออนไลน์พร้อมรับ QR Token ทันที และสามารถปรับขนาดเสื้อได้ด้วยตนเองก่อนวันปิดแก้ไขข้อมูล',
+              title: 'ช่วงเวลาเปิดรับสมัครออนไลน์',
+              detail: 'สมัครออนไลน์และรับ QR Token สำหรับรับอุปกรณ์ทันทีหลังชำระเงิน',
             },
             {
               timeLabel: selectedEvent.kitPickupWindow,
@@ -3012,6 +3013,285 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
     const isEditorialView =
       !showRegForm && detailTab !== 'storefront';
+
+    // Event page sections as blocks: one view per block id, drawn in the order of
+    // resolveDetailLayout (the organizer's saved order, or the default one).
+    const detailBlocks = resolveDetailLayout(selectedEvent).filter(
+      (b) => b.id !== 'merch' || selectedEvent.products.length > 0
+    );
+    const openStore = (productId?: string) => {
+      if (productId) setStoreFocus({ id: productId, n: Date.now() });
+      setShowRegForm(false);
+      setDetailTab('storefront');
+    };
+    const detailBlockViews: Record<EventDetailBlockId, React.ReactNode> = {
+      about: (
+        <section id="sec-about" className="clean-panel">
+          <h2>{tx("เกี่ยวกับงาน")}</h2>
+          {overviewParas.map((p, idx) => (
+            <p key={idx} className="muted-block">
+              {tx(p)}
+            </p>
+          ))}
+          {selectedEvent.highlights.length > 0 && (
+            <>
+              <h3>{tx("จุดเด่น")}</h3>
+              <ul className="compact-bullet-list">
+                {selectedEvent.highlights.map((h, i) => (
+                  <li key={i}>{tx(h)}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+      ),
+
+      categories: (
+        <section id="sec-categories" className="clean-panel">
+          <div className="section-title-bar">
+            <div>
+              <h2>{tx("ระยะและค่าสมัคร")}</h2>
+              <p className="muted-inline">{tx("เลือกระยะได้ตอนกรอกใบสมัคร")}</p>
+            </div>
+          </div>
+
+          <div className="editorial-category-list">
+            {selectedEvent.categories.map((cat) => {
+              const curTier = getCurrentTier(cat);
+              const quote = calculateFeeQuote(curTier.priceSatang, selectedEvent.feeBearerPolicy);
+              const left = getCategoryOpenSeats(selectedEvent.id, cat);
+              return (
+                <article key={cat.id} className="editorial-cat-card">
+                  <div className="editorial-cat-head">
+                    <div className="cta-inline-row">
+                      <span className={`category-bib-chip tone-${cat.colorTag}`}>
+                        <strong>{tx(cat.code)}</strong>
+                      </span>
+                      <h3>{tx(cat.name)}</h3>
+                    </div>
+
+                    <div className="editorial-cat-price">
+                      <span className="muted-inline">
+                        {tx("ราคาสุทธิ (")}{tx(curTier.label)})
+                      </span>
+                      <strong className="mono-num text-vermilion">
+                        {formatThb(quote.runnerNetPaySatang, true)}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="editorial-cat-facts">
+                    <span>
+                      <IconClock size={14} /> {tx(" ปล่อยตัว")}{' '}
+                      <strong className="mono-num">
+                        {tx(cat.startTimeLocal)} {tx(" น.")}
+                      </strong>
+                    </span>
+                    <span>
+                      {tx("เวลา Cut-off")}{' '}
+                      <strong className="mono-num">
+                        {tx(cat.cutoffHours)} {tx(" ชม.")}
+                      </strong>
+                    </span>
+                    <span>
+                      {tx("ที่นั่งว่าง")}{' '}
+                      <strong className="mono-num">
+                        {tx(left)} / {tx(cat.categoryQuota)}
+                      </strong>{' '}
+                      {tx("สิทธิ์")}
+                    </span>
+                    {formatAgeLimit(cat) && (
+                      <span>
+                        <strong>{formatAgeLimit(cat)}</strong>{' '}
+                        <span className="muted-inline">
+                          ({formatAgeBasis(cat.ageBasis ?? 'race_day')})
+                        </span>
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="editorial-tier-strip">
+                    {cat.priceTiers.map((t) => (
+                      <span
+                        key={t.id}
+                        className={`editorial-tier-pill ${t.isCurrent ? 'active' : ''}`}
+                      >
+                        <strong>{tx(t.label)}:</strong>{' '}
+                        <span className="mono-num">{formatThb(t.priceSatang)}</span>{' '}
+                        ({tx(t.startsAt)} – {tx(t.endsAt)})
+                        {t.isCurrent ? tx(" · เปิดใช้อยู่") : ''}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="editorial-cat-actions">
+                    <span className="muted-inline">
+                      {tx("ค่าสมัครป้าย ")} {formatThb(quote.baseSatang)} {tx(" + ค่าบริการฝั่งนักวิ่ง")}{' '}
+                      {formatThb(quote.runnerFeeSatang, true)}
+                    </span>
+                  </div>
+
+                  {categoryHasAgeGroups(cat) && (
+                    <details className="cat-age-details">
+                      <summary>{tx("ดูรุ่นอายุ")}</summary>
+                      <CategoryAgeGroups event={selectedEvent} cat={cat} />
+                    </details>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ),
+
+      racepack: (
+        <section id="sec-racepack" className="clean-panel">
+          <h2>{tx("สิ่งที่ได้รับและตารางไซส์เสื้อ")}</h2>
+
+          <div className="racepack-grid">
+            {racePackList.map((item, idx) => (
+              <div key={idx} className="racepack-item-card">
+                <div className="cta-inline-row">
+                  <IconShirt size={16} />
+                  <strong>{tx(item.title)}</strong>
+                </div>
+                <p className="muted-block">{tx(item.detail)}</p>
+                <span className="mono-code">{tx(item.scope)}</span>
+              </div>
+            ))}
+          </div>
+
+          <h3 className="racepack-size-head">{tx("ตารางไซส์เสื้อแข่งขัน")}</h3>
+          <div className="table-scroll">
+            <table className="ops-table">
+              <thead>
+                <tr>
+                  <th>{tx("ไซส์")}</th>
+                  <th>{tx("รอบอก (นิ้ว)")}</th>
+                  <th>{tx("ความยาว (นิ้ว)")}</th>
+                  <th className="num-col">{tx("คงเหลือ")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedEvent.shirtStocks.map((st) => {
+                  const left = Math.max(0, st.total - st.reservedOrConfirmed);
+                  const spec = getShirtSpec(st.size);
+                  return (
+                    <tr key={st.size}>
+                      <td>
+                        <strong>{tx(st.size)}</strong>
+                      </td>
+                      <td className="mono-num">{tx(spec.chestInch)}</td>
+                      <td className="mono-num">{tx(spec.lengthInch)}</td>
+                      <td className="num-col mono-num">
+                        {left > 0 ? (
+                          <strong className="text-forest">
+                            {txf("ว่าง {0} ตัว", left)}
+                          </strong>
+                        ) : (
+                          <span className="text-danger">{tx("หมดแล้ว")}</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ),
+
+      schedule: (
+        <section id="sec-schedule" className="clean-panel">
+          <h2>{tx("กำหนดการ")}</h2>
+          <div className="schedule-timeline-list">
+            {scheduleTimeline.map((item, idx) => (
+              <div key={idx} className="schedule-timeline-row">
+                <div className="schedule-time-badge mono-num">
+                  <IconClock size={14} />
+                  <span>{tx(item.timeLabel)}</span>
+                </div>
+                <div className="schedule-row-body">
+                  <strong>{tx(item.title)}</strong>
+                  <p className="muted-inline">{tx(item.detail)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ),
+
+      venue: (
+        <section id="sec-venue" className="clean-panel">
+          <h2>{tx("สถานที่และติดต่อผู้จัด")}</h2>
+          <dl className="venue-facts">
+            <div>
+              <dt>
+                <IconMapPin size={16} />
+                {tx("สถานที่จัดงาน")}
+              </dt>
+              <dd>
+                {tx(selectedEvent.venue)}
+                <span className="muted-inline">
+                  {' · '}
+                  {tx("จ.")}{tx(selectedEvent.province)} ({tx("ภาค")}{tx(selectedEvent.region)})
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>
+                <IconBuilding size={16} />
+                {tx("ผู้จัดงาน")}
+              </dt>
+              <dd>
+                {tx(org?.nameTh)}
+                {org?.contactEmail && (
+                  <>
+                    {' · '}
+                    <a href={`mailto:${org.contactEmail}`}>{org.contactEmail}</a>
+                  </>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>
+                <IconFlag size={16} />
+                {tx("กติกาการแข่งขัน")}
+              </dt>
+              <dd>{txf("ใช้กติกาฉบับ {0}", selectedEvent.rulesVersion)}</dd>
+            </div>
+          </dl>
+        </section>
+      ),
+
+      merch: (
+        <section id="sec-merch" className="clean-panel merch-strip" aria-labelledby="merch-strip-title">
+          <div className="merch-strip-head">
+            <div>
+              <h2 id="merch-strip-title">{tx("ของที่ระลึกประจำงาน")}</h2>
+              <p className="muted-inline">{tx("ซื้อได้โดยไม่ต้องสมัครวิ่ง")}</p>
+            </div>
+            <button type="button" className="btn-secondary" onClick={() => openStore()}>
+              <IconBag size={15} />
+              <span>{tx("ไปที่ร้านค้า")}</span>
+            </button>
+          </div>
+          <ul className="merch-strip-list">
+            {selectedEvent.products.map((prd) => (
+              <li key={prd.id}>
+                <button type="button" className="merch-strip-item" onClick={() => openStore(prd.id)}>
+                  <span className="merch-strip-art" aria-hidden="true">
+                    <ProductArt kind={souvenirArt(prd.categoryLabel, prd.nameTh)} className="sf-art-svg" />
+                  </span>
+                  <span className="merch-strip-name">{tx(prd.nameTh)}</span>
+                  <strong className="merch-strip-price mono-num">{formatThb(prd.priceSatang, true)}</strong>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ),
+    };
 
     return (
       <main className="customer-container event-detail-page">
@@ -3080,7 +3360,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               <div className="detail-hero-body">
                 <div className="detail-meta-top">
                   <span className="race-type-tag">{tx(selectedEvent.raceType)}</span>
-                  <span className="mono-code">{tx(selectedEvent.code)}</span>
                 </div>
 
                 <h1>{tx(selectedEvent.titleTh)}</h1>
@@ -3091,39 +3370,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   </span>
                   <span>
                     <IconMapPin size={20} />
-                    <span>{tx("จ.")}{tx(selectedEvent.province)}</span>
+                    <span>
+                      {tx(selectedEvent.venue)}
+                      <span className="kr-detail-province"> · {tx("จ.")}{tx(selectedEvent.province)}</span>
+                    </span>
                   </span>
                 </p>
                 <p className="muted-block">{tx(selectedEvent.tagline)}</p>
 
-                <div className="detail-key-facts">
-                  <div>
-                    <IconCalendar size={16} />
-                    <span>
-                      {tx("วันแข่งขัน:")}{' '}
-                      <strong className="mono-num">{tx(selectedEvent.eventDate)}</strong>{' '}
-                      {tx("· เปิดรับสมัคร:")}{' '}
-                      <strong>
-                        {selectedEvent.registrationPeriodLabel
-                          ? tx(selectedEvent.registrationPeriodLabel)
-                          : txf("ถึง {0}", selectedEvent.editDeadlineDate)}
-                      </strong>
-                    </span>
-                  </div>
-                  <div>
-                    <IconMapPin size={16} />
-                    <span>
-                      {tx("จังหวัด")}{tx(selectedEvent.province)} · {tx(selectedEvent.venue)}
-                    </span>
-                  </div>
-                  <div>
-                    <IconBuilding size={16} />
-                    <span>
-                      {tx("ผู้จัดงาน: ")} <strong>{tx(org?.nameTh)}</strong> {tx(" · นโยบายค่าบริการ:")}{' '}
-                      <strong>{feePolicyLabel(selectedEvent.feeBearerPolicy)}</strong>
-                    </span>
-                  </div>
-                </div>
               </div>
             </section>
 
@@ -3170,7 +3424,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               >
                 <IconBag size={16} />
                 <span>
-                  {tx("ร้านค้าของที่ระลึก (")}{tx(selectedEvent.products.length)} {tx(" รายการ — ไม่สมัครวิ่งก็ซื้อได้)")}
+                  {txf("ร้านค้า ({0})", selectedEvent.products.length)}
                 </span>
               </button>
 
@@ -3229,319 +3483,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   </section>
                 )}
 
-                {/* SECTION 1: ABOUT & HIGHLIGHTS */}
-                <section id="sec-about" className="clean-panel">
-                  <h2>{tx("รายละเอียดการจัดงานและไฮไลต์สำคัญ")}</h2>
-                  {overviewParas.map((p, idx) => (
-                    <p key={idx} className="muted-block">
-                      {tx(p)}
-                    </p>
-                  ))}
-
-                  <h3>{tx("จุดเด่นและสิทธิพิเศษสำหรับผู้สมัคร")}</h3>
-                  <ul className="compact-bullet-list">
-                    {selectedEvent.highlights.map((h, i) => (
-                      <li key={i}>{tx(h)}</li>
-                    ))}
-                    <li>
-                      {tx("แสดงราคาสุทธิชัดเจนก่อนชำระเงิน (")}{feePolicyLabel(selectedEvent.feeBearerPolicy)})
-                    </li>
-                  </ul>
-                </section>
-
-                {/* SECTION 2: RACE CATEGORIES, DISTANCES & PRICE TIERS */}
-                <section id="sec-categories" className="clean-panel">
-                  <div className="section-title-bar">
-                    <div>
-                      <h2>{tx("ประเภทการแข่งขัน ระยะทาง และอัตราค่าสมัคร")}</h2>
-                      <p className="muted-inline">
-                        {tx("ข้อมูลแต่ละระยะสำหรับอ่านประกอบ เลือกระยะที่ต้องการได้ในขั้นตอนกรอกใบสมัคร")}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="editorial-category-list">
-                    {selectedEvent.categories.map((cat) => {
-                      const curTier = getCurrentTier(cat);
-                      const quote = calculateFeeQuote(
-                        curTier.priceSatang,
-                        selectedEvent.feeBearerPolicy
-                      );
-                      const left = getCategoryOpenSeats(selectedEvent.id, cat);
-                      return (
-                        <article key={cat.id} className="editorial-cat-card">
-                          <div className="editorial-cat-head">
-                            <div className="cta-inline-row">
-                              <span
-                                className={`category-bib-chip tone-${cat.colorTag}`}
-                              >
-                                <strong>{tx(cat.code)}</strong>
-                              </span>
-                              <h3>{tx(cat.name)}</h3>
-                              <span className="mono-code">
-                                BIB {tx(cat.bibPrefix)}-xxxx
-                              </span>
-                            </div>
-
-                            <div className="editorial-cat-price">
-                              <span className="muted-inline">
-                                {tx("ราคาสุทธิ (")}{tx(curTier.label)})
-                              </span>
-                              <strong className="mono-num text-vermilion">
-                                {formatThb(quote.runnerNetPaySatang, true)}
-                              </strong>
-                            </div>
-                          </div>
-
-                          <div className="editorial-cat-facts">
-                            <span>
-                              <IconClock size={14} /> {tx(" ปล่อยตัว")}{' '}
-                              <strong className="mono-num">
-                                {tx(cat.startTimeLocal)} {tx(" น.")}
-                              </strong>
-                            </span>
-                            <span>
-                              {tx("เวลา Cut-off")}{' '}
-                              <strong className="mono-num">
-                                {tx(cat.cutoffHours)} {tx(" ชม.")}
-                              </strong>
-                            </span>
-                            <span>
-                              {tx("ที่นั่งว่าง")}{' '}
-                              <strong className="mono-num">
-                                {tx(left)} / {tx(cat.categoryQuota)}
-                              </strong>{' '}
-                              {tx("สิทธิ์")}
-                            </span>
-                            {formatAgeLimit(cat) && (
-                              <span>
-                                <strong>{formatAgeLimit(cat)}</strong>{' '}
-                                <span className="muted-inline">
-                                  ({formatAgeBasis(cat.ageBasis ?? 'race_day')})
-                                </span>
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="editorial-tier-strip">
-                            {cat.priceTiers.map((t) => (
-                              <span
-                                key={t.id}
-                                className={`editorial-tier-pill ${
-                                  t.isCurrent ? 'active' : ''
-                                }`}
-                              >
-                                <strong>{tx(t.label)}:</strong>{' '}
-                                <span className="mono-num">
-                                  {formatThb(t.priceSatang)}
-                                </span>{' '}
-                                ({tx(t.startsAt)} – {tx(t.endsAt)})
-                                {t.isCurrent ? tx(" · เปิดใช้อยู่") : ''}
-                              </span>
-                            ))}
-                          </div>
-
-                          <div className="editorial-cat-actions">
-                            <span className="muted-inline">
-                              {tx("ค่าสมัครป้าย ")} {formatThb(quote.baseSatang)} {tx(" + ค่าบริการฝั่งนักวิ่ง")}{' '}
-                              {formatThb(quote.runnerFeeSatang, true)}
-                            </span>
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                </section>
-
-                {/* SECTION 2.5: AGE RULES & AGE GROUPS (shown only when a distance has age rules) */}
-                <EventAgeGroupsSection event={selectedEvent} id="sec-age-groups" />
-
-                {/* SECTION 3: RACE PACK ENTITLEMENTS, SHIRT & MEDAL + SIZE CHART */}
-                <section id="sec-racepack" className="clean-panel">
-                  <h2>{tx("เสื้อแข่งขัน เหรียญรางวัล สิทธิ์ที่ผู้สมัครจะได้รับ และตารางไซส์เสื้อ")}</h2>
-                  <p className="muted-block">
-                    {tx("แยกชัดเจนระหว่างสิ่งที่ได้รับตามสิทธิ์การสมัครแข่งขัน (Race Pack) กับสินค้าที่ระลึกที่เปิดขายแยกในหน้าร้านค้า")}
-                  </p>
-
-                  <div className="racepack-grid">
-                    {racePackList.map((item, idx) => (
-                      <div key={idx} className="racepack-item-card">
-                        <div className="cta-inline-row">
-                          <IconShirt size={16} />
-                          <strong>{tx(item.title)}</strong>
-                        </div>
-                        <p className="muted-block">{tx(item.detail)}</p>
-                        <span className="mono-code">{tx(item.scope)}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <h3 style={{ marginTop: '1.1rem' }}>
-                    {tx("ตารางขนาดเสื้อแข่งขันมาตรฐานและสต็อกคงเหลือจริง")}
-                  </h3>
-                  <div className="table-scroll">
-                    <table className="ops-table">
-                      <thead>
-                        <tr>
-                          <th>{tx("ขนาดเสื้อ (Size)")}</th>
-                          <th>{tx("รอบอก (นิ้ว)")}</th>
-                          <th>{tx("ความยาวเสื้อ (นิ้ว)")}</th>
-                          <th className="num-col">{tx("โควตาเสื้อทั้งหมด")}</th>
-                          <th className="num-col">{tx("คงเหลือให้เลือก")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedEvent.shirtStocks.map((st) => {
-                          const left = Math.max(
-                            0,
-                            st.total - st.reservedOrConfirmed
-                          );
-                          const spec = getShirtSpec(st.size);
-                          return (
-                            <tr key={st.size}>
-                              <td>
-                                <strong>{tx("ไซส์")} {tx(st.size)}</strong>
-                              </td>
-                              <td className="mono-num">{tx(spec.chestInch)}</td>
-                              <td className="mono-num">{tx(spec.lengthInch)}</td>
-                              <td className="num-col mono-num">
-                                {tx(st.total)} {tx(" ตัว")}
-                              </td>
-                              <td className="num-col mono-num">
-                                {left > 0 ? (
-                                  <strong className="text-forest">
-                                    {tx("ว่าง ")} {tx(left)} {tx(" ตัว")}
-                                  </strong>
-                                ) : (
-                                  <span className="text-danger">{tx("หมดโควตา")}</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-
-                {/* SECTION 4: SCHEDULE & TIMELINE */}
-                <section id="sec-schedule" className="clean-panel">
-                  <h2>{tx("กำหนดการรับอุปกรณ์และตารางเวลาวันแข่งขัน (Timeline)")}</h2>
-                  <p className="muted-block">
-                    {tx("เวลาอ้างอิงตามเขตเวลามาตรฐานประเทศไทย (")}{tx(selectedEvent.timezone)})
-                  </p>
-
-                  <div className="schedule-timeline-list">
-                    {scheduleTimeline.map((item, idx) => (
-                      <div key={idx} className="schedule-timeline-row">
-                        <div className="schedule-time-badge mono-num">
-                          <IconClock size={14} />
-                          <span>{tx(item.timeLabel)}</span>
-                        </div>
-                        <div className="schedule-row-body">
-                          <strong>{tx(item.title)}</strong>
-                          <p className="muted-inline">{tx(item.detail)}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                {/* SECTION 5: VENUE, RULES, CONTACT & VERIFIED RESULTS/PHOTOS */}
-                <section id="sec-venue-rules" className="clean-panel">
-                  <h2>{tx("สถานที่จัดงาน กติกาการแข่งขัน และช่องทางติดต่อผู้จัด")}</h2>
-                  <div className="form-grid-2">
-                    <div className="racepack-item-card">
-                      <strong>{tx("จุดปล่อยตัวและสถานที่จัดงาน")}</strong>
-                      <p className="muted-block">
-                        {tx(selectedEvent.venue)} {tx(" · จังหวัด")}{tx(selectedEvent.province)} {tx(" (ภูมิภาค")}
-                        {tx(selectedEvent.region)})
-                      </p>
-                      <span className="muted-inline">
-                        {tx("เวลารับเสื้อและ BIB: ")} {tx(selectedEvent.kitPickupWindow)}
-                      </span>
-                    </div>
-
-                    <div className="racepack-item-card">
-                      <strong>{tx("กติกาการแข่งขันและการแก้ไขข้อมูล")}</strong>
-                      <p className="muted-block">
-                        {tx("ใช้กติกาฉบับ ")} <code>{tx(selectedEvent.rulesVersion)}</code> {tx(" · ผู้สมัครแก้ไขขนาดเสื้อด้วยตนเองได้ถึงวันที่")}{' '}
-                        <strong className="mono-num">
-                          {tx(selectedEvent.editDeadlineDate)}
-                        </strong>
-                      </p>
-                      <span className="muted-inline">
-                        {tx("ผู้จัดงาน: ")} {tx(org?.nameTh)} ({tx(org?.contactEmail)})
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* finished races show results and albums in #sec-results at the top */}
-                </section>
-
-                {/* SECTION 6: MERCHANDISE STOREFRONT PREVIEW */}
-                {selectedEvent.products.length > 0 && (
-                  <section id="sec-merch-preview" className="clean-panel">
-                    <div className="section-title-bar">
-                      <div>
-                        <h2>
-                          {tx("ของที่ระลึกประจำงาน (")}{tx(selectedEvent.products.length)}{' '}
-                          {tx("รายการ — ลูกค้าทั่วไปซื้อได้โดยไม่ต้องสมัครวิ่ง)")}
-                        </h2>
-                        <p className="muted-inline">
-                          {tx("คำสั่งซื้อสินค้าที่ระลึกจะแยกออกจากใบสมัครวิ่ง และรับของด้วยรหัสรับสินค้าเฉพาะ")}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() => {
-                          setShowRegForm(false);
-                          setDetailTab('storefront');
-                        }}
-                      >
-                        <IconBag size={15} />
-                        <span>{tx("เปิดหน้าร้านค้าของงาน")}</span>
-                      </button>
-                    </div>
-
-                    <div className="form-grid-2">
-                      {selectedEvent.products.map((prd) => {
-                        const left = Math.max(
-                          0,
-                          prd.stockOrCeiling - prd.soldCount
-                        );
-                        return (
-                          <div key={prd.id} className="racepack-item-card">
-                            <div className="section-title-bar">
-                              <strong>{tx(prd.nameTh)}</strong>
-                              <strong className="mono-num text-vermilion">
-                                {formatThb(prd.priceSatang, true)}
-                              </strong>
-                            </div>
-                            <p className="muted-inline">{tx(prd.description)}</p>
-                            <div className="cta-inline-row">
-                              <span className="mono-code">
-                                {tx("คงเหลือ ")} {tx(left)}/{tx(prd.stockOrCeiling)} {tx(" ชิ้น")}
-                              </span>
-                              <button
-                                type="button"
-                                className="btn-ghost-sm"
-                                onClick={() => {
-                                  setStoreFocus({ id: prd.id, n: Date.now() });
-                                  setShowRegForm(false);
-                                  setDetailTab('storefront');
-                                }}
-                              >
-                                {tx("เลือกซื้อรายการนี้")}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </section>
-                )}
+                {/* sections in the order the organizer set (default order until they do) */}
+                {detailBlocks.map((b) => (
+                  <React.Fragment key={b.id}>{detailBlockViews[b.id]}</React.Fragment>
+                ))}
               </div>
             )}
 
@@ -4196,28 +4141,22 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 <div>
                   <div className="sticky-card-head">
                     <EventStatusBadge status={selectedEvent.status} />
-                    <span className="mono-code">{tx(selectedEvent.code)}</span>
                   </div>
                   <h2>
                     <span className="kr-sticky-kicker">{tx("สมัครร่วมงาน")}</span>{' '}
                     {tx(selectedEvent.titleTh)}
                   </h2>
+                  {selectedEvent.status === 'published' && selectedEvent.registrationPeriodLabel && (
+                    <p className="kr-sticky-period">
+                      <IconCalendar size={15} />
+                      <span>
+                        {tx("เปิดรับสมัคร")} {tx(selectedEvent.registrationPeriodLabel)}
+                      </span>
+                    </p>
+                  )}
                 </div>
                 <MascotAnim pose="cheer" className="kr-sticky-mascot" />
               </div>
-
-              <dl className="sticky-key-facts">
-                <div>
-                  <dt>{tx("วันแข่งขัน")}</dt>
-                  <dd className="mono-num">{tx(selectedEvent.eventDate)}</dd>
-                </div>
-                <div>
-                  <dt>{tx("สถานที่")}</dt>
-                  <dd>
-                    {tx("จ.")}{tx(selectedEvent.province)} · {tx(selectedEvent.venue)}
-                  </dd>
-                </div>
-              </dl>
 
               {/* PRIMARY STICKY CTA & MERCHANDISE BUTTONS */}
               <div className="sticky-cta-group">
@@ -4260,7 +4199,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     className="btn-secondary btn-full"
                     onClick={() =>
                       jumpToEditorialSection(
-                        selectedEvent.status === 'completed' ? 'sec-results' : 'sec-venue-rules'
+                        selectedEvent.status === 'completed' ? 'sec-results' : 'sec-venue'
                       )
                     }
                   >
@@ -4323,39 +4262,25 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 </div>
               )}
 
-              <div className="sticky-quick-jumps">
-                <span className="muted-inline">{tx("หัวข้อในหน้านี้:")}</span>
-                <div className="cta-inline-row">
-                  <button
-                    type="button"
-                    className="footer-text-link"
-                    onClick={() => jumpToEditorialSection('sec-categories')}
-                  >
-                    {tx("ระยะและราคา")}
-                  </button>
-                  <button
-                    type="button"
-                    className="footer-text-link"
-                    onClick={() => jumpToEditorialSection('sec-racepack')}
-                  >
-                    {tx("เสื้อและตารางไซส์")}
-                  </button>
-                  <button
-                    type="button"
-                    className="footer-text-link"
-                    onClick={() => jumpToEditorialSection('sec-schedule')}
-                  >
-                    {tx("กำหนดการ")}
-                  </button>
-                  <button
-                    type="button"
-                    className="footer-text-link"
-                    onClick={() => jumpToEditorialSection('sec-venue-rules')}
-                  >
-                    {tx("กติกาและสถานที่")}
-                  </button>
+              {detailBlocks.some((b) => b.inShortcuts) && (
+                <div className="sticky-quick-jumps">
+                  <span className="muted-inline">{tx("หัวข้อในหน้านี้:")}</span>
+                  <div className="cta-inline-row">
+                    {detailBlocks
+                      .filter((b) => b.inShortcuts)
+                      .map((b) => (
+                        <button
+                          key={b.id}
+                          type="button"
+                          className="footer-text-link"
+                          onClick={() => jumpToEditorialSection(b.sectionId)}
+                        >
+                          {tx(b.label)}
+                        </button>
+                      ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </aside>
         </div>

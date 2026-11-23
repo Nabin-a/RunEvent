@@ -1131,27 +1131,6 @@ textarea::placeholder {
   margin-bottom: 0.45rem;
 }
 
-.detail-key-facts {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.875rem;
-  color: var(--ink-secondary);
-  margin-top: 0.65rem;
-}
-
-.detail-key-facts div {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.45rem;
-  min-width: 0;
-}
-
-.detail-key-facts svg {
-  flex-shrink: 0;
-  margin-top: 0.18rem;
-}
-
 .detail-mode-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -1378,37 +1357,6 @@ textarea::placeholder {
 .sticky-register-card > h2 {
   margin: 0;
   font-size: 1.125rem;
-}
-
-.sticky-key-facts {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.42rem;
-  padding: 0.7rem 0;
-  border-top: 1px solid var(--line-light);
-  border-bottom: 1px solid var(--line-light);
-  font-size: 0.875rem;
-}
-
-.sticky-key-facts > div {
-  display: grid;
-  grid-template-columns: minmax(76px, 92px) minmax(0, 1fr);
-  gap: 0.5rem;
-  min-width: 0;
-}
-
-.sticky-key-facts dt {
-  color: var(--ink-secondary);
-  font-weight: 600;
-}
-
-.sticky-key-facts dd {
-  margin: 0;
-  color: var(--ink-primary);
-  font-weight: 600;
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 
 .sticky-quota-box {
@@ -5997,12 +5945,6 @@ body.swal2-iosfix {
     order: -1;
   }
 
-  .event-detail-page .sticky-key-facts {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.55rem 1rem;
-  }
-
   .event-detail-page .sticky-cta-group {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
@@ -6028,11 +5970,6 @@ body.swal2-iosfix {
   .event-detail-page .detail-hero-body,
   .event-detail-page .clean-panel {
     padding: 1.05rem 1.1rem;
-  }
-
-  .event-detail-page .sticky-key-facts {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0.42rem;
   }
 
   .event-detail-page .sticky-cta-group {
@@ -6141,18 +6078,6 @@ body.swal2-iosfix {
     min-height: 2.75rem;
   }
 
-  .event-detail-page #sec-merch-preview > .section-title-bar {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.6rem;
-  }
-
-  .event-detail-page #sec-merch-preview > .section-title-bar .btn-secondary {
-    width: 100%;
-    justify-content: center;
-    min-height: 2.75rem;
-  }
-
   .event-detail-page .size-pill-row {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -6195,11 +6120,6 @@ body.swal2-iosfix {
   .event-detail-page .detail-hero-body,
   .event-detail-page .sticky-register-card {
     padding: 0.88rem 0.85rem;
-  }
-
-  .event-detail-page .sticky-key-facts > div {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0.12rem;
   }
 
   .event-detail-page .size-pill-row {
@@ -7896,39 +7816,8 @@ body.swal2-iosfix {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Public event page: age rules & age groups                              */
+/* Public event page: age groups inside each distance card                             */
 /* ---------------------------------------------------------------------- */
-.age-public-section > .muted-block {
-  margin: 0.25rem 0 1rem;
-}
-
-.age-public-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
-  gap: 1rem 1.5rem;
-}
-
-.age-public-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding-top: 0.85rem;
-  border-top: 1px solid var(--line-light);
-}
-
-.age-public-head {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  min-width: 0;
-}
-
-.age-public-head h3 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 700;
-}
-
 .age-public-meta {
   margin: 0;
   font-size: 0.875rem;

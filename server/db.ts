@@ -713,6 +713,9 @@ export function readPlatformProfileConfig(): PlatformProfileConfig {
   return JSON.parse(row.detail_json) as PlatformProfileConfig;
 }
 
+const DOI_RACEPACK_PARAGRAPH =
+  'ทุกระยะการแข่งขันได้รับเสื้อวิ่งเนื้อผ้าไมโครโพลีเอสเตอร์ระบายอากาศ ป้ายหมายเลขแข่งขัน (BIB) พร้อม QR Token สำหรับรับอุปกรณ์ และเหรียญรางวัล Finisher สำหรับผู้ที่เข้าเส้นชัยภายในเวลา Cut-off ที่กำหนด';
+
 export function seedDatabase(forceReset = false): void {
   initSchema();
 
@@ -783,6 +786,20 @@ export function seedDatabase(forceReset = false): void {
                 ],
           },
           { preservePasswordHash: true }
+        );
+      }
+    }
+    // Idempotent migration: the Doi Suthep overview no longer repeats the race pack
+    // (it has its own section on the event page).
+    const doiRow = db
+      .prepare("SELECT detail_json FROM events WHERE id = 'evt-doisuthep-2026'")
+      .get() as { detail_json: string } | undefined;
+    if (doiRow) {
+      const doi = JSON.parse(doiRow.detail_json) as RaceEvent;
+      const kept = (doi.overviewParagraphs ?? []).filter((p) => p !== DOI_RACEPACK_PARAGRAPH);
+      if (kept.length !== (doi.overviewParagraphs ?? []).length) {
+        db.prepare("UPDATE events SET detail_json = ? WHERE id = 'evt-doisuthep-2026'").run(
+          JSON.stringify({ ...doi, overviewParagraphs: kept })
         );
       }
     }

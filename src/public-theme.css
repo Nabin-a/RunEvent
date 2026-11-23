@@ -1261,6 +1261,206 @@
   gap: 0.5rem;
 }
 
+.kr-detail-province {
+  color: var(--ink-secondary);
+}
+
+/* registration window under the title of the register card */
+.kr-sticky-period {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.4rem 0 0;
+  color: var(--ink-secondary);
+  font-size: 0.875rem;
+}
+
+.kr-sticky-period svg {
+  flex: none;
+}
+
+/* event page blocks */
+.app-root.is-public .event-detail-page .racepack-size-head {
+  margin-top: 1.1rem;
+}
+
+.cat-age-details {
+  border-top: 1px solid var(--kr-mint-line);
+  padding-top: 0.6rem;
+}
+
+.cat-age-details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.75rem;
+  color: var(--kr-slate);
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.cat-age-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.cat-age-details > summary::after {
+  content: '';
+  width: 0.75rem;
+  height: 0.75rem;
+  background: var(--select-chevron) center / contain no-repeat;
+  transition: transform 0.18s var(--kr-ease);
+}
+
+.cat-age-details[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.cat-age-body {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.25rem 0 0.35rem;
+}
+
+.venue-facts {
+  display: grid;
+  gap: 0.9rem;
+  margin: 0;
+}
+
+.venue-facts > div {
+  display: grid;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+  gap: 0.25rem 1rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--kr-mint-line);
+}
+
+.venue-facts > div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.venue-facts dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--ink-secondary);
+  font-weight: 600;
+}
+
+.venue-facts dt svg {
+  flex: none;
+}
+
+.venue-facts dd {
+  margin: 0;
+  color: var(--kr-slate);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.venue-facts dd .muted-inline {
+  font-weight: 500;
+}
+
+/* souvenirs: a short strip that leads to the shop tab */
+.merch-strip-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.merch-strip-head h2 {
+  margin-bottom: 0.15rem;
+}
+
+.merch-strip-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.merch-strip-item {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 4.25rem;
+  padding: 0.5rem 0.85rem 0.5rem 0.5rem;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  color: var(--kr-slate);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.18s var(--kr-ease), background-color 0.18s var(--kr-ease);
+}
+
+.merch-strip-item:hover {
+  border-color: var(--kr-mint);
+  background: var(--kr-mint-3);
+}
+
+.merch-strip-item:focus-visible {
+  outline: 2px solid var(--kr-slate);
+  outline-offset: 2px;
+}
+
+.merch-strip-art {
+  display: block;
+  width: 3.5rem;
+  height: 3.5rem;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--kr-mint-3);
+}
+
+.merch-strip-art .sf-art-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.merch-strip-name {
+  display: -webkit-box;
+  overflow: hidden;
+  font-weight: 600;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.merch-strip-price {
+  color: var(--kr-slate);
+  white-space: nowrap;
+}
+
+@media (max-width: 34rem) {
+  .venue-facts > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .merch-strip-head .btn-secondary {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cat-age-details > summary::after,
+  .merch-strip-item {
+    transition: none;
+  }
+}
+
 /* mode tabs (details / register / shop) and section shortcuts as pill tabs */
 .app-root.is-public .event-detail-page .detail-mode-tabs {
   gap: 0.25rem 1.5rem;

@@ -681,6 +681,14 @@ export interface ProductionInquiry {
   createdAt: string;
 }
 
+/** Sections of the public event page that an organizer can reorder or hide. */
+export type EventDetailBlockId = 'about' | 'categories' | 'racepack' | 'schedule' | 'venue' | 'merch';
+
+export interface EventDetailLayoutItem {
+  block: EventDetailBlockId;
+  visible: boolean;
+}
+
 export interface RaceEvent {
   id: string;
   code: string;
@@ -708,6 +716,8 @@ export interface RaceEvent {
   /** Race kit postal shipping fee set by the organizer (satang). Unset = sandbox sample fee. */
   kitShippingFeeSatang?: number;
   registrationPeriodLabel?: string;
+  /** Order and visibility of the sections on the public event page (organizer-editable later). Unset = default order. */
+  detailLayout?: EventDetailLayoutItem[];
   overviewParagraphs?: string[];
   racePackItems?: {
     title: string;
