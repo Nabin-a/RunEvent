@@ -534,6 +534,9 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
   };
 
   const pushUrl = (url: string, replace = false) => {
+    // the console keeps its own address (it may live under a sub-path such as /admin/ next to the
+    // public site's files); public-site URLs pushed here would reload into the public app
+    if (isAdminApp) return;
     const currentFull = `${window.location.pathname}${window.location.search}`;
     setRegLayoutB(isRegisterBPath(url.split('?')[0]));
     if (currentFull === url) return;
