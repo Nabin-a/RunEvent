@@ -1967,7 +1967,9 @@
   color: #ffffff;
 }
 
+/* .active = on the profile / account pages: keep the dark-bar look (the base light fill hid the white name) */
 .app-root .global-topbar .btn-account-pill:hover,
+.app-root .global-topbar .btn-account-pill.active,
 .app-root .global-topbar .btn-account-pill[aria-expanded='true'] {
   background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.45);
