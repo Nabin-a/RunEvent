@@ -1,4 +1,5 @@
 import {
+  EventProduct,
   FeeBearerPolicy,
   MerchOrderRecord,
   PriceTier,
@@ -176,7 +177,7 @@ export function computeMetrics(
     const refundDeduction =
       r.refundStatus === 'succeeded' ? r.snapshotRefundedSatang : 0;
     const organizerShareBeforeRefund =
-      r.snapshotBaseSatang - r.snapshotOrganizerFeeSatang;
+      r.snapshotBaseSatang - r.snapshotOrganizerFeeSatang + (r.snapshotKitShippingSatang ?? 0);
     const organizerNetForOrder = Math.max(
       0,
       organizerShareBeforeRefund - refundDeduction
@@ -249,4 +250,45 @@ export function sellerModelLabel(
     case 'kratai_full_service':
       return tx('กระต่าย ดูแลครบวงจร (รับพรีออเดอร์ ผลิต แพ็ก และจัดส่งถึงผู้ซื้อ)');
   }
+}
+
+/**
+ * Race kit postal fee used while the organizer has not set one. A sandbox sample value only:
+ * the forms label it as such, and organizers replace it in the event's pricing settings.
+ */
+export const SAMPLE_KIT_SHIPPING_SATANG = 5000;
+
+export function kitShippingFee(ev: Pick<RaceEvent, 'kitShippingFeeSatang'>): { satang: number; isSample: boolean } {
+  return typeof ev.kitShippingFeeSatang === 'number'
+    ? { satang: ev.kitShippingFeeSatang, isSample: false }
+    : { satang: SAMPLE_KIT_SHIPPING_SATANG, isSample: true };
+}
+
+export interface RegistrationShippingQuote {
+  /** race kit parcel; souvenirs sold by the organizer ride in the same parcel */
+  kitSatang: number;
+  /** souvenirs from other sellers: one parcel (and fee) per seller */
+  sellers: { seller: string; satang: number }[];
+  totalSatang: number;
+}
+
+/**
+ * Shipping for an entry sent by post. Pick-up at the expo costs nothing. By post: the kit fee,
+ * organizer-sold souvenirs go in the kit parcel at no extra charge, and every other seller
+ * charges once (the highest fee among their items), like the storefront cart.
+ */
+export function quoteRegistrationShipping(
+  ev: Pick<RaceEvent, 'kitShippingFeeSatang'>,
+  method: 'pickup_at_expo' | 'postal_shipping',
+  lines: { prd: Pick<EventProduct, 'serviceModel' | 'sellerLabel' | 'shippingFeeSatang'> }[]
+): RegistrationShippingQuote {
+  if (method !== 'postal_shipping') return { kitSatang: 0, sellers: [], totalSatang: 0 };
+  const kitSatang = kitShippingFee(ev).satang;
+  const bySeller = new Map<string, number>();
+  for (const l of lines) {
+    if (l.prd.serviceModel === 'organizer_self_sell') continue;
+    bySeller.set(l.prd.sellerLabel, Math.max(bySeller.get(l.prd.sellerLabel) ?? 0, l.prd.shippingFeeSatang));
+  }
+  const sellers = [...bySeller.entries()].map(([seller, satang]) => ({ seller, satang }));
+  return { kitSatang, sellers, totalSatang: kitSatang + sellers.reduce((n, x) => n + x.satang, 0) };
 }

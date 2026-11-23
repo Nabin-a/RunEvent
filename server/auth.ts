@@ -4,6 +4,17 @@ import type { Response } from 'express';
 export const SESSION_COOKIE_NAME = 'kratai_sid';
 const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
+/**
+ * Platform Owner console (separate app, served under /admin-api): its own cookie, only sent to
+ * /admin-api, SameSite=Strict, short life. Admin tokens carry this prefix so a public-site token
+ * can never be replayed as an admin one (and the other way round).
+ */
+export const ADMIN_SESSION_COOKIE_NAME = 'kratai_admin_sid';
+export const ADMIN_TOKEN_PREFIX = 'adm_';
+export const ADMIN_API_PREFIX = '/admin-api';
+export const ADMIN_SESSION_MAX_AGE_SECONDS = 8 * 60 * 60; // 8 hours
+const isAdminRes = (res: Response) => res.locals?.adminScope === true;
+
 export function hashPassword(plain: string): string {
   const salt = randomBytes(16).toString('hex');
   const derived = scryptSync(plain, salt, 64).toString('hex');
@@ -52,6 +63,13 @@ export const COOKIE_SECURE = process.env.COOKIE_SECURE
 const SECURE_ATTR = COOKIE_SECURE ? '; Secure' : '';
 
 export function setSessionCookie(res: Response, token: string): void {
+  if (isAdminRes(res)) {
+    res.setHeader(
+      'Set-Cookie',
+      `${ADMIN_SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; Path=${ADMIN_API_PREFIX}; HttpOnly; SameSite=Strict; Max-Age=${ADMIN_SESSION_MAX_AGE_SECONDS}${SECURE_ATTR}`
+    );
+    return;
+  }
   res.setHeader(
     'Set-Cookie',
     `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_MAX_AGE_SECONDS}${SECURE_ATTR}`
@@ -59,6 +77,13 @@ export function setSessionCookie(res: Response, token: string): void {
 }
 
 export function clearSessionCookie(res: Response): void {
+  if (isAdminRes(res)) {
+    res.setHeader(
+      'Set-Cookie',
+      `${ADMIN_SESSION_COOKIE_NAME}=; Path=${ADMIN_API_PREFIX}; HttpOnly; SameSite=Strict; Max-Age=0${SECURE_ATTR}`
+    );
+    return;
+  }
   res.setHeader(
     'Set-Cookie',
     `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${SECURE_ATTR}`

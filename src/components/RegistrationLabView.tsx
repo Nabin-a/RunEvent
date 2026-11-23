@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  EventProduct,
   RunnerSavedAddress,
   Organization,
   RaceCategory,
@@ -8,7 +9,14 @@ import type {
   UserAccount,
 } from '../types';
 import { tx, txf } from '../i18n';
-import { calculateFeeQuote, feePolicyLabel, formatThb, getCurrentTier } from '../utils/pricing';
+import {
+  calculateFeeQuote,
+  feePolicyLabel,
+  formatThb,
+  getCurrentTier,
+  kitShippingFee,
+  quoteRegistrationShipping,
+} from '../utils/pricing';
 import { evaluateCategoryAge, formatAgeGroupLabel, formatBasisDate } from '../utils/age';
 import { resolveShirtSpec } from '../data/runnerProfileDefaults';
 import type { PlatformProfileConfig } from '../types';
@@ -19,7 +27,7 @@ import { RunnerCustomFieldsInputs } from './PublicEventView';
 import { RequiredFieldText } from './RequiredFieldText';
 import { NoteTag, PriceTag } from './RegTags';
 import { RegistrationStepper } from './RegistrationStepper';
-import { ShirtGallery, SouvenirCards, type ShirtGalleryStyle } from './ProductGallery';
+import { ShirtGallery, type ShirtGalleryStyle } from './ProductGallery';
 import { SHIRT_STYLES, shirtStyleName, type ShirtStyleId } from '../data/mockShirtStyles';
 import { ThaiPostalAddressSelector, type CascadingAddressValue } from './ThaiPostalAddressSelector';
 import {
@@ -30,6 +38,13 @@ import {
   IconMapPin,
   IconShirt,
 } from './Icons';
+import { PaymentMethodPicker } from './PaymentMethodPicker';
+import { SouvenirPicker } from './SouvenirPicker';
+import { RegistrationTerms } from './RegistrationTerms';
+import type { CartLine } from './StorefrontView';
+import { RegistrationDone, RegistrationSummary, type ReviewSection } from './RegistrationReview';
+import { EventCoverMedia } from './Icons';
+import { displayPhone } from '../utils/phone';
 
 /**
  * Registration form, layout B (sandbox review only).
@@ -39,11 +54,11 @@ import {
  * titled sections, two fields per row only where they belong together (first /
  * last name, document type / number), and generous space between sections.
  *
- * It cannot submit. State is local and nothing is sent to the server; step 7 shows
- * a sample receipt.
+ * It cannot submit. State is local and nothing is sent to the server; step 6 reviews the
+ * whole form, step 7 takes the (simulated) payment and step 8 shows a sample receipt.
  */
 
-type LabStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+type LabStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
 /** [value, setter] owned by the live form, so switching A <-> B keeps what was typed */
 export type Pair<T> = [T, (next: T) => void];
@@ -70,10 +85,9 @@ export interface LabShared {
   answers: Pair<Record<string, string | boolean>>;
   shirtSize: Pair<ShirtSizeCode>;
   shirtStyle: Pair<ShirtStyleId>;
-  addonId: Pair<string>;
-  addonSize: Pair<string>;
-  souvenirTab: Pair<string>;
+  addonItems: Pair<CartLine[]>;
   delivery: Pair<'expo_pickup' | 'postal'>;
+  addrName: Pair<string>;
   recipient: Pair<string>;
   shipPhone: Pair<string>;
   address: Pair<CascadingAddressValue>;
@@ -81,7 +95,7 @@ export interface LabShared {
   bookId: Pair<string>;
   channel: Pair<'promptpay' | 'card'>;
   acceptRules: Pair<boolean>;
-  marketing: Pair<boolean>;
+  acceptPayTerms: Pair<boolean>;
 }
 type Gender = 'ไม่ระบุ' | 'ชาย' | 'หญิง';
 type IdType = 'thai_id' | 'passport';
@@ -112,12 +126,12 @@ export function RegistrationLabView({
     { step: 3, label: 'สินค้า' },
     ...(hasSouvenirs ? [{ step: 4 as LabStep, label: 'ของที่ระลึก' }] : []),
     { step: 5, label: 'ที่อยู่' },
-    { step: 6, label: 'ชำระเงิน' },
-    { step: 7, label: 'สำเร็จ' },
+    { step: 6, label: 'สรุป' },
+    { step: 7, label: 'ชำระเงิน' },
   ];
 
   const [step, setStep] = useState<LabStep>(
-    Math.min(6, Math.max(1, shared.step[0])) as LabStep
+    Math.min(7, Math.max(1, shared.step[0])) as LabStep
   );
   const stepperRef = useRef<HTMLElement | null>(null);
   const shellRef = useRef<HTMLElement | null>(null);
@@ -227,11 +241,12 @@ export function RegistrationLabView({
   /* ---------- step 3-5 ---------- */
   const [shirtSize, setShirtSize] = shared.shirtSize;
   const [shirtStyle, setShirtStyle] = shared.shirtStyle;
-  const [addonId, setAddonId] = shared.addonId;
-  const addon = event.products.find((p) => p.id === addonId) ?? null;
-  const [addonSize, setAddonSize] = shared.addonSize;
-  const [souvenirTab, setSouvenirTab] = shared.souvenirTab;
+  const [addonItems, setAddonItems] = shared.addonItems;
+  const addonLines = addonItems
+    .map((l) => ({ ...l, prd: event.products.find((p) => p.id === l.productId) }))
+    .filter((l): l is CartLine & { prd: EventProduct } => Boolean(l.prd));
   const [delivery, setDelivery] = shared.delivery;
+  const [addrName, setAddrName] = shared.addrName;
   const [recipient, setRecipient] = shared.recipient;
   const [shipPhone, setShipPhone] = shared.shipPhone;
   const [address, setAddress] = shared.address;
@@ -251,7 +266,7 @@ export function RegistrationLabView({
     );
     const entry: RunnerSavedAddress = dup ?? {
       id: `lab-addr-${Date.now().toString(36)}`,
-      addressName: txf('ที่อยู่จากการสมัคร {0}', event.code),
+      addressName: addrName.trim() || txf('ที่อยู่จากการสมัคร {0}', event.code),
       recipientName: recipient.trim(),
       phone: shipPhone.trim(),
       address: a.address.trim(),
@@ -263,6 +278,7 @@ export function RegistrationLabView({
       isDefault: book.length === 0,
     };
     if (!dup) setBook((b) => [...b, entry]);
+    setAddrName('');
     setBookId(entry.id);
     setAddrMode('saved');
     setAddrNotice({
@@ -276,15 +292,17 @@ export function RegistrationLabView({
   /* ---------- step 6 ---------- */
   const [channel, setChannel] = shared.channel;
   const [acceptRules, setAcceptRules] = shared.acceptRules;
-  const [marketing, setMarketing] = shared.marketing;
+  const [acceptPayTerms, setAcceptPayTerms] = shared.acceptPayTerms;
 
-  const addonSatang = addon ? addon.priceSatang : 0;
-  const totalSatang = (quote?.runnerNetPaySatang ?? 0) + addonSatang;
+  const addonSatang = addonLines.reduce((n, l) => n + l.prd.priceSatang * l.qty, 0);
+  const shipQuote = quoteRegistrationShipping(event, delivery === 'postal' ? 'postal_shipping' : 'pickup_at_expo', addonLines);
+  const kitFee = kitShippingFee(event);
+  const totalSatang = (quote?.runnerNetPaySatang ?? 0) + addonSatang + shipQuote.totalSatang;
   const participantName = `${firstTh} ${lastTh}`.trim();
 
   const go = (next: LabStep) => {
     setStep(next);
-    if (next < 7) shared.step[1](next);
+    if (next < 8) shared.step[1](next);
   };
   const afterShirt: LabStep = hasSouvenirs ? 4 : 5;
   const beforeAddress: LabStep = hasSouvenirs ? 4 : 3;
@@ -339,6 +357,10 @@ export function RegistrationLabView({
         </span>
       </p>
 
+      <div className="reg-lab-cover" aria-hidden="true">
+        <EventCoverMedia event={event} illustrated className="reg-lab-cover-img" />
+      </div>
+
       <header className="reg-lab-head">
         <button type="button" className="btn-ghost-sm reg-lab-back" onClick={onBack}>
           <IconArrowLeft size={15} />
@@ -368,15 +390,17 @@ export function RegistrationLabView({
 
       <section className="reg-lab-card" aria-label={tx('ขั้นตอนการสมัครเข้าร่วมงานวิ่ง')}>
         {/* event-reg-wizard-pane: picks up the live form's stepper rules, so A and B show the same progress */}
-        <div className="reg-lab-stepper event-reg-wizard-pane">
-          <RegistrationStepper
-            steps={steps}
-            current={step}
-            complete={step === 7}
-            stepperRef={stepperRef}
-            onJump={go}
-          />
-        </div>
+        {step !== 8 && (
+          <div className="reg-lab-stepper event-reg-wizard-pane">
+            <RegistrationStepper
+              steps={steps}
+              current={step}
+              complete={false}
+              stepperRef={stepperRef}
+              onJump={go}
+            />
+          </div>
+        )}
 
         <div className="reg-lab-body">
           {/* ---------- STEP 1 ---------- */}
@@ -694,21 +718,7 @@ export function RegistrationLabView({
                 <h2>{tx('ของที่ระลึก (ไม่บังคับ)')}</h2>
                 <p>{tx('สั่งเสื้อหรือเหรียญที่ระลึกเพิ่มพร้อมใบสมัคร ชำระรวมกับค่าสมัคร')}</p>
               </div>
-              <SouvenirCards
-                products={event.products}
-                tab={souvenirTab}
-                onTabChange={setSouvenirTab}
-                value={addon ? `${addon.id}::${addonSize}` : ''}
-                onChange={(v) => {
-                  if (!v) {
-                    setAddonId('none');
-                    return;
-                  }
-                  const [pid, variant] = v.split('::');
-                  setAddonId(pid);
-                  setAddonSize(variant);
-                }}
-              />
+              <SouvenirPicker products={event.products} value={addonItems} onChange={setAddonItems} />
               {footer(3, 5)}
             </>
           )}
@@ -742,6 +752,11 @@ export function RegistrationLabView({
                     <strong>{tx('ระบุที่อยู่สำหรับรับเอกสาร/จัดส่งอุปกรณ์ทางไปรษณีย์')}</strong>
                     <span className="muted-inline">
                       {tx('บันทึกที่อยู่สำหรับจัดส่งเสื้อและของที่ระลึกตามเงื่อนไขของผู้จัดงาน')}
+                    </span>
+                    <span className="reg-tag-row">
+                      <PriceTag prefix="+" satang={kitFee.satang} />
+                      <NoteTag>{tx('ค่าจัดส่งชุดแข่ง')}</NoteTag>
+                      {kitFee.isSample && <NoteTag>{tx('ค่าตัวอย่าง ผู้จัดยังไม่ได้กำหนด')}</NoteTag>}
                     </span>
                   </div>
                 </label>
@@ -822,6 +837,17 @@ export function RegistrationLabView({
                     <>
                       <div className="reg-lab-fields">
                         <div className="form-row reg-lab-full">
+                          <label htmlFor="lab-addr-name">{tx('ชื่อเรียกที่อยู่')}</label>
+                          <input
+                            id="lab-addr-name"
+                            type="text"
+                            value={addrName}
+                            maxLength={60}
+                            placeholder={tx('เช่น บ้านพัก / ที่ทำงาน')}
+                            onChange={(e) => setAddrName(e.target.value)}
+                          />
+                        </div>
+                        <div className="form-row reg-lab-full">
                           <label htmlFor="lab-recipient"><RequiredFieldText text={tx('ชื่อผู้รับ *')} /></label>
                           <input id="lab-recipient" type="text" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
                         </div>
@@ -839,15 +865,17 @@ export function RegistrationLabView({
                           contactEmail={currentUser?.contactEmail}
                           required
                           streetAddressLabel={tx('ที่อยู่ (บ้านเลขที่ อาคาร ซอย ถนน)')}
+                          summaryFooter={
+                            <div className="ship-addr-save-row">
+                              <span className="muted-inline">
+                                {tx('ไม่บันทึกก็ได้ ที่อยู่นี้จะใช้เฉพาะการสมัครครั้งนี้')}
+                              </span>
+                              <button type="button" className="btn-secondary" onClick={saveToBook}>
+                                {tx('บันทึกลงสมุดที่อยู่')}
+                              </button>
+                            </div>
+                          }
                         />
-                      </div>
-                      <div className="ship-addr-save-row">
-                        <button type="button" className="btn-secondary" onClick={saveToBook}>
-                          {tx('บันทึกลงสมุดที่อยู่')}
-                        </button>
-                        <span className="muted-inline">
-                          {tx('ไม่บันทึกก็ได้ ที่อยู่นี้จะใช้เฉพาะการสมัครครั้งนี้')}
-                        </span>
                       </div>
                     </>
                   )}
@@ -857,34 +885,151 @@ export function RegistrationLabView({
             </>
           )}
 
-          {/* ---------- STEP 6 ---------- */}
-          {step === 6 && category && tier && quote && (
+          {/* ---------- STEP 6: review the whole form ---------- */}
+          {step === 6 && category && tier && quote && (() => {
+            const idDigits = idNumber.replace(/\s/g, '');
+            const bookAddr = book.find((x) => x.id === bookId);
+            const shipText =
+              addrMode === 'saved' && bookAddr
+                ? `${bookAddr.recipientName} (${bookAddr.phone}) — ${bookAddr.address}, ต.${bookAddr.subdistrict} อ.${bookAddr.district} จ.${bookAddr.province} ${bookAddr.postalCode}`
+                : `${recipient} (${shipPhone}) — ${address.address}, ต.${address.subdistrict} อ.${address.district} จ.${address.province} ${address.postalCode}`;
+            const answerRows = (event.customFields ?? []).map((f) => {
+              const val = answers[f.id] ?? f.defaultValue;
+              return {
+                label: tx(f.label),
+                value: typeof val === 'boolean' ? (val ? tx('ใช่') : tx('ไม่ใช่')) : tx(String(val ?? '').trim()),
+              };
+            });
+            const sections: ReviewSection[] = [
+              {
+                key: 'entry',
+                title: tx('ประเภทการสมัคร'),
+                editStep: 1,
+                rows: [
+                  { label: tx('ประเภท'), value: picked ? tx(picked.label) : '' },
+                  { label: tx('ระยะ'), value: tx(category.name) },
+                  { label: tx('ปล่อยตัว'), value: `${category.startTimeLocal} ${tx('น.')}` },
+                  { label: tx('อัตราค่าสมัคร'), value: tx(tier.label) },
+                ],
+              },
+              {
+                key: 'runner',
+                title: tx('ผู้เข้าแข่งขัน'),
+                editStep: 2,
+                rows: [
+                  { label: tx('ชื่อ-นามสกุล'), value: participantName },
+                  { label: tx('ชื่อภาษาอังกฤษ'), value: `${firstEn} ${lastEn}`.trim() },
+                  { label: tx('ชื่อเล่น'), value: nickTh.trim() },
+                  { label: tx('วันเกิด'), value: dob },
+                  { label: tx('เพศ'), value: tx(gender) },
+                  { label: tx('เบอร์โทร'), value: displayPhone(phone) },
+                  {
+                    label: idType === 'passport' ? tx('หนังสือเดินทาง') : tx('เลขบัตรประชาชน'),
+                    value: idDigits ? `•••• ${idDigits.slice(-4)}` : '',
+                  },
+                  { label: tx('ผู้ติดต่อฉุกเฉิน'), value: tx(emergency.trim()) },
+                ],
+              },
+              ...(answerRows.length > 0
+                ? [{ key: 'answers', title: tx('ข้อมูลเพิ่มเติม'), editStep: 2, rows: answerRows }]
+                : []),
+              {
+                key: 'shirt',
+                title: tx('เสื้อตามสิทธิ์สมัคร'),
+                editStep: 3,
+                rows: [
+                  { label: tx('แบบ'), value: tx(shirtStyleName(shirtStyle)) },
+                  { label: tx('ไซส์'), value: shirtSize },
+                ],
+              },
+              ...(hasSouvenirs
+                ? [
+                    {
+                      key: 'souvenir',
+                      title: tx('ของที่ระลึก'),
+                      editStep: 4,
+                      rows:
+                        addonLines.length > 0
+                          ? addonLines.map((l) => ({
+                              label: `${tx(l.prd.nameTh)}${l.size !== '-' ? ` · ${l.size}` : ''}`,
+                              value: `× ${l.qty}`,
+                            }))
+                          : [{ label: tx('รายการ'), value: tx('ไม่ได้เลือก') }],
+                    },
+                  ]
+                : []),
+              {
+                key: 'kit',
+                title: tx('การรับอุปกรณ์'),
+                editStep: 5,
+                rows: [
+                  {
+                    label: tx('วิธีรับ'),
+                    value: delivery === 'postal' ? tx('จัดส่งทางไปรษณีย์') : tx('รับเองที่หน้างาน (QR Check-in)'),
+                  },
+                  ...(delivery === 'postal'
+                    ? [
+                        { label: tx('ที่อยู่จัดส่ง'), value: tx(shipText.trim()) },
+                        { label: tx('ค่าจัดส่ง'), value: formatThb(shipQuote.totalSatang, true) },
+                      ]
+                    : []),
+                ],
+              },
+            ];
+            return (
+              <>
+                <div className="reg-lab-title">
+                  <h2>{tx('ตรวจข้อมูลก่อนชำระเงิน')}</h2>
+                  <p>{tx('ตรวจทุกส่วนให้ถูกต้อง ถ้าต้องการเปลี่ยน กด "แก้ไข" เพื่อกลับไปขั้นนั้น')}</p>
+                </div>
+                <RegistrationSummary
+                  sections={sections}
+                  lines={[
+                    {
+                      label: txf('ค่าสมัคร {0} ({1})', tx(category.name), tx(tier.label)),
+                      sub: txf('{0} · ไซส์ {1}', tx(shirtStyleName(shirtStyle)), shirtSize),
+                      satang: quote.baseSatang,
+                    },
+                    {
+                      label: txf('ค่าบริการระบบ ({0})', feePolicyLabel(event.feeBearerPolicy)),
+                      satang: quote.runnerFeeSatang,
+                    },
+                    ...addonLines.map((l) => ({
+                      label: `${txf('สินค้าซื้อเพิ่ม: {0} ({1})', tx(l.prd.nameTh), l.size)} × ${l.qty}`,
+                      satang: l.prd.priceSatang * l.qty,
+                    })),
+                    ...(shipQuote.kitSatang > 0
+                      ? [
+                          {
+                        label: tx('ค่าจัดส่งชุดแข่ง (ของที่ระลึกจากผู้จัดส่งรวมกล่องนี้)'),
+                        satang: shipQuote.kitSatang,
+                      },
+                      ...shipQuote.sellers.map((x) => ({
+                        label: txf('ค่าจัดส่งของที่ระลึก ({0})', tx(x.seller)),
+                        satang: x.satang,
+                      })),
+                        ]
+                      : []),
+                  ]}
+                  totalSatang={totalSatang}
+                  onEdit={(st) => go(st as LabStep)}
+                />
+                {footer(5, 7, 'ไปชำระเงิน')}
+              </>
+            );
+          })()}
+
+          {/* ---------- STEP 7: payment ---------- */}
+          {step === 7 && category && tier && quote && (
             <>
               <div className="reg-lab-title">
-                <h2>{tx('ตรวจยอดและยืนยันการสมัคร')}</h2>
-                <p>{tx('ตรวจรายการก่อนชำระ ยอดคำนวณจากราคาปัจจุบันของงาน')}</p>
+                <h2>{tx('ชำระเงินและยืนยันการสมัคร')}</h2>
+                <p>{tx('ยอดคำนวณจากราคาปัจจุบันของงาน')}</p>
               </div>
 
               <section className="reg-lab-section" aria-labelledby="lab-sum">
-                <h3 id="lab-sum">{tx('สรุปยอดชำระ')}</h3>
+                <h3 id="lab-sum">{tx('ยอดที่ต้องชำระ')}</h3>
                 <dl className="reg-lab-ledger">
-                  <div>
-                    <dt>
-                      {txf('ค่าสมัคร {0} ({1})', tx(category.name), tx(tier.label))}
-                      <span className="muted-inline">{txf('{0} · ไซส์ {1}', tx(shirtStyleName(shirtStyle)), shirtSize)}</span>
-                    </dt>
-                    <dd className="mono-num">{formatThb(quote.baseSatang, true)}</dd>
-                  </div>
-                  <div>
-                    <dt>{txf('ค่าบริการระบบ ({0})', feePolicyLabel(event.feeBearerPolicy))}</dt>
-                    <dd className="mono-num">{formatThb(quote.runnerFeeSatang, true)}</dd>
-                  </div>
-                  {addon && (
-                    <div>
-                      <dt>{txf('สินค้าซื้อเพิ่ม: {0} ({1})', tx(addon.nameTh), addonSize)}</dt>
-                      <dd className="mono-num">{formatThb(addon.priceSatang, true)}</dd>
-                    </div>
-                  )}
                   <div className="reg-lab-ledger-total">
                     <dt>{tx('ยอดชำระสุทธิทั้งหมด')}</dt>
                     <dd className="mono-num text-vermilion">{formatThb(totalSatang, true)}</dd>
@@ -892,53 +1037,27 @@ export function RegistrationLabView({
                 </dl>
               </section>
 
-              <section className="reg-lab-section" aria-labelledby="lab-pay">
-                <h3 id="lab-pay">{tx('ช่องทางชำระเงิน (จำลอง)')}</h3>
-                <div className="reg-lab-pair-cards" role="radiogroup" aria-labelledby="lab-pay">
-                  {(
-                    [
-                      ['promptpay', 'QR PromptPay', 'สแกนจ่ายทันที'],
-                      ['card', 'บัตรเครดิต / เดบิต', 'Visa · Mastercard · JCB'],
-                    ] as const
-                  ).map(([id, title, sub]) => (
-                    <label key={id} className={`reg-category-radio-card ${channel === id ? 'selected' : ''}`}>
-                      <input type="radio" name="lab-pay" checked={channel === id} onChange={() => setChannel(id)} />
-                      <span className="custom-radio-circle" aria-hidden="true" />
-                      <div className="reg-radio-card-copy">
-                        <strong>{tx(title)}</strong>
-                        <span className="muted-inline">{tx(sub)}</span>
-                      </div>
-                    </label>
-                  ))}
-                </div>
+              <section className="reg-lab-section">
+                <PaymentMethodPicker name="lab-pay" value={channel} onChange={setChannel} />
               </section>
 
-              <section className="reg-lab-section" aria-labelledby="lab-consent">
-                <h3 id="lab-consent">{tx('ข้อตกลง')}</h3>
-                <div className="reg-lab-consents">
-                  <label className="checkbox-row">
-                    <input type="checkbox" checked={acceptRules} onChange={(e) => setAcceptRules(e.target.checked)} />
-                    <span>
-                      <strong>{tx('[จำเป็น]')}</strong>{' '}
-                      {txf('ข้าพเจ้ายอมรับกติกาการแข่งขันและเงื่อนไขความปลอดภัยของงาน ({0})', event.rulesVersion)}
-                    </span>
-                  </label>
-                  <label className="checkbox-row">
-                    <input type="checkbox" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} />
-                    <span>{tx('[ไม่บังคับ] ยินยอมรับข่าวสารงานวิ่งและโปรโมชันจากผู้จัดงาน')}</span>
-                  </label>
-                </div>
+              <section className="reg-lab-section">
+                <RegistrationTerms
+                  event={event}
+                  organization={organization}
+                  acceptRules={acceptRules}
+                  onAcceptRules={setAcceptRules}
+                  acceptPayment={acceptPayTerms}
+                  onAcceptPayment={setAcceptPayTerms}
+                />
               </section>
 
               <div className="reg-lab-footer">
-                <button type="button" className="btn-secondary" onClick={() => go(5)}>
+                <button type="button" className="btn-secondary" onClick={() => go(6)}>
                   {tx('ย้อนกลับ')}
                 </button>
                 <div className="reg-lab-footer-actions">
-                  <button type="button" className="btn-secondary" onClick={() => go(7)}>
-                    {tx('กันโควตาไว้ชำระภายหลัง (15 นาที)')}
-                  </button>
-                  <button type="button" className="btn-primary" disabled={!acceptRules} onClick={() => go(7)}>
+                  <button type="button" className="btn-primary" disabled={!acceptRules || !acceptPayTerms} onClick={() => go(8)}>
                     {tx('ชำระเงินและยืนยันการสมัครทันที')}
                   </button>
                 </div>
@@ -946,37 +1065,23 @@ export function RegistrationLabView({
             </>
           )}
 
-          {/* ---------- STEP 7 (sample) ---------- */}
-          {step === 7 && (
-            <div className="reg-lab-done">
-              <IconCheckCircle size={28} />
-              <h2>{tx('ตัวอย่างหน้าสมัครสำเร็จ')}</h2>
-              <p>{tx('แบบ B ไม่ได้ส่งใบสมัครจริง ข้อมูลด้านล่างเป็นค่าที่กรอกในหน้านี้เท่านั้น')}</p>
-              <dl className="reg-lab-ledger">
-                <div>
-                  <dt>{tx('ผู้เข้าแข่งขัน')}</dt>
-                  <dd>{participantName || '—'}</dd>
-                </div>
-                <div>
-                  <dt>{tx('ระยะ')}</dt>
-                  <dd>{category ? tx(category.name) : '—'}</dd>
-                </div>
-                <div>
-                  <dt>{tx('เสื้อตามสิทธิ์สมัคร')}</dt>
-                  <dd>{txf('{0} · ไซส์ {1}', tx(shirtStyleName(shirtStyle)), shirtSize)}</dd>
-                </div>
-                <div className="reg-lab-ledger-total">
-                  <dt>{tx('ยอดชำระสุทธิทั้งหมด')}</dt>
-                  <dd className="mono-num text-vermilion">{formatThb(totalSatang, true)}</dd>
-                </div>
-              </dl>
-              <div className="reg-lab-footer">
-                <span />
-                <button type="button" className="btn-secondary" onClick={() => go(1)}>
-                  {tx('เริ่มกรอกใหม่')}
-                </button>
-              </div>
-            </div>
+          {/* ---------- STEP 8 (sample): success on its own centred screen ---------- */}
+          {step === 8 && (
+            <RegistrationDone
+              title={tx('ตัวอย่างหน้าสมัครสำเร็จ')}
+              subtitle={tx('แบบ B ไม่ได้ส่งใบสมัครจริง ข้อมูลด้านล่างเป็นค่าที่กรอกในหน้านี้เท่านั้น')}
+              items={[
+                { label: tx('ผู้เข้าแข่งขัน'), value: participantName || '—' },
+                { label: tx('ระยะ'), value: category ? tx(category.name) : '—' },
+                { label: tx('เสื้อตามสิทธิ์สมัคร'), value: txf('{0} · ไซส์ {1}', tx(shirtStyleName(shirtStyle)), shirtSize) },
+                { label: tx('ช่องทางชำระ'), value: channel === 'card' ? tx('บัตรเครดิต / เดบิต') : 'QR PromptPay' },
+                { label: tx('ยอดชำระสุทธิทั้งหมด'), value: formatThb(totalSatang, true), accent: true },
+              ]}
+            >
+              <button type="button" className="btn-secondary" onClick={() => go(1)}>
+                {tx('เริ่มกรอกใหม่')}
+              </button>
+            </RegistrationDone>
           )}
         </div>
       </section>

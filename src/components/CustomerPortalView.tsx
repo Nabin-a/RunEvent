@@ -22,6 +22,8 @@ import {
   feePolicyLabel,
   formatThb,
   getCurrentTier,
+  kitShippingFee,
+  quoteRegistrationShipping,
 } from '../utils/pricing';
 import {
   EventCoverMedia,
@@ -43,6 +45,12 @@ import {
   IconSearch,
   IconShirt,
 } from './Icons';
+import { RegistrationDone, RegistrationSummary, type ReviewSection } from './RegistrationReview';
+import { PaymentMethodPicker } from './PaymentMethodPicker';
+import { StorefrontView, type CartLine, type MerchCheckoutPayload, type MerchCheckoutResult } from './StorefrontView';
+import { SouvenirPicker } from './SouvenirPicker';
+import { PAYMENT_TERMS_VERSION, RegistrationTerms } from './RegistrationTerms';
+import { displayPhone } from '../utils/phone';
 import { DateOfBirthInput } from './DateOfBirthInput';
 import { EventAgeGroupsSection } from './EventAgeGroupsSection';
 import { RaceCalendarView } from './RaceCalendarView';
@@ -52,7 +60,6 @@ import { MobileRegisterBar } from './MobileRegisterBar';
 import { MascotAnim } from './MascotAnim';
 import { RegistrationLabView, type LabShared } from './RegistrationLabView';
 import { ProductPicker, type PickerType } from './ProductPicker';
-import { souvenirArt } from './ProductArt';
 import { SHIRT_STYLES, shirtStyleName, type ShirtStyleId } from '../data/mockShirtStyles';
 import { MascotSprite, MascotStepTrack } from './MascotRunner';
 import { reportInvalidFieldsWithin } from '../utils/formValidation';
@@ -90,7 +97,7 @@ import {
 import { IdNumberInput } from './IdNumberInput';
 /** Registration wizard steps: 1 start, 2 participant, 3 race-kit shirt, 4 souvenirs,
  *  5 address, 6 payment, 7 done. Step 4 is skipped when the event sells nothing. */
-type RegStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+type RegStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
 export type CustomerSubView =
   | 'directory'
@@ -135,32 +142,23 @@ interface CustomerPortalViewProps {
     shippingAddressSnapshot?: string;
     participantSnapshot?: RegistrationRecord['participantSnapshot'];
     marketingConsent: boolean;
+    acceptedRules: boolean;
+    acceptedPaymentTermsVersion?: string;
     simulateImmediateWebhook: boolean;
-    addonProduct?: EventProduct | null;
-    addonSize?: string;
+    addonItems?: CartLine[];
     customAnswers?: Record<string, string | boolean>;
     requestId: string;
   }) => Promise<
-    | { ok: true; reg: RegistrationRecord; addonOrder?: MerchOrderRecord }
+    | { ok: true; reg: RegistrationRecord; addonOrders?: MerchOrderRecord[] }
     | { ok: false; error: string }
   >;
-  onCreateStandaloneMerchOrder: (payload: {
-    eventId: string;
-    product: EventProduct;
-    variantSize: string;
-    quantity: number;
-    buyerName: string;
-    deliveryMethod: 'pickup_at_expo' | 'postal_shipping';
-    shippingAddress?: string;
-    linkedRegistrationCode?: string;
-  }) => MerchOrderRecord;
-  onUpdateRunnerShirtSize: (
-    regId: string,
-    newSize: ShirtSizeCode
-  ) => void;
   onCompletePendingPayment: (regId: string) => void;
+  /** storefront cart checkout (server checks stock for the whole cart in one go) */
+  onCheckoutMerchCart: (payload: MerchCheckoutPayload) => Promise<MerchCheckoutResult>;
   /** 'b' renders the alternative registration layout (sandbox review only, cannot submit) */
   registrationLayout?: 'a' | 'b';
+  /** event-wide quota box on the event detail page (dev-dock mockup for now) */
+  showQuotaBox?: boolean;
 }
 
 export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
@@ -181,10 +179,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   onSaveProfilePatch,
   onOpenOrganizerDashboard,
   onCreateRegistrationAndOptionalAddon,
-  onCreateStandaloneMerchOrder,
-  onUpdateRunnerShirtSize,
   onCompletePendingPayment,
+  onCheckoutMerchCart,
   registrationLayout = 'a',
+  showQuotaBox = true,
 }) => {
   // Directory filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -206,7 +204,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   // Every step change (next / back / clicking a done step) brings the form back to its top.
   // going back to edit starts a fresh checkout attempt (a new booking id)
   useEffect(() => {
-    if (regStep < 6) checkoutRequestId.current = null;
+    if (regStep < 7) checkoutRequestId.current = null;
   }, [regStep]);
   const prevRegStep = useRef(regStep);
   useEffect(() => {
@@ -232,12 +230,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     'วีระ วัฒนากูล (089-110-2211)'
   );
   const [shirtSize, setShirtSize] = useState<ShirtSizeCode>('M');
-  const [includeAddonId, setIncludeAddonId] = useState<string>('none');
+  // souvenirs bought with the entry: any products, sizes and quantities (one merch order per line)
+  const [addonItems, setAddonItems] = useState<CartLine[]>([]);
   // shirt style in the shirt step (only 'tee' is real stock; see data/mockShirtStyles.ts)
   const [shirtStyle, setShirtStyle] = useState<ShirtStyleId>('tee');
-  // souvenir category picked in the souvenir step ('none' = no souvenir)
-  const [souvenirType, setSouvenirType] = useState<string>('none');
-  const [addonSize, setAddonSize] = useState<string>('M');
   const [registerForSelf, setRegisterForSelf] = useState(true);
   const [buyerName, setBuyerName] = useState(
     currentUser?.fullNameTh ?? ''
@@ -299,6 +295,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       currentUser?.runnerProfile?.savedAddresses?.[0]?.id ??
       ''
   );
+  // name the runner gives a new address (e.g. home / office) when saving it to the book
+  const [shipAddrName, setShipAddrName] = useState('');
   const [shipRecipient, setShipRecipient] = useState(
     currentUser?.fullNameTh ?? ''
   );
@@ -319,6 +317,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   });
   const [acceptedRules, setAcceptedRules] = useState(false);
   const [marketingConsent, setMarketingConsent] = useState(false);
+  // payment terms on the payment step (required, like the event rules)
+  const [acceptedPayTerms, setAcceptedPayTerms] = useState(false);
   const [customAnswers, setCustomAnswers] = useState<
     Record<string, string | boolean>
   >({});
@@ -334,21 +334,12 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   const [createdResult, setCreatedResult] = useState<{
     reg: RegistrationRecord;
     addonOrder?: MerchOrderRecord;
+    addonOrders?: MerchOrderRecord[];
   } | null>(null);
 
   // Storefront state (General customer without registration)
-  const [activeProductId, setActiveProductId] = useState<string>('');
-  const [merchSize, setMerchSize] = useState<string>('M');
-  const [merchQty, setMerchQty] = useState<number>(1);
-  const [deliveryMethod, setDeliveryMethod] = useState<
-    'pickup_at_expo' | 'postal_shipping'
-  >('pickup_at_expo');
-  const [merchAddress, setMerchAddress] = useState(
-    '199 ถ.นิมมานเหมินท์ อ.เมือง จ.เชียงใหม่ 50200'
-  );
   const [linkedRegForMerch, setLinkedRegForMerch] = useState<string>('');
-  const [createdMerchReceipt, setCreatedMerchReceipt] =
-    useState<MerchOrderRecord | null>(null);
+  const [storeFocus, setStoreFocus] = useState<{ id: string; n: number } | null>(null);
 
 
   React.useEffect(() => {
@@ -612,20 +603,35 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     [selectedEvent, activeCategory, regDob, regGender]
   );
 
-  const activeProduct: EventProduct | null = useMemo(() => {
-    if (!selectedEvent || selectedEvent.products.length === 0) return null;
-    return (
-      selectedEvent.products.find((p) => p.id === activeProductId) ??
-      selectedEvent.products[0]
-    );
-  }, [selectedEvent, activeProductId]);
-
-  const selectedAddonProduct: EventProduct | null = useMemo(() => {
-    if (!selectedEvent || includeAddonId === 'none') return null;
-    return (
-      selectedEvent.products.find((p) => p.id === includeAddonId) ?? null
-    );
-  }, [selectedEvent, includeAddonId]);
+  const addonLines = useMemo(
+    () =>
+      selectedEvent
+        ? addonItems
+            .map((l) => ({ ...l, prd: selectedEvent.products.find((p) => p.id === l.productId) }))
+            .filter((l): l is CartLine & { prd: EventProduct } => Boolean(l.prd))
+        : [],
+    [selectedEvent, addonItems]
+  );
+  const addonSatangTotal = addonLines.reduce((n, l) => n + l.prd.priceSatang * l.qty, 0);
+  // postage shown on the delivery step, itemised on the review step and added to the total;
+  // the server works it out again with the same helper
+  const regShipQuote = quoteRegistrationShipping(
+    selectedEvent ?? {},
+    kitDeliveryOption === 'postal' ? 'postal_shipping' : 'pickup_at_expo',
+    addonLines
+  );
+  const regKitFee = kitShippingFee(selectedEvent ?? {});
+  // the older inline form on the event page still picks a single souvenir: these read and
+  // write the first line only
+  const selectedAddonProduct: EventProduct | null = addonLines[0]?.prd ?? null;
+  const includeAddonId = addonLines[0]?.productId ?? 'none';
+  const addonSize = addonLines[0]?.size ?? 'M';
+  const setIncludeAddonId = (id: string) => {
+    const prd = selectedEvent?.products.find((p) => p.id === id);
+    setAddonItems(prd ? [{ productId: prd.id, size: prd.availableSizes[0] ?? '-', qty: 1 }] : []);
+  };
+  const setAddonSize = (size: string) =>
+    setAddonItems((prev) => (prev.length > 0 ? [{ ...prev[0], size }, ...prev.slice(1)] : prev));
 
   const myRegistrations = useMemo(() => {
     if (!currentUser) return [];
@@ -670,14 +676,12 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     openWizardImmediately = false
   ) => {
     setSelectedCatId(ev.categories[0]?.id ?? '');
-    setActiveProductId(ev.products[0]?.id ?? '');
-    setMerchSize(ev.products[0]?.availableSizes[0] ?? 'M');
     setIncludeAddonId('none');
     setRegStep(1);
     setAcceptedRules(false);
+    setAcceptedPayTerms(false);
     setCheckoutError(null);
     setCreatedResult(null);
-    setCreatedMerchReceipt(null);
     setLinkedRegForMerch(prelinkRegCode);
     setDetailTab(tab);
     setShowRegForm(openWizardImmediately);
@@ -728,6 +732,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       setCheckoutError(
         txf("กรุณาติ๊กยอมรับกติกาการแข่งขัน ({0}) ก่อนยืนยัน", selectedEvent.rulesVersion)
       );
+      return;
+    }
+    if (!acceptedPayTerms) {
+      setCheckoutError(tx("กรุณาติ๊กยอมรับข้อกำหนดการชำระเงินและการคืนเงินก่อนยืนยัน"));
       return;
     }
 
@@ -830,9 +838,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         preferredShirtFit: registerForSelf ? prof?.preferredShirtFit : undefined,
       },
       marketingConsent,
+      acceptedRules: true,
+      acceptedPaymentTermsVersion: PAYMENT_TERMS_VERSION,
       simulateImmediateWebhook: payImmediately,
-      addonProduct: selectedAddonProduct,
-      addonSize,
+      addonItems: addonItems.length > 0 ? addonItems : undefined,
       customAnswers:
         (selectedEvent.customFields ?? []).length > 0
           ? customAnswers
@@ -849,7 +858,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       return;
     }
     checkoutRequestId.current = null;
-    const res = { reg: outcome.reg, addonOrder: outcome.addonOrder };
+    const res = { reg: outcome.reg, addonOrder: outcome.addonOrders?.[0], addonOrders: outcome.addonOrders };
 
     // Persist reusable data back to the Runner Profile
     const profilePatch: Partial<RunnerProfileData> = {};
@@ -893,46 +902,12 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       onSaveProfilePatch?.(profilePatch);
     }
     setCreatedResult(res);
-    setRegStep(7);
+    setRegStep(8);
   };
 
   const handleRegistrationSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     void submitRegistrationOrder(true);
-  };
-
-  const handleMerchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedEvent || !activeProduct) return;
-
-    if (!currentUser) {
-      onRequireLoginWithIntent({
-        surface: 'events',
-        eventId: selectedEvent.id,
-        eventTab: 'storefront',
-        label: `สั่งซื้อสินค้าที่ระลึกงาน ${selectedEvent.titleTh}`,
-      });
-      return;
-    }
-
-    const receipt = onCreateStandaloneMerchOrder({
-      eventId: selectedEvent.id,
-      product: activeProduct,
-      variantSize: merchSize,
-      quantity: merchQty,
-      buyerName: currentUser.fullNameTh,
-      deliveryMethod:
-        selectedEvent.status === 'completed'
-          ? 'postal_shipping'
-          : deliveryMethod,
-      shippingAddress:
-        selectedEvent.status === 'completed' ||
-        deliveryMethod === 'postal_shipping'
-          ? merchAddress.trim()
-          : undefined,
-      linkedRegistrationCode: linkedRegForMerch || undefined,
-    });
-    setCreatedMerchReceipt(receipt);
   };
 
   /* ================= SUBVIEW 3: MY TICKETS & MERCH ORDERS ================= */
@@ -1030,12 +1005,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     const cat = ev?.categories.find(
                       (c) => c.id === reg.categoryId
                     );
-                    const canEditShirt =
-                      ev &&
-                      ev.status === 'published' &&
-                      reg.registrationStatus === 'confirmed' &&
-                      reg.fulfillmentStatus === 'ready';
-
                     return (
                       <article key={reg.id} className="runner-pass-item kr-pass">
                         {ev && (
@@ -1083,36 +1052,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                                   )
                                 </span>
                               </button>
-                            )}
-
-                            {canEditShirt && (
-                              <div className="inline-shirt-editor">
-                                <label htmlFor={`my-shirt-${reg.id}`}>
-                                  {tx("แก้ขนาดเสื้อสิทธิ์สมัคร (ถึง ")} {tx(ev.editDeadlineDate)}):
-                                </label>
-                                <select
-                                  id={`my-shirt-${reg.id}`}
-                                  value={reg.shirtSize}
-                                  onChange={(e) =>
-                                    onUpdateRunnerShirtSize(
-                                      reg.id,
-                                      e.target.value
-                                    )
-                                  }
-                                >
-                                  {(ev?.shirtStocks ?? [])
-                                    .filter(
-                                      (st) =>
-                                        st.total - st.reservedOrConfirmed > 0 ||
-                                        st.size === reg.shirtSize
-                                    )
-                                    .map((st) => (
-                                      <option key={st.size} value={st.size}>
-                                        {tx("ไซส์ ")} {tx(st.size)}
-                                      </option>
-                                    ))}
-                                </select>
-                              </div>
                             )}
 
                             {ev && ev.products.length > 0 && (
@@ -1346,10 +1285,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           },
         ],
         shirtStyle: [shirtStyle, setShirtStyle],
-        addonId: [includeAddonId, setIncludeAddonId],
-        addonSize: [addonSize, setAddonSize],
-        souvenirTab: [souvenirType, setSouvenirType],
+        addonItems: [addonItems, setAddonItems],
         delivery: [kitDeliveryOption, setKitDeliveryOption],
+        addrName: [shipAddrName, setShipAddrName],
         recipient: [
           shipRecipient,
           (v) => {
@@ -1387,7 +1325,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         ],
         channel: [paymentChannel, setPaymentChannel],
         acceptRules: [acceptedRules, setAcceptedRules],
-        marketing: [marketingConsent, setMarketingConsent],
+        acceptPayTerms: [acceptedPayTerms, setAcceptedPayTerms],
       };
       return (
         <RegistrationLabView
@@ -1409,8 +1347,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       { step: 3, label: 'สินค้า' },
       ...(hasSouvenirs ? [{ step: 4 as RegStep, label: 'ของที่ระลึก' }] : []),
       { step: 5, label: 'ที่อยู่' },
-      { step: 6, label: 'ชำระเงิน' },
-      { step: 7, label: 'สำเร็จ' },
+      { step: 6, label: 'สรุป' },
+      { step: 7, label: 'ชำระเงิน' },
     ];
 
     const getShirtSpec = (size: ShirtSizeCode) =>
@@ -1467,6 +1405,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             <div className="poster-cover-media" aria-hidden="true">
               <EventCoverMedia
                 event={selectedEvent}
+                illustrated
                 className="poster-cover-img"
               />
               <div className="poster-cover-scrim" />
@@ -1524,6 +1463,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             className="event-reg-wizard-pane"
             aria-label={tx("ขั้นตอนการสมัครเข้าร่วมงานวิ่ง")}
           >
+            {regStep !== 8 && (
+            <>
             {/* 6-STEP CONNECTED CIRCLE PROGRESS STEPPER */}
             <nav
               ref={stepperRef}
@@ -1566,17 +1507,19 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             <MascotStepTrack
               stepperRef={stepperRef}
               stepIndex={Math.max(0, stepLabels.findIndex((s) => s.step === regStep))}
-              complete={regStep === 7}
+              complete={false}
             />
             {/* phones: current step + segmented bar instead of 7 squeezed circles */}
             <MobileStepProgress
               steps={stepLabels}
               current={regStep}
-              complete={regStep === 7}
+              complete={false}
               onJump={(step) => {
                 if (step < regStep) setRegStep(step);
               }}
             />
+            </>
+            )}
 
             {/* STEP 1: เริ่ม — เลือกประเภทการสมัคร */}
             {regStep === 1 && (
@@ -2296,67 +2239,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   {tx("สั่งเสื้อหรือเหรียญที่ระลึกเพิ่มพร้อมใบสมัคร ชำระรวมกับค่าสมัคร")}
                 </p>
 
-                {(() => {
-                  // one type per souvenir category the event sells
-                  const groups = new Map<string, EventProduct[]>();
-                  selectedEvent.products.forEach((p) => {
-                    groups.set(p.categoryLabel, [...(groups.get(p.categoryLabel) ?? []), p]);
-                  });
-                  const souvenirTypes: PickerType[] = [
-                    { id: 'none', name: 'ไม่ซื้อเพิ่ม', art: null, optionLegend: '', options: [] },
-                    ...[...groups.entries()].map(([label, items]) => ({
-                      id: label,
-                      name: label,
-                      art: souvenirArt(label, items[0].nameTh),
-                      optionLegend: label === 'เสื้อที่ระลึก' ? 'ไซส์' : 'แบบ / รุ่น',
-                      options: items.flatMap((p) =>
-                        p.availableSizes.map((sz) => ({
-                          value: `${p.id}::${sz}`,
-                          label: sz,
-                          sub:
-                            items.length > 1
-                              ? `${p.nameTh} · +${formatThb(p.priceSatang)}`
-                              : `+${formatThb(p.priceSatang)}`,
-                          left: Math.max(0, p.stockOrCeiling - p.soldCount),
-                          total: p.stockOrCeiling,
-                          unit: 'ชิ้น',
-                        }))
-                      ),
-                    })),
-                  ];
-                  const typeId =
-                    selectedAddonProduct?.categoryLabel ?? souvenirType;
-                  return (
-                    <ProductPicker
-                      idPrefix="reg-souvenir"
-                      typeLegend="ประเภทของที่ระลึก"
-                      types={souvenirTypes}
-                      typeId={typeId}
-                      onTypeChange={(id) => {
-                        setSouvenirType(id);
-                        // a different category clears the item picked before
-                        if (selectedAddonProduct?.categoryLabel !== id) setIncludeAddonId('none');
-                      }}
-                      optionValue={
-                        selectedAddonProduct ? `${selectedAddonProduct.id}::${addonSize}` : ''
-                      }
-                      onOptionChange={(v) => {
-                        const [pid, sz] = v.split('::');
-                        setIncludeAddonId(pid);
-                        setAddonSize(sz);
-                      }}
-                      emptyNote="รับเฉพาะสิทธิ์สมัครวิ่ง ไม่ซื้อสินค้าเพิ่ม"
-                    />
-                  );
-                })()}
-
-                {selectedAddonProduct && (
-                  <span className="reg-tag-row">
-                    <PriceTag prefix="+" satang={selectedAddonProduct.priceSatang} />
-                    <NoteTag>{tx("ชำระพร้อมค่าสมัคร")}</NoteTag>
-                    <span className="muted-inline">{tx(selectedAddonProduct.nameTh)}</span>
-                  </span>
-                )}
+                <SouvenirPicker products={selectedEvent.products} value={addonItems} onChange={setAddonItems} />
                 <div className="reg-step-footer-between">
                   <button
                     type="button"
@@ -2428,6 +2311,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       </strong>
                       <span className="muted-inline">
                         {tx("บันทึกที่อยู่สำหรับจัดส่งเสื้อและของที่ระลึกตามเงื่อนไขของผู้จัดงาน")}
+                      </span>
+                      <span className="reg-tag-row">
+                        <PriceTag prefix="+" satang={regKitFee.satang} />
+                        <NoteTag>{tx("ค่าจัดส่งชุดแข่ง")}</NoteTag>
+                        {regKitFee.isSample && <NoteTag>{tx("ค่าตัวอย่าง ผู้จัดยังไม่ได้กำหนด")}</NoteTag>}
                       </span>
                     </div>
                   </label>
@@ -2524,44 +2412,139 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
                   {shipAddrMode === 'manual' && (
                     <>
-                      <div className="form-grid-2">
-                        <div className="form-row">
-                          <label htmlFor="ship-recipient">{<RequiredFieldText text={tx("ชื่อผู้รับ *")} />}</label>
-                          <input
-                            id="ship-recipient"
-                            type="text"
-                            value={shipRecipient}
-                            onChange={(e) => {
-                              setShipRecipient(e.target.value);
-                              const n = regCascadeAddr;
-                              setRunnerShippingAddress(
-                                `${e.target.value} (${shipPhone}) — ${n.address}, ต.${n.subdistrict} อ.${n.district} จ.${n.province} ${n.postalCode}`.trim()
-                              );
-                            }}
-                          />
-                        </div>
-                        <div className="form-row">
-                          <label htmlFor="ship-phone">{<RequiredFieldText text={tx("เบอร์โทรผู้รับ *")} />}</label>
-                          <PhoneInput
-                            id="ship-phone"
-                            value={shipPhone}
-                            onChange={(next) => {
-                              setShipPhone(next);
-                              const n = regCascadeAddr;
-                              setRunnerShippingAddress(
-                                `${shipRecipient} (${next}) — ${n.address}, ต.${n.subdistrict} อ.${n.district} จ.${n.province} ${n.postalCode}`.trim()
-                              );
-                            }}
-                          />
-                        </div>
-                      </div>
-
+                      {/* compact grid: name | phone, recipient | postal code, street | area, then a one-line summary */}
                       <ThaiPostalAddressSelector
                         idPrefix="ev-reg-ship"
+                        compact
+                        compactLead={
+                          <>
+                            <div className="form-row">
+                              <label htmlFor="ship-addr-name">{tx('ชื่อเรียกที่อยู่')}</label>
+                              <input
+                                id="ship-addr-name"
+                                type="text"
+                                value={shipAddrName}
+                                maxLength={60}
+                                placeholder={tx('เช่น บ้านพัก / ที่ทำงาน')}
+                                onChange={(e) => setShipAddrName(e.target.value)}
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="ship-phone">{<RequiredFieldText text={tx("เบอร์โทรผู้รับ *")} />}</label>
+                              <PhoneInput
+                                id="ship-phone"
+                                value={shipPhone}
+                                onChange={(next) => {
+                                  setShipPhone(next);
+                                  const n = regCascadeAddr;
+                                  setRunnerShippingAddress(
+                                    `${shipRecipient} (${next}) — ${n.address}, ต.${n.subdistrict} อ.${n.district} จ.${n.province} ${n.postalCode}`.trim()
+                                  );
+                                }}
+                              />
+                            </div>
+                            <div className="form-row">
+                              <label htmlFor="ship-recipient">{<RequiredFieldText text={tx("ชื่อผู้รับ *")} />}</label>
+                              <input
+                                id="ship-recipient"
+                                type="text"
+                                value={shipRecipient}
+                                onChange={(e) => {
+                                  setShipRecipient(e.target.value);
+                                  const n = regCascadeAddr;
+                                  setRunnerShippingAddress(
+                                    `${e.target.value} (${shipPhone}) — ${n.address}, ต.${n.subdistrict} อ.${n.district} จ.${n.province} ${n.postalCode}`.trim()
+                                  );
+                                }}
+                              />
+                            </div>
+                          </>
+                        }
                         contactPhone={shipPhone}
                         contactEmail={currentUser?.contactEmail}
                         required
                         streetAddressLabel="ที่อยู่ (บ้านเลขที่ อาคาร ซอย ถนน)"
+                        summaryFooter={
+                          currentUser && (
+                              <div className="ship-addr-save-row">
+                                <span className="muted-inline">
+                                  {tx('ไม่บันทึกก็ได้ ที่อยู่นี้จะใช้เฉพาะการสมัครครั้งนี้')}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="btn-secondary"
+                                  disabled={savingShipAddr}
+                                  onClick={async () => {
+                                    const a = regCascadeAddr;
+                                    if (
+                                      !shipRecipient.trim() ||
+                                      !shipPhone.trim() ||
+                                      !a.address.trim() ||
+                                      !a.postalCode ||
+                                      !a.province ||
+                                      !a.district ||
+                                      !a.subdistrict
+                                    ) {
+                                      setShipAddrNotice({
+                                        tone: 'err',
+                                        text: tx('กรอกชื่อผู้รับ เบอร์โทร และที่อยู่ให้ครบก่อนบันทึก'),
+                                      });
+                                      return;
+                                    }
+                                    const existing = currentUser.runnerProfile?.savedAddresses ?? [];
+                                    const dup = existing.find(
+                                      (x) =>
+                                        x.address.trim() === a.address.trim() &&
+                                        x.postalCode === a.postalCode &&
+                                        x.subdistrict === a.subdistrict
+                                    );
+                                    const saved: RunnerSavedAddress = dup ?? {
+                                      id: `addr-${Date.now().toString(36)}`,
+                                      addressName: shipAddrName.trim() || txf('ที่อยู่จากการสมัคร {0}', selectedEvent.code),
+                                      recipientName: shipRecipient.trim(),
+                                      phone: shipPhone.trim(),
+                                      address: a.address.trim(),
+                                      province: a.province,
+                                      district: a.district,
+                                      subdistrict: a.subdistrict,
+                                      postalCode: a.postalCode,
+                                      country: a.country || 'Thailand',
+                                      isDefault: existing.length === 0,
+                                    };
+                                    if (!dup) {
+                                      setSavingShipAddr(true);
+                                      const res = await onSaveProfilePatch?.({
+                                        savedAddresses: [...existing, saved],
+                                      });
+                                      setSavingShipAddr(false);
+                                      if (res && !res.ok) {
+                                        setShipAddrNotice({
+                                          tone: 'err',
+                                          text: res.error ?? tx('บันทึกที่อยู่ไม่สำเร็จ กรุณาลองอีกครั้ง'),
+                                        });
+                                        return;
+                                      }
+                                    }
+                                    // back to the address book with the new address picked
+                                    setSelectedSavedAddrId(saved.id);
+                                    setRunnerShippingAddress(
+                                      `${saved.recipientName} (${saved.phone}) — ${saved.address}, ต.${saved.subdistrict} อ.${saved.district} จ.${saved.province} ${saved.postalCode}`
+                                    );
+                                    setShipAddrMode('saved');
+                                    setShipAddrName('');
+                                    setShipAddrNotice({
+                                      tone: 'ok',
+                                      text: dup
+                                        ? tx('ที่อยู่นี้มีในสมุดแล้ว เลือกให้แล้ว')
+                                        : tx('บันทึกลงสมุดที่อยู่แล้ว และเลือกเป็นที่อยู่จัดส่ง'),
+                                    });
+                                  }}
+                                >
+                                  {savingShipAddr ? tx('กำลังบันทึก…') : tx('บันทึกลงสมุดที่อยู่')}
+                                </button>
+                              </div>
+                          )
+                        }
                         value={regCascadeAddr}
                         onChange={(next) => {
                           setRegCascadeAddr(next);
@@ -2574,85 +2557,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           );
                         }}
                       />
-
-                      {currentUser && (
-                        <div className="ship-addr-save-row">
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            disabled={savingShipAddr}
-                            onClick={async () => {
-                              const a = regCascadeAddr;
-                              if (
-                                !shipRecipient.trim() ||
-                                !shipPhone.trim() ||
-                                !a.address.trim() ||
-                                !a.postalCode ||
-                                !a.province ||
-                                !a.district ||
-                                !a.subdistrict
-                              ) {
-                                setShipAddrNotice({
-                                  tone: 'err',
-                                  text: tx('กรอกชื่อผู้รับ เบอร์โทร และที่อยู่ให้ครบก่อนบันทึก'),
-                                });
-                                return;
-                              }
-                              const existing = currentUser.runnerProfile?.savedAddresses ?? [];
-                              const dup = existing.find(
-                                (x) =>
-                                  x.address.trim() === a.address.trim() &&
-                                  x.postalCode === a.postalCode &&
-                                  x.subdistrict === a.subdistrict
-                              );
-                              const saved: RunnerSavedAddress = dup ?? {
-                                id: `addr-${Date.now().toString(36)}`,
-                                addressName: txf('ที่อยู่จากการสมัคร {0}', selectedEvent.code),
-                                recipientName: shipRecipient.trim(),
-                                phone: shipPhone.trim(),
-                                address: a.address.trim(),
-                                province: a.province,
-                                district: a.district,
-                                subdistrict: a.subdistrict,
-                                postalCode: a.postalCode,
-                                country: a.country || 'Thailand',
-                                isDefault: existing.length === 0,
-                              };
-                              if (!dup) {
-                                setSavingShipAddr(true);
-                                const res = await onSaveProfilePatch?.({
-                                  savedAddresses: [...existing, saved],
-                                });
-                                setSavingShipAddr(false);
-                                if (res && !res.ok) {
-                                  setShipAddrNotice({
-                                    tone: 'err',
-                                    text: res.error ?? tx('บันทึกที่อยู่ไม่สำเร็จ กรุณาลองอีกครั้ง'),
-                                  });
-                                  return;
-                                }
-                              }
-                              // back to the address book with the new address picked
-                              setSelectedSavedAddrId(saved.id);
-                              setRunnerShippingAddress(
-                                `${saved.recipientName} (${saved.phone}) — ${saved.address}, ต.${saved.subdistrict} อ.${saved.district} จ.${saved.province} ${saved.postalCode}`
-                              );
-                              setShipAddrMode('saved');
-                              setShipAddrNotice({
-                                tone: 'ok',
-                                text: dup
-                                  ? tx('ที่อยู่นี้มีในสมุดแล้ว เลือกให้แล้ว')
-                                  : tx('บันทึกลงสมุดที่อยู่แล้ว และเลือกเป็นที่อยู่จัดส่ง'),
-                              });
-                            }}
-                          >
-                            {savingShipAddr ? tx('กำลังบันทึก…') : tx('บันทึกลงสมุดที่อยู่')}
-                          </button>
-                          <span className="muted-inline">
-                            {tx('ไม่บันทึกก็ได้ ที่อยู่นี้จะใช้เฉพาะการสมัครครั้งนี้')}
-                          </span>
-                        </div>
-                      )}
                     </>
                   )}
                 </div>
@@ -2677,14 +2581,162 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               </div>
             )}
 
-            {/* STEP 5: ชำระเงิน — ตรวจสอบยอดชำระ & ยืนยันการสมัคร */}
-            {regStep === 6 && activeCategory && (
+            {/* STEP 6: สรุป — ตรวจข้อมูลทั้งฟอร์มก่อนชำระเงิน */}
+            {regStep === 6 && activeCategory && (() => {
+              const tier = getCurrentTier(activeCategory);
+              const quote = calculateFeeQuote(tier.priceSatang, selectedEvent.feeBearerPolicy);
+              const addonSatang = addonSatangTotal;
+              const picked = registrationOptions.find((o) => o.optionId === currentPickedOptionId);
+              const idDigits = regIdNumber.replace(/\s/g, '');
+              const answerRows = (selectedEvent.customFields ?? []).map((f) => {
+                const val = customAnswers[f.id] ?? f.defaultValue;
+                return {
+                  label: tx(f.label),
+                  value:
+                    typeof val === 'boolean' ? (val ? tx('ใช่') : tx('ไม่ใช่')) : tx(String(val ?? '').trim()),
+                };
+              });
+              const sections: ReviewSection[] = [
+                {
+                  key: 'entry',
+                  title: tx('ประเภทการสมัคร'),
+                  editStep: 1,
+                  rows: [
+                    { label: tx('ประเภท'), value: picked ? tx(picked.label) : '' },
+                    { label: tx('ระยะ'), value: tx(activeCategory.name) },
+                    { label: tx('ปล่อยตัว'), value: `${activeCategory.startTimeLocal} ${tx('น.')}` },
+                    { label: tx('อัตราค่าสมัคร'), value: tx(tier.label) },
+                  ],
+                },
+                {
+                  key: 'runner',
+                  title: tx('ผู้เข้าแข่งขัน'),
+                  editStep: 2,
+                  rows: [
+                    { label: tx('ชื่อ-นามสกุล'), value: `${regFirstNameTh} ${regLastNameTh}`.trim() },
+                    { label: tx('ชื่อภาษาอังกฤษ'), value: `${regFirstNameEn} ${regLastNameEn}`.trim() },
+                    { label: tx('ชื่อเล่น'), value: regNicknameTh.trim() },
+                    { label: tx('วันเกิด'), value: regDob },
+                    { label: tx('เพศ'), value: tx(regGender) },
+                    { label: tx('เบอร์โทร'), value: displayPhone(regPhone) },
+                    {
+                      label: regIdType === 'passport' ? tx('หนังสือเดินทาง') : tx('เลขบัตรประชาชน'),
+                      value: idDigits ? `•••• ${idDigits.slice(-4)}` : '',
+                    },
+                    { label: tx('ผู้ติดต่อฉุกเฉิน'), value: tx(emergencyContactText.trim()) },
+                  ],
+                },
+                ...(answerRows.length > 0
+                  ? [{ key: 'answers', title: tx('ข้อมูลเพิ่มเติม'), editStep: 2, rows: answerRows }]
+                  : []),
+                {
+                  key: 'shirt',
+                  title: tx('เสื้อตามสิทธิ์สมัคร'),
+                  editStep: 3,
+                  rows: [
+                    { label: tx('แบบ'), value: tx(shirtStyleName(shirtStyle)) },
+                    { label: tx('ไซส์'), value: shirtSize },
+                  ],
+                },
+                ...(hasSouvenirs
+                  ? [
+                      {
+                        key: 'souvenir',
+                        title: tx('ของที่ระลึก'),
+                        editStep: 4,
+                        rows:
+                          addonLines.length > 0
+                            ? addonLines.map((l) => ({
+                                label: `${tx(l.prd.nameTh)}${l.size !== '-' ? ` · ${l.size}` : ''}`,
+                                value: `× ${l.qty}`,
+                              }))
+                            : [{ label: tx('รายการ'), value: tx('ไม่ได้เลือก') }],
+                      },
+                    ]
+                  : []),
+                {
+                  key: 'kit',
+                  title: tx('การรับอุปกรณ์'),
+                  editStep: 5,
+                  rows: [
+                    {
+                      label: tx('วิธีรับ'),
+                      value:
+                        kitDeliveryOption === 'postal'
+                          ? tx('จัดส่งทางไปรษณีย์')
+                          : tx('รับเองที่หน้างาน (QR Check-in)'),
+                    },
+                    ...(kitDeliveryOption === 'postal'
+                      ? [
+                          { label: tx('ที่อยู่จัดส่ง'), value: tx(runnerShippingAddress.trim()) },
+                          { label: tx('ค่าจัดส่ง'), value: formatThb(regShipQuote.totalSatang, true) },
+                        ]
+                      : []),
+                  ],
+                },
+              ];
+              return (
+                <div className="reg-step-body">
+                  <h2 className="reg-step-accent-heading">{tx('ตรวจข้อมูลก่อนชำระเงิน')}</h2>
+                  <p className="muted-block">
+                    {tx('ตรวจทุกส่วนให้ถูกต้อง ถ้าต้องการเปลี่ยน กด "แก้ไข" เพื่อกลับไปขั้นนั้น')}
+                  </p>
+                  <RegistrationSummary
+                    sections={sections}
+                    lines={[
+                      {
+                        label: `${tx('ค่าสมัคร')} ${tx(activeCategory.name)} (${tx(tier.label)})`,
+                        sub: `${tx(shirtStyleName(shirtStyle))} · ${tx('ไซส์')} ${shirtSize}`,
+                        satang: quote.baseSatang,
+                      },
+                      {
+                        label: `${tx('ค่าบริการระบบ')} (${feePolicyLabel(selectedEvent.feeBearerPolicy)})`,
+                        satang: quote.runnerFeeSatang,
+                      },
+                      ...addonLines.map((l) => ({
+                        label: `${tx('สินค้าซื้อเพิ่ม')}: ${tx(l.prd.nameTh)}${l.size !== '-' ? ` (${l.size})` : ''} × ${l.qty}`,
+                        satang: l.prd.priceSatang * l.qty,
+                      })),
+                      ...(regShipQuote.kitSatang > 0
+                        ? [
+                            {
+                        label: tx('ค่าจัดส่งชุดแข่ง (ของที่ระลึกจากผู้จัดส่งรวมกล่องนี้)'),
+                        satang: regShipQuote.kitSatang,
+                      },
+                      ...regShipQuote.sellers.map((x) => ({
+                        label: txf('ค่าจัดส่งของที่ระลึก ({0})', tx(x.seller)),
+                        satang: x.satang,
+                      })),
+                          ]
+                        : []),
+                    ]}
+                    totalSatang={quote.runnerNetPaySatang + addonSatang + regShipQuote.totalSatang}
+                    onEdit={(st) => setRegStep(st as RegStep)}
+                  />
+                  <div className="reg-step-footer-between">
+                    <button type="button" className="btn-secondary" onClick={() => setRegStep(5)}>
+                      {tx('ย้อนกลับ')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-primary reg-next-pill-btn"
+                      onClick={() => setRegStep(7)}
+                    >
+                      {tx('ไปชำระเงิน')}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* STEP 7: ชำระเงิน — ยอดสุทธิ ช่องทางชำระ และยอมรับกติกา */}
+            {regStep === 7 && activeCategory && (
               <form
                 onSubmit={handleRegistrationSubmit}
                 className="reg-step-body"
               >
                 <h2 className="reg-step-accent-heading">
-                  {tx("สรุปยอดชำระแยกรายการและยืนยันการสมัคร")}
+                  {tx("ชำระเงินและยืนยันการสมัคร")}
                 </h2>
 
                 {(() => {
@@ -2693,40 +2745,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     tier.priceSatang,
                     selectedEvent.feeBearerPolicy
                   );
-                  const addonSatang = selectedAddonProduct
-                    ? selectedAddonProduct.priceSatang
-                    : 0;
-                  const grandTotal = quote.runnerNetPaySatang + addonSatang;
+                  const addonSatang = addonSatangTotal;
+                  const grandTotal = quote.runnerNetPaySatang + addonSatang + regShipQuote.totalSatang;
 
                   return (
-                    <div className="price-breakdown-box">
-                      <div className="breakdown-line">
-                        <span>
-                          {tx("ค่าสมัครวิ่ง ")} {tx(activeCategory.name)} ({tx(tier.label)}{tx(") · ")}{tx(shirtStyleName(shirtStyle))} {tx("ไซส์")} {tx(shirtSize)}
-                        </span>
-                        <span className="mono-num">
-                          {formatThb(quote.baseSatang, true)}
-                        </span>
-                      </div>
-                      <div className="breakdown-line">
-                        <span>
-                          {tx("ค่าบริการระบบ (")}{feePolicyLabel(selectedEvent.feeBearerPolicy)})
-                        </span>
-                        <span className="mono-num">
-                          {formatThb(quote.runnerFeeSatang, true)}
-                        </span>
-                      </div>
-                      {selectedAddonProduct && (
-                        <div className="breakdown-line">
-                          <span>
-                            {tx("สินค้าซื้อเพิ่ม: ")} {tx(selectedAddonProduct.nameTh)} (
-                            {tx(addonSize)})
-                          </span>
-                          <span className="mono-num">
-                            {formatThb(selectedAddonProduct.priceSatang, true)}
-                          </span>
-                        </div>
-                      )}
+                    <div className="price-breakdown-box reg-pay-total-box">
                       <div className="breakdown-total">
                         <strong>{tx("ยอดชำระสุทธิทั้งหมด")}</strong>
                         <strong className="mono-num text-vermilion">
@@ -2737,52 +2760,16 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   );
                 })()}
 
-                <div className="form-row">
-                  <label>{tx("เลือกช่องทางชำระเงิน (จำลอง)")}</label>
-                  <div className="cta-inline-row">
-                    <button
-                      type="button"
-                      className={`filter-pill ${
-                        paymentChannel === 'promptpay' ? 'active' : ''
-                      }`}
-                      onClick={() => setPaymentChannel('promptpay')}
-                    >
-                      {tx("QR PromptPay (สแกนจ่ายทันที)")}
-                    </button>
-                    <button
-                      type="button"
-                      className={`filter-pill ${
-                        paymentChannel === 'card' ? 'active' : ''
-                      }`}
-                      onClick={() => setPaymentChannel('card')}
-                    >
-                      {tx("บัตรเครดิต / เดบิต")}
-                    </button>
-                  </div>
-                </div>
+                <PaymentMethodPicker name="reg-a-pay" value={paymentChannel} onChange={setPaymentChannel} />
 
-                <div className="consent-group">
-                  <label className="checkbox-row">
-                    <input
-                      type="checkbox"
-                      checked={acceptedRules}
-                      onChange={(e) => setAcceptedRules(e.target.checked)}
-                    />
-                    <span>
-                      <strong>{tx("[จำเป็น]")}</strong> {tx(" ข้าพเจ้ายอมรับกติกาการแข่งขันและเงื่อนไขความปลอดภัยของงาน (")}{tx(selectedEvent.rulesVersion)})
-                    </span>
-                  </label>
-                  <label className="checkbox-row">
-                    <input
-                      type="checkbox"
-                      checked={marketingConsent}
-                      onChange={(e) => setMarketingConsent(e.target.checked)}
-                    />
-                    <span>
-                      {tx("[ไม่บังคับ] ยินยอมรับข่าวสารงานวิ่งและโปรโมชันจากผู้จัดงาน")}
-                    </span>
-                  </label>
-                </div>
+                <RegistrationTerms
+                  event={selectedEvent}
+                  organization={org}
+                  acceptRules={acceptedRules}
+                  onAcceptRules={setAcceptedRules}
+                  acceptPayment={acceptedPayTerms}
+                  onAcceptPayment={setAcceptedPayTerms}
+                />
 
                 {checkoutError && (
                   <div className="error-callout" role="alert">
@@ -2818,20 +2805,12 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   <button
                     type="button"
                     className="btn-secondary"
-                    onClick={() => setRegStep(5)}
+                    onClick={() => setRegStep(6)}
                     disabled={submitting}
                   >
                     {tx("ย้อนกลับ")}
                   </button>
                   <div className="cta-inline-row">
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => void submitRegistrationOrder(false)}
-                      disabled={submitting}
-                    >
-                      {tx("กันโควตาไว้ชำระภายหลัง (15 นาที)")}
-                    </button>
                     <button type="submit" className="btn-primary" disabled={submitting}>
                       {tx("ชำระเงินและยืนยันการสมัครทันที")}
                     </button>
@@ -2840,81 +2819,53 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               </form>
             )}
 
-            {/* STEP 6: สำเร็จ — ใบยืนยันสิทธิ์และ QR Token */}
-            {regStep === 7 && createdResult && (
-              <div className="reg-step-body">
-                <div className="receipt-success-panel">
-                  <div className="receipt-head">
-                    <IconCheckCircle size={24} />
-                    <div>
-                      <h2>
-                        {createdResult.reg.registrationStatus === 'confirmed'
-                          ? tx("สมัครวิ่งและยืนยันการชำระเงินสำเร็จ!")
-                          : tx("สร้างใบจองโควตาสำเร็จ (รอผลชำระเงินภายใน 15 นาที)")}
-                      </h2>
-                      <p className="muted-inline">
-                        {tx("บันทึกใบสมัครด้วยฟอร์มเวอร์ชัน")}{' '}
-                        <span className="mono-code">
-                          {selectedEvent.publishedFormVersion ?? 'v1.2-published'}
-                        </span>{' '}
-                        {tx("เรียบร้อยแล้ว")}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="receipt-grid">
-                    <div>
-                      <span className="muted-inline">{tx("รหัสใบสมัครวิ่ง")}</span>
-                      <strong className="mono-code">
-                        {tx(createdResult.reg.regCode)}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="muted-inline">{tx("ผู้เข้าแข่งขัน")}</span>
-                      <strong>{tx(createdResult.reg.participantNameTh)}</strong>
-                    </div>
-                    <div>
-                      <span className="muted-inline">{tx("เสื้อตามสิทธิ์สมัคร")}</span>
-                      <strong>{tx("ไซส์")} {tx(createdResult.reg.shirtSize)}</strong>
-                    </div>
-                    <div>
-                      <span className="muted-inline">{tx("QR Token รับอุปกรณ์")}</span>
-                      <strong className="mono-code">
-                        {tx(createdResult.reg.qrCheckInToken)}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="muted-inline">{tx("ยอดค่าสมัครสุทธิ")}</span>
-                      <strong className="mono-num text-vermilion">
-                        {formatThb(
-                          createdResult.reg.snapshotTotalChargedSatang,
-                          true
-                        )}
-                      </strong>
-                    </div>
-                  </div>
-
-                  <div className="cta-inline-row">
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      onClick={() => onNavigate('my_orders', null)}
-                    >
-                      {tx("ไปหน้าบัตรวิ่งและคำสั่งซื้อของฉัน")}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => {
-                        setCreatedResult(null);
-                        setRegStep(1);
-                      }}
-                    >
-                      {tx("สมัครเพิ่มอีกท่าน")}
-                    </button>
-                  </div>
-                </div>
-              </div>
+            {/* STEP 8: สำเร็จ — หน้าแยก ไม่มีแถบขั้นตอน ข้อมูลอยู่กลางจอ */}
+            {regStep === 8 && createdResult && (
+              <RegistrationDone
+                title={
+                  createdResult.reg.registrationStatus === 'confirmed'
+                    ? tx('สมัครวิ่งและชำระเงินสำเร็จ')
+                    : tx('สร้างใบจองโควตาสำเร็จ (รอผลชำระเงินภายใน 15 นาที)')
+                }
+                subtitle={
+                  <>
+                    {tx('บันทึกใบสมัครด้วยฟอร์มเวอร์ชัน')}{' '}
+                    <span className="mono-code">{selectedEvent.publishedFormVersion ?? 'v1.2-published'}</span>{' '}
+                    {tx('เรียบร้อยแล้ว')}
+                  </>
+                }
+                items={[
+                  { label: tx('รหัสใบสมัครวิ่ง'), value: tx(createdResult.reg.regCode), mono: true },
+                  { label: tx('ผู้เข้าแข่งขัน'), value: tx(createdResult.reg.participantNameTh) },
+                  ...(activeCategory ? [{ label: tx('ระยะ'), value: tx(activeCategory.name) }] : []),
+                  { label: tx('เสื้อตามสิทธิ์สมัคร'), value: `${tx('ไซส์')} ${tx(createdResult.reg.shirtSize)}` },
+                  { label: tx('QR Token รับอุปกรณ์'), value: tx(createdResult.reg.qrCheckInToken), mono: true },
+                  ...(createdResult.addonOrders ?? []).map((o) => ({
+                    label: `${tx(o.productNameTh)}${o.variantSize !== '-' ? ` · ${o.variantSize}` : ''} × ${o.quantity}`,
+                    value: o.merchOrderCode,
+                    mono: true,
+                  })),
+                  {
+                    label: tx('ยอดค่าสมัครสุทธิ'),
+                    value: formatThb(createdResult.reg.snapshotTotalChargedSatang, true),
+                    accent: true,
+                  },
+                ]}
+              >
+                <button type="button" className="btn-primary" onClick={() => onNavigate('my_orders', null)}>
+                  {tx('ไปหน้าบัตรวิ่งและคำสั่งซื้อของฉัน')}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setCreatedResult(null);
+                    setRegStep(1);
+                  }}
+                >
+                  {tx('สมัครเพิ่มอีกท่าน')}
+                </button>
+              </RegistrationDone>
             )}
           </section>
         </div>
@@ -3562,7 +3513,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                                 type="button"
                                 className="btn-ghost-sm"
                                 onClick={() => {
-                                  setActiveProductId(prd.id);
+                                  setStoreFocus({ id: prd.id, n: Date.now() });
                                   setShowRegForm(false);
                                   setDetailTab('storefront');
                                 }}
@@ -4057,10 +4008,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         tier.priceSatang,
                         selectedEvent.feeBearerPolicy
                       );
-                      const addonSatang = selectedAddonProduct
-                        ? selectedAddonProduct.priceSatang
-                        : 0;
-                      const grandTotal = quote.runnerNetPaySatang + addonSatang;
+                      const addonSatang = addonSatangTotal;
+                      const grandTotal = quote.runnerNetPaySatang + addonSatang + regShipQuote.totalSatang;
 
                       return (
                         <div className="price-breakdown-box">
@@ -4182,15 +4131,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               <span>{tx("กำลังกันที่และยืนยันคำสั่งซื้อ…")}</span>
                             </span>
                           )}
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            onClick={() => void submitRegistrationOrder(false)}
-                            disabled={submitting}
-                          >
-                            <IconClock size={15} />
-                            <span>{tx("ชำระภายหลัง (กันโควตา 30 นาที)")}</span>
-                          </button>
                           <button type="submit" className="btn-cta-accent" disabled={submitting}>
                             <IconCheckCircle size={16} />
                             <span>
@@ -4212,267 +4152,22 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
             {/* MODE C: EVENT STOREFRONT FOR GENERAL CUSTOMERS */}
             {!showRegForm && detailTab === 'storefront' && (
-              <section className="clean-panel">
-                <h2>
-                  {tx("หน้าร้านประจำงานวิ่ง (ลูกค้าทั่วไปซื้อได้โดยไม่เกิดใบสมัครวิ่ง)")}
-                </h2>
-            <p className="muted-block">
-              {tx("ระบุผู้ขาย สถานะพร้อมขาย/พรีออเดอร์ เพดานขั้นต่ำ วันปิดรับ และผู้รับผิดชอบจัดส่งอย่างชัดเจนในทุกรายการ")}
-              {linkedRegForMerch && (
-                <>
-                  {' '}
-                  {tx("· กำลังสั่งซื้อเพิ่มโดยอ้างอิงใบสมัครเดิม")}{' '}
-                  <span className="mono-code">{tx(linkedRegForMerch)}</span>{' '}
-                  {tx("(สร้างคำสั่งซื้อใหม่แยกจากยอดใบสมัครเดิม)")}
-                </>
-              )}
-            </p>
-
-            {selectedEvent.products.length === 0 ? (
-              <div className="subtle-empty-note">
-                {tx("งานวิ่งนี้ยังไม่ได้เปิดรายการสินค้าหน้าร้านเพิ่มเติม")}
-              </div>
-            ) : (
-              <div className="storefront-split">
-                <div className="merch-catalog-list">
-                  {selectedEvent.products.map((prd) => {
-                    const remaining = Math.max(
-                      0,
-                      prd.stockOrCeiling - prd.soldCount
-                    );
-                    const isPicked = activeProduct?.id === prd.id;
-                    return (
-                      <article
-                        key={prd.id}
-                        className={`merch-card-item ${
-                          isPicked ? 'selected' : ''
-                        }`}
-                      >
-                        <div className="merch-item-head">
-                          <span className="status-pill badge-navy">
-                            <IconShirt size={13} />
-                            <span>{tx(prd.categoryLabel)}</span>
-                          </span>
-                          <span
-                            className={`status-pill ${
-                              prd.saleMode === 'ready_stock'
-                                ? 'badge-forest'
-                                : 'badge-amber'
-                            }`}
-                          >
-                            <span>
-                              {prd.saleMode === 'ready_stock'
-                                ? tx("พร้อมขายตามสต็อก")
-                                : txf("พรีออเดอร์ · ปิดรับ {0}", prd.preorderCloseDate)}
-                            </span>
-                          </span>
-                        </div>
-
-                        <h3>{tx(prd.nameTh)}</h3>
-                        <p className="muted-block">{tx(prd.description)}</p>
-
-                        <div className="merch-policy-meta">
-                          <div>
-                            <strong>{tx(prd.sellerLabel)}</strong> ·{' '}
-                            {tx(prd.fulfillmentOwnerLabel)}
-                          </div>
-                          <div>{tx("กำหนดส่งมอบ:")} {tx(prd.estimatedDeliveryNote)}</div>
-                          <div>{tx("เงื่อนไข:")} {tx(prd.refundAndMinPolicyNote)}</div>
-                        </div>
-
-                        <div className="merch-item-foot">
-                          <div>
-                            <strong className="net-price-figure mono-num">
-                              {formatThb(prd.priceSatang)}
-                            </strong>
-                            <span className="muted-inline mono-num">
-                              {' '}
-                              {tx("· คงเหลือ ")} {tx(remaining)}/{tx(prd.stockOrCeiling)} {tx(" ชิ้น")}
-                              {prd.preorderMinQty
-                                ? txf(" (ยอดจองปัจจุบัน {0}/{1} ขั้นต่ำ)", prd.soldCount, prd.preorderMinQty)
-                                : ''}
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            className={
-                              isPicked ? 'btn-primary' : 'btn-secondary'
-                            }
-                            onClick={() => {
-                              setActiveProductId(prd.id);
-                              setMerchSize(prd.availableSizes[0] ?? 'M');
-                              setCreatedMerchReceipt(null);
-                            }}
-                          >
-                            {isPicked ? tx("เลือกอยู่") : tx("เลือกสินค้านี้")}
-                          </button>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-
-                {activeProduct && (
-                  <form
-                    className="merch-order-panel"
-                    onSubmit={handleMerchSubmit}
-                  >
-                    <h3>{tx("สรุปคำสั่งซื้อสินค้า")}</h3>
-                    <p className="muted-inline">
-                      {tx("สินค้า: ")} <strong>{tx(activeProduct.nameTh)}</strong>
-                    </p>
-
-                    <div className="form-grid-2">
-                      <div className="form-row">
-                        <label htmlFor="sf-size">{tx("ขนาด / ตัวเลือก")}</label>
-                        <select
-                          id="sf-size"
-                          value={merchSize}
-                          onChange={(e) => setMerchSize(e.target.value)}
-                        >
-                          {activeProduct.availableSizes.map((sz) => (
-                            <option key={sz} value={sz}>
-                              {tx(sz)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="form-row">
-                        <label htmlFor="sf-qty">{tx("จำนวน")}</label>
-                        <select
-                          id="sf-qty"
-                          value={merchQty}
-                          onChange={(e) => setMerchQty(Number(e.target.value))}
-                        >
-                          {[1, 2, 3, 4, 5].map((n) => (
-                            <option key={n} value={n}>
-                              {tx(n)} {tx(" ชิ้น")}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="form-row">
-                      <label htmlFor="sf-deliv">{tx("ช่องทางรับสินค้า")}</label>
-                      <select
-                        id="sf-deliv"
-                        value={
-                          selectedEvent.status === 'completed'
-                            ? 'postal_shipping'
-                            : deliveryMethod
-                        }
-                        disabled={selectedEvent.status === 'completed'}
-                        onChange={(e) =>
-                          setDeliveryMethod(
-                            e.target.value as
-                              | 'pickup_at_expo'
-                              | 'postal_shipping'
-                          )
-                        }
-                      >
-                        <option value="pickup_at_expo">
-                          {tx("รับที่บูธร้านค้าหน้างานด้วยหลักฐานคำสั่งซื้อ (ฟรีค่าส่ง)")}
-                        </option>
-                        <option value="postal_shipping">
-                          {tx("จัดส่งทางไปรษณีย์ (+")}
-                          {formatThb(activeProduct.shippingFeeSatang)})
-                        </option>
-                      </select>
-                    </div>
-
-                    {(selectedEvent.status === 'completed' ||
-                      deliveryMethod === 'postal_shipping') && (
-                      <div className="form-row">
-                        <label htmlFor="sf-addr">{tx("ที่อยู่สำหรับจัดส่งพัสดุ")}</label>
-                        <input
-                          id="sf-addr"
-                          type="text"
-                          value={merchAddress}
-                          onChange={(e) => setMerchAddress(e.target.value)}
-                          required
-                        />
-                      </div>
-                    )}
-
-                    <div className="price-breakdown-box">
-                      <div className="breakdown-line">
-                        <span>{tx("ค่าสินค้า (")}{tx(merchQty)} {tx(" ชิ้น)")}</span>
-                        <span className="mono-num">
-                          {formatThb(activeProduct.priceSatang * merchQty, true)}
-                        </span>
-                      </div>
-                      <div className="breakdown-line">
-                        <span>{tx("ค่าจัดส่ง")}</span>
-                        <span className="mono-num">
-                          {formatThb(
-                            selectedEvent.status === 'completed' ||
-                              deliveryMethod === 'postal_shipping'
-                              ? activeProduct.shippingFeeSatang
-                              : 0,
-                            true
-                          )}
-                        </span>
-                      </div>
-                      <div className="breakdown-line breakdown-total">
-                        <strong>{tx("ยอดรวมคำสั่งซื้อนี้")}</strong>
-                        <strong className="mono-num text-vermilion">
-                          {formatThb(
-                            activeProduct.priceSatang * merchQty +
-                              (selectedEvent.status === 'completed' ||
-                              deliveryMethod === 'postal_shipping'
-                                ? activeProduct.shippingFeeSatang
-                                : 0),
-                            true
-                          )}
-                        </strong>
-                      </div>
-                    </div>
-
-                    {!currentUser ? (
-                      <button
-                        type="button"
-                        className="btn-primary btn-full"
-                        onClick={() =>
-                          onRequireLoginWithIntent({
-                            surface: 'events',
-                            eventId: selectedEvent.id,
-                            eventTab: 'storefront',
-                            label: `สั่งซื้อ ${activeProduct.nameTh}`,
-                          })
-                        }
-                      >
-                        <IconLock size={15} />
-                        <span>{tx("เข้าสู่ระบบเพื่อสั่งซื้อสินค้า")}</span>
-                      </button>
-                    ) : (
-                      <button type="submit" className="btn-primary btn-full">
-                        <IconBag size={16} />
-                        <span>{tx("ยืนยันคำสั่งซื้อและชำระเงิน")}</span>
-                      </button>
-                    )}
-
-                      {createdMerchReceipt && (
-                        <div className="success-callout" role="status">
-                          <IconCheckCircle size={18} />
-                          <div>
-                            <strong>
-                              {tx("สร้างคำสั่งซื้อ")}{' '}
-                              {tx(createdMerchReceipt.merchOrderCode)} {tx(" สำเร็จ")}
-                            </strong>
-                            <p>
-                              {tx("รหัสรับของ:")}{' '}
-                              <code>{tx(createdMerchReceipt.pickupToken)}</code>{' '}
-                              {tx("(คำสั่งซื้อนี้ไม่สร้างสิทธิ์แข่งขันหรือเลข BIB)")}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </form>
-                  )}
-                </div>
-              )}
-              </section>
+              <StorefrontView
+                event={selectedEvent}
+                currentUser={currentUser}
+                linkedRegistrationCode={linkedRegForMerch || undefined}
+                focusProduct={storeFocus}
+                onRequireLogin={() =>
+                  onRequireLoginWithIntent({
+                    surface: 'events',
+                    eventId: selectedEvent.id,
+                    eventTab: 'storefront',
+                    label: `สั่งซื้อสินค้าที่ระลึกงาน ${selectedEvent.titleTh}`,
+                  })
+                }
+                onCheckout={onCheckoutMerchCart}
+                onViewOrders={() => onNavigate('my_orders', null)}
+              />
             )}
           </div>
 
@@ -4562,30 +4257,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     </span>
                   </button>
                 )}
-
-                {selectedEvent.products.length > 0 && (
-                  <button
-                    type="button"
-                    className="btn-secondary btn-full"
-                    onClick={() => {
-                      setShowRegForm(false);
-                      setDetailTab(
-                        !showRegForm && detailTab === 'storefront'
-                          ? 'info_results'
-                          : 'storefront'
-                      );
-                    }}
-                  >
-                    <IconBag size={15} />
-                    <span>
-                      {!showRegForm && detailTab === 'storefront'
-                        ? tx("กลับไปอ่านรายละเอียดงานวิ่ง")
-                        : txf("ซื้อเสื้อ/ของที่ระลึก ({0} รายการ)", selectedEvent.products.length)}
-                    </span>
-                  </button>
-                )}
               </div>
 
+              {showQuotaBox && (
               <div className="sticky-quota-box">
                 <div className="sticky-quota-top">
                   <span className="muted-inline">{tx("โควตารวมทั้งงาน")}</span>
@@ -4604,6 +4278,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   />
                 </div>
               </div>
+              )}
 
               {priceFromSatang !== null && (
                 <div className="sticky-category-picker">

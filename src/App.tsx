@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AdminLogin } from './admin/AdminLogin';
 import Swal from 'sweetalert2';
 import {
   DEMO_CUSTOM_FIELDS,
@@ -347,6 +348,13 @@ function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
 
 const isRegisterBPath = (pathname: string) => /\/register-b\/?$/.test(pathname);
 
+/** Public site address used by the Platform Owner console (VITE_PUBLIC_SITE_URL, else :5173 on this host). */
+function publicSiteOrigin(): string {
+  const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+  return env?.VITE_PUBLIC_SITE_URL || `${window.location.protocol}//${window.location.hostname}:5173`;
+}
+const MOCK_QUOTA_BOX_KEY = 'kratai.mock.showQuotaBox';
+
 function findEventBySlug(events: RaceEvent[], slug: string | null): RaceEvent | null {
   if (!slug) return null;
   const lower = slug.toLowerCase();
@@ -357,7 +365,9 @@ function findEventBySlug(events: RaceEvent[], slug: string | null): RaceEvent | 
   );
 }
 
-export const App: React.FC = () => {
+export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }) => {
+  // 'admin' = the separate Platform Owner console (its own entry, port, sign-in and session)
+  const isAdminApp = mode === 'admin';
   // ใช้ context ภาษาเพื่อให้ทั้ง tree re-render เมื่อสลับ TH/EN
   const { lang, setLang } = useI18n();
   const [sys, setSys] = useState<PersistedSystemState>(loadSystemState);
@@ -390,10 +400,14 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  const initialParsed = parseUrlRoute(
-    window.location.pathname,
-    window.location.search
-  );
+  const initialParsed = (() => {
+    const parsed = parseUrlRoute(window.location.pathname, window.location.search);
+    // the console only has the platform section and the organizer workspace it inspects
+    if (isAdminApp && parsed.surface !== 'organizer') {
+      return { ...parsed, surface: 'platform_admin' as RootSurface };
+    }
+    return parsed;
+  })();
   const initialMatchedEvent = findEventBySlug(
     sys.events,
     initialParsed.eventSlug
@@ -501,6 +515,23 @@ export const App: React.FC = () => {
 
   // layout B of the registration form (/events/:id/register-b), sandbox review only
   const [regLayoutB, setRegLayoutB] = useState(() => isRegisterBPath(window.location.pathname));
+  // Mockup only (dev dock): show / hide the event-wide quota box on event detail pages.
+  // The real switch will be an organizer setting per event; this browser-local flag stands in for it.
+  const [mockShowQuotaBox, setMockShowQuotaBox] = useState(() => {
+    try {
+      return window.localStorage.getItem(MOCK_QUOTA_BOX_KEY) !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const toggleMockQuotaBox = (show: boolean) => {
+    setMockShowQuotaBox(show);
+    try {
+      window.localStorage.setItem(MOCK_QUOTA_BOX_KEY, show ? '1' : '0');
+    } catch {
+      /* storage blocked: the choice lasts until reload */
+    }
+  };
 
   const pushUrl = (url: string, replace = false) => {
     const currentFull = `${window.location.pathname}${window.location.search}`;
@@ -695,6 +726,9 @@ export const App: React.FC = () => {
   // Production Route Guard: redirect unauthenticated visitors from protected routes to /login with ReturnIntent
   useEffect(() => {
     if (!apiBootstrapped) return;
+    // the console has its own sign-in gate; sending it to the public sign-in page here made the
+    // two fight over the surface every render (the sign-in page flickered)
+    if (isAdminApp) return;
     if (!currentUser) {
       if (surface === 'platform_admin') {
         setReturnIntent({
@@ -1782,23 +1816,22 @@ export const App: React.FC = () => {
     participantSnapshot?: RegistrationRecord['participantSnapshot'];
     marketingConsent: boolean;
     simulateImmediateWebhook: boolean;
-    addonProduct?: EventProduct | null;
-    addonSize?: string;
+    addonItems?: { productId: string; size: string; qty: number }[];
     customAnswers?: Record<string, string | boolean>;
     /** one id per checkout attempt; the same id on a retry so the server never books twice */
     requestId: string;
   }): Promise<
-    | { ok: true; reg: RegistrationRecord; addonOrder?: MerchOrderRecord }
+    | { ok: true; reg: RegistrationRecord; addonOrders?: MerchOrderRecord[] }
     | { ok: false; error: string }
   > => {
     // The seat, shirt and price are decided by the server inside one locked transaction, so
     // the page waits for its answer instead of showing a booking the server might refuse.
-    const { requestId, addonProduct, ...rest } = payload;
+    const { requestId, addonItems, ...rest } = payload;
     const res = await syncApi('POST', '/api/registrations', {
       ...rest,
       id: requestId,
-      addonProductId: addonProduct?.id,
-      addonOrderId: addonProduct ? `${requestId}-addon` : undefined,
+      addonItems: addonItems?.map((l) => ({ productId: l.productId, variantSize: l.size, quantity: l.qty })),
+      addonOrderId: addonItems && addonItems.length > 0 ? `${requestId}-addon` : undefined,
     });
     if (!res.ok || !res.reg) {
       return {
@@ -1806,87 +1839,24 @@ export const App: React.FC = () => {
         error: res.error ?? tx('ระบบยืนยันคำสั่งซื้อไม่สำเร็จ กรุณาลองอีกครั้ง'),
       };
     }
-    return { ok: true, reg: res.reg, addonOrder: res.addonOrder };
+    return { ok: true, reg: res.reg, addonOrders: res.addonOrders ?? (res.addonOrder ? [res.addonOrder] : []) };
   };
 
-  const handleCreateStandaloneMerchOrder = (payload: {
+  // Storefront cart: the server prices every line, checks stock for the whole cart in one
+  // transaction and returns the orders it wrote; nothing is added locally before it answers.
+  const handleCheckoutMerchCart = async (payload: {
     eventId: string;
-    product: EventProduct;
-    variantSize: string;
-    quantity: number;
+    items: { productId: string; size: string; qty: number }[];
     buyerName: string;
     deliveryMethod: 'pickup_at_expo' | 'postal_shipping';
     shippingAddress?: string;
     linkedRegistrationCode?: string;
-  }): MerchOrderRecord => {
-    const ev = sys.events.find((e) => e.id === payload.eventId)!;
-    const mSeq = sys.merchOrders.length + 520;
-    const shipFee =
-      payload.deliveryMethod === 'postal_shipping'
-        ? payload.product.shippingFeeSatang
-        : 0;
-
-    const newOrder: MerchOrderRecord = {
-      id: `mord-${Date.now()}`,
-      merchOrderCode: `SHP-2611-${mSeq}`,
-      eventId: ev.id,
-      organizationId: ev.organizationId,
-      buyerUserId: currentUser?.id,
-      buyerName: payload.buyerName,
-      buyerEmail: currentUser?.contactEmail ?? 'บัญชี LINE (ไม่มีอีเมล)',
-      productId: payload.product.id,
-      productNameTh: payload.product.nameTh,
-      sellerLabel: payload.product.sellerLabel,
-      variantSize: payload.variantSize,
-      quantity: payload.quantity,
-      deliveredQty: 0,
-      deliveryMethod: payload.deliveryMethod,
-      shippingAddress: payload.shippingAddress,
-      unitPriceSatang: payload.product.priceSatang,
-      shippingSatang: shipFee,
-      totalPaidSatang: payload.product.priceSatang * payload.quantity + shipFee,
-      paymentStatus: 'succeeded',
-      fulfillmentStatus:
-        payload.deliveryMethod === 'pickup_at_expo'
-          ? 'ready_or_shipped'
-          : 'preparing',
-      pickupToken: `PICK-SHP-${mSeq}`,
-      linkedRegistrationCode: payload.linkedRegistrationCode,
-      createdAt: '2026-11-17T09:46:00+07:00',
-    };
-
-    setSys((prev) => ({
-      ...prev,
-      merchOrders: [newOrder, ...prev.merchOrders],
-      events: prev.events.map((e) =>
-        e.id === ev.id
-          ? {
-            ...e,
-            products: e.products.map((p) =>
-              p.id === payload.product.id
-                ? { ...p, soldCount: p.soldCount + payload.quantity }
-                : p
-            ),
-          }
-          : e
-      ),
-    }));
-
-    appendAudit(
-      ev.organizationId,
-      `คำสั่งซื้อสินค้าหน้าร้าน (${newOrder.merchOrderCode})`,
-      `${payload.product.nameTh} × ${payload.quantity} (ไม่เกิดใบสมัครวิ่ง)`,
-      ev.id
-    );
-    void syncApi('POST', '/api/merch-orders', {
+  }) => {
+    const res = await syncApi('POST', '/api/merch-orders/checkout', {
       ...payload,
-      productId: payload.product.id,
-      id: newOrder.id,
-      merchOrderCode: newOrder.merchOrderCode,
-      pickupToken: newOrder.pickupToken,
+      items: payload.items.map((l) => ({ productId: l.productId, variantSize: l.size, quantity: l.qty })),
     });
-
-    return newOrder;
+    return { ok: res.ok, error: res.error, orders: res.orders, checkoutCode: res.checkoutCode };
   };
 
   const handleUpdateEventTotalQuota = (
@@ -2347,54 +2317,6 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleUpdateRunnerShirtSize = (
-    regId: string,
-    newSize: ShirtSizeCode
-  ) => {
-    const target = sys.registrations.find((r) => r.id === regId);
-    if (!target || target.shirtSize === newSize) return;
-    const oldSize = target.shirtSize;
-
-    setSys((prev) => ({
-      ...prev,
-      registrations: prev.registrations.map((r) =>
-        r.id === regId ? { ...r, shirtSize: newSize } : r
-      ),
-      events: prev.events.map((ev) =>
-        ev.id === target.eventId
-          ? {
-            ...ev,
-            shirtStocks: ev.shirtStocks.map((st) => {
-              if (st.size === oldSize) {
-                return {
-                  ...st,
-                  reservedOrConfirmed: Math.max(
-                    0,
-                    st.reservedOrConfirmed - 1
-                  ),
-                };
-              }
-              if (st.size === newSize) {
-                return {
-                  ...st,
-                  reservedOrConfirmed: st.reservedOrConfirmed + 1,
-                };
-              }
-              return st;
-            }),
-          }
-          : ev
-      ),
-    }));
-
-    appendAudit(
-      target.organizationId,
-      `แก้ไขขนาดเสื้อตามสิทธิ์สมัคร (${target.regCode})`,
-      `${oldSize} -> ${newSize}`,
-      target.eventId
-    );
-    void syncApi('PATCH', `/api/registrations/${regId}/shirt-size`, { newSize });
-  };
 
 
   /* ---- Organizer Operations ---- */
@@ -3311,10 +3233,29 @@ export const App: React.FC = () => {
     void syncApi('PATCH', `/api/admin/users/${targetUserId}/access`, { action });
   };
 
-  const isPlatformOwner = Boolean(currentUser?.isPlatformAdmin);
+  // Platform Owner tools live only in the separate console; on the public site the same account
+  // is an ordinary runner / organizer member (the server enforces the same split)
+  const isPlatformOwner = isAdminApp && Boolean(currentUser?.isPlatformAdmin);
   const hasOrganizerAccess = Boolean(
-    currentUser && (currentUser.memberships.length > 0 || currentUser.isPlatformAdmin)
+    currentUser && (currentUser.memberships.length > 0 || isPlatformOwner)
   );
+
+  useEffect(() => {
+    if (isAdminApp && surface !== 'platform_admin' && surface !== 'organizer') {
+      setSurface('platform_admin');
+    }
+    if (!isAdminApp && surface === 'platform_admin') {
+      setSurface('customer');
+      setCustomerSubView('directory');
+      pushUrl('/', true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdminApp, surface]);
+
+  const handleAdminLogin = async (email: string, password: string): Promise<string | null> => {
+    const res = await syncApi('POST', '/api/auth/login', { email, password });
+    return res.ok ? null : res.error ?? tx('เข้าสู่ระบบไม่สำเร็จ กรุณาลองอีกครั้ง');
+  };
   const currentUserDisplayName = currentUser
     ? lang === 'en'
       ? currentUser.fullNameEn || tx(currentUser.fullNameTh)
@@ -3382,7 +3323,47 @@ export const App: React.FC = () => {
         }}
         onCancel={() => setPdpaGateOpen(false)}
       />
+      {isAdminApp && (
+        <header className="global-topbar admin-topbar">
+          <div className="brand-lockup">
+            <span className="brand-home-btn">
+              <span className="brand-rabbit-mark" aria-hidden="true" />
+              <strong className="brand-name">{tx('กระต่าย')}</strong>
+            </span>
+            <span className="admin-topbar-tag">{tx('ศูนย์ควบคุม Platform Owner')}</span>
+          </div>
+          {currentUser && (
+            <>
+              <nav className="global-surface-nav" aria-label={tx('เมนูศูนย์ควบคุม')}>
+                <button
+                  type="button"
+                  className={`surface-switch-btn ${surface === 'platform_admin' ? 'active' : ''}`}
+                  aria-current={surface === 'platform_admin' ? 'page' : undefined}
+                  onClick={() => navigatePlatformAdmin()}
+                >
+                  <IconShield size={15} />
+                  <span>{tx('ศูนย์ควบคุม')}</span>
+                </button>
+                {surface === 'organizer' && (
+                  <span className="surface-switch-btn active" aria-current="page">
+                    <IconBuilding size={15} />
+                    <span>{tx('ตรวจพื้นที่ผู้จัด')}</span>
+                  </span>
+                )}
+              </nav>
+              <div className="topbar-user-actions">
+                <span className="admin-topbar-user">{currentUser.fullNameTh}</span>
+                <button type="button" className="btn-ghost-sm admin-topbar-logout" onClick={handleLogout}>
+                  {tx('ออกจากระบบ')}
+                </button>
+              </div>
+            </>
+          )}
+        </header>
+      )}
+
       {/* PRODUCTION ROLE-BASED TOP HEADER */}
+      {!isAdminApp && (
       <header
         className="global-topbar"
         onKeyDown={(e) => {
@@ -3429,32 +3410,6 @@ export const App: React.FC = () => {
             <IconCalendar size={15} />
             <span>{tx("ปฏิทินงานวิ่ง")}</span>
           </button>
-
-          {currentUser && (
-            <button
-              type="button"
-              className={`surface-switch-btn ${
-                surface === 'runner_profile' ? 'active' : ''
-              }`}
-              onClick={() => navigateRunnerProfile('personal')}
-            >
-              <IconUsers size={15} />
-              <span>{tx("โปรไฟล์นักวิ่ง")}</span>
-            </button>
-          )}
-
-          {/* VISIBLE ONLY WHEN LOGGED IN AS AN ORGANIZER MEMBER (OR PLATFORM ADMIN) */}
-          {hasOrganizerAccess && (
-            <button
-              type="button"
-              className={`surface-switch-btn ${surface === 'organizer' ? 'active' : ''
-                }`}
-              onClick={() => navigateOrganizer()}
-            >
-              <IconBuilding size={15} />
-              <span>{tx("ระบบผู้จัดงาน")}</span>
-            </button>
-          )}
 
           {/* VISIBLE ONLY WHEN LOGGED IN AS PLATFORM OWNER */}
           {isPlatformOwner && (
@@ -3617,6 +3572,19 @@ export const App: React.FC = () => {
                     <span>{tx("ตั้งค่าบัญชี")}</span>
                   </button>
 
+                  {/* organizer members (and the platform owner) reach the organizer system from here */}
+                  {hasOrganizerAccess && (
+                    <button
+                      type="button"
+                      className={`profile-menu-item ${surface === 'organizer' ? 'is-current' : ''}`}
+                      aria-current={surface === 'organizer' ? 'page' : undefined}
+                      onClick={() => navigateOrganizer()}
+                    >
+                      <IconBuilding size={15} />
+                      <span>{tx("ระบบผู้จัดงาน")}</span>
+                    </button>
+                  )}
+
                   {isPlatformOwner && (
                     <button
                       type="button"
@@ -3628,7 +3596,7 @@ export const App: React.FC = () => {
                     </button>
                   )}
 
-                  {hasOrganizerAccess ? (
+                  {hasOrganizerAccess && currentUser.memberships.length > 0 ? (
                     <div className="profile-org-section">
                       <span className="muted-inline">{tx("องค์กรผู้จัดที่คุณสังกัด:")}</span>
                       {currentUser.memberships.map((m) => {
@@ -3863,11 +3831,18 @@ export const App: React.FC = () => {
           </>
         )}
       </header>
+      )}
 
+      {/* console: sign in first */}
+      {isAdminApp && !currentUser ? (
+        apiBootstrapped ? <AdminLogin onSubmit={handleAdminLogin} /> : null
+      ) : (
+      <>
       {/* ACTIVE SURFACE */}
       {surface === 'customer' && (
         <CustomerPortalView
           registrationLayout={sandboxTools && regLayoutB ? 'b' : 'a'}
+          showQuotaBox={sandboxTools ? mockShowQuotaBox : true}
           subView={customerSubView}
           selectedEventId={selectedPublicEventId}
           initialEventTab={initialEventTab}
@@ -3894,8 +3869,7 @@ export const App: React.FC = () => {
           onCreateRegistrationAndOptionalAddon={
             handleCreateRegistrationAndAddon
           }
-          onCreateStandaloneMerchOrder={handleCreateStandaloneMerchOrder}
-          onUpdateRunnerShirtSize={handleUpdateRunnerShirtSize}
+          onCheckoutMerchCart={handleCheckoutMerchCart}
           onCompletePendingPayment={handleSimulateWebhookConfirm}
         />
       )}
@@ -4037,6 +4011,10 @@ export const App: React.FC = () => {
               }
             }}
             onUpdateEventTotalQuota={handleUpdateEventTotalQuota}
+            onUpdateEventKitShipping={async (eventId, feeSatang) => {
+              const res = await syncApi('PATCH', `/api/events/${eventId}`, { kitShippingFeeSatang: feeSatang });
+              return { ok: res.ok, error: res.error };
+            }}
             onUpdateCategoryQuota={handleUpdateCategoryQuota}
             onUpdateCategoryAgeRules={handleUpdateCategoryAgeRules}
             onUpdateCustomFields={handleUpdateCustomFields}
@@ -4128,7 +4106,9 @@ export const App: React.FC = () => {
             onAdminResolveOrForceRefund={handleAdminResolveOrForceRefund}
             onAdminUpdateUserAccess={handleAdminUpdateUserAccess}
             onOpenPublicEvent={(evId) =>
-              navigateCustomer('event_detail', evId, 'register')
+              isAdminApp
+                ? window.open(`${publicSiteOrigin()}/events/${evId}`, '_blank', 'noopener')
+                : navigateCustomer('event_detail', evId, 'register')
             }
             onInspectOrganizerWorkspace={(orgId, evId) =>
               navigateOrganizer(orgId, evId)
@@ -4160,13 +4140,16 @@ export const App: React.FC = () => {
           </main>
         ))}
 
+      </>
+      )}
+
       {/* Production Minimal Footer with Organizer Onboarding Link + Honest Prototype Notice */}
       <footer className="minimal-footer">
         <div className="footer-links-group">
           <span>
             <strong>{tx('กระต่าย')}</strong> {tx(" · แพลตฟอร์มงานวิ่งและร้านค้าที่ระลึกประจำงาน")}
           </span>
-          {hasOrganizerAccess && (
+          {hasOrganizerAccess && !isAdminApp && (
             <button
               type="button"
               className="footer-text-link"
@@ -4186,8 +4169,8 @@ export const App: React.FC = () => {
       )}
 
       {/* COLLAPSIBLE FLOATING DEV / DEMO SWITCHER BAR (SEPARATED FROM PRODUCTION UI) */}
-      {/* Hidden when the server runs without sandbox tools (production) */}
-      {sandboxTools && (
+      {/* Hidden when the server runs without sandbox tools (production) and in the console */}
+      {sandboxTools && !isAdminApp && (
       <aside
         className="dev-demo-dock"
         aria-label={tx("แถบเครื่องมือสำหรับผู้พัฒนาและสลับบัญชีสาธิต")}
@@ -4286,6 +4269,27 @@ export const App: React.FC = () => {
                       </button>
                     );
                   })}
+                </div>
+              </div>
+            )}
+
+            {customerSubView === 'event_detail' && (
+              <div className="dev-drawer-section">
+                <div className="dev-section-label">
+                  {tx("Mockup: แสดงโควตารวมบนหน้ารายละเอียดงาน (ของจริงจะเป็นการตั้งค่าของผู้จัด)")}
+                </div>
+                <div className="cta-inline-row">
+                  {([true, false] as const).map((show) => (
+                    <button
+                      key={String(show)}
+                      type="button"
+                      className={`btn-ghost-sm ${mockShowQuotaBox === show ? 'active' : ''}`}
+                      aria-pressed={mockShowQuotaBox === show}
+                      onClick={() => toggleMockQuotaBox(show)}
+                    >
+                      {show ? tx("แสดง") : tx("ซ่อน")}
+                    </button>
+                  ))}
                 </div>
               </div>
             )}

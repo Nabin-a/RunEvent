@@ -153,6 +153,8 @@ interface OrganizerDashboardViewProps {
   onCreateSingleUseInvite: (orgId: string, role: OrgRole) => TeamInvitation;
   onOpenPublicPreview: (eventId?: string) => void;
   onUpdateEventTotalQuota: (eventId: string, newTotalQuota: number) => void;
+  /** race kit postal fee in satang; applies to new registrations only */
+  onUpdateEventKitShipping: (eventId: string, feeSatang: number) => Promise<{ ok: boolean; error?: string }>;
   onUpdateCategoryQuota: (eventId: string, categoryId: string, newCategoryQuota: number) => void;
   onUpdateCategoryAgeRules: (
     eventId: string,
@@ -834,6 +836,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
   onCreateSingleUseInvite,
   onOpenPublicPreview,
   onUpdateEventTotalQuota,
+  onUpdateEventKitShipping,
   onUpdateCategoryQuota,
   onUpdateCategoryAgeRules,
   onUpdateCustomFields,
@@ -3011,6 +3014,13 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     />
                   </div>
 
+                  <KitShippingFeeEditor
+                    key={selectedEvent.id}
+                    currentSatang={selectedEvent.kitShippingFeeSatang}
+                    canEdit={canManageEventConfig}
+                    onSave={(fee) => onUpdateEventKitShipping(selectedEvent.id, fee)}
+                  />
+
                   <div className="table-scroll">
                     <table className="ops-table">
                       <thead>
@@ -4457,3 +4467,82 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
     </div>
   );
 };
+
+/**
+ * Race kit postal fee for this event. Runners see it on the delivery step and pay it with the
+ * entry; it is counted in the organizer's payout. Changing it only affects new registrations
+ * (each entry keeps the fee it was charged).
+ */
+function KitShippingFeeEditor({
+  currentSatang,
+  canEdit,
+  onSave,
+}: {
+  currentSatang?: number;
+  canEdit: boolean;
+  onSave: (feeSatang: number) => Promise<{ ok: boolean; error?: string }>;
+}) {
+  const [baht, setBaht] = React.useState(
+    currentSatang !== undefined ? String(currentSatang / 100) : ''
+  );
+  const [msg, setMsg] = React.useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
+  const [saving, setSaving] = React.useState(false);
+
+  const save = async () => {
+    const n = Number(baht);
+    if (baht.trim() === '' || !Number.isFinite(n) || n < 0 || n > 1000) {
+      setMsg({ tone: 'err', text: tx('กรอกค่าจัดส่งเป็นตัวเลข 0–1,000 บาท') });
+      return;
+    }
+    setSaving(true);
+    const res = await onSave(Math.round(n * 100));
+    setSaving(false);
+    setMsg(
+      res.ok
+        ? { tone: 'ok', text: tx('บันทึกแล้ว ใช้กับใบสมัครใหม่ตั้งแต่ตอนนี้') }
+        : { tone: 'err', text: res.error ? tx(res.error) : tx('บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง') }
+    );
+  };
+
+  return (
+    <div className="kit-ship-editor">
+      <div>
+        <strong>{tx('ค่าจัดส่งชุดแข่งทางไปรษณีย์')}</strong>
+        <p className="muted-inline">
+          {currentSatang === undefined
+            ? tx('ยังไม่ได้กำหนด หน้าสมัครแสดงค่าตัวอย่าง 50 บาทพร้อมป้ายกำกับ')
+            : tx('ผู้สมัครที่เลือกส่งไปรษณีย์จ่ายพร้อมค่าสมัคร และนับเป็นยอดของผู้จัด')}
+        </p>
+      </div>
+      <div className="kit-ship-input">
+        <label htmlFor="kit-ship-fee" className="sr-only">
+          {tx('ค่าจัดส่งชุดแข่ง (บาท)')}
+        </label>
+        <input
+          id="kit-ship-fee"
+          type="number"
+          inputMode="decimal"
+          min={0}
+          max={1000}
+          step={1}
+          value={baht}
+          placeholder="50"
+          disabled={!canEdit || saving}
+          onChange={(e) => {
+            setBaht(e.target.value);
+            setMsg(null);
+          }}
+        />
+        <span>{tx('บาท')}</span>
+        <button type="button" className="btn-secondary" disabled={!canEdit || saving} onClick={() => void save()}>
+          {saving ? tx('กำลังบันทึก…') : tx('บันทึก')}
+        </button>
+      </div>
+      {msg && (
+        <p className={msg.tone === 'ok' ? 'kit-ship-ok' : 'kit-ship-err'} role={msg.tone === 'err' ? 'alert' : 'status'}>
+          {msg.text}
+        </p>
+      )}
+    </div>
+  );
+}

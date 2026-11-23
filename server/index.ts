@@ -2,7 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type Request, type Response } from 'express';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {
+  ADMIN_API_PREFIX,
+  ADMIN_SESSION_COOKIE_NAME,
+  ADMIN_SESSION_MAX_AGE_SECONDS,
+  ADMIN_TOKEN_PREFIX,
   clearSessionCookie,
   generateSessionToken,
   hashSessionToken,
@@ -27,7 +32,7 @@ import {
   upsertRegistrationRow,
   upsertUserRow,
 } from './db';
-import { calculateFeeQuote, getCurrentTier } from '../src/utils/pricing';
+import { calculateFeeQuote, getCurrentTier, quoteRegistrationShipping } from '../src/utils/pricing';
 import { PRIVACY_NOTICE_VERSION } from '../src/data/privacyNotice';
 import { MAX_EMERGENCY_CONTACTS } from '../src/data/runnerProfileDefaults';
 import { registerReviewCommentRoutes } from './reviewComments';
@@ -110,6 +115,51 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: '12mb' }));
 
+/*
+ * Platform Owner console. The admin app calls /admin-api/<path>; that is served by the same
+ * /api/<path> handlers, but in the "admin" scope: the session comes from the admin cookie and
+ * platform-wide powers (isPlatformActor) exist only here. On the public site a Platform Owner
+ * account is an ordinary runner / organizer member.
+ */
+const scopeStore = new AsyncLocalStorage<{ admin: boolean }>();
+const inAdminScope = () => scopeStore.getStore()?.admin === true;
+/** platform-wide powers: a Platform Owner signed in to the admin console */
+function isPlatformActor(user: UserAccount | null | undefined): user is UserAccount {
+  return Boolean(user?.isPlatformAdmin) && inAdminScope();
+}
+
+app.use((req, res, next) => {
+  const isAdmin = req.url === ADMIN_API_PREFIX || req.url.startsWith(`${ADMIN_API_PREFIX}/`);
+  if (!isAdmin) {
+    scopeStore.run({ admin: false }, next);
+    return;
+  }
+  res.locals.adminScope = true;
+  req.url = `/api${req.url.slice(ADMIN_API_PREFIX.length)}`;
+  scopeStore.run({ admin: true }, () => {
+    const p = req.path;
+    if (p === '/api/auth/login' || p === '/api/auth/logout') {
+      next();
+      return;
+    }
+    if (p.startsWith('/api/auth/')) {
+      res.status(403).json({ ok: false, error: 'ศูนย์ควบคุมเข้าสู่ระบบได้ด้วยอีเมลและรหัสผ่านเท่านั้น' });
+      return;
+    }
+    const { user } = resolveSessionUser(req);
+    if (!user) {
+      if (p === '/api/bootstrap' && req.method === 'GET') {
+        // signed out: no system data, the console shows its sign-in form
+        res.json({ ok: true, currentUserId: null, config: { sandboxTools: SANDBOX_TOOLS } });
+        return;
+      }
+      res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบศูนย์ควบคุมอีกครั้ง' });
+      return;
+    }
+    next();
+  });
+});
+
 function nowThaiStamp(): string {
   const now = new Date();
   const fmt = new Intl.DateTimeFormat('sv-SE', {
@@ -149,9 +199,12 @@ function resolveSessionUser(req: Request): {
   user: UserAccount | null;
   tokenHash: string | null;
 } {
+  const admin = inAdminScope();
   const cookies = parseCookies(req.headers.cookie);
-  const rawToken = cookies[SESSION_COOKIE_NAME];
+  const rawToken = cookies[admin ? ADMIN_SESSION_COOKIE_NAME : SESSION_COOKIE_NAME];
   if (!rawToken) return { user: null, tokenHash: null };
+  // admin tokens only in the admin scope, public tokens only on the public site
+  if (admin !== rawToken.startsWith(ADMIN_TOKEN_PREFIX)) return { user: null, tokenHash: null };
   const tokenHash = hashSessionToken(rawToken);
   const row = db
     .prepare('SELECT user_id, expires_at FROM auth_sessions WHERE token_hash = ?')
@@ -161,14 +214,19 @@ function resolveSessionUser(req: Request): {
     db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(tokenHash);
     return { user: null, tokenHash: null };
   }
-  return { user: getUserById(row.user_id), tokenHash };
+  const user = getUserById(row.user_id);
+  // an admin session whose account lost Platform Owner rights is no longer valid
+  if (admin && !user?.isPlatformAdmin) return { user: null, tokenHash };
+  return { user, tokenHash };
 }
 
 function issueSession(req: Request, res: Response, userId: string): void {
-  const token = generateSessionToken();
+  const admin = inAdminScope();
+  const token = `${admin ? ADMIN_TOKEN_PREFIX : ''}${generateSessionToken()}`;
   const tokenHash = hashSessionToken(token);
   const createdAt = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const ttlMs = admin ? ADMIN_SESSION_MAX_AGE_SECONDS * 1000 : 7 * 24 * 60 * 60 * 1000;
+  const expiresAt = new Date(Date.now() + ttlMs).toISOString();
   db.prepare(`
     INSERT INTO auth_sessions (token_hash, user_id, user_agent, created_at, expires_at)
     VALUES (?, ?, ?, ?, ?)
@@ -183,7 +241,8 @@ function hasOrgRole(
   eventId?: string
 ): boolean {
   if (!user) return false;
-  if (user.isPlatformAdmin) return true;
+  // platform-wide access only inside the Platform Owner console
+  if (user.isPlatformAdmin && inAdminScope()) return true;
   const mem = user.memberships.find((m) => m.organizationId === orgId);
   if (!mem) return false;
   if (allowedRoles && !allowedRoles.includes(mem.role)) return false;
@@ -406,7 +465,15 @@ app.post('/api/auth/login', (req, res) => {
     });
   }
 
-  const user = withLoginEvent(getUserById(row.id)!, req, 'อีเมล + รหัสผ่าน', 'success');
+  if (inAdminScope() && !getUserById(row.id)?.isPlatformAdmin) {
+    return res.status(403).json({ ok: false, error: 'บัญชีนี้ไม่มีสิทธิ์เข้าศูนย์ควบคุม Platform Owner' });
+  }
+  const user = withLoginEvent(
+    getUserById(row.id)!,
+    req,
+    inAdminScope() ? 'อีเมล + รหัสผ่าน (ศูนย์ควบคุม)' : 'อีเมล + รหัสผ่าน',
+    'success'
+  );
   upsertUserRow(user, { preservePasswordHash: true });
   issueSession(req, res, user.id);
   return okSnapshot(res, user.id, { user });
@@ -496,6 +563,8 @@ app.post('/api/auth/logout', (req, res) => {
     db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(tokenHash);
   }
   clearSessionCookie(res);
+  // signed out of the console: no system data in the reply
+  if (inAdminScope()) return res.json({ ok: true, currentUserId: null, config: { sandboxTools: SANDBOX_TOOLS } });
   return okSnapshot(res, null);
 });
 
@@ -1309,6 +1378,12 @@ app.post('/api/registrations', (req, res) => {
   // same id when it retries (slow network, timeout, double click). A repeat must not take a
   // second seat or shirt, so it gets the registration that already exists instead.
   const clientRegId = payload.id ? String(payload.id) : '';
+  if (payload.acceptedRules !== true || !payload.acceptedPaymentTermsVersion) {
+    return res.status(400).json({
+      ok: false,
+      error: 'กรุณายอมรับกติกาการแข่งขันและข้อกำหนดการชำระเงินก่อนยืนยัน',
+    });
+  }
 
   db.exec('BEGIN IMMEDIATE');
   try {
@@ -1325,16 +1400,17 @@ app.post('/api/registrations', (req, res) => {
         }
         const state = readSystemState();
         const reg = state.registrations.find((r) => r.id === clientRegId);
-        const addonOrder = reg
-          ? state.merchOrders.find((m) => m.linkedRegistrationCode === reg.regCode)
-          : undefined;
+        const addonOrders = reg
+          ? state.merchOrders.filter((m) => m.linkedRegistrationCode === reg.regCode)
+          : [];
         return res.json({
           ok: true,
           currentUserId: user?.id ?? null,
           state,
           config: { sandboxTools: SANDBOX_TOOLS },
           reg,
-          addonOrder,
+          addonOrder: addonOrders[0],
+          addonOrders,
           replayed: true,
         });
       }
@@ -1419,6 +1495,11 @@ app.post('/api/registrations', (req, res) => {
     const tokenSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
     const immediate = Boolean(payload.simulateImmediateWebhook);
     const createdIso = nowIsoBangkok();
+    const kitByPost = payload.kitDeliveryMethod === 'postal_shipping';
+    if (kitByPost && !String(payload.shippingAddressSnapshot ?? '').trim()) {
+      db.exec('ROLLBACK');
+      return res.status(400).json({ ok: false, error: 'กรุณาระบุที่อยู่สำหรับจัดส่งชุดแข่ง' });
+    }
 
     const newReg: RegistrationRecord = {
       id: String(payload.id || `reg-dyn-${Date.now()}`),
@@ -1445,10 +1526,7 @@ app.post('/api/registrations', (req, res) => {
             : 'ผู้ติดต่อฉุกเฉินจำลอง 089-•••-0011')
       ),
       shirtSize,
-      kitDeliveryMethod:
-        payload.kitDeliveryMethod === 'postal_shipping'
-          ? 'postal_shipping'
-          : 'pickup_at_expo',
+      kitDeliveryMethod: kitByPost ? 'postal_shipping' : 'pickup_at_expo',
       shippingAddressSnapshot: payload.shippingAddressSnapshot
         ? String(payload.shippingAddressSnapshot)
         : undefined,
@@ -1457,6 +1535,7 @@ app.post('/api/registrations', (req, res) => {
       bibNumber: null,
       qrCheckInToken: `TKN-${cat.bibPrefix}${seq}-${tokenSuffix}`,
       acceptedRulesVersion: ev.rulesVersion,
+      acceptedPaymentTermsVersion: String(payload.acceptedPaymentTermsVersion),
       marketingConsent: Boolean(payload.marketingConsent),
       createdAt: createdIso,
       paidAt: immediate ? createdIso : null,
@@ -1486,41 +1565,102 @@ app.post('/api/registrations', (req, res) => {
       newReg.gender = participantGender;
     }
 
-    let addonOrder: MerchOrderRecord | undefined;
-    if (payload.addonProductId || payload.addonProduct) {
-      const prdId = String(payload.addonProductId ?? payload.addonProduct?.id ?? '');
-      const prd = ev.products.find((p) => p.id === prdId);
-      if (prd) {
-        const mCount = (
-          db.prepare('SELECT COUNT(*) AS cnt FROM merch_orders').get() as { cnt: number }
-        ).cnt;
-        const mSeq = mCount + 510;
-        addonOrder = {
-          id: String(payload.addonOrderId || `mord-dyn-${Date.now()}`),
-          merchOrderCode: `SHP-2611-${mSeq}`,
-          eventId: ev.id,
-          organizationId: ev.organizationId,
-          buyerUserId: user?.id,
-          buyerName: newReg.buyerName,
-          buyerEmail: user?.contactEmail ?? 'ติดต่อผ่านบัญชีผู้ใช้',
-          productId: prd.id,
-          productNameTh: prd.nameTh,
-          sellerLabel: prd.sellerLabel,
-          variantSize: String(payload.addonSize ?? 'M'),
-          quantity: 1,
-          deliveredQty: 0,
-          deliveryMethod: 'pickup_at_expo',
-          unitPriceSatang: prd.priceSatang,
-          shippingSatang: 0,
-          totalPaidSatang: prd.priceSatang,
-          paymentStatus: immediate ? 'succeeded' : 'pending',
-          fulfillmentStatus: 'ready_or_shipped',
-          pickupToken: `PICK-SHP-${mSeq}`,
-          linkedRegistrationCode: regCode,
-          createdAt: createdIso,
-        };
+    // Souvenirs bought with the entry: any number of lines, each a separate merch order linked
+    // to this registration (the entry total itself never changes). Every line is checked in this
+    // same transaction (size, 1–10 pieces, pre-order still open, stock for the summed quantity),
+    // so the seat and the souvenirs are either all booked or none.
+    const rawAddonItems: unknown[] = Array.isArray(payload.addonItems)
+      ? payload.addonItems
+      : payload.addonProductId || payload.addonProduct
+      ? [{ productId: payload.addonProductId ?? payload.addonProduct?.id, variantSize: payload.addonSize, quantity: 1 }]
+      : [];
+    if (rawAddonItems.length > 20) {
+      db.exec('ROLLBACK');
+      return res.status(400).json({ ok: false, error: 'เลือกของที่ระลึกได้ไม่เกิน 20 รายการ' });
+    }
+    const today = createdIso.slice(0, 10);
+    const addonLines: { prd: EventProduct; size: string; qty: number }[] = [];
+    const addonQtyByProduct = new Map<string, number>();
+    for (const raw of rawAddonItems) {
+      const it = (raw ?? {}) as Record<string, unknown>;
+      const prd = ev.products.find((p) => p.id === String(it.productId ?? ''));
+      if (!prd) {
+        db.exec('ROLLBACK');
+        return res.status(404).json({ ok: false, error: 'ไม่พบของที่ระลึกบางรายการ' });
+      }
+      const qty = Math.floor(Number(it.quantity ?? 1));
+      if (!Number.isFinite(qty) || qty < 1 || qty > 10) {
+        db.exec('ROLLBACK');
+        return res.status(400).json({ ok: false, error: `จำนวนของ ${prd.nameTh} ต้องอยู่ระหว่าง 1–10 ชิ้น` });
+      }
+      const size = String(it.variantSize ?? '').trim();
+      if (prd.availableSizes.length > 0 && !prd.availableSizes.includes(size)) {
+        db.exec('ROLLBACK');
+        return res.status(400).json({ ok: false, error: `กรุณาเลือกไซส์ของ ${prd.nameTh}` });
+      }
+      if (prd.saleMode === 'preorder' && prd.preorderCloseDate && prd.preorderCloseDate < today) {
+        db.exec('ROLLBACK');
+        return res.status(409).json({ ok: false, error: `${prd.nameTh} ปิดรับพรีออเดอร์แล้ว` });
+      }
+      addonQtyByProduct.set(prd.id, (addonQtyByProduct.get(prd.id) ?? 0) + qty);
+      addonLines.push({ prd, size: size || '-', qty });
+    }
+    for (const [prdId, qty] of addonQtyByProduct) {
+      const prd = ev.products.find((p) => p.id === prdId)!;
+      const left = prd.stockOrCeiling - prd.soldCount;
+      if (qty > left) {
+        db.exec('ROLLBACK');
+        return res.status(409).json({
+          ok: false,
+          error: left > 0 ? `${prd.nameTh} เหลือเพียง ${left} ชิ้น` : `${prd.nameTh} หมดแล้ว`,
+        });
       }
     }
+
+    // Postage: the kit fee is part of the entry total (and goes to the organizer); souvenirs from
+    // other sellers pay once per seller on their own order. Same rule as the forms show.
+    const shipQuote = quoteRegistrationShipping(ev, kitByPost ? 'postal_shipping' : 'pickup_at_expo', addonLines);
+    if (shipQuote.kitSatang > 0) {
+      newReg.snapshotKitShippingSatang = shipQuote.kitSatang;
+      newReg.snapshotTotalChargedSatang += shipQuote.kitSatang;
+    }
+    const sellerFee = new Map(shipQuote.sellers.map((x) => [x.seller, x.satang]));
+    const sellerCharged = new Set<string>();
+    const shipAddress = kitByPost ? String(payload.shippingAddressSnapshot).trim() : undefined;
+
+    let mSeqLast = lastMerchSeq();
+    const addonBaseId = String(payload.addonOrderId || `mord-dyn-${Date.now()}`);
+    const addonOrders: MerchOrderRecord[] = addonLines.map((l, i) => {
+      const mSeq = ++mSeqLast;
+      const ship = sellerCharged.has(l.prd.sellerLabel) ? 0 : sellerFee.get(l.prd.sellerLabel) ?? 0;
+      sellerCharged.add(l.prd.sellerLabel);
+      return {
+        id: addonLines.length === 1 ? addonBaseId : `${addonBaseId}-${i + 1}`,
+        merchOrderCode: `SHP-2611-${mSeq}`,
+        checkoutCode: `ADD-${regCode}`,
+        eventId: ev.id,
+        organizationId: ev.organizationId,
+        buyerUserId: user?.id,
+        buyerName: newReg.buyerName,
+        buyerEmail: user?.contactEmail ?? 'ติดต่อผ่านบัญชีผู้ใช้',
+        productId: l.prd.id,
+        productNameTh: l.prd.nameTh,
+        sellerLabel: l.prd.sellerLabel,
+        variantSize: l.size,
+        quantity: l.qty,
+        deliveredQty: 0,
+        deliveryMethod: kitByPost ? 'postal_shipping' : 'pickup_at_expo',
+        shippingAddress: shipAddress,
+        unitPriceSatang: l.prd.priceSatang,
+        shippingSatang: ship,
+        totalPaidSatang: l.prd.priceSatang * l.qty + ship,
+        paymentStatus: immediate ? 'succeeded' : 'pending',
+        fulfillmentStatus: kitByPost ? 'preparing' : 'ready_or_shipped',
+        pickupToken: `PICK-SHP-${mSeq}`,
+        linkedRegistrationCode: regCode,
+        createdAt: createdIso,
+      };
+    });
 
     const updatedEv: RaceEvent = {
       ...ev,
@@ -1529,28 +1669,30 @@ app.post('/api/registrations', (req, res) => {
           ? { ...st, reservedOrConfirmed: st.reservedOrConfirmed + 1 }
           : st
       ),
-      products: addonOrder
-        ? ev.products.map((p) =>
-            p.id === addonOrder!.productId ? { ...p, soldCount: p.soldCount + 1 } : p
-          )
-        : ev.products,
+      products: ev.products.map((p) =>
+        addonQtyByProduct.has(p.id)
+          ? { ...p, soldCount: p.soldCount + (addonQtyByProduct.get(p.id) ?? 0) }
+          : p
+      ),
     };
 
     upsertEventRow(updatedEv);
     upsertRegistrationRow(newReg, 1);
-    if (addonOrder) upsertMerchOrderRow(addonOrder, 1);
+    addonOrders.forEach((o) => upsertMerchOrderRow(o, 1));
 
     recordAudit(
       user,
       ev.organizationId,
       `สมัครวิ่งรายการใหม่ (${regCode})${
-        addonOrder ? ` พร้อมซื้อสินค้าเพิ่ม (${addonOrder.merchOrderCode})` : ''
+        addonOrders.length > 0
+          ? ` พร้อมซื้อสินค้าเพิ่ม (${addonOrders.map((o) => o.merchOrderCode).join(', ')})`
+          : ''
       }`,
       `${cat.code} · เสื้อ ${shirtSize}`,
       ev.id
     );
     db.exec('COMMIT');
-    return okSnapshot(res, user?.id ?? null, { reg: newReg, addonOrder });
+    return okSnapshot(res, user?.id ?? null, { reg: newReg, addonOrder: addonOrders[0], addonOrders });
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
@@ -1791,6 +1933,15 @@ app.post('/api/registrations/:id/refund', (req, res) => {
   return okSnapshot(res, user?.id ?? null);
 });
 
+/** Highest SHP-2611-<n> number in use; call inside the write transaction. */
+function lastMerchSeq(): number {
+  const rows = db.prepare('SELECT merch_order_code AS code FROM merch_orders').all() as { code: string }[];
+  return rows.reduce((max, r) => {
+    const n = Number(String(r.code).split('-').pop());
+    return Number.isFinite(n) && n > max ? n : max;
+  }, 500);
+}
+
 app.post('/api/merch-orders', (req, res) => {
   const { user } = resolveSessionUser(req);
   const payload = req.body ?? {};
@@ -1817,10 +1968,7 @@ app.post('/api/merch-orders', (req, res) => {
       db.exec('ROLLBACK');
       return res.status(409).json({ ok: false, error: 'สต็อกสินค้าไม่เพียงพอ' });
     }
-    const mCount = (
-      db.prepare('SELECT COUNT(*) AS cnt FROM merch_orders').get() as { cnt: number }
-    ).cnt;
-    const mSeq = mCount + 520;
+    const mSeq = lastMerchSeq() + 1;
     const deliveryMethod =
       payload.deliveryMethod === 'postal_shipping' ? 'postal_shipping' : 'pickup_at_expo';
     const shipFee = deliveryMethod === 'postal_shipping' ? prd.shippingFeeSatang : 0;
@@ -1868,6 +2016,151 @@ app.post('/api/merch-orders', (req, res) => {
     );
     db.exec('COMMIT');
     return okSnapshot(res, user?.id ?? null, { order: newOrder });
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+});
+
+/**
+ * Cart checkout for the event storefront. One request, one transaction:
+ * every line is checked against the product's remaining stock / pre-order ceiling
+ * (lines for the same product are added up first), then one merch order is written per
+ * line. Orders from the same cart share `checkoutCode`; shipping is charged once per
+ * seller (the highest fee among that seller's lines) because each seller ships their
+ * own parcel. Prices and fees come from the event record, never from the client.
+ */
+app.post('/api/merch-orders/checkout', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  const payload = req.body ?? {};
+  const eventId = String(payload.eventId ?? '');
+  const rawItems: unknown[] = Array.isArray(payload.items) ? payload.items : [];
+  if (rawItems.length === 0 || rawItems.length > 20) {
+    return res.status(400).json({ ok: false, error: 'ตะกร้าว่างหรือมีรายการมากเกินไป' });
+  }
+  const deliveryMethod: MerchOrderRecord['deliveryMethod'] =
+    payload.deliveryMethod === 'postal_shipping' ? 'postal_shipping' : 'pickup_at_expo';
+  const shippingAddress =
+    deliveryMethod === 'postal_shipping' ? String(payload.shippingAddress ?? '').trim() : undefined;
+  if (deliveryMethod === 'postal_shipping' && !shippingAddress) {
+    return res.status(400).json({ ok: false, error: 'กรุณาระบุที่อยู่สำหรับจัดส่ง' });
+  }
+  const buyerName = String(payload.buyerName ?? '').trim();
+  if (!buyerName) {
+    return res.status(400).json({ ok: false, error: 'กรุณาระบุชื่อผู้สั่งซื้อ' });
+  }
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const evRow = db
+      .prepare('SELECT detail_json FROM events WHERE id = ?')
+      .get(eventId) as { detail_json: string } | undefined;
+    if (!evRow) {
+      db.exec('ROLLBACK');
+      return res.status(404).json({ ok: false, error: 'ไม่พบงานวิ่ง' });
+    }
+    const ev = JSON.parse(evRow.detail_json) as RaceEvent;
+    const today = nowIsoBangkok().slice(0, 10);
+
+    const lines: { prd: EventProduct; size: string; qty: number }[] = [];
+    const qtyByProduct = new Map<string, number>();
+    for (const raw of rawItems) {
+      const it = (raw ?? {}) as Record<string, unknown>;
+      const prd = ev.products.find((p) => p.id === String(it.productId ?? ''));
+      if (!prd) {
+        db.exec('ROLLBACK');
+        return res.status(404).json({ ok: false, error: 'ไม่พบสินค้าบางรายการในตะกร้า' });
+      }
+      const qty = Math.floor(Number(it.quantity ?? 1));
+      if (!Number.isFinite(qty) || qty < 1 || qty > 10) {
+        db.exec('ROLLBACK');
+        return res.status(400).json({ ok: false, error: `จำนวนของ ${prd.nameTh} ต้องอยู่ระหว่าง 1–10 ชิ้น` });
+      }
+      const size = String(it.variantSize ?? '').trim();
+      if (prd.availableSizes.length > 0 && !prd.availableSizes.includes(size)) {
+        db.exec('ROLLBACK');
+        return res.status(400).json({ ok: false, error: `กรุณาเลือกไซส์ของ ${prd.nameTh}` });
+      }
+      if (prd.saleMode === 'preorder' && prd.preorderCloseDate && prd.preorderCloseDate < today) {
+        db.exec('ROLLBACK');
+        return res.status(409).json({ ok: false, error: `${prd.nameTh} ปิดรับพรีออเดอร์แล้ว` });
+      }
+      qtyByProduct.set(prd.id, (qtyByProduct.get(prd.id) ?? 0) + qty);
+      lines.push({ prd, size: size || '-', qty });
+    }
+    for (const [prdId, qty] of qtyByProduct) {
+      const prd = ev.products.find((p) => p.id === prdId)!;
+      const left = prd.stockOrCeiling - prd.soldCount;
+      if (qty > left) {
+        db.exec('ROLLBACK');
+        return res.status(409).json({
+          ok: false,
+          error: left > 0 ? `${prd.nameTh} เหลือเพียง ${left} ชิ้น` : `${prd.nameTh} หมดแล้ว`,
+        });
+      }
+    }
+
+    // shipping: once per seller, on that seller's first line
+    const shipBySeller = new Map<string, number>();
+    if (deliveryMethod === 'postal_shipping') {
+      for (const l of lines) {
+        shipBySeller.set(l.prd.sellerLabel, Math.max(shipBySeller.get(l.prd.sellerLabel) ?? 0, l.prd.shippingFeeSatang));
+      }
+    }
+    const shipCharged = new Set<string>();
+
+    let mSeqLast = lastMerchSeq();
+    const stamp = Date.now();
+    const checkoutCode = `CART-${stamp.toString(36).toUpperCase()}`;
+    const createdAt = nowIsoBangkok();
+    const orders: MerchOrderRecord[] = lines.map((l, i) => {
+      const mSeq = ++mSeqLast;
+      const ship = shipCharged.has(l.prd.sellerLabel) ? 0 : shipBySeller.get(l.prd.sellerLabel) ?? 0;
+      shipCharged.add(l.prd.sellerLabel);
+      return {
+        id: `mord-${stamp}-${i}`,
+        merchOrderCode: `SHP-2611-${mSeq}`,
+        checkoutCode,
+        eventId: ev.id,
+        organizationId: ev.organizationId,
+        buyerUserId: user?.id,
+        buyerName,
+        buyerEmail: user?.contactEmail ?? 'บัญชี LINE (ไม่มีอีเมล)',
+        productId: l.prd.id,
+        productNameTh: l.prd.nameTh,
+        sellerLabel: l.prd.sellerLabel,
+        variantSize: l.size,
+        quantity: l.qty,
+        deliveredQty: 0,
+        deliveryMethod,
+        shippingAddress,
+        unitPriceSatang: l.prd.priceSatang,
+        shippingSatang: ship,
+        totalPaidSatang: l.prd.priceSatang * l.qty + ship,
+        paymentStatus: 'succeeded',
+        fulfillmentStatus: deliveryMethod === 'pickup_at_expo' ? 'ready_or_shipped' : 'preparing',
+        pickupToken: `PICK-SHP-${mSeq}`,
+        linkedRegistrationCode: payload.linkedRegistrationCode ? String(payload.linkedRegistrationCode) : undefined,
+        createdAt,
+      };
+    });
+
+    upsertEventRow({
+      ...ev,
+      products: ev.products.map((p) =>
+        qtyByProduct.has(p.id) ? { ...p, soldCount: p.soldCount + (qtyByProduct.get(p.id) ?? 0) } : p
+      ),
+    });
+    orders.forEach((o) => upsertMerchOrderRow(o, 1));
+    recordAudit(
+      user,
+      ev.organizationId,
+      `คำสั่งซื้อสินค้าหน้าร้านแบบตะกร้า (${checkoutCode})`,
+      `${orders.map((o) => `${o.productNameTh} × ${o.quantity}`).join(', ')} (ไม่เกิดใบสมัครวิ่ง)`,
+      ev.id
+    );
+    db.exec('COMMIT');
+    return okSnapshot(res, user?.id ?? null, { orders, checkoutCode });
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
@@ -1989,7 +2282,7 @@ app.post('/api/production-inquiries', (req, res) => {
 
 app.patch('/api/production-inquiries/:id', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   const qRow = db
@@ -2226,6 +2519,21 @@ app.patch('/api/events/:id', (req, res) => {
 
   const patch = req.body ?? {};
   let nextEv: RaceEvent = { ...target };
+
+  if (patch.kitShippingFeeSatang !== undefined) {
+    const fee = Number(patch.kitShippingFeeSatang);
+    if (!Number.isInteger(fee) || fee < 0 || fee > 100000) {
+      return res.status(400).json({ ok: false, error: 'ค่าจัดส่งชุดแข่งต้องอยู่ระหว่าง 0–1,000 บาท' });
+    }
+    nextEv.kitShippingFeeSatang = fee;
+    recordAudit(
+      user,
+      target.organizationId,
+      `ตั้งค่าจัดส่งชุดแข่งทางไปรษณีย์ ${target.code}`,
+      `${target.kitShippingFeeSatang ?? 'ค่าตัวอย่าง'} -> ${fee} สตางค์ (ใช้กับใบสมัครใหม่)`,
+      target.id
+    );
+  }
 
   if (typeof patch.totalEventQuota === 'number') {
     const confirmed = (
@@ -2481,7 +2789,7 @@ app.patch('/api/events/:id', (req, res) => {
 
 app.patch('/api/admin/profile-config', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   const nextConfig = req.body?.config as PlatformProfileConfig | undefined;
@@ -2504,7 +2812,7 @@ app.patch('/api/admin/profile-config', (req, res) => {
 
 app.post('/api/admin/organizations/:id/review', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   const oRow = db
@@ -2591,7 +2899,7 @@ app.post('/api/admin/organizations/:id/review', (req, res) => {
 
 app.post('/api/admin/events/:id/govern', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   const evRow = db
@@ -2642,7 +2950,7 @@ app.post('/api/admin/events/:id/govern', (req, res) => {
 
 app.post('/api/admin/payouts', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   const p = req.body ?? {};
@@ -2673,7 +2981,7 @@ app.post('/api/admin/payouts', (req, res) => {
 
 app.patch('/api/admin/payouts/:id', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   const pRow = db
@@ -2696,7 +3004,7 @@ app.patch('/api/admin/payouts/:id', (req, res) => {
 
 app.post('/api/admin/registrations/:id/force-refund', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   const rRow = db
@@ -2740,7 +3048,7 @@ app.post('/api/admin/registrations/:id/force-refund', (req, res) => {
 
 app.patch('/api/admin/users/:id/access', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   const targetUser = getUserById(req.params.id);
@@ -2794,7 +3102,7 @@ app.patch('/api/admin/users/:id/access', (req, res) => {
 
 app.post('/api/form-builder/steps', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   const step = req.body?.step as RegistrationStepDef;
@@ -2826,7 +3134,7 @@ app.post('/api/form-builder/steps', (req, res) => {
 
 app.post('/api/form-builder/steps/reorder', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   const stepId = String(req.body?.stepId ?? '');
@@ -2856,7 +3164,7 @@ app.post('/api/form-builder/steps/reorder', (req, res) => {
 
 app.delete('/api/form-builder/steps/:id', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   const sRow = db
@@ -2886,7 +3194,7 @@ app.delete('/api/form-builder/steps/:id', (req, res) => {
 
 app.post('/api/form-builder/fields', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   const field = req.body?.field as GlobalFormFieldDef;
@@ -2935,7 +3243,7 @@ app.post('/api/form-builder/fields', (req, res) => {
 
 app.post('/api/form-builder/rules', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   const rule = req.body?.rule as ConditionalRule;
@@ -2983,7 +3291,7 @@ app.post('/api/form-builder/rules', (req, res) => {
 
 app.delete('/api/form-builder/rules/:id', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   db.prepare('DELETE FROM conditional_rules WHERE id = ?').run(req.params.id);
@@ -2992,7 +3300,7 @@ app.delete('/api/form-builder/rules/:id', (req, res) => {
 
 app.post('/api/form-builder/templates', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   const steps = (
@@ -3033,7 +3341,7 @@ app.post('/api/form-builder/templates', (req, res) => {
 
 app.post('/api/form-builder/templates/:id/publish', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   const tRow = db
@@ -3096,7 +3404,7 @@ app.post('/api/form-builder/field-requests', (req, res) => {
 
 app.post('/api/form-builder/field-requests/:id/resolve', (req, res) => {
   const { user } = resolveSessionUser(req);
-  if (!user?.isPlatformAdmin) {
+  if (!isPlatformActor(user)) {
     return res.status(403).json({ ok: false, error: 'สงวนสิทธิ์เฉพาะ Platform Owner' });
   }
   const fRow = db

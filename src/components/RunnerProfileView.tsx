@@ -1331,21 +1331,24 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
 
   const handleSaveAddressItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addrLabel.trim() || !addrRecipient.trim() || !addrLine.trim()) {
-      const errMsg = tx(
-        'กรุณาระบุชื่อเรียกที่อยู่ ชื่อผู้รับ และบ้านเลขที่/ถนนให้ครบถ้วน'
-      );
+    if (!addrRecipient.trim() || !addrLine.trim()) {
+      const errMsg = tx('กรุณาระบุชื่อผู้รับ และบ้านเลขที่/ถนนให้ครบถ้วน');
       setBanner({ tone: 'err', text: errMsg });
       showResultModalAlert(false, errMsg);
       return;
     }
+    // the name is optional; a blank one becomes "ที่อยู่ที่ <n>" by its place in the book
+    const editingIdx = editingAddrId ? addressList.findIndex((a) => a.id === editingAddrId) : -1;
+    const addrName =
+      addrLabel.trim() ||
+      txf('ที่อยู่ที่ {0}', editingIdx >= 0 ? editingIdx + 1 : addressList.length + 1);
     let nextAddrs: RunnerSavedAddress[];
     if (editingAddrId) {
       nextAddrs = addressList.map((a) =>
         a.id === editingAddrId
           ? {
             ...a,
-            addressName: addrLabel.trim(),
+            addressName: addrName,
             recipientName: addrRecipient.trim(),
             phone: addrPhone.trim(),
             address: addrLine.trim(),
@@ -1363,7 +1366,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
         ...addressList,
         {
           id: `addr-${Date.now()}`,
-          addressName: addrLabel.trim(),
+          addressName: addrName,
           recipientName: addrRecipient.trim(),
           phone: addrPhone.trim(),
           address: addrLine.trim(),
@@ -2288,6 +2291,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                   )}
                 </strong>
                 <ThaiPostalAddressSelector
+                typeableArea
                   idPrefix="rp-res"
                   contactPhone={phoneInput}
                   contactEmail={user.contactEmail}
@@ -3093,48 +3097,54 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                         </div>
 
                         <div className="runner-modal-body canvas-stack">
-                          <div className="form-grid-2">
-                            <div className="form-row">
-                              <label htmlFor="ad-lbl">
-                                {<RequiredFieldText text={tx('ชื่อเรียกที่อยู่ *')} />}
-                              </label>
-                              <input
-                                id="ad-lbl"
-                                type="text"
-                                value={addrLabel}
-                                onChange={(e) => setAddrLabel(e.target.value)}
-                                placeholder={tx('เช่น บ้านพัก / ที่ทำงาน')}
-                                required
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="ad-rec">
-                                {<RequiredFieldText text={tx('ชื่อผู้รับพัสดุ *')} />}
-                              </label>
-                              <input
-                                id="ad-rec"
-                                type="text"
-                                value={addrRecipient}
-                                onChange={(e) =>
-                                  setAddrRecipient(e.target.value)
-                                }
-                                required
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="ad-ph">
-                                {<RequiredFieldText text={tx('เบอร์โทรผู้รับ *')} />}
-                              </label>
-                              <PhoneInput
-                                id="ad-ph"
-                                value={addrPhone}
-                                onChange={(next) => setAddrPhone(next)}
-                                required
-                              />
-                            </div>
-                          </div>
-
+                          {/* right column (recipient, then the summary) rises next to the phone row;
+                              fields stay in reading order so Tab goes name, recipient, phone, address */}
                           <ThaiPostalAddressSelector
+                            typeableArea
+                            flow={{
+                              topLeft: (
+                                  <div className="form-row">
+                                    <label htmlFor="ad-lbl">{tx('ชื่อเรียกที่อยู่ (ไม่บังคับ)')}</label>
+                                    <input
+                                      id="ad-lbl"
+                                      type="text"
+                                      value={addrLabel}
+                                      maxLength={60}
+                                      onChange={(e) => setAddrLabel(e.target.value)}
+                                      placeholder={tx('เช่น บ้านพัก / ที่ทำงาน')}
+                                    />
+                                  </div>
+                              ),
+                              topRight: (
+                                  <div className="form-row">
+                                    <label htmlFor="ad-rec">
+                                      {<RequiredFieldText text={tx('ชื่อผู้รับพัสดุ *')} />}
+                                    </label>
+                                    <input
+                                      id="ad-rec"
+                                      type="text"
+                                      value={addrRecipient}
+                                      onChange={(e) =>
+                                        setAddrRecipient(e.target.value)
+                                      }
+                                      required
+                                    />
+                                  </div>
+                              ),
+                              left: (
+                                  <div className="form-row">
+                                    <label htmlFor="ad-ph">
+                                      {<RequiredFieldText text={tx('เบอร์โทรผู้รับ *')} />}
+                                    </label>
+                                    <PhoneInput
+                                      id="ad-ph"
+                                      value={addrPhone}
+                                      onChange={(next) => setAddrPhone(next)}
+                                      required
+                                    />
+                                  </div>
+                              ),
+                            }}
                             idPrefix="ad-book"
                             contactPhone={addrPhone}
                             contactEmail={user.contactEmail}

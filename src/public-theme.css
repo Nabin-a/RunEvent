@@ -8,7 +8,8 @@
 /* ------------------------------------------------------------------ */
 /* Tokens                                                              */
 /* ------------------------------------------------------------------ */
-.app-root.is-public {
+.app-root.is-public,
+.app-root.is-backoffice .global-topbar {
   --kr-font-display: var(--font-display); /* Anuphan, same family as the body */
   --kr-mint: #9be8c7;
   --kr-mint-2: #c9f3e1; /* chips and tags */
@@ -28,27 +29,27 @@
 /* ------------------------------------------------------------------ */
 /* Header                                                              */
 /* ------------------------------------------------------------------ */
-.app-root.is-public .global-topbar {
+.app-root:is(.is-public, .is-backoffice) .global-topbar {
   min-height: 4.25rem;
   padding: 0.6rem clamp(1rem, 3vw, 2.25rem);
   border-bottom: 1px solid var(--kr-mint-line);
   box-shadow: 0 6px 18px -16px rgba(52, 73, 95, 0.4);
 }
 
-.app-root.is-public .brand-name {
+.app-root:is(.is-public, .is-backoffice) .brand-name {
   font-family: var(--kr-font-display);
   font-size: 1.375rem;
   font-weight: 700;
   letter-spacing: 0;
 }
 
-.app-root.is-public .global-surface-nav {
+.app-root:is(.is-public, .is-backoffice) .global-surface-nav {
   gap: 2rem;
   margin-right: auto;
   margin-left: clamp(1.5rem, 4vw, 3.5rem);
 }
 
-.app-root.is-public .surface-switch-btn {
+.app-root:is(.is-public, .is-backoffice) .surface-switch-btn {
   position: relative;
   padding: 0.65rem 0.15rem;
   border-bottom: 0;
@@ -57,11 +58,11 @@
   font-weight: 600;
 }
 
-.app-root.is-public .surface-switch-btn svg {
+.app-root:is(.is-public, .is-backoffice) .surface-switch-btn svg {
   display: none;
 }
 
-.app-root.is-public .surface-switch-btn::after {
+.app-root:is(.is-public, .is-backoffice) .surface-switch-btn::after {
   content: '';
   position: absolute;
   left: 0;
@@ -74,20 +75,20 @@
   transition: transform 0.22s var(--kr-ease);
 }
 
-.app-root.is-public .surface-switch-btn:hover {
+.app-root:is(.is-public, .is-backoffice) .surface-switch-btn:hover {
   border-bottom-color: transparent;
 }
 
-.app-root.is-public .surface-switch-btn:hover::after {
+.app-root:is(.is-public, .is-backoffice) .surface-switch-btn:hover::after {
   transform: scaleX(0.5);
 }
 
-.app-root.is-public .surface-switch-btn.active::after {
+.app-root:is(.is-public, .is-backoffice) .surface-switch-btn.active::after {
   transform: scaleX(1);
 }
 
 /* TH / EN: the active language is a mint pill */
-.app-root.is-public .lang-switch button {
+.app-root:is(.is-public, .is-backoffice) .lang-switch button {
   min-height: 2rem;
   padding: 0.2rem 0.7rem;
   border-radius: 999px;
@@ -97,23 +98,23 @@
   font-weight: 700;
 }
 
-.app-root.is-public .lang-switch button + button {
+.app-root:is(.is-public, .is-backoffice) .lang-switch button + button {
   border-left: 0;
   border-radius: 999px;
 }
 
-.app-root.is-public .lang-switch button[aria-pressed='true'] {
+.app-root:is(.is-public, .is-backoffice) .lang-switch button[aria-pressed='true'] {
   background: var(--kr-mint);
   text-decoration: none;
 }
 
-.app-root.is-public .topbar-user-actions > .btn-primary {
+.app-root:is(.is-public, .is-backoffice) .topbar-user-actions > .btn-primary {
   min-height: 2.5rem;
   padding: 0.45rem 1.35rem;
   border-radius: 999px;
 }
 
-.app-root.is-public .btn-account-pill {
+.app-root:is(.is-public, .is-backoffice) .btn-account-pill {
   border-radius: 999px;
 }
 
@@ -616,7 +617,7 @@
   .kr-card-go,
   .kr-search-btn,
   .kr-chip,
-  .app-root.is-public .surface-switch-btn::after {
+  .app-root:is(.is-public, .is-backoffice) .surface-switch-btn::after {
     transition: none;
   }
 

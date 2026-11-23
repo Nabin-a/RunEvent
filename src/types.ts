@@ -619,6 +619,8 @@ export interface EventProduct {
 export interface MerchOrderRecord {
   id: string;
   merchOrderCode: string;
+  /** orders placed together from one storefront cart share this code */
+  checkoutCode?: string;
   eventId: string;
   organizationId: string;
   buyerUserId?: string;
@@ -703,6 +705,8 @@ export interface RaceEvent {
   editDeadlineDate: string;
   rulesVersion: string;
   kitPickupWindow: string;
+  /** Race kit postal shipping fee set by the organizer (satang). Unset = sandbox sample fee. */
+  kitShippingFeeSatang?: number;
   registrationPeriodLabel?: string;
   overviewParagraphs?: string[];
   racePackItems?: {
@@ -777,6 +781,8 @@ export interface RegistrationRecord {
   bibNumber: string | null;
   qrCheckInToken: string;
   acceptedRulesVersion: string;
+  /** payment and refund terms accepted at checkout (registrations made from Nov 2026) */
+  acceptedPaymentTermsVersion?: string;
   marketingConsent: boolean;
   createdAt: string;
   paidAt: string | null;
@@ -795,6 +801,8 @@ export interface RegistrationRecord {
   snapshotOrganizerFeeSatang: number;
   snapshotTotalChargedSatang: number;
   snapshotRefundedSatang: number;
+  /** race kit postal fee charged with this entry (part of snapshotTotalChargedSatang, goes to the organizer) */
+  snapshotKitShippingSatang?: number;
   customAnswers?: Record<string, string | boolean>;
   formVersionUsed?: string;
   gender?: 'ชาย' | 'หญิง' | 'ไม่ระบุ';

@@ -46,7 +46,10 @@ export interface ApiSnapshotResponse {
   event?: RaceEvent;
   reg?: RegistrationRecord;
   addonOrder?: MerchOrderRecord;
+  addonOrders?: MerchOrderRecord[];
   order?: MerchOrderRecord;
+  orders?: MerchOrderRecord[];
+  checkoutCode?: string;
   inquiry?: ProductionInquiry;
   invitation?: TeamInvitation;
   /** Generic payload (e.g. /api/account/export). */
@@ -54,6 +57,15 @@ export interface ApiSnapshotResponse {
 }
 
 let cachedApiOrigin = '';
+
+/**
+ * Platform Owner console: every /api/... call is sent to /admin-api/... so the server uses the
+ * admin session and scope. Called once by the admin app's entry before it renders.
+ */
+let adminApi = false;
+export function enableAdminApi(): void {
+  adminApi = true;
+}
 
 function resolveFallbackApiOrigin(): string {
   if (typeof window === 'undefined') return '';
@@ -67,8 +79,9 @@ export async function apiRequest(
   path: string,
   body?: unknown
 ): Promise<ApiSnapshotResponse> {
+  const finalPath = adminApi && path.startsWith('/api/') ? `/admin-api/${path.slice(5)}` : path;
   const doFetch = (base: string) =>
-    fetch(`${base}${path}`, {
+    fetch(`${base}${finalPath}`, {
       method,
       credentials: 'include',
       headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,

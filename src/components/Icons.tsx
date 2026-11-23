@@ -85,6 +85,13 @@ export const IconQr: React.FC<IconProps> = ({ size, className }) => (
   </svg>
 );
 
+export const IconCard: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <rect x="3" y="5.5" width="18" height="13" rx="2" />
+    <path d="M3 10h18M7 15h3" />
+  </svg>
+);
+
 export const IconCheckCircle: React.FC<IconProps> = ({ size, className }) => (
   <svg {...baseProps(size, className)}>
     <circle cx="12" cy="12" r="9" />
