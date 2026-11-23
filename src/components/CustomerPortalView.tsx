@@ -3346,7 +3346,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           <div className="event-editorial-col">
             {/* HERO COVER BANNER */}
             <section className="event-detail-hero">
-              <div className="detail-cover-box">
+              <div className={`detail-cover-box ${selectedEvent.coverImageUrl ? 'has-banner' : ''}`}>
                 <EventCoverMedia
                   event={selectedEvent}
                   illustrated

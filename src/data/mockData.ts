@@ -398,6 +398,8 @@ export const DEMO_CUSTOM_FIELDS = [
 const BASE_EVENTS: RaceEvent[] = [
   {
     id: 'evt-doisuthep-2026',
+    coverImageUrl: '/event-covers/evt-doisuthep-2026.webp',
+    coverImageAlt: 'ภาพแบนเนอร์ตัวอย่างประกอบงานวิ่ง',
     code: 'EVT-CMI-2601',
     organizationId: 'org-lanna',
     titleTh: 'ดอยสุเทพ ดอว์น ฮาล์ฟมาราธอน 2026',
@@ -650,6 +652,8 @@ const BASE_EVENTS: RaceEvent[] = [
   },
   {
     id: 'evt-promthep-2026',
+    coverImageUrl: '/event-covers/evt-promthep-2026.webp',
+    coverImageAlt: 'ภาพแบนเนอร์ตัวอย่างประกอบงานวิ่ง',
     code: 'EVT-PKT-2601',
     organizationId: 'org-andaman',
     titleTh: 'แหลมพรหมเทพ ซันเซ็ต รัน 2026',
@@ -758,6 +762,8 @@ const BASE_EVENTS: RaceEvent[] = [
   },
   {
     id: 'evt-oldmoat-2026',
+    coverImageUrl: '/event-covers/evt-oldmoat-2026.webp',
+    coverImageAlt: 'ภาพแบนเนอร์ตัวอย่างประกอบงานวิ่ง',
     code: 'EVT-CMI-2600',
     organizationId: 'org-lanna',
     titleTh: 'เชียงใหม่ คูเมือง คลาสสิก 10K 2026',
@@ -959,6 +965,8 @@ const BASE_EVENTS: RaceEvent[] = [
   },
   {
     id: 'evt-maerim-suspended',
+    coverImageUrl: '/event-covers/evt-maerim-suspended.webp',
+    coverImageAlt: 'ภาพแบนเนอร์ตัวอย่างประกอบงานวิ่ง',
     code: 'EVT-CMI-2699',
     organizationId: 'org-lanna',
     titleTh: 'แม่ริม เทรล ชาเลนจ์ 2026',

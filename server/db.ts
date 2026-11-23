@@ -716,6 +716,15 @@ export function readPlatformProfileConfig(): PlatformProfileConfig {
 const DOI_RACEPACK_PARAGRAPH =
   'ทุกระยะการแข่งขันได้รับเสื้อวิ่งเนื้อผ้าไมโครโพลีเอสเตอร์ระบายอากาศ ป้ายหมายเลขแข่งขัน (BIB) พร้อม QR Token สำหรับรับอุปกรณ์ และเหรียญรางวัล Finisher สำหรับผู้ที่เข้าเส้นชัยภายในเวลา Cut-off ที่กำหนด';
 
+/** Sample banner covers for the demo events (files in public/event-covers). */
+const SAMPLE_EVENT_COVERS: Record<string, string> = {
+  'evt-doisuthep-2026': '/event-covers/evt-doisuthep-2026.webp',
+  'evt-promthep-2026': '/event-covers/evt-promthep-2026.webp',
+  'evt-oldmoat-2026': '/event-covers/evt-oldmoat-2026.webp',
+  'evt-maerim-suspended': '/event-covers/evt-maerim-suspended.webp',
+};
+const SAMPLE_COVER_ALT = 'ภาพแบนเนอร์ตัวอย่างประกอบงานวิ่ง';
+
 export function seedDatabase(forceReset = false): void {
   initSchema();
 
@@ -802,6 +811,22 @@ export function seedDatabase(forceReset = false): void {
           JSON.stringify({ ...doi, overviewParagraphs: kept })
         );
       }
+    }
+    // Idempotent migration: sample banner covers for the public demo events,
+    // set only where the event has no cover yet so organizer uploads are kept.
+    for (const [eventId, url] of Object.entries(SAMPLE_EVENT_COVERS)) {
+      const row = db
+        .prepare('SELECT detail_json FROM events WHERE id = ?')
+        .get(eventId) as { detail_json: string } | undefined;
+      if (!row) continue;
+      const ev = JSON.parse(row.detail_json) as RaceEvent;
+      if (ev.coverImageUrl) continue;
+      db.prepare('UPDATE events SET detail_json = ?, cover_image_url = ?, cover_image_alt = ? WHERE id = ?').run(
+        JSON.stringify({ ...ev, coverImageUrl: url, coverImageAlt: SAMPLE_COVER_ALT }),
+        url,
+        SAMPLE_COVER_ALT,
+        eventId
+      );
     }
     const reg07Row = db
       .prepare("SELECT detail_json FROM registrations WHERE id = 'reg-07'")
