@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import {
   DEMO_CUSTOM_FIELDS,
   DEMO_ORGANIZATIONS,
+  EXTRA_SOUVENIRS,
   INITIAL_AUDIT_LOGS,
   INITIAL_EVENTS,
   INITIAL_INVITATIONS,
@@ -27,6 +28,7 @@ import {
   SEEDED_RUNNER_901_LOGIN_HISTORY,
   SEEDED_RUNNER_901_PROFILE,
 } from '../src/data/runnerProfileDefaults';
+import { SEEDED_SAVED_BOOKS } from '../src/data/seededSavedBooks';
 import type {
   AuditLogEntry,
   ConditionalRule,
@@ -828,6 +830,46 @@ export function seedDatabase(forceReset = false): void {
         eventId
       );
     }
+    // Idempotent migration: souvenirs added to the seed on 23 Nov 2026 reach databases
+    // seeded earlier. Products already present (same id) are left untouched.
+    for (const eventId of new Set(EXTRA_SOUVENIRS.map((p) => p.eventId))) {
+      const row = db
+        .prepare('SELECT detail_json FROM events WHERE id = ?')
+        .get(eventId) as { detail_json: string } | undefined;
+      if (!row) continue;
+      const ev = JSON.parse(row.detail_json) as RaceEvent;
+      const have = new Set((ev.products ?? []).map((p) => p.id));
+      const missing = EXTRA_SOUVENIRS.filter((p) => p.eventId === eventId && !have.has(p.id));
+      if (missing.length === 0) continue;
+      db.prepare('UPDATE events SET detail_json = ? WHERE id = ?').run(
+        JSON.stringify({ ...ev, products: [...(ev.products ?? []), ...missing] }),
+        eventId
+      );
+    }
+    // Idempotent migration: address books and saved registrants for the other demo
+    // accounts (23 Nov 2026). Only fills an account that has never had either list,
+    // so a user's own edits or deletions are never overwritten.
+    for (const [userId, book] of Object.entries(SEEDED_SAVED_BOOKS)) {
+      const user = getUserById(userId);
+      if (!user) continue;
+      const profile = user.runnerProfile;
+      if (profile?.savedAddresses !== undefined || profile?.savedParticipants !== undefined) continue;
+      upsertUserRow({ ...user, runnerProfile: { ...(profile ?? {}), ...book } });
+    }
+    // Idempotent migration (23 Nov 2026): the whole-event quota switch. Events stored before
+    // the switch existed get it set to "on", so their total cap keeps working as before.
+    const eventRows = db.prepare('SELECT id, detail_json FROM events').all() as {
+      id: string;
+      detail_json: string;
+    }[];
+    for (const row of eventRows) {
+      const ev = JSON.parse(row.detail_json) as RaceEvent;
+      if (typeof ev.totalEventQuotaEnabled === 'boolean') continue;
+      db.prepare('UPDATE events SET detail_json = ? WHERE id = ?').run(
+        JSON.stringify({ ...ev, totalEventQuotaEnabled: true }),
+        row.id
+      );
+    }
     const reg07Row = db
       .prepare("SELECT detail_json FROM registrations WHERE id = 'reg-07'")
       .get() as { detail_json: string } | undefined;
@@ -899,6 +941,7 @@ export function seedDatabase(forceReset = false): void {
       const normalizedEv: RaceEvent = {
         ...rawEv,
         activeTemplateId: rawEv.activeTemplateId ?? 'tpl-halfmarathon',
+        totalEventQuotaEnabled: rawEv.totalEventQuotaEnabled ?? true,
         publishedFormVersion: rawEv.publishedFormVersion ?? 'v1.2-published',
         customFields:
           rawEv.customFields === undefined &&

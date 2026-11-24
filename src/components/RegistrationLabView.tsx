@@ -42,7 +42,7 @@ import { PaymentMethodPicker } from './PaymentMethodPicker';
 import { SouvenirPicker } from './SouvenirPicker';
 import { RegistrationTerms } from './RegistrationTerms';
 import type { CartLine } from './StorefrontView';
-import { RegistrationDone, RegistrationSummary, type ReviewSection } from './RegistrationReview';
+import { RegistrationDone, RegistrationSummary, type ReviewLedgerGroup, type ReviewSection } from './RegistrationReview';
 import { EventCoverMedia } from './Icons';
 import { displayPhone } from '../utils/phone';
 
@@ -81,7 +81,9 @@ export interface LabShared {
   phone: Pair<string>;
   idType: Pair<'thai_id' | 'passport'>;
   idNumber: Pair<string>;
-  emergency: Pair<string>;
+  emergencyName: Pair<string>;
+  emergencyRelation: Pair<string>;
+  emergencyPhone: Pair<string>;
   answers: Pair<Record<string, string | boolean>>;
   shirtSize: Pair<ShirtSizeCode>;
   shirtStyle: Pair<ShirtStyleId>;
@@ -198,7 +200,21 @@ export function RegistrationLabView({
   const [phone, setPhone] = shared.phone;
   const [idType, setIdType] = shared.idType;
   const [idNumber, setIdNumber] = shared.idNumber;
-  const [emergency, setEmergency] = shared.emergency;
+  const [emergencyName, setEmergencyName] = shared.emergencyName;
+  const [emergencyRelation, setEmergencyRelation] = shared.emergencyRelation;
+  const [emergencyPhone, setEmergencyPhone] = shared.emergencyPhone;
+  const setEmergency = (name: string, relation: string, phone: string) => {
+    setEmergencyName(name);
+    setEmergencyRelation(relation);
+    setEmergencyPhone(phone);
+  };
+  const emergency = [
+    emergencyName.trim(),
+    emergencyRelation.trim() ? `(${emergencyRelation.trim()})` : '',
+    displayPhone(emergencyPhone),
+  ]
+    .filter(Boolean)
+    .join(' ');
   const [answers, setAnswers] = shared.answers;
 
   const fillFrom = (p?: {
@@ -214,6 +230,7 @@ export function RegistrationLabView({
     idType?: 'none' | IdType;
     idNumber?: string;
     emergencyContactName?: string;
+    emergencyContactRelation?: string;
     emergencyContactPhone?: string;
   } | null) => {
     setFirstTh(p?.firstName ?? '');
@@ -227,11 +244,7 @@ export function RegistrationLabView({
     setPhone(p?.phone ?? '');
     setIdType(p?.idType === 'passport' ? 'passport' : 'thai_id');
     setIdNumber(p?.idNumber ?? '');
-    setEmergency(
-      p?.emergencyContactName
-        ? `${p.emergencyContactName}${p.emergencyContactPhone ? ` (${p.emergencyContactPhone})` : ''}`
-        : ''
-    );
+    setEmergency(p?.emergencyContactName ?? '', p?.emergencyContactRelation ?? '', p?.emergencyContactPhone ?? '');
   };
 
   const saved = profile?.savedParticipants ?? [];
@@ -298,7 +311,8 @@ export function RegistrationLabView({
   const shipQuote = quoteRegistrationShipping(event, delivery === 'postal' ? 'postal_shipping' : 'pickup_at_expo', addonLines);
   const kitFee = kitShippingFee(event);
   const totalSatang = (quote?.runnerNetPaySatang ?? 0) + addonSatang + shipQuote.totalSatang;
-  const participantName = `${firstTh} ${lastTh}`.trim();
+  // Thai name is optional; fall back to the (required) English name
+  const participantName = `${firstTh} ${lastTh}`.trim() || `${firstEn} ${lastEn}`.trim();
 
   const go = (next: LabStep) => {
     setStep(next);
@@ -402,7 +416,7 @@ export function RegistrationLabView({
           </div>
         )}
 
-        <div className="reg-lab-body">
+        <div className={`reg-lab-body ${step === 6 ? 'is-review' : ''}`}>
           {/* ---------- STEP 1 ---------- */}
           {step === 1 && (
             <>
@@ -465,7 +479,7 @@ export function RegistrationLabView({
                         setForSelf(true);
                         fillFrom(profile ?? null);
                         const primary = contacts.find((c) => c.isPrimary) ?? contacts[0];
-                        if (primary) setEmergency(`${primary.contactName} (${primary.phone})`);
+                        if (primary) setEmergency(primary.contactName, primary.relationship, primary.phone);
                       }}
                     />
                     <span className="custom-radio-circle" aria-hidden="true" />
@@ -536,20 +550,20 @@ export function RegistrationLabView({
                     <p className="reg-lab-hint">{tx('ชื่ออังกฤษใช้พิมพ์บนป้าย BIB')}</p>
                     <div className="reg-lab-fields">
                       <div className="form-row">
-                        <label htmlFor="lab-fth"><RequiredFieldText text={tx('ชื่อจริง *')} /></label>
+                        <label htmlFor="lab-fen"><RequiredFieldText text="First Name (EN) *" /></label>
+                        <input id="lab-fen" type="text" required value={firstEn} onChange={(e) => setFirstEn(e.target.value)} placeholder="e.g. Kanpitcha" />
+                      </div>
+                      <div className="form-row">
+                        <label htmlFor="lab-len"><RequiredFieldText text="Last Name (EN) *" /></label>
+                        <input id="lab-len" type="text" required value={lastEn} onChange={(e) => setLastEn(e.target.value)} placeholder="e.g. Wattanakul" />
+                      </div>
+                      <div className="form-row">
+                        <label htmlFor="lab-fth">{tx('ชื่อจริง (ภาษาไทย)')}</label>
                         <input id="lab-fth" type="text" value={firstTh} onChange={(e) => setFirstTh(e.target.value)} placeholder={tx('เช่น กานต์พิชชา')} />
                       </div>
                       <div className="form-row">
-                        <label htmlFor="lab-lth"><RequiredFieldText text={tx('นามสกุล *')} /></label>
+                        <label htmlFor="lab-lth">{tx('นามสกุล (ภาษาไทย)')}</label>
                         <input id="lab-lth" type="text" value={lastTh} onChange={(e) => setLastTh(e.target.value)} placeholder={tx('เช่น วัฒนากูล')} />
-                      </div>
-                      <div className="form-row">
-                        <label htmlFor="lab-fen">First Name (EN)</label>
-                        <input id="lab-fen" type="text" value={firstEn} onChange={(e) => setFirstEn(e.target.value)} placeholder="e.g. Kanpitcha" />
-                      </div>
-                      <div className="form-row">
-                        <label htmlFor="lab-len">Last Name (EN)</label>
-                        <input id="lab-len" type="text" value={lastEn} onChange={(e) => setLastEn(e.target.value)} placeholder="e.g. Wattanakul" />
                       </div>
                       <div className="form-row">
                         <label htmlFor="lab-nth">{tx('ชื่อเล่น')}</label>
@@ -628,7 +642,7 @@ export function RegistrationLabView({
                             value=""
                             onChange={(e) => {
                               const c = contacts.find((x) => x.id === e.target.value);
-                              if (c) setEmergency(`${c.contactName} (${c.phone})`);
+                              if (c) setEmergency(c.contactName, c.relationship, c.phone);
                             }}
                           >
                             <option value="">{tx('เลือกจากโปรไฟล์…')}</option>
@@ -640,17 +654,27 @@ export function RegistrationLabView({
                           </select>
                         </div>
                       )}
-                      <div className="form-row reg-lab-full">
+                      <div className="form-row">
                         <label htmlFor="lab-emerg">
-                          <RequiredFieldText text={tx('ชื่อและเบอร์โทรผู้ติดต่อฉุกเฉิน *')} />
+                          <RequiredFieldText text={tx('ชื่อผู้ติดต่อฉุกเฉิน *')} />
                         </label>
                         <input
                           id="lab-emerg"
                           type="text"
-                          value={emergency}
-                          onChange={(e) => setEmergency(e.target.value)}
-                          placeholder={tx('ชื่อผู้ติดต่อ และเบอร์โทร 10 หลัก')}
+                          required
+                          value={emergencyName}
+                          onChange={(e) => setEmergencyName(e.target.value)}
+                          placeholder={tx('เช่น วีระ วัฒนากูล')}
                         />
+                        {emergencyRelation && (
+                          <span className="muted-inline">{txf('ความสัมพันธ์: {0}', tx(emergencyRelation))}</span>
+                        )}
+                      </div>
+                      <div className="form-row">
+                        <label htmlFor="lab-emerg-phone">
+                          <RequiredFieldText text={tx('เบอร์โทรผู้ติดต่อฉุกเฉิน *')} />
+                        </label>
+                        <PhoneInput id="lab-emerg-phone" value={emergencyPhone} onChange={setEmergencyPhone} required />
                       </div>
                     </div>
                   </section>
@@ -903,13 +927,20 @@ export function RegistrationLabView({
             const sections: ReviewSection[] = [
               {
                 key: 'entry',
-                title: tx('ประเภทการสมัคร'),
+                title: tx('การสมัคร'),
                 editStep: 1,
                 rows: [
                   { label: tx('ประเภท'), value: picked ? tx(picked.label) : '' },
-                  { label: tx('ระยะ'), value: tx(category.name) },
-                  { label: tx('ปล่อยตัว'), value: `${category.startTimeLocal} ${tx('น.')}` },
+                  {
+                    label: tx('ระยะ'),
+                    value: `${tx(category.name)} · ${tx('ปล่อยตัว')} ${category.startTimeLocal} ${tx('น.')}`,
+                  },
                   { label: tx('อัตราค่าสมัคร'), value: tx(tier.label) },
+                  {
+                    label: tx('เสื้อตามสิทธิ์'),
+                    value: `${tx(shirtStyleName(shirtStyle))} · ${shirtSize}`,
+                    editStep: 3,
+                  },
                 ],
               },
               {
@@ -917,47 +948,21 @@ export function RegistrationLabView({
                 title: tx('ผู้เข้าแข่งขัน'),
                 editStep: 2,
                 rows: [
-                  { label: tx('ชื่อ-นามสกุล'), value: participantName },
+                  {
+                    label: tx('ชื่อ-นามสกุล'),
+                    value: nickTh.trim() ? `${participantName} (${nickTh.trim()})` : participantName,
+                  },
                   { label: tx('ชื่อภาษาอังกฤษ'), value: `${firstEn} ${lastEn}`.trim() },
-                  { label: tx('ชื่อเล่น'), value: nickTh.trim() },
-                  { label: tx('วันเกิด'), value: dob },
-                  { label: tx('เพศ'), value: tx(gender) },
+                  { label: tx('วันเกิด · เพศ'), value: [dob, tx(gender)].filter(Boolean).join(' · ') },
                   { label: tx('เบอร์โทร'), value: displayPhone(phone) },
                   {
                     label: idType === 'passport' ? tx('หนังสือเดินทาง') : tx('เลขบัตรประชาชน'),
                     value: idDigits ? `•••• ${idDigits.slice(-4)}` : '',
                   },
                   { label: tx('ผู้ติดต่อฉุกเฉิน'), value: tx(emergency.trim()) },
+                  ...answerRows,
                 ],
               },
-              ...(answerRows.length > 0
-                ? [{ key: 'answers', title: tx('ข้อมูลเพิ่มเติม'), editStep: 2, rows: answerRows }]
-                : []),
-              {
-                key: 'shirt',
-                title: tx('เสื้อตามสิทธิ์สมัคร'),
-                editStep: 3,
-                rows: [
-                  { label: tx('แบบ'), value: tx(shirtStyleName(shirtStyle)) },
-                  { label: tx('ไซส์'), value: shirtSize },
-                ],
-              },
-              ...(hasSouvenirs
-                ? [
-                    {
-                      key: 'souvenir',
-                      title: tx('ของที่ระลึก'),
-                      editStep: 4,
-                      rows:
-                        addonLines.length > 0
-                          ? addonLines.map((l) => ({
-                              label: `${tx(l.prd.nameTh)}${l.size !== '-' ? ` · ${l.size}` : ''}`,
-                              value: `× ${l.qty}`,
-                            }))
-                          : [{ label: tx('รายการ'), value: tx('ไม่ได้เลือก') }],
-                    },
-                  ]
-                : []),
               {
                 key: 'kit',
                 title: tx('การรับอุปกรณ์'),
@@ -967,13 +972,49 @@ export function RegistrationLabView({
                     label: tx('วิธีรับ'),
                     value: delivery === 'postal' ? tx('จัดส่งทางไปรษณีย์') : tx('รับเองที่หน้างาน (QR Check-in)'),
                   },
-                  ...(delivery === 'postal'
-                    ? [
-                        { label: tx('ที่อยู่จัดส่ง'), value: tx(shipText.trim()) },
-                        { label: tx('ค่าจัดส่ง'), value: formatThb(shipQuote.totalSatang, true) },
-                      ]
-                    : []),
+                  ...(delivery === 'postal' ? [{ label: tx('ส่งถึง'), value: tx(shipText.trim()) }] : []),
                 ],
+              },
+            ];
+            const ledger: ReviewLedgerGroup[] = [
+              {
+                key: 'entry',
+                lines: [
+                  {
+                    label: txf('ค่าสมัคร {0} ({1})', tx(category.name), tx(tier.label)),
+                    sub: txf('{0} · ไซส์ {1}', tx(shirtStyleName(shirtStyle)), shirtSize),
+                    satang: quote.baseSatang,
+                  },
+                  {
+                    label: txf('ค่าบริการระบบ ({0})', feePolicyLabel(event.feeBearerPolicy)),
+                    satang: quote.runnerFeeSatang,
+                  },
+                ],
+              },
+              {
+                key: 'souvenir',
+                title: txf('ของที่ระลึก {0} ชิ้น', addonLines.reduce((n, l) => n + l.qty, 0)),
+                editStep: 4,
+                lines: addonLines.map((l) => ({
+                  label: `${tx(l.prd.nameTh)}${l.size !== '-' && l.prd.availableSizes.length > 1 ? ` · ${l.size}` : ''} ×${l.qty}`,
+                  satang: l.prd.priceSatang * l.qty,
+                })),
+              },
+              {
+                key: 'ship',
+                lines:
+                  shipQuote.kitSatang > 0
+                    ? [
+                        {
+                          label: tx('ค่าจัดส่งชุดแข่ง (ของที่ระลึกจากผู้จัดส่งรวมกล่องนี้)'),
+                          satang: shipQuote.kitSatang,
+                        },
+                        ...shipQuote.sellers.map((x) => ({
+                          label: txf('ค่าจัดส่งของที่ระลึก ({0})', tx(x.seller)),
+                          satang: x.satang,
+                        })),
+                      ]
+                    : [],
               },
             ];
             return (
@@ -984,37 +1025,12 @@ export function RegistrationLabView({
                 </div>
                 <RegistrationSummary
                   sections={sections}
-                  lines={[
-                    {
-                      label: txf('ค่าสมัคร {0} ({1})', tx(category.name), tx(tier.label)),
-                      sub: txf('{0} · ไซส์ {1}', tx(shirtStyleName(shirtStyle)), shirtSize),
-                      satang: quote.baseSatang,
-                    },
-                    {
-                      label: txf('ค่าบริการระบบ ({0})', feePolicyLabel(event.feeBearerPolicy)),
-                      satang: quote.runnerFeeSatang,
-                    },
-                    ...addonLines.map((l) => ({
-                      label: `${txf('สินค้าซื้อเพิ่ม: {0} ({1})', tx(l.prd.nameTh), l.size)} × ${l.qty}`,
-                      satang: l.prd.priceSatang * l.qty,
-                    })),
-                    ...(shipQuote.kitSatang > 0
-                      ? [
-                          {
-                        label: tx('ค่าจัดส่งชุดแข่ง (ของที่ระลึกจากผู้จัดส่งรวมกล่องนี้)'),
-                        satang: shipQuote.kitSatang,
-                      },
-                      ...shipQuote.sellers.map((x) => ({
-                        label: txf('ค่าจัดส่งของที่ระลึก ({0})', tx(x.seller)),
-                        satang: x.satang,
-                      })),
-                        ]
-                      : []),
-                  ]}
+                  ledger={ledger}
                   totalSatang={totalSatang}
                   onEdit={(st) => go(st as LabStep)}
+                  action={{ label: 'ไปชำระเงิน', onClick: () => go(7) }}
                 />
-                {footer(5, 7, 'ไปชำระเงิน')}
+                {footer(5, null)}
               </>
             );
           })()}

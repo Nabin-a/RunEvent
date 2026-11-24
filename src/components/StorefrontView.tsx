@@ -513,16 +513,22 @@ export function StorefrontView({
             <h3 className="sf-step-title">{tx('ตรวจคำสั่งซื้อและชำระเงิน')}</h3>
             <RegistrationSummary
               sections={sections}
-              lines={[
-                ...cartLines.map((l) => ({
-                  label: `${tx(l.prd.nameTh)} × ${l.qty}`,
-                  sub: l.prd.saleMode === 'preorder' ? `${tx('พรีออเดอร์')} · ${tx(l.prd.estimatedDeliveryNote)}` : undefined,
-                  satang: l.prd.priceSatang * l.qty,
-                })),
-                ...[...shippingBySeller.entries()].map(([seller, fee]) => ({
-                  label: txf('ค่าจัดส่ง ({0})', tx(seller)),
-                  satang: fee,
-                })),
+              ledger={[
+                {
+                  key: 'items',
+                  lines: cartLines.map((l) => ({
+                    label: `${tx(l.prd.nameTh)} × ${l.qty}`,
+                    sub: l.prd.saleMode === 'preorder' ? `${tx('พรีออเดอร์')} · ${tx(l.prd.estimatedDeliveryNote)}` : undefined,
+                    satang: l.prd.priceSatang * l.qty,
+                  })),
+                },
+                {
+                  key: 'ship',
+                  lines: [...shippingBySeller.entries()].map(([seller, fee]) => ({
+                    label: txf('ค่าจัดส่ง ({0})', tx(seller)),
+                    satang: fee,
+                  })),
+                },
               ]}
               totalSatang={total}
               onEdit={(s) => setStep(s as Step)}

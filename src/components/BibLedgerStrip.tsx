@@ -66,10 +66,17 @@ export const BibLedgerStrip: React.FC<BibLedgerStripProps> = ({
           <div className="summary-col-header">
             <h3>{tx("สัดส่วนที่นั่งผู้เข้าแข่งขัน (โควตา)")}</h3>
             <span className="mono-num muted-inline">
-              {tx("เพดานรับรวม ")} {metrics.totalEventQuota.toLocaleString('th-TH')} {tx(" คน")}
+              {metrics.totalQuotaEnabled ? (
+                <>
+                  {tx("เพดานรับรวม ")} {metrics.totalEventQuota.toLocaleString('th-TH')} {tx(" คน")}
+                </>
+              ) : (
+                tx("ปิดโควตารวม — ไม่จำกัดยอดรวม ใช้โควตารายระยะ")
+              )}
             </span>
           </div>
 
+          {metrics.totalQuotaEnabled && (
           <div
             className="quota-track-bar"
             role="img"
@@ -94,6 +101,7 @@ export const BibLedgerStrip: React.FC<BibLedgerStripProps> = ({
               }}
             />
           </div>
+          )}
 
           <div className="quota-cards-row">
             <button
@@ -122,12 +130,14 @@ export const BibLedgerStrip: React.FC<BibLedgerStripProps> = ({
               </span>
             </button>
 
-            <div className="metric-static-cell">
-              <span className="metric-num mono-num">
-                {metrics.openEventQuota.toLocaleString('th-TH')}
-              </span>
-              <span className="metric-label">{tx("ที่นั่งว่างคงเหลือ")}</span>
-            </div>
+            {metrics.totalQuotaEnabled && (
+              <div className="metric-static-cell">
+                <span className="metric-num mono-num">
+                  {metrics.openEventQuota.toLocaleString('th-TH')}
+                </span>
+                <span className="metric-label">{tx("ที่นั่งว่างคงเหลือ")}</span>
+              </div>
+            )}
           </div>
         </div>
 

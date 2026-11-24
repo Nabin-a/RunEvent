@@ -45,7 +45,7 @@ import {
   IconSearch,
   IconShirt,
 } from './Icons';
-import { RegistrationDone, RegistrationSummary, type ReviewSection } from './RegistrationReview';
+import { RegistrationDone, RegistrationSummary, type ReviewLedgerGroup, type ReviewSection } from './RegistrationReview';
 import { PaymentMethodPicker } from './PaymentMethodPicker';
 import { StorefrontView, type CartLine, type MerchCheckoutPayload, type MerchCheckoutResult } from './StorefrontView';
 import { SouvenirPicker } from './SouvenirPicker';
@@ -54,13 +54,24 @@ import { displayPhone } from '../utils/phone';
 import { DateOfBirthInput } from './DateOfBirthInput';
 import { CategoryAgeGroups, categoryHasAgeGroups } from './EventAgeGroupsSection';
 import { ProductArt, souvenirArt } from './ProductArt';
-import { resolveDetailLayout } from '../data/eventDetailLayout';
-import type { EventDetailBlockId } from '../types';
+import { pageOf, resolveBlockKey, resolveDetailBlocksDeep, resolveDetailLayout } from '../data/eventDetailLayout';
+import { EventCustomBlockView } from './EventCustomBlockView';
+import { EventDataPieceView, type DataPieceCtx } from './EventDataPieceView';
+import { dataPieceHasContent, mergedCoreText } from '../data/eventDataPieces';
+import { convertToFreeBlocks } from '../data/eventPageConvert';
+import { usePagePreview } from './pagePreview';
+import type { EventDetailBlockId, EventPageItem } from '../types';
 import { RaceCalendarView } from './RaceCalendarView';
 import { NoteTag, PriceTag } from './RegTags';
 import { MobileStepProgress } from './MobileStepProgress';
 import { MobileRegisterBar } from './MobileRegisterBar';
+import { SectionShortcuts } from './SectionShortcuts';
+import { ScheduleTimeline } from './ScheduleTimeline';
+import { HomeScrollMotion } from './HomeScrollMotion';
+import { NEW_ADDRESS, SavedAddressSelect } from './SavedAddressSelect';
+import { StickyCardCompact } from './StickyCardCompact';
 import { MascotAnim } from './MascotAnim';
+import { isTotalQuotaEnabled } from '../utils/eventConfig';
 import { DirectoryEmptyState, HeroRegionSelect, HeroSearchField, matchesSearchText, similarSearchTerms } from './DirectorySearch';
 import { RegistrationLabView, type LabShared } from './RegistrationLabView';
 import { ProductPicker, type PickerType } from './ProductPicker';
@@ -219,6 +230,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   const [regionFilter, setRegionFilter] = useState<string>('all');
 
   // Event detail & step-by-step registration state (6-step dedicated page)
+  // live preview inside the organizer page editor (no effect on the public page)
+  const pagePreview = usePagePreview();
   const [detailTab, setDetailTab] = useState<
     'register' | 'storefront' | 'info_results'
   >(initialEventTab);
@@ -250,9 +263,23 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   const [runnerShippingAddress, setRunnerShippingAddress] = useState(
     '199/8 ถ.ห้วยแก้ว ต.สุเทพ อ.เมือง จ.เชียงใหม่ 50200'
   );
-  const [emergencyContactText, setEmergencyContactText] = useState(
-    'วีระ วัฒนากูล (089-110-2211)'
-  );
+  // emergency contact: name and phone are separate fields; the relationship is kept when the
+  // contact comes from the profile or a saved participant. The registration still sends one line.
+  const [emergencyName, setEmergencyName] = useState('วีระ วัฒนากูล');
+  const [emergencyRelation, setEmergencyRelation] = useState('');
+  const [emergencyPhone, setEmergencyPhone] = useState('089-110-2211');
+  const setEmergencyContact = (name: string, relation: string, phone: string) => {
+    setEmergencyName(name);
+    setEmergencyRelation(relation);
+    setEmergencyPhone(phone);
+  };
+  const emergencyContactText = [
+    emergencyName.trim(),
+    emergencyRelation.trim() ? `(${emergencyRelation.trim()})` : '',
+    displayPhone(emergencyPhone),
+  ]
+    .filter(Boolean)
+    .join(' ');
   const [shirtSize, setShirtSize] = useState<ShirtSizeCode>('M');
   // souvenirs bought with the entry: any products, sizes and quantities (one merch order per line)
   const [addonItems, setAddonItems] = useState<CartLine[]>([]);
@@ -419,16 +446,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     setRegIdType(pt?.idType && pt.idType !== 'none' ? pt.idType : 'thai_id');
     setRegIdNumber(pt?.idNumber ?? '');
     setRegPhone(pt?.phone ?? '');
-    setEmergencyContactText(
-      pt?.emergencyContactName
-        ? [
-            pt.emergencyContactName,
-            pt.emergencyContactRelation ? `(${pt.emergencyContactRelation})` : '',
-            pt.emergencyContactPhone ?? '',
-          ]
-            .filter(Boolean)
-            .join(' ')
-        : ''
+    setEmergencyContact(
+      pt?.emergencyContactName ?? '',
+      pt?.emergencyContactRelation ?? '',
+      pt?.emergencyContactPhone ?? ''
     );
   };
 
@@ -459,13 +480,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     const primaryContact =
       contacts.find((c) => c.isPrimary) ?? contacts[0] ?? null;
     if (primaryContact) {
-      setEmergencyContactText(
-        `${primaryContact.contactName} (${primaryContact.relationship}) ${primaryContact.phone}`
-      );
+      setEmergencyContact(primaryContact.contactName, primaryContact.relationship, primaryContact.phone);
     } else if (p?.emergencyContactName && p?.emergencyContactPhone) {
-      setEmergencyContactText(
-        `${p.emergencyContactName} (${p.emergencyContactPhone})`
-      );
+      setEmergencyContact(p.emergencyContactName, p.emergencyContactRelation ?? '', p.emergencyContactPhone);
     }
   };
 
@@ -666,16 +683,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     return merchOrders.filter((m) => m.buyerUserId === currentUser.id);
   }, [merchOrders, currentUser]);
 
-  const getEventOpenSeats = (ev: RaceEvent) => {
-    const used = registrations.filter(
-      (r) =>
-        r.eventId === ev.id &&
-        (r.registrationStatus === 'confirmed' ||
-          r.registrationStatus === 'pending_payment')
-    ).length;
-    return Math.max(0, ev.totalEventQuota - used);
-  };
-
   const getCategoryOpenSeats = (evId: string, cat: RaceCategory) => {
     const used = registrations.filter(
       (r) =>
@@ -685,6 +692,21 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           r.registrationStatus === 'pending_payment')
     ).length;
     return Math.max(0, cat.categoryQuota - used);
+  };
+
+  // Seats still open for the event. With the whole-event cap switched off, only the
+  // per-distance quotas limit sign-ups, so the event is full only when every distance is full.
+  const getEventOpenSeats = (ev: RaceEvent) => {
+    if (!isTotalQuotaEnabled(ev)) {
+      return ev.categories.reduce((sum, cat) => sum + getCategoryOpenSeats(ev.id, cat), 0);
+    }
+    const used = registrations.filter(
+      (r) =>
+        r.eventId === ev.id &&
+        (r.registrationStatus === 'confirmed' ||
+          r.registrationStatus === 'pending_payment')
+    ).length;
+    return Math.max(0, ev.totalEventQuota - used);
   };
 
   const openEventPage = (
@@ -744,6 +766,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
     if (!finalBuyer || !finalParticipant) {
       setCheckoutError(tx("กรุณากรอกชื่อผู้ชำระเงินและชื่อผู้เข้าแข่งขันให้ครบถ้วน"));
+      return;
+    }
+    // the English name is the required one (printed on the BIB); Thai is optional
+    if (!regFirstNameEn.trim() || !regLastNameEn.trim()) {
+      setCheckoutError(tx("กรุณากรอกชื่อ-นามสกุลภาษาอังกฤษของผู้เข้าแข่งขันให้ครบ"));
       return;
     }
     if (!acceptedRules) {
@@ -886,12 +913,12 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       const match =
         existing.find((x) => x.id === selectedParticipantId) ??
         (cleanId ? existing.find((x) => x.idNumber === cleanId) : undefined) ??
-        existing.find(
-          (x) =>
-            x.firstName === regFirstNameTh.trim() &&
-            x.lastName === regLastNameTh.trim()
+        existing.find((x) =>
+          regFirstNameTh.trim()
+            ? x.firstName === regFirstNameTh.trim() && x.lastName === regLastNameTh.trim()
+            : (x.firstNameEn ?? '').toLowerCase() === regFirstNameEn.trim().toLowerCase() &&
+              (x.lastNameEn ?? '').toLowerCase() === regLastNameEn.trim().toLowerCase()
         );
-      const emergParts = emergencyContactText.trim().match(/^(.*?)[\s(]*([0-9][0-9\-\s]{7,})\)?\s*$/);
       const participant: SavedParticipant = {
         id: match?.id ?? `sp-${Date.now()}`,
         firstName: regFirstNameTh.trim(),
@@ -906,10 +933,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         idNumber: cleanId || undefined,
         phone: regPhone.trim() || undefined,
         preferredShirtSize: shirtSize,
-        emergencyContactName: emergParts
-          ? emergParts[1].trim()
-          : emergencyContactText.trim() || undefined,
-        emergencyContactPhone: emergParts ? emergParts[2].trim() : undefined,
+        emergencyContactName: emergencyName.trim() || undefined,
+        emergencyContactRelation: emergencyRelation.trim() || undefined,
+        emergencyContactPhone: emergencyPhone.trim() || undefined,
         lastUsedAt: new Date().toISOString(),
       };
       profilePatch.savedParticipants = match
@@ -1293,7 +1319,15 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         phone: [regPhone, setRegPhone],
         idType: [regIdType === 'passport' ? 'passport' : 'thai_id', setRegIdType],
         idNumber: [regIdNumber, setRegIdNumber],
-        emergency: [emergencyContactText, setEmergencyContactText],
+        emergencyName: [
+          emergencyName,
+          (v) => {
+            setEmergencyName(v);
+            setEmergencyRelation('');
+          },
+        ],
+        emergencyRelation: [emergencyRelation, setEmergencyRelation],
+        emergencyPhone: [emergencyPhone, setEmergencyPhone],
         answers: [customAnswers, setCustomAnswers],
         shirtSize: [
           shirtSize,
@@ -1785,10 +1819,40 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           · {tx("ชื่ออังกฤษแสดงบนป้าย BIB")}
                         </span>
                       </legend>
-                      {/* two fields per row: Thai name, English name (printed on the BIB), nicknames */}
+                      {/* two fields per row: English name (required, printed on the BIB), Thai name, nicknames */}
                       <div className="reg-name-grid">
                         <div className="form-row">
-                          <label htmlFor="p2-fname-th">{<RequiredFieldText text={tx("ชื่อจริง *")} />}</label>
+                          <label htmlFor="p2-fname-en">{<RequiredFieldText text="First Name (EN) *" />}</label>
+                          <input
+                            id="p2-fname-en"
+                            type="text"
+                            value={regFirstNameEn}
+                            onChange={(e) => {
+                              const v = sanitizeEnglishNameInput(e.target.value);
+                              setRegFirstNameEn(v);
+                              setParticipantNameEn(`${v} ${regLastNameEn}`.trim());
+                            }}
+                            placeholder="e.g. Kanpitcha"
+                            required
+                          />
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="p2-lname-en">{<RequiredFieldText text="Last Name (EN) *" />}</label>
+                          <input
+                            id="p2-lname-en"
+                            type="text"
+                            value={regLastNameEn}
+                            onChange={(e) => {
+                              const v = sanitizeEnglishNameInput(e.target.value);
+                              setRegLastNameEn(v);
+                              setParticipantNameEn(`${regFirstNameEn} ${v}`.trim());
+                            }}
+                            placeholder="e.g. Wattanakul"
+                            required
+                          />
+                        </div>
+                        <div className="form-row">
+                          <label htmlFor="p2-fname-th">{tx("ชื่อจริง (ภาษาไทย)")}</label>
                           <input
                             id="p2-fname-th"
                             type="text"
@@ -1801,11 +1865,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               );
                             }}
                             placeholder={tx("เช่น กานต์พิชชา")}
-                            required
                           />
                         </div>
                         <div className="form-row">
-                          <label htmlFor="p2-lname-th">{<RequiredFieldText text={tx("นามสกุล *")} />}</label>
+                          <label htmlFor="p2-lname-th">{tx("นามสกุล (ภาษาไทย)")}</label>
                           <input
                             id="p2-lname-th"
                             type="text"
@@ -1818,35 +1881,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               );
                             }}
                             placeholder={tx("เช่น วัฒนากูล")}
-                            required
-                          />
-                        </div>
-                        <div className="form-row">
-                          <label htmlFor="p2-fname-en">First Name (EN)</label>
-                          <input
-                            id="p2-fname-en"
-                            type="text"
-                            value={regFirstNameEn}
-                            onChange={(e) => {
-                              const v = sanitizeEnglishNameInput(e.target.value);
-                              setRegFirstNameEn(v);
-                              setParticipantNameEn(`${v} ${regLastNameEn}`.trim());
-                            }}
-                            placeholder="e.g. Kanpitcha"
-                          />
-                        </div>
-                        <div className="form-row">
-                          <label htmlFor="p2-lname-en">Last Name (EN)</label>
-                          <input
-                            id="p2-lname-en"
-                            type="text"
-                            value={regLastNameEn}
-                            onChange={(e) => {
-                              const v = sanitizeEnglishNameInput(e.target.value);
-                              setRegLastNameEn(v);
-                              setParticipantNameEn(`${regFirstNameEn} ${v}`.trim());
-                            }}
-                            placeholder="e.g. Wattanakul"
                           />
                         </div>
                         <div className="form-row">
@@ -2004,14 +2038,34 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     <div className="reg-field-group">
                       <div className="form-row">
                         <label htmlFor="p2-emerg">
-                          {<RequiredFieldText text={tx("ชื่อและเบอร์โทรผู้ติดต่อฉุกเฉิน *")} />}
+                          {<RequiredFieldText text={tx("ชื่อผู้ติดต่อฉุกเฉิน *")} />}
                         </label>
                         <input
                           id="p2-emerg"
                           type="text"
-                          value={emergencyContactText}
-                          onChange={(e) => setEmergencyContactText(e.target.value)}
-                          placeholder={tx("ชื่อผู้ติดต่อ และเบอร์โทร 10 หลัก")}
+                          value={emergencyName}
+                          onChange={(e) => {
+                            setEmergencyName(e.target.value);
+                            setEmergencyRelation('');
+                          }}
+                          placeholder={tx("เช่น วีระ วัฒนากูล")}
+                          required
+                        />
+                        {emergencyRelation && (
+                          <span className="muted-inline">
+                            {txf("ความสัมพันธ์: {0}", tx(emergencyRelation))}
+                          </span>
+                        )}
+                      </div>
+                      <div className="form-row">
+                        <label htmlFor="p2-emerg-phone">
+                          {<RequiredFieldText text={tx("เบอร์โทรผู้ติดต่อฉุกเฉิน *")} />}
+                        </label>
+                        <PhoneInput
+                          id="p2-emerg-phone"
+                          value={emergencyPhone}
+                          onChange={setEmergencyPhone}
+                          required
                         />
                         {registerForSelf &&
                           (currentUser?.runnerProfile?.emergencyContacts ?? []).length > 0 && (
@@ -2023,10 +2077,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                                 const ec = (
                                   currentUser?.runnerProfile?.emergencyContacts ?? []
                                 ).find((x) => x.id === e.target.value);
-                                if (ec)
-                                  setEmergencyContactText(
-                                    `${ec.contactName} (${ec.relationship}) ${ec.phone}`
-                                  );
+                                if (ec) setEmergencyContact(ec.contactName, ec.relationship, ec.phone);
                               }}
                             >
                               <option value="">{tx("เลือกจากโปรไฟล์…")}</option>
@@ -2100,8 +2151,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         setStep2Error(tx("กรุณากรอกช่องที่มีเครื่องหมาย * ให้ครบ ช่องที่ยังไม่ครบถูกไฮไลต์ไว้"));
                         return;
                       }
-                      if (!regFirstNameTh.trim() || !regLastNameTh.trim() || !buyerName.trim()) {
-                        setStep2Error(tx("กรุณากรอกชื่อ-นามสกุลผู้สมัครให้ครบถ้วน"));
+                      if (!regFirstNameEn.trim() || !regLastNameEn.trim() || !buyerName.trim()) {
+                        setStep2Error(tx("กรุณากรอกชื่อ-นามสกุลภาษาอังกฤษของผู้เข้าแข่งขันให้ครบ"));
                         return;
                       }
                       if (regIdType === 'thai_id' && regIdNumber.trim() && regIdNumber.trim().length !== 13) {
@@ -2342,43 +2393,32 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 {/* Pick-up at the venue needs no address: the form only shows for postal delivery */}
                 {kitDeliveryOption === 'postal' && (
                 <div className="custom-field-creator canvas-stack" style={{ marginTop: '0.6rem' }}>
-                  <strong>{<RequiredFieldText text={tx("ที่อยู่ติดต่อ / ที่อยู่สำหรับจัดส่งพัสดุ *")} />}</strong>
+                  <strong id="ship-addr-label">{<RequiredFieldText text={tx("ที่อยู่ติดต่อ / ที่อยู่สำหรับจัดส่งพัสดุ *")} />}</strong>
+                  {/* address book as one dropdown; its last row opens the form for a new address */}
                   {(currentUser?.runnerProfile?.savedAddresses ?? []).length > 0 && (
-                    <div className="priority-pill-bar" role="tablist" aria-label={tx("วิธีระบุที่อยู่")}>
-                      <button
-                        type="button"
-                        className={`filter-pill ${shipAddrMode === 'saved' ? 'active' : ''}`}
-                        onClick={() => {
-                          setShipAddrNotice(null);
-                          setShipAddrMode('saved');
-                          const addr = (currentUser?.runnerProfile?.savedAddresses ?? []).find(
-                            (x) => x.id === selectedSavedAddrId
-                          ) ?? currentUser?.runnerProfile?.savedAddresses?.[0];
-                          if (addr) {
-                            setSelectedSavedAddrId(addr.id);
-                            setRunnerShippingAddress(
-                              `${addr.recipientName} (${addr.phone}) — ${addr.address}, ต.${addr.subdistrict} อ.${addr.district} จ.${addr.province} ${addr.postalCode}`
-                            );
-                          }
-                        }}
-                      >
-                        {tx("เลือกจากสมุดที่อยู่")}
-                      </button>
-                      <button
-                        type="button"
-                        className={`filter-pill ${shipAddrMode === 'manual' ? 'active' : ''}`}
-                        onClick={() => {
-                          setShipAddrNotice(null);
+                    <SavedAddressSelect
+                      addresses={currentUser?.runnerProfile?.savedAddresses ?? []}
+                      value={shipAddrMode === 'manual' ? NEW_ADDRESS : selectedSavedAddrId}
+                      labelledBy="ship-addr-label"
+                      onChange={(id) => {
+                        setShipAddrNotice(null);
+                        if (id === NEW_ADDRESS) {
                           setShipAddrMode('manual');
-                          const next = regCascadeAddr;
+                          const n = regCascadeAddr;
                           setRunnerShippingAddress(
-                            `${shipRecipient} (${shipPhone}) — ${next.address}, ต.${next.subdistrict} อ.${next.district} จ.${next.province} ${next.postalCode}`.trim()
+                            `${shipRecipient} (${shipPhone}) — ${n.address}, ต.${n.subdistrict} อ.${n.district} จ.${n.province} ${n.postalCode}`.trim()
                           );
-                        }}
-                      >
-                        {tx("กรอกที่อยู่ใหม่เอง")}
-                      </button>
-                    </div>
+                          return;
+                        }
+                        const addr = (currentUser?.runnerProfile?.savedAddresses ?? []).find((x) => x.id === id);
+                        if (!addr) return;
+                        setShipAddrMode('saved');
+                        setSelectedSavedAddrId(addr.id);
+                        setRunnerShippingAddress(
+                          `${addr.recipientName} (${addr.phone}) — ${addr.address}, ต.${addr.subdistrict} อ.${addr.district} จ.${addr.province} ${addr.postalCode}`
+                        );
+                      }}
+                    />
                   )}
 
                   {shipAddrNotice && (
@@ -2389,43 +2429,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                       {shipAddrNotice.tone === 'err' ? <IconAlert size={15} /> : <IconCheckCircle size={15} />}
                       <span>{shipAddrNotice.text}</span>
                     </p>
-                  )}
-
-                  {shipAddrMode === 'saved' &&
-                    (currentUser?.runnerProfile?.savedAddresses ?? []).length > 0 && (
-                    <div className="reg-radio-cards-stack">
-                      {(currentUser?.runnerProfile?.savedAddresses ?? []).map((addr) => (
-                        <label
-                          key={addr.id}
-                          className={`reg-category-radio-card ${
-                            selectedSavedAddrId === addr.id ? 'selected' : ''
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="saved-ship-addr"
-                            checked={selectedSavedAddrId === addr.id}
-                            onChange={() => {
-                              setSelectedSavedAddrId(addr.id);
-                              setRunnerShippingAddress(
-                                `${addr.recipientName} (${addr.phone}) — ${addr.address}, ต.${addr.subdistrict} อ.${addr.district} จ.${addr.province} ${addr.postalCode}`
-                              );
-                            }}
-                          />
-                          <span className="custom-radio-circle" aria-hidden="true" />
-                          <div className="reg-radio-card-copy">
-                            <strong>
-                              {addr.addressName}
-                              {addr.isDefault ? ` · ${tx("ค่าเริ่มต้น")}` : ''}
-                            </strong>
-                            <span className="muted-inline">
-                              {addr.recipientName} ({addr.phone}) — {addr.address}, ต.{addr.subdistrict} อ.{addr.district} จ.{addr.province}{' '}
-                              <span className="mono-num">{addr.postalCode}</span>
-                            </span>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
                   )}
 
                   {shipAddrMode === 'manual' && (
@@ -2617,13 +2620,20 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               const sections: ReviewSection[] = [
                 {
                   key: 'entry',
-                  title: tx('ประเภทการสมัคร'),
+                  title: tx('การสมัคร'),
                   editStep: 1,
                   rows: [
                     { label: tx('ประเภท'), value: picked ? tx(picked.label) : '' },
-                    { label: tx('ระยะ'), value: tx(activeCategory.name) },
-                    { label: tx('ปล่อยตัว'), value: `${activeCategory.startTimeLocal} ${tx('น.')}` },
+                    {
+                      label: tx('ระยะ'),
+                      value: `${tx(activeCategory.name)} · ${tx('ปล่อยตัว')} ${activeCategory.startTimeLocal} ${tx('น.')}`,
+                    },
                     { label: tx('อัตราค่าสมัคร'), value: tx(tier.label) },
+                    {
+                      label: tx('เสื้อตามสิทธิ์'),
+                      value: `${tx(shirtStyleName(shirtStyle))} · ${shirtSize}`,
+                      editStep: 3,
+                    },
                   ],
                 },
                 {
@@ -2631,47 +2641,23 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   title: tx('ผู้เข้าแข่งขัน'),
                   editStep: 2,
                   rows: [
-                    { label: tx('ชื่อ-นามสกุล'), value: `${regFirstNameTh} ${regLastNameTh}`.trim() },
+                    {
+                      label: tx('ชื่อ-นามสกุล'),
+                      value: [`${regFirstNameTh} ${regLastNameTh}`.trim(), regNicknameTh.trim() ? `(${regNicknameTh.trim()})` : '']
+                        .filter(Boolean)
+                        .join(' '),
+                    },
                     { label: tx('ชื่อภาษาอังกฤษ'), value: `${regFirstNameEn} ${regLastNameEn}`.trim() },
-                    { label: tx('ชื่อเล่น'), value: regNicknameTh.trim() },
-                    { label: tx('วันเกิด'), value: regDob },
-                    { label: tx('เพศ'), value: tx(regGender) },
+                    { label: tx('วันเกิด · เพศ'), value: [regDob, tx(regGender)].filter(Boolean).join(' · ') },
                     { label: tx('เบอร์โทร'), value: displayPhone(regPhone) },
                     {
                       label: regIdType === 'passport' ? tx('หนังสือเดินทาง') : tx('เลขบัตรประชาชน'),
                       value: idDigits ? `•••• ${idDigits.slice(-4)}` : '',
                     },
                     { label: tx('ผู้ติดต่อฉุกเฉิน'), value: tx(emergencyContactText.trim()) },
+                    ...answerRows,
                   ],
                 },
-                ...(answerRows.length > 0
-                  ? [{ key: 'answers', title: tx('ข้อมูลเพิ่มเติม'), editStep: 2, rows: answerRows }]
-                  : []),
-                {
-                  key: 'shirt',
-                  title: tx('เสื้อตามสิทธิ์สมัคร'),
-                  editStep: 3,
-                  rows: [
-                    { label: tx('แบบ'), value: tx(shirtStyleName(shirtStyle)) },
-                    { label: tx('ไซส์'), value: shirtSize },
-                  ],
-                },
-                ...(hasSouvenirs
-                  ? [
-                      {
-                        key: 'souvenir',
-                        title: tx('ของที่ระลึก'),
-                        editStep: 4,
-                        rows:
-                          addonLines.length > 0
-                            ? addonLines.map((l) => ({
-                                label: `${tx(l.prd.nameTh)}${l.size !== '-' ? ` · ${l.size}` : ''}`,
-                                value: `× ${l.qty}`,
-                              }))
-                            : [{ label: tx('รายการ'), value: tx('ไม่ได้เลือก') }],
-                      },
-                    ]
-                  : []),
                 {
                   key: 'kit',
                   title: tx('การรับอุปกรณ์'),
@@ -2685,12 +2671,50 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           : tx('รับเองที่หน้างาน (QR Check-in)'),
                     },
                     ...(kitDeliveryOption === 'postal'
-                      ? [
-                          { label: tx('ที่อยู่จัดส่ง'), value: tx(runnerShippingAddress.trim()) },
-                          { label: tx('ค่าจัดส่ง'), value: formatThb(regShipQuote.totalSatang, true) },
-                        ]
+                      ? [{ label: tx('ส่งถึง'), value: tx(runnerShippingAddress.trim()) }]
                       : []),
                   ],
+                },
+              ];
+              const ledger: ReviewLedgerGroup[] = [
+                {
+                  key: 'entry',
+                  lines: [
+                    {
+                      label: `${tx('ค่าสมัคร')} ${tx(activeCategory.name)} (${tx(tier.label)})`,
+                      sub: `${tx(shirtStyleName(shirtStyle))} · ${tx('ไซส์')} ${shirtSize}`,
+                      satang: quote.baseSatang,
+                    },
+                    {
+                      label: `${tx('ค่าบริการระบบ')} (${feePolicyLabel(selectedEvent.feeBearerPolicy)})`,
+                      satang: quote.runnerFeeSatang,
+                    },
+                  ],
+                },
+                {
+                  key: 'souvenir',
+                  title: txf('ของที่ระลึก {0} ชิ้น', addonLines.reduce((n, l) => n + l.qty, 0)),
+                  editStep: 4,
+                  lines: addonLines.map((l) => ({
+                    label: `${tx(l.prd.nameTh)}${l.size !== '-' && l.prd.availableSizes.length > 1 ? ` · ${l.size}` : ''} ×${l.qty}`,
+                    satang: l.prd.priceSatang * l.qty,
+                  })),
+                },
+                {
+                  key: 'ship',
+                  lines:
+                    regShipQuote.kitSatang > 0
+                      ? [
+                          {
+                            label: tx('ค่าจัดส่งชุดแข่ง (ของที่ระลึกจากผู้จัดส่งรวมกล่องนี้)'),
+                            satang: regShipQuote.kitSatang,
+                          },
+                          ...regShipQuote.sellers.map((x) => ({
+                            label: txf('ค่าจัดส่งของที่ระลึก ({0})', tx(x.seller)),
+                            satang: x.satang,
+                          })),
+                        ]
+                      : [],
                 },
               ];
               return (
@@ -2701,46 +2725,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   </p>
                   <RegistrationSummary
                     sections={sections}
-                    lines={[
-                      {
-                        label: `${tx('ค่าสมัคร')} ${tx(activeCategory.name)} (${tx(tier.label)})`,
-                        sub: `${tx(shirtStyleName(shirtStyle))} · ${tx('ไซส์')} ${shirtSize}`,
-                        satang: quote.baseSatang,
-                      },
-                      {
-                        label: `${tx('ค่าบริการระบบ')} (${feePolicyLabel(selectedEvent.feeBearerPolicy)})`,
-                        satang: quote.runnerFeeSatang,
-                      },
-                      ...addonLines.map((l) => ({
-                        label: `${tx('สินค้าซื้อเพิ่ม')}: ${tx(l.prd.nameTh)}${l.size !== '-' ? ` (${l.size})` : ''} × ${l.qty}`,
-                        satang: l.prd.priceSatang * l.qty,
-                      })),
-                      ...(regShipQuote.kitSatang > 0
-                        ? [
-                            {
-                        label: tx('ค่าจัดส่งชุดแข่ง (ของที่ระลึกจากผู้จัดส่งรวมกล่องนี้)'),
-                        satang: regShipQuote.kitSatang,
-                      },
-                      ...regShipQuote.sellers.map((x) => ({
-                        label: txf('ค่าจัดส่งของที่ระลึก ({0})', tx(x.seller)),
-                        satang: x.satang,
-                      })),
-                          ]
-                        : []),
-                    ]}
+                    ledger={ledger}
                     totalSatang={quote.runnerNetPaySatang + addonSatang + regShipQuote.totalSatang}
                     onEdit={(st) => setRegStep(st as RegStep)}
+                    action={{ label: 'ไปชำระเงิน', onClick: () => setRegStep(7) }}
                   />
                   <div className="reg-step-footer-between">
                     <button type="button" className="btn-secondary" onClick={() => setRegStep(5)}>
                       {tx('ย้อนกลับ')}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-primary reg-next-pill-btn"
-                      onClick={() => setRegStep(7)}
-                    >
-                      {tx('ไปชำระเงิน')}
                     </button>
                   </div>
                 </div>
@@ -2919,70 +2911,19 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       return min === null || net < min ? net : min;
     }, null);
 
-    const overviewParas =
-      selectedEvent.overviewParagraphs &&
-      selectedEvent.overviewParagraphs.length > 0
-        ? selectedEvent.overviewParagraphs
-        : [
-            `${selectedEvent.titleTh} (${selectedEvent.titleEn}) จัดขึ้น ณ ${selectedEvent.venue} จังหวัด${selectedEvent.province} ในรูปแบบ ${selectedEvent.raceType} โดยเน้นมาตรฐานความปลอดภัยของเส้นทาง การจัดการจุดปล่อยตัวตามรหัสสี BIB และความโปร่งใสของราคาค่าสมัครสุทธิ`,
-          ];
-
-    const racePackList =
-      selectedEvent.racePackItems && selectedEvent.racePackItems.length > 0
-        ? selectedEvent.racePackItems
-        : [
-            {
-              title: 'เสื้อวิ่งประจำงาน (Official Race Jersey)',
-              detail:
-                'เนื้อผ้าไมโครโพลีเอสเตอร์ระบายอากาศ แห้งไว เลือกขนาด XS ถึง 2XL ได้ตามโควตาตอนสมัคร',
-              scope: 'ผู้สมัครทุกระยะ',
-            },
-            {
-              title: 'ป้ายหมายเลขแข่งขัน (BIB) พร้อม QR Token',
-              detail:
-                'แยกสีตามระยะการแข่งขัน ใช้แสดงเพื่อรับอุปกรณ์ในวัน Expo และเข้าบล็อกปล่อยตัว',
-              scope: 'ผู้สมัครทุกระยะ',
-            },
-            {
-              title: 'เหรียญรางวัล Finisher',
-              detail:
-                'มอบให้ผู้เข้าแข่งขันที่วิ่งผ่านจุดเช็กและเข้าเส้นชัยภายในเวลา Cut-off ของแต่ละระยะ',
-              scope: 'ผู้เข้าเส้นชัยตามกติกา',
-            },
-            {
-              title: 'ประกันอุบัติเหตุ & บริการจุดให้น้ำ-อาหารหลังเส้นชัย',
-              detail:
-                'ดูแลความปลอดภัยด้วยทีมแพทย์เคลื่อนที่ จุดบริการน้ำดื่มตลอดเส้นทาง และอาหารว่างหลังเข้าเส้นชัย',
-              scope: 'ผู้สมัครทุกคน',
-            },
-          ];
-
-    const scheduleTimeline =
-      selectedEvent.scheduleItems && selectedEvent.scheduleItems.length > 0
-        ? selectedEvent.scheduleItems
-        : [
-            {
-              timeLabel: `วันนี้ – ${selectedEvent.editDeadlineDate}`,
-              title: 'ช่วงเวลาเปิดรับสมัครออนไลน์',
-              detail: 'สมัครออนไลน์และรับ QR Token สำหรับรับอุปกรณ์ทันทีหลังชำระเงิน',
-            },
-            {
-              timeLabel: selectedEvent.kitPickupWindow,
-              title: 'วันรับเสื้อและป้าย BIB (Expo & Race Kit Pickup)',
-              detail: `แสดง QR Token ที่จุดรับอุปกรณ์ ณ ${selectedEvent.venue} เพื่อรับเสื้อและป้าย BIB`,
-            },
-            ...selectedEvent.categories.map((c) => ({
-              timeLabel: `${selectedEvent.eventDate} · ${c.startTimeLocal} น.`,
-              title: `ปล่อยตัวระยะ ${c.name} (${c.code})`,
-              detail: `รหัสหน้า BIB ${c.bibPrefix}-xxxx · เวลา Cut-off ${c.cutoffHours} ชั่วโมง`,
-            })),
-            {
-              timeLabel: `${selectedEvent.eventDate} · หลังเข้าเส้นชัย`,
-              title: 'รับเหรียญรางวัล Finisher และประกาศผลการแข่งขัน/อัลบั้มภาพ',
-              detail:
-                'ตรวจสอบผลการแข่งขันและลิงก์อัลบั้มภาพถ่ายหลังงานที่ผู้จัดตรวจสอบแล้วผ่านหน้าเว็บนี้',
-            },
-          ];
+    // text of the built-in blocks: the editor's unsaved page, then the saved draft (editor
+    // preview only), then the event's own text, then the generated default (eventDataPieces.ts)
+    const coreText = mergedCoreText(
+      selectedEvent,
+      pagePreview.page?.coreText ?? (pagePreview.active ? selectedEvent.detailPageDraft?.coreText : undefined)
+    );
+    const overviewParas = coreText.about.paragraphs;
+    const highlightList = coreText.about.highlights;
+    const racePackList = coreText.racepack.items;
+    const scheduleTimeline = coreText.schedule.items;
+    /** editor preview: mark text of a built-in block for in-place editing */
+    const coreEd = (target: string, mode: 'line' | 'multi', value: string) =>
+      pagePreview.active ? { 'data-page-edit': `core:${target}`, 'data-edit-mode': mode, 'data-edit-value': value } : {};
 
     const getShirtSpec = (size: ShirtSizeCode) =>
       resolveShirtSpec(
@@ -3015,30 +2956,136 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       !showRegForm && detailTab !== 'storefront';
 
     // Event page sections as blocks: one view per block id, drawn in the order of
-    // resolveDetailLayout (the organizer's saved order, or the default one).
-    const detailBlocks = resolveDetailLayout(selectedEvent).filter(
-      (b) => b.id !== 'merch' || selectedEvent.products.length > 0
+    // resolveDetailLayout (the organizer's published order, or the default one).
+    // Inside the organizer page editor (?preview=page) the unsaved page it sends wins,
+    // then the saved draft.
+    // built-in blocks are free blocks now (24 Nov 2026): older pages are converted as they are read
+    const shownPage = convertToFreeBlocks(
+      pagePreview.page ??
+        (pagePreview.active && selectedEvent.detailPageDraft ? selectedEvent.detailPageDraft : pageOf(selectedEvent)),
+      selectedEvent
     );
+    /** the sticky register card's text and switches (EventRegisterCardConfig) */
+    const cardCfg = shownPage.card ?? {};
+    const detailBlocks = resolveDetailLayout(shownPage).filter(
+      (b) => b.id !== 'merch' || selectedEvent.products.length > 0 || pagePreview.active
+    );
+    // the strip is a teaser: a few items, the rest live in the shop tab
+    const MERCH_STRIP_MAX = 4;
     const openStore = (productId?: string) => {
       if (productId) setStoreFocus({ id: productId, n: Date.now() });
       setShowRegForm(false);
       setDetailTab('storefront');
     };
+    /** the category cards of the event page (also drawn by the "categories" data piece) */
+    const renderCategoryCards = (cats: RaceCategory[], opts: { showAllTiers?: boolean; showAge?: boolean } = {}) => (
+            <div className="editorial-category-list">
+              {cats.map((cat) => {
+                const curTier = getCurrentTier(cat);
+                const quote = calculateFeeQuote(curTier.priceSatang, selectedEvent.feeBearerPolicy);
+                const left = getCategoryOpenSeats(selectedEvent.id, cat);
+                return (
+                  <article key={cat.id} className="editorial-cat-card">
+                    <div className="editorial-cat-head">
+                      <div className="cta-inline-row">
+                        <span className={`category-bib-chip tone-${cat.colorTag}`}>
+                          <strong>{tx(cat.code)}</strong>
+                        </span>
+                        <h3>{tx(cat.name)}</h3>
+                      </div>
+
+                      <div className="editorial-cat-price">
+                        <span className="muted-inline">
+                          {tx("ราคาสุทธิ (")}{tx(curTier.label)})
+                        </span>
+                        <strong className="mono-num text-vermilion">
+                          {formatThb(quote.runnerNetPaySatang, true)}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="editorial-cat-facts">
+                      <span>
+                        <IconClock size={14} /> {tx(" ปล่อยตัว")}{' '}
+                        <strong className="mono-num">
+                          {tx(cat.startTimeLocal)} {tx(" น.")}
+                        </strong>
+                      </span>
+                      <span>
+                        {tx("เวลา Cut-off")}{' '}
+                        <strong className="mono-num">
+                          {tx(cat.cutoffHours)} {tx(" ชม.")}
+                        </strong>
+                      </span>
+                      <span>
+                        {tx("ที่นั่งว่าง")}{' '}
+                        <strong className="mono-num">
+                          {tx(left)} / {tx(cat.categoryQuota)}
+                        </strong>{' '}
+                        {tx("สิทธิ์")}
+                      </span>
+                      {opts.showAge !== false && formatAgeLimit(cat) && (
+                        <span>
+                          <strong>{formatAgeLimit(cat)}</strong>{' '}
+                          <span className="muted-inline">
+                            ({formatAgeBasis(cat.ageBasis ?? 'race_day')})
+                          </span>
+                        </span>
+                      )}
+                    </div>
+
+                    {opts.showAllTiers !== false && (
+                    <div className="editorial-tier-strip">
+                      {cat.priceTiers.map((t) => (
+                        <span
+                          key={t.id}
+                          className={`editorial-tier-pill ${t.isCurrent ? 'active' : ''}`}
+                        >
+                          <strong>{tx(t.label)}:</strong>{' '}
+                          <span className="mono-num">{formatThb(t.priceSatang)}</span>{' '}
+                          ({tx(t.startsAt)} – {tx(t.endsAt)})
+                          {t.isCurrent ? tx(" · เปิดใช้อยู่") : ''}
+                        </span>
+                      ))}
+                    </div>
+                    )}
+
+                    <div className="editorial-cat-actions">
+                      <span className="muted-inline">
+                        {tx("ค่าสมัครป้าย ")} {formatThb(quote.baseSatang)} {tx(" + ค่าบริการฝั่งนักวิ่ง")}{' '}
+                        {formatThb(quote.runnerFeeSatang, true)}
+                      </span>
+                    </div>
+
+                    {opts.showAge !== false && categoryHasAgeGroups(cat) && (
+                      <details className="cat-age-details">
+                        <summary>{tx("ดูรุ่นอายุ")}</summary>
+                        <CategoryAgeGroups event={selectedEvent} cat={cat} />
+                      </details>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+    );
+
     const detailBlockViews: Record<EventDetailBlockId, React.ReactNode> = {
       about: (
         <section id="sec-about" className="clean-panel">
           <h2>{tx("เกี่ยวกับงาน")}</h2>
           {overviewParas.map((p, idx) => (
-            <p key={idx} className="muted-block">
+            <p key={idx} className="muted-block" {...coreEd(`about:paragraphs.${idx}`, 'multi', p)}>
               {tx(p)}
             </p>
           ))}
-          {selectedEvent.highlights.length > 0 && (
+          {highlightList.length > 0 && (
             <>
               <h3>{tx("จุดเด่น")}</h3>
               <ul className="compact-bullet-list">
-                {selectedEvent.highlights.map((h, i) => (
-                  <li key={i}>{tx(h)}</li>
+                {highlightList.map((h, i) => (
+                  <li key={i} {...coreEd(`about:highlights.${i}`, 'line', h)}>
+                    {tx(h)}
+                  </li>
                 ))}
               </ul>
             </>
@@ -3055,92 +3102,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             </div>
           </div>
 
-          <div className="editorial-category-list">
-            {selectedEvent.categories.map((cat) => {
-              const curTier = getCurrentTier(cat);
-              const quote = calculateFeeQuote(curTier.priceSatang, selectedEvent.feeBearerPolicy);
-              const left = getCategoryOpenSeats(selectedEvent.id, cat);
-              return (
-                <article key={cat.id} className="editorial-cat-card">
-                  <div className="editorial-cat-head">
-                    <div className="cta-inline-row">
-                      <span className={`category-bib-chip tone-${cat.colorTag}`}>
-                        <strong>{tx(cat.code)}</strong>
-                      </span>
-                      <h3>{tx(cat.name)}</h3>
-                    </div>
-
-                    <div className="editorial-cat-price">
-                      <span className="muted-inline">
-                        {tx("ราคาสุทธิ (")}{tx(curTier.label)})
-                      </span>
-                      <strong className="mono-num text-vermilion">
-                        {formatThb(quote.runnerNetPaySatang, true)}
-                      </strong>
-                    </div>
-                  </div>
-
-                  <div className="editorial-cat-facts">
-                    <span>
-                      <IconClock size={14} /> {tx(" ปล่อยตัว")}{' '}
-                      <strong className="mono-num">
-                        {tx(cat.startTimeLocal)} {tx(" น.")}
-                      </strong>
-                    </span>
-                    <span>
-                      {tx("เวลา Cut-off")}{' '}
-                      <strong className="mono-num">
-                        {tx(cat.cutoffHours)} {tx(" ชม.")}
-                      </strong>
-                    </span>
-                    <span>
-                      {tx("ที่นั่งว่าง")}{' '}
-                      <strong className="mono-num">
-                        {tx(left)} / {tx(cat.categoryQuota)}
-                      </strong>{' '}
-                      {tx("สิทธิ์")}
-                    </span>
-                    {formatAgeLimit(cat) && (
-                      <span>
-                        <strong>{formatAgeLimit(cat)}</strong>{' '}
-                        <span className="muted-inline">
-                          ({formatAgeBasis(cat.ageBasis ?? 'race_day')})
-                        </span>
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="editorial-tier-strip">
-                    {cat.priceTiers.map((t) => (
-                      <span
-                        key={t.id}
-                        className={`editorial-tier-pill ${t.isCurrent ? 'active' : ''}`}
-                      >
-                        <strong>{tx(t.label)}:</strong>{' '}
-                        <span className="mono-num">{formatThb(t.priceSatang)}</span>{' '}
-                        ({tx(t.startsAt)} – {tx(t.endsAt)})
-                        {t.isCurrent ? tx(" · เปิดใช้อยู่") : ''}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="editorial-cat-actions">
-                    <span className="muted-inline">
-                      {tx("ค่าสมัครป้าย ")} {formatThb(quote.baseSatang)} {tx(" + ค่าบริการฝั่งนักวิ่ง")}{' '}
-                      {formatThb(quote.runnerFeeSatang, true)}
-                    </span>
-                  </div>
-
-                  {categoryHasAgeGroups(cat) && (
-                    <details className="cat-age-details">
-                      <summary>{tx("ดูรุ่นอายุ")}</summary>
-                      <CategoryAgeGroups event={selectedEvent} cat={cat} />
-                    </details>
-                  )}
-                </article>
-              );
-            })}
-          </div>
+          {renderCategoryCards(selectedEvent.categories)}
         </section>
       ),
 
@@ -3150,13 +3112,17 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
           <div className="racepack-grid">
             {racePackList.map((item, idx) => (
-              <div key={idx} className="racepack-item-card">
+              <div key={idx} className="racepack-item-card" {...(pagePreview.active ? { 'data-core-item': `racepack:${idx}` } : {})}>
                 <div className="cta-inline-row">
                   <IconShirt size={16} />
-                  <strong>{tx(item.title)}</strong>
+                  <strong {...coreEd(`racepack:items.${idx}.title`, 'line', item.title)}>{tx(item.title)}</strong>
                 </div>
-                <p className="muted-block">{tx(item.detail)}</p>
-                <span className="mono-code">{tx(item.scope)}</span>
+                <p className="muted-block" {...coreEd(`racepack:items.${idx}.detail`, 'multi', item.detail)}>
+                  {tx(item.detail)}
+                </p>
+                <span className="mono-code" {...coreEd(`racepack:items.${idx}.scope`, 'line', item.scope)}>
+                  {tx(item.scope)}
+                </span>
               </div>
             ))}
           </div>
@@ -3204,20 +3170,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       schedule: (
         <section id="sec-schedule" className="clean-panel">
           <h2>{tx("กำหนดการ")}</h2>
-          <div className="schedule-timeline-list">
-            {scheduleTimeline.map((item, idx) => (
-              <div key={idx} className="schedule-timeline-row">
-                <div className="schedule-time-badge mono-num">
-                  <IconClock size={14} />
-                  <span>{tx(item.timeLabel)}</span>
-                </div>
-                <div className="schedule-row-body">
-                  <strong>{tx(item.title)}</strong>
-                  <p className="muted-inline">{tx(item.detail)}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+          <ScheduleTimeline
+            items={scheduleTimeline}
+            editBase={pagePreview.active ? 'core:schedule:items' : undefined}
+            dragList={pagePreview.active ? 'schedule' : undefined}
+          />
         </section>
       ),
 
@@ -3270,14 +3227,23 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             <div>
               <h2 id="merch-strip-title">{tx("ของที่ระลึกประจำงาน")}</h2>
               <p className="muted-inline">{tx("ซื้อได้โดยไม่ต้องสมัครวิ่ง")}</p>
+              {pagePreview.active && selectedEvent.products.length === 0 && (
+                <p className="custom-block-empty data-piece-empty">
+                  {tx("งานนี้ยังไม่มีสินค้า หน้าจริงจะไม่แสดงส่วนนี้")}
+                </p>
+              )}
             </div>
             <button type="button" className="btn-secondary" onClick={() => openStore()}>
               <IconBag size={15} />
-              <span>{tx("ไปที่ร้านค้า")}</span>
+              <span>
+                {selectedEvent.products.length > MERCH_STRIP_MAX
+                  ? txf("ดูทั้งหมด {0} รายการ", selectedEvent.products.length)
+                  : tx("ไปที่ร้านค้า")}
+              </span>
             </button>
           </div>
           <ul className="merch-strip-list">
-            {selectedEvent.products.map((prd) => (
+            {selectedEvent.products.slice(0, MERCH_STRIP_MAX).map((prd) => (
               <li key={prd.id}>
                 <button type="button" className="merch-strip-item" onClick={() => openStore(prd.id)}>
                   <span className="merch-strip-art" aria-hidden="true">
@@ -3484,9 +3450,83 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 )}
 
                 {/* sections in the order the organizer set (default order until they do) */}
-                {detailBlocks.map((b) => (
-                  <React.Fragment key={b.id}>{detailBlockViews[b.id]}</React.Fragment>
-                ))}
+                {detailBlocks.map((b) => {
+                  const dataCtx: DataPieceCtx = {
+                    event: selectedEvent,
+                    org: org ?? undefined,
+                    openSeats: (cat) => getCategoryOpenSeats(selectedEvent.id, cat),
+                    eventOpenSeats: isTotalQuotaEnabled(selectedEvent) ? getEventOpenSeats(selectedEvent) : null,
+                    shirtSpec: getShirtSpec,
+                    registerOpen: selectedEvent.status === 'published',
+                    onRegister: (catId) => {
+                      if (!pagePreview.active) startRegistrationForCategory(catId);
+                    },
+                    onOpenStore: (productId) => {
+                      if (!pagePreview.active) openStore(productId);
+                    },
+                    formatAge: (cat) => formatAgeLimit(cat) || null,
+                    renderCategoryCards,
+                  };
+                  const renderData = (item: EventPageItem) => <EventDataPieceView item={item} ctx={dataCtx} preview={pagePreview.active} />;
+                  const dataHasContent = (item: EventPageItem) => dataPieceHasContent(selectedEvent, item);
+                  // a block placed inside a column of this free block (one level deep)
+                  const renderNested = (ref: string): React.ReactNode => {
+                    const inner = resolveBlockKey(shownPage, ref);
+                    if (!inner) return null;
+                    if (inner.core) {
+                      if (inner.core === 'merch' && selectedEvent.products.length === 0 && !pagePreview.active) return null;
+                      return detailBlockViews[inner.core];
+                    }
+                    return inner.custom ? (
+                      <EventCustomBlockView
+                        block={inner.custom}
+                        sectionId={inner.sectionId}
+                        preview={pagePreview.active}
+                        selectedKey={pagePreview.selected}
+                        onPick={pagePreview.pick}
+                        nested
+                        renderData={renderData}
+                        dataHasContent={dataHasContent}
+                      />
+                    ) : null;
+                  };
+                  const view = b.custom ? (
+                    <EventCustomBlockView
+                      block={b.custom}
+                      sectionId={b.sectionId}
+                      preview={pagePreview.active}
+                      selectedKey={pagePreview.selected}
+                      onPick={pagePreview.pick}
+                      renderNested={renderNested}
+                      renderData={renderData}
+                      dataHasContent={dataHasContent}
+                    />
+                  ) : (
+                    b.core && detailBlockViews[b.core]
+                  );
+                  if (!pagePreview.active) return <React.Fragment key={b.id}>{view}</React.Fragment>;
+                  // editor preview: click a block to select it in the editor
+                  return (
+                    <div
+                      key={b.id}
+                      data-page-key={b.id}
+                      className={`page-preview-block ${pagePreview.selected === b.id ? 'is-picked' : ''}`}
+                      onClickCapture={(e) => {
+                        // a piece of a free block selects itself (its own handler); anything
+                        // else in the block (buttons, links) must not act inside the editor
+                        if ((e.target as HTMLElement).closest('[data-page-item]')) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        pagePreview.pick(b.id);
+                      }}
+                    >
+                      <span className="page-preview-tag" aria-hidden="true">
+                        {b.label}
+                      </span>
+                      {view}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -4136,16 +4176,46 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             className="event-sticky-aside"
             aria-label={tx("สรุปข้อมูลสำคัญและปุ่มสมัครงานวิ่งแบบเกาะตามหน้าจอ")}
           >
-            <div className="sticky-register-card">
+            <div
+              className={`sticky-register-card ${pagePreview.active && pagePreview.selected === 'card' ? 'is-picked' : ''}`}
+              {...(pagePreview.active
+                ? {
+                    'data-page-card': '',
+                    // editor preview: the card is picked as a whole; its buttons and links stay inert
+                    onClickCapture: (e: React.MouseEvent) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      pagePreview.pick('card');
+                    },
+                  }
+                : {})}
+            >
               <div className="kr-sticky-top">
                 <div>
                   <div className="sticky-card-head">
                     <EventStatusBadge status={selectedEvent.status} />
                   </div>
                   <h2>
-                    <span className="kr-sticky-kicker">{tx("สมัครร่วมงาน")}</span>{' '}
+                    <span
+                      className="kr-sticky-kicker"
+                      {...(pagePreview.active
+                        ? { 'data-page-edit': 'card:kicker', 'data-edit-mode': 'line', 'data-edit-value': cardCfg.kicker ?? 'สมัครร่วมงาน' }
+                        : {})}
+                    >
+                      {cardCfg.kicker ? cardCfg.kicker : tx("สมัครร่วมงาน")}
+                    </span>{' '}
                     {tx(selectedEvent.titleTh)}
                   </h2>
+                  {(cardCfg.promo || pagePreview.active) && (
+                    <p
+                      className={`kr-sticky-promo ${cardCfg.promo ? '' : 'is-placeholder'}`}
+                      {...(pagePreview.active
+                        ? { 'data-page-edit': 'card:promo', 'data-edit-mode': 'line', 'data-edit-value': cardCfg.promo ?? '' }
+                        : {})}
+                    >
+                      {cardCfg.promo || tx("ดับเบิลคลิกเพื่อเพิ่มข้อความโปรโมตสั้น ๆ")}
+                    </p>
+                  )}
                   {selectedEvent.status === 'published' && selectedEvent.registrationPeriodLabel && (
                     <p className="kr-sticky-period">
                       <IconCalendar size={15} />
@@ -4155,7 +4225,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     </p>
                   )}
                 </div>
-                <MascotAnim pose="cheer" className="kr-sticky-mascot" />
+                {cardCfg.showMascot !== false && <MascotAnim pose="cheer" className="kr-sticky-mascot" />}
               </div>
 
               {/* PRIMARY STICKY CTA & MERCHANDISE BUTTONS */}
@@ -4199,7 +4269,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     className="btn-secondary btn-full"
                     onClick={() =>
                       jumpToEditorialSection(
-                        selectedEvent.status === 'completed' ? 'sec-results' : 'sec-venue'
+                        selectedEvent.status === 'completed'
+                          ? 'sec-results'
+                          : (detailBlocks.find((b) => b.custom?.cells.some((c) => c.some((it) => it.kind === 'data' && it.source === 'venue')))
+                              ?.sectionId ?? 'sec-venue')
                       )
                     }
                   >
@@ -4213,7 +4286,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 )}
               </div>
 
-              {showQuotaBox && (
+              {/* The whole-event count and bar are hidden when the organizer switched the total cap off. */}
+              {showQuotaBox && isTotalQuotaEnabled(selectedEvent) && cardCfg.showQuota !== false && (
               <div className="sticky-quota-box">
                 <div className="sticky-quota-top">
                   <span className="muted-inline">{tx("โควตารวมทั้งงาน")}</span>
@@ -4262,25 +4336,19 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 </div>
               )}
 
-              {detailBlocks.some((b) => b.inShortcuts) && (
-                <div className="sticky-quick-jumps">
-                  <span className="muted-inline">{tx("หัวข้อในหน้านี้:")}</span>
-                  <div className="cta-inline-row">
-                    {detailBlocks
-                      .filter((b) => b.inShortcuts)
-                      .map((b) => (
-                        <button
-                          key={b.id}
-                          type="button"
-                          className="footer-text-link"
-                          onClick={() => jumpToEditorialSection(b.sectionId)}
-                        >
-                          {tx(b.label)}
-                        </button>
-                      ))}
-                  </div>
-                </div>
+              {cardCfg.showShortcuts !== false && (
+                <SectionShortcuts
+                  blocks={resolveDetailBlocksDeep(shownPage)}
+                  spy={isEditorialView}
+                  pageKey={selectedEvent.id}
+                  onJump={jumpToEditorialSection}
+                />
               )}
+              <StickyCardCompact
+                firstSectionId={detailBlocks[0]?.sectionId}
+                enabled={isEditorialView}
+                pageKey={selectedEvent.id}
+              />
             </div>
           </aside>
         </div>
@@ -4293,6 +4361,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               headline={txf('{0} ระยะ · เริ่มต้น', selectedEvent.categories.length)}
               priceText={formatThb(priceFromSatang, true)}
               seatsLeft={openSeats}
+              hideSeatCount={!isTotalQuotaEnabled(selectedEvent)}
               onRegister={() => startRegistrationForCategory()}
             />
           )}
@@ -4317,6 +4386,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   /* ================= SUBVIEW 1: MODERN MINIMAL DIRECTORY ================= */
   return (
     <main className="customer-container">
+      <HomeScrollMotion
+        cardCount={filteredEvents.length}
+        listKey={filteredEvents.map((ev) => ev.id).join(',')}
+      />
       {/* HERO: headline, running rabbit, search (keyword + region) */}
       <section className="kr-hero" aria-labelledby="kr-hero-title">
         <div className="kr-hero-copy">
@@ -4532,9 +4605,13 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     ) : (
                       <span>{tx("ยังไม่เปิดราคา")}</span>
                     )}
-                    <small className="mono-num">
-                      {txf("ว่าง {0}/{1} สิทธิ์", openSeats, ev.totalEventQuota)}
-                    </small>
+                    {isTotalQuotaEnabled(ev) ? (
+                      <small className="mono-num">
+                        {txf("ว่าง {0}/{1} สิทธิ์", openSeats, ev.totalEventQuota)}
+                      </small>
+                    ) : openSeats <= 0 ? (
+                      <small>{tx("โควตาเต็มแล้ว")}</small>
+                    ) : null}
                   </p>
                   <button
                     type="button"

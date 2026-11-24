@@ -1,9 +1,12 @@
 import { RequiredFieldText } from './RequiredFieldText';
+import { EventPageEditor } from './EventPageEditor';
+import { FaIcon } from './FaIcon';
 import React, { useMemo, useState } from 'react';
 import {
   AuditLogEntry,
   CustomFieldType,
   CustomRegistrationField,
+  EventDetailPage,
   EventStatus,
   FeeBearerPolicy,
   FormTemplate,
@@ -73,7 +76,7 @@ import {
   RefundStatusBadge,
   RegStatusBadge,
 } from './StatusBadges';
-import { validateQuotaUpdate } from '../utils/eventConfig';
+import { isTotalQuotaEnabled, validateQuotaUpdate } from '../utils/eventConfig';
 
 import { tx, txf } from '../i18n';
 export type OrgSection =
@@ -87,7 +90,8 @@ export type OrgSection =
   | 'evt_participants'
   | 'evt_storefront'
   | 'evt_finance'
-  | 'evt_checkin_bib';
+  | 'evt_checkin_bib'
+  | 'evt_page_editor';
 
 interface OrganizerDashboardViewProps {
   currentUser: UserAccount;
@@ -153,6 +157,12 @@ interface OrganizerDashboardViewProps {
   onCreateSingleUseInvite: (orgId: string, role: OrgRole) => TeamInvitation;
   onOpenPublicPreview: (eventId?: string) => void;
   onUpdateEventTotalQuota: (eventId: string, newTotalQuota: number) => void;
+  /** whole-event cap on/off; turning on may also set a new cap in the same request */
+  onToggleEventTotalQuota: (
+    eventId: string,
+    enabled: boolean,
+    newTotalQuota?: number
+  ) => Promise<{ ok: boolean; error?: string }>;
   /** race kit postal fee in satang; applies to new registrations only */
   onUpdateEventKitShipping: (eventId: string, feeSatang: number) => Promise<{ ok: boolean; error?: string }>;
   onUpdateCategoryQuota: (eventId: string, categoryId: string, newCategoryQuota: number) => void;
@@ -162,6 +172,12 @@ interface OrganizerDashboardViewProps {
     config: AgeConfigValid
   ) => Promise<{ ok: boolean; error?: string }>;
   onUpdateCustomFields: (eventId: string, nextFields: CustomRegistrationField[]) => void;
+  /** page editor: save the draft of the public event page, or publish it */
+  onSaveDetailPage: (
+    eventId: string,
+    page: EventDetailPage,
+    publish: boolean
+  ) => Promise<{ ok: boolean; error?: string }>;
   formTemplates?: FormTemplate[];
   registrationSteps?: RegistrationStepDef[];
   globalFields?: GlobalFormFieldDef[];
@@ -266,6 +282,139 @@ export function QuotaEditorRow({
         <span className="mono-num">
           {registeredCount + reservedCount} / <strong>{tx(maxQuota)}</strong> {tx(" คน")}
         </span>
+      )}
+    </div>
+  );
+}
+
+// สวิตช์เปิด/ปิดโควตารวมทั้งงาน: ปิด = ไม่จำกัดยอดรวม ใช้เฉพาะโควตารายระยะ และไม่แสดงยอดรวมบนหน้าสาธารณะ
+// เปิดกลับ = ใช้เพดานเดิม ถ้าเพดานเดิมต่ำกว่ายอดที่ใช้ไปแล้ว ให้ตั้งเพดานใหม่ก่อนเปิด
+export function TotalQuotaSwitch({
+  enabled,
+  currentCap,
+  usedSeats,
+  canEdit,
+  onToggle,
+}: {
+  enabled: boolean;
+  currentCap: number;
+  usedSeats: number;
+  canEdit: boolean;
+  onToggle: (enabled: boolean, newCap?: number) => Promise<{ ok: boolean; error?: string }>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [needsCap, setNeedsCap] = useState(false);
+  const [draftCap, setDraftCap] = useState<number>(Math.max(usedSeats, currentCap));
+  const capCheck = validateQuotaUpdate(draftCap, usedSeats, 0);
+
+  const submit = async (next: boolean, cap?: number) => {
+    setBusy(true);
+    setMessage(null);
+    const r = await onToggle(next, cap);
+    setBusy(false);
+    if (r.ok) {
+      setNeedsCap(false);
+      setMessage({
+        ok: true,
+        text: next
+          ? tx('เปิดโควตารวมแล้ว ระบบจำกัดยอดรวมตามเพดานด้านล่าง')
+          : tx('ปิดโควตารวมแล้ว รับสมัครตามโควตารายระยะเท่านั้น'),
+      });
+    } else {
+      setMessage({ ok: false, text: tx(r.error ?? 'บันทึกไม่สำเร็จ ลองอีกครั้ง') });
+    }
+  };
+
+  return (
+    <div className="total-quota-switch">
+      <div className="total-quota-switch-row">
+        <div className="total-quota-switch-text">
+          <label htmlFor="total-quota-switch" className="total-quota-switch-label">
+            {tx('ใช้โควตารวมทั้งงาน')}
+          </label>
+          <span id="total-quota-switch-desc" className="muted-inline">
+            {enabled
+              ? txf('เปิดอยู่ — รับผู้สมัครรวมไม่เกิน {0} คน ร่วมกับโควตารายระยะ', currentCap)
+              : tx('ปิดอยู่ — ไม่จำกัดยอดรวม ใช้เฉพาะโควตารายระยะ และไม่แสดงยอดรวมบนหน้างานสาธารณะ')}
+          </span>
+        </div>
+        <span className="total-quota-switch-state" aria-hidden="true">
+          {enabled ? tx('เปิดใช้') : tx('ปิดใช้')}
+        </span>
+        <input
+          id="total-quota-switch"
+          type="checkbox"
+          role="switch"
+          className="acct-switch"
+          aria-describedby="total-quota-switch-desc"
+          checked={enabled}
+          disabled={!canEdit || busy}
+          onChange={(e) => {
+            const next = e.target.checked;
+            if (next && currentCap < usedSeats) {
+              setDraftCap(usedSeats);
+              setNeedsCap(true);
+              setMessage(null);
+              return;
+            }
+            void submit(next);
+          }}
+        />
+      </div>
+
+      {!canEdit && (
+        <p className="muted-inline">
+          {tx('เฉพาะเจ้าขององค์กรหรือผู้จัดการงานจึงเปิด/ปิดโควตารวมได้')}
+        </p>
+      )}
+
+      {needsCap && !enabled && (
+        <div className="total-quota-switch-cap" role="group" aria-labelledby="total-quota-cap-title">
+          <p id="total-quota-cap-title">
+            {txf(
+              'เพดานเดิม {0} คน ต่ำกว่ายอดที่สมัครและกันที่ไว้แล้ว {1} คน — ตั้งเพดานใหม่ก่อนเปิดโควตารวม',
+              currentCap,
+              usedSeats
+            )}
+          </p>
+          <div className="cta-inline-row">
+            <input
+              type="number"
+              className="mono-num quota-number-input"
+              aria-label={tx('เพดานรับผู้สมัครรวมทั้งงานใหม่')}
+              min={usedSeats}
+              value={draftCap}
+              onChange={(e) => setDraftCap(Number(e.target.value))}
+            />
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={busy || !capCheck.valid}
+              onClick={() => void submit(true, draftCap)}
+            >
+              {tx('ตั้งเพดานและเปิดโควตารวม')}
+            </button>
+            <button
+              type="button"
+              className="btn-ghost-sm"
+              disabled={busy}
+              onClick={() => setNeedsCap(false)}
+            >
+              {tx('ยกเลิก')}
+            </button>
+          </div>
+          {!capCheck.valid && <p className="field-error">{tx(capCheck.message)}</p>}
+        </div>
+      )}
+
+      {message && (
+        <p
+          className={message.ok ? 'text-forest' : 'field-error'}
+          role={message.ok ? 'status' : 'alert'}
+        >
+          {message.text}
+        </p>
       )}
     </div>
   );
@@ -836,10 +985,12 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
   onCreateSingleUseInvite,
   onOpenPublicPreview,
   onUpdateEventTotalQuota,
+  onToggleEventTotalQuota,
   onUpdateEventKitShipping,
   onUpdateCategoryQuota,
   onUpdateCategoryAgeRules,
   onUpdateCustomFields,
+  onSaveDetailPage,
   formTemplates = [],
   registrationSteps = [],
   fieldRequests = [],
@@ -1457,6 +1608,23 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             <button
               type="button"
               className={`rail-nav-btn ${
+                selectedEvent && activeSection === 'evt_page_editor'
+                  ? 'active'
+                  : ''
+              }`}
+              onClick={() =>
+                onSelectEvent(
+                  selectedEvent?.id ?? accessibleOrgEvents[0].id,
+                  'evt_page_editor'
+                )
+              }
+            >
+              <FaIcon name="file-lines" />
+              <span>{tx("หน้ารายละเอียดงาน")}</span>
+            </button>
+            <button
+              type="button"
+              className={`rail-nav-btn ${
                 selectedEvent && activeSection === 'evt_participants'
                   ? 'active'
                   : ''
@@ -1944,8 +2112,12 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                                   </td>
                                   <td>{feePolicyLabel(ev.feeBearerPolicy)}</td>
                                   <td className="num-col mono-num">
-                                    <strong>{tx(confirmed)}</strong> /{' '}
-                                    {tx(ev.totalEventQuota)}
+                                    <strong>{tx(confirmed)}</strong>
+                                    {isTotalQuotaEnabled(ev) ? (
+                                      <> / {tx(ev.totalEventQuota)}</>
+                                    ) : (
+                                      <> {tx(" · ไม่จำกัดยอดรวม")}</>
+                                    )}
                                   </td>
                                   <td>
                                     <div className="cta-inline-row">
@@ -2190,7 +2362,9 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                               <EventStatusBadge status={ev.status} />
                             </td>
                             <td className="num-col mono-num">
-                              {tx(ev.totalEventQuota)} {tx(" คน")}
+                              {isTotalQuotaEnabled(ev)
+                                ? <>{tx(ev.totalEventQuota)} {tx(" คน")}</>
+                                : tx("ไม่จำกัดยอดรวม")}
                             </td>
                             <td>
                               <div className="cta-inline-row">
@@ -2748,6 +2922,15 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     <button
                       type="button"
                       className={`filter-pill ${
+                        activeSection === 'evt_page_editor' ? 'active' : ''
+                      }`}
+                      onClick={() => onSelectSection('evt_page_editor')}
+                    >
+                      {tx("หน้ารายละเอียดงาน")}
+                    </button>
+                    <button
+                      type="button"
+                      className={`filter-pill ${
                         activeSection === 'evt_participants' ? 'active' : ''
                       }`}
                       onClick={() => onSelectSection('evt_participants')}
@@ -2985,6 +3168,17 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
               )}
 
             {/* ================= 7. EVENT PRICING, SHIRT SIZES & PRODUCTION QUOTE ================= */}
+            {selectedEvent && activeSection === 'evt_page_editor' && (
+              <EventPageEditor
+                key={selectedEvent.id}
+                event={selectedEvent}
+                canEdit={canManageEventConfig}
+                onSave={(page, publish) => onSaveDetailPage(selectedEvent.id, page, publish)}
+                onClose={() => onSelectSection('evt_overview')}
+                onOpenSection={(section) => onSelectSection(section as OrgSection)}
+              />
+            )}
+
             {selectedEvent && activeSection === 'evt_pricing_quota' && (
               <div className="canvas-stack">
                 <div className="page-guide-header">
@@ -3000,18 +3194,33 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                   </div>
 
                   <div className="total-quota-banner">
-                    <QuotaEditorRow
-                      categoryName="เพดานรับผู้สมัครรวมทั้งงาน (Total Event Quota)"
-                      maxQuota={selectedEvent.totalEventQuota}
-                      registeredCount={eventMetrics?.confirmedParticipants ?? 0}
-                      reservedCount={
-                        eventMetrics?.pendingPaymentReservations ?? 0
+                    <TotalQuotaSwitch
+                      key={selectedEvent.id}
+                      enabled={isTotalQuotaEnabled(selectedEvent)}
+                      currentCap={selectedEvent.totalEventQuota}
+                      usedSeats={
+                        (eventMetrics?.confirmedParticipants ?? 0) +
+                        (eventMetrics?.pendingPaymentReservations ?? 0)
                       }
                       canEdit={canManageEventConfig}
-                      onSaveQuota={(nextTotal) =>
-                        onUpdateEventTotalQuota(selectedEvent.id, nextTotal)
+                      onToggle={(enabled, cap) =>
+                        onToggleEventTotalQuota(selectedEvent.id, enabled, cap)
                       }
                     />
+                    {isTotalQuotaEnabled(selectedEvent) && (
+                      <QuotaEditorRow
+                        categoryName="เพดานรับผู้สมัครรวมทั้งงาน (Total Event Quota)"
+                        maxQuota={selectedEvent.totalEventQuota}
+                        registeredCount={eventMetrics?.confirmedParticipants ?? 0}
+                        reservedCount={
+                          eventMetrics?.pendingPaymentReservations ?? 0
+                        }
+                        canEdit={canManageEventConfig}
+                        onSaveQuota={(nextTotal) =>
+                          onUpdateEventTotalQuota(selectedEvent.id, nextTotal)
+                        }
+                      />
+                    )}
                   </div>
 
                   <KitShippingFeeEditor

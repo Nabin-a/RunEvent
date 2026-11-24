@@ -681,12 +681,139 @@ export interface ProductionInquiry {
   createdAt: string;
 }
 
-/** Sections of the public event page that an organizer can reorder or hide. */
+/** Built-in sections of the public event page (their data comes from the event settings). */
 export type EventDetailBlockId = 'about' | 'categories' | 'racepack' | 'schedule' | 'venue' | 'merch';
 
+/** A layout slot: a built-in section, or `custom:<id>` for a free block the organizer added. */
+export type EventDetailLayoutKey = EventDetailBlockId | `custom:${string}`;
+
 export interface EventDetailLayoutItem {
-  block: EventDetailBlockId;
+  block: EventDetailLayoutKey;
   visible: boolean;
+}
+
+/** Kinds of pieces an organizer can drop into a free block (set chosen 23 Nov 2026). */
+export type EventPageItemKind =
+  | 'heading'
+  | 'text'
+  | 'list'
+  | 'table'
+  | 'faq'
+  | 'image'
+  | 'gallery'
+  | 'file'
+  | 'link'
+  | 'divider'
+  /** another block (built-in or free) placed inside a column; one level deep only (decision 23 Nov 2026) */
+  | 'nested'
+  /** read-only event data (prices, seats, sizes, venue…) shown live; see data/eventDataPieces.ts */
+  | 'data'
+  /** cards with a title, a description and a short tag (e.g. what runners get) */
+  | 'cards'
+  /** a time line: time, title, detail (e.g. the event schedule) */
+  | 'timeline';
+
+/** where a data piece reads from (phase A, 24 Nov 2026) */
+export type EventDataSource = 'categories' | 'quota' | 'register' | 'sizechart' | 'venue' | 'contact' | 'kit' | 'products';
+
+/** display choices of a data piece; the values themselves are never edited here */
+export interface EventDataPieceOptions {
+  /** categories / quota: only these categories (empty = all) */
+  categoryIds?: string[];
+  showAllTiers?: boolean;
+  showAge?: boolean;
+  layout?: 'cards' | 'table';
+  quotaMode?: 'per-category' | 'total';
+  quotaStyle?: 'number' | 'label';
+  showStock?: boolean;
+  showDate?: boolean;
+  showRules?: boolean;
+  /** products: how many to show (1-8) */
+  productCount?: number;
+  productCategory?: string;
+}
+
+/** organizer text of the built-in blocks about / race pack / schedule (saved with the page) */
+export interface EventCoreText {
+  about?: { paragraphs: string[]; highlights: string[] };
+  racepack?: { items: { title: string; detail: string; scope: string }[] };
+  schedule?: { items: { timeLabel: string; title: string; detail: string }[] };
+}
+
+/** One piece inside a column of a free block. Only the fields of its kind are used. */
+export interface EventPageItem {
+  id: string;
+  kind: EventPageItemKind;
+  /** heading / text */
+  text?: string;
+  /** list */
+  items?: string[];
+  ordered?: boolean;
+  /** table: rows of cells, the first row is the header */
+  rows?: string[][];
+  /** faq */
+  faqs?: { q: string; a: string }[];
+  /** image */
+  imageUrl?: string;
+  imageAlt?: string;
+  /** gallery */
+  images?: { url: string; alt: string }[];
+  /** file (PDF) */
+  fileUrl?: string;
+  fileName?: string;
+  /** link / file: button text */
+  label?: string;
+  /** link: address (http/https only) */
+  href?: string;
+  /** nested: the block shown here, a built-in id or `custom:<id>`; it is then not in the page layout */
+  ref?: EventDetailLayoutKey;
+  /** data: which event data it shows, and how */
+  source?: EventDataSource;
+  options?: EventDataPieceOptions;
+  /** cards */
+  /** cards; `icon` = a name from CARD_ICONS (empty = gift), `iconImage` = an uploaded icon (wins over `icon`) */
+  cards?: { title: string; detail: string; scope: string; icon?: string; iconImage?: string }[];
+  /** timeline */
+  timeline?: { timeLabel: string; title: string; detail: string }[];
+}
+
+/** A free block: organizer-named section with 1-3 columns (one column on phones). */
+export interface EventCustomBlock {
+  id: string;
+  title: string;
+  columns: 1 | 2 | 3;
+  /** one list of pieces per column; cells.length === columns */
+  cells: EventPageItem[][];
+}
+
+/** what the organizer may change on the sticky register card (24 Nov 2026); prices, seats,
+ *  categories, status and the register button always come from the system */
+export interface EventRegisterCardConfig {
+  /** small heading above the event name (default "สมัครร่วมงาน") */
+  kicker?: string;
+  /** one short promo line under the event name */
+  promo?: string;
+  showMascot?: boolean;
+  /** the whole-event seat bar (only ever shown while the total cap is on) */
+  showQuota?: boolean;
+  showShortcuts?: boolean;
+}
+
+export interface EventDetailPage {
+  layout: EventDetailLayoutItem[];
+  customBlocks: EventCustomBlock[];
+  /** the sticky register card's text and switches */
+  card?: EventRegisterCardConfig;
+  /** 2 = built-in blocks already turned into free blocks (24 Nov 2026); older pages are converted on read */
+  v?: 2;
+  /** edited text of the built-in blocks; copied onto the event when published */
+  coreText?: EventCoreText;
+}
+
+export interface EventDetailPageVersion extends EventDetailPage {
+  version: number;
+  publishedAt: string;
+  publishedBy: string;
 }
 
 export interface RaceEvent {
@@ -709,6 +836,9 @@ export interface RaceEvent {
   status: EventStatus;
   statusNote?: string;
   totalEventQuota: number;
+  /** Organizer switch for the whole-event cap. false = no total cap (per-distance quotas only)
+   *  and the total is hidden on public pages. Unset = on (events created before the switch). */
+  totalEventQuotaEnabled?: boolean;
   feeBearerPolicy: FeeBearerPolicy;
   editDeadlineDate: string;
   rulesVersion: string;
@@ -716,8 +846,18 @@ export interface RaceEvent {
   /** Race kit postal shipping fee set by the organizer (satang). Unset = sandbox sample fee. */
   kitShippingFeeSatang?: number;
   registrationPeriodLabel?: string;
-  /** Order and visibility of the sections on the public event page (organizer-editable later). Unset = default order. */
+  /** Published order and visibility of the sections on the public event page. Unset = default order. */
   detailLayout?: EventDetailLayoutItem[];
+  /** Published free blocks referenced by `custom:<id>` entries of detailLayout. */
+  detailCustomBlocks?: EventCustomBlock[];
+  /** Organizer's unpublished edit of the page (page editor). */
+  detailPageDraft?: EventDetailPage & { updatedAt: string; updatedBy: string };
+  /** Published settings of the sticky register card. */
+  detailRegisterCard?: EventRegisterCardConfig;
+  /** 2 = the published page is already made of free blocks (see EventDetailPage.v) */
+  detailPageV?: 2;
+  /** Published versions, newest last (kept to the last 20). */
+  detailPageVersions?: EventDetailPageVersion[];
   overviewParagraphs?: string[];
   racePackItems?: {
     title: string;

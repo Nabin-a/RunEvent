@@ -17,6 +17,7 @@ export function MobileRegisterBar({
   headline,
   priceText,
   seatsLeft,
+  hideSeatCount = false,
   onRegister,
 }: {
   /** the in-page register area; the bar hides while it is on screen */
@@ -26,6 +27,8 @@ export function MobileRegisterBar({
   priceText: string;
   /** seats left in the whole event; 0 disables the button */
   seatsLeft: number;
+  /** true when the event's total cap is off: no seat count, only "full" once every distance is full */
+  hideSeatCount?: boolean;
   onRegister: () => void;
 }) {
   const disabled = seatsLeft <= 0;
@@ -61,9 +64,11 @@ export function MobileRegisterBar({
         <span className="mreg-cat">{headline}</span>
         <span className="mreg-meta">
           <strong className="mono-num text-vermilion">{priceText}</strong>
-          <span className="mreg-seats">
-            {seatsLeft > 0 ? txf('ว่าง {0} สิทธิ์', seatsLeft) : tx('โควตาเต็มแล้ว')}
-          </span>
+          {!(hideSeatCount && seatsLeft > 0) && (
+            <span className="mreg-seats">
+              {seatsLeft > 0 ? txf('ว่าง {0} สิทธิ์', seatsLeft) : tx('โควตาเต็มแล้ว')}
+            </span>
+          )}
         </span>
       </div>
       <button

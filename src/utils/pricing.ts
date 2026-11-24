@@ -9,6 +9,7 @@ import {
   TimeWindowFilter,
 } from '../types';
 import { tx } from '../i18n';
+import { isTotalQuotaEnabled } from './eventConfig';
 
 /**
  * Simulated platform fee schedule for mockup demonstration only.
@@ -90,6 +91,9 @@ export interface ScopedLedgerMetrics {
   pendingPaymentReservations: number;
   openEventQuota: number;
   totalEventQuota: number;
+  /** false when any event in scope has its whole-event cap switched off: the scope has no
+   *  total cap, so cap, open seats and fill-rate figures must not be shown. */
+  totalQuotaEnabled: boolean;
   grossPaidSatang: number;
   succeededRefundSatang: number;
   pendingRefundCount: number;
@@ -214,6 +218,7 @@ export function computeMetrics(
     pendingPaymentReservations: lifetimeReserved,
     openEventQuota,
     totalEventQuota,
+    totalQuotaEnabled: events.length > 0 && events.every((e) => isTotalQuotaEnabled(e)),
     grossPaidSatang,
     succeededRefundSatang,
     pendingRefundCount: pendingRefundRegs.length,

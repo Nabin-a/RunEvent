@@ -6,6 +6,7 @@ import {
   TimeWindowFilter,
 } from '../types';
 import { formatThb, ScopedLedgerMetrics } from '../utils/pricing';
+import { isTotalQuotaEnabled } from '../utils/eventConfig';
 import {
   IconAlert,
   IconArrowRight,
@@ -382,6 +383,7 @@ export const OrganizerAnalyticsCharts: React.FC<
         confirmed,
         pending,
         fillPct,
+        capEnabled: isTotalQuotaEnabled(ev),
         grossSatang,
         netPayoutSatang,
         merchSatang,
@@ -658,6 +660,7 @@ export const OrganizerAnalyticsCharts: React.FC<
             <article className="analytics-kpi-card">
               <div className="kpi-card-top">
                 <span className="priority-chip chip-p1">P1 · KPI Card</span>
+                {metrics.totalQuotaEnabled && (
                 <span
                   className={`status-pill ${
                     fillRatePct >= 80 ? 'badge-amber' : 'badge-forest'
@@ -670,24 +673,43 @@ export const OrganizerAnalyticsCharts: React.FC<
                       : txf("ใช้โควตา {0}%", fillRatePct)}
                   </span>
                 </span>
+                )}
               </div>
-              <h3>{tx("ผู้สมัครยืนยันสิทธิ์ / โควตารวม")}</h3>
+              <h3>
+                {metrics.totalQuotaEnabled
+                  ? tx("ผู้สมัครยืนยันสิทธิ์ / โควตารวม")
+                  : tx("ผู้สมัครยืนยันสิทธิ์")}
+              </h3>
               <div className="kpi-big-figure mono-num">
                 <strong>{metrics.confirmedParticipants.toLocaleString('th-TH')}</strong>
                 <span className="kpi-denom">
-                  / {metrics.totalEventQuota.toLocaleString('th-TH')} {tx(" คน")}
+                  {metrics.totalQuotaEnabled ? (
+                    <>
+                      / {metrics.totalEventQuota.toLocaleString('th-TH')} {tx(" คน")}
+                    </>
+                  ) : (
+                    <>
+                      {tx(" คน · ไม่จำกัดยอดรวม")}
+                    </>
+                  )}
                 </span>
               </div>
-              <div className="kpi-mini-meter" aria-hidden="true">
-                <div
-                  className="kpi-mini-fill fill-forest"
-                  style={{ width: `${Math.max(4, fillRatePct)}%` }}
-                />
-              </div>
+              {metrics.totalQuotaEnabled && (
+                <div className="kpi-mini-meter" aria-hidden="true">
+                  <div
+                    className="kpi-mini-fill fill-forest"
+                    style={{ width: `${Math.max(4, fillRatePct)}%` }}
+                  />
+                </div>
+              )}
               <div className="kpi-card-foot">
                 <span className="muted-inline mono-num">
-                  {tx("รอชำระ ")} {tx(metrics.pendingPaymentReservations)} {tx(" · ว่าง")}{' '}
-                  {tx(metrics.openEventQuota)} {tx(" ที่นั่ง")}
+                  {tx("รอชำระ ")} {tx(metrics.pendingPaymentReservations)}
+                  {metrics.totalQuotaEnabled && (
+                    <>
+                      {tx(" · ว่าง")} {tx(metrics.openEventQuota)} {tx(" ที่นั่ง")}
+                    </>
+                  )}
                 </span>
                 <button
                   type="button"
@@ -1230,17 +1252,23 @@ export const OrganizerAnalyticsCharts: React.FC<
                           <EventStatusBadge status={ev.status} />
                         </div>
 
-                        <div className="hbar-meter-row">
-                          <div className="hbar-track">
-                            <div
-                              className="hbar-fill fill-forest"
-                              style={{ width: `${Math.max(4, usedPct)}%` }}
-                            />
+                        {isTotalQuotaEnabled(ev) ? (
+                          <div className="hbar-meter-row">
+                            <div className="hbar-track">
+                              <div
+                                className="hbar-fill fill-forest"
+                                style={{ width: `${Math.max(4, usedPct)}%` }}
+                              />
+                            </div>
+                            <span className="mono-num hbar-pct-label">
+                              {confirmed + pending}/{tx(ev.totalEventQuota)} {tx(" คน (")}{tx(usedPct)}%)
+                            </span>
                           </div>
-                          <span className="mono-num hbar-pct-label">
-                            {confirmed + pending}/{tx(ev.totalEventQuota)} {tx(" คน (")}{tx(usedPct)}%)
-                          </span>
-                        </div>
+                        ) : (
+                          <div className="muted-inline mono-num">
+                            {confirmed + pending} {tx(" คน · ไม่จำกัดยอดรวม")}
+                          </div>
+                        )}
 
                         <div className="cta-inline-row">
                           <button
@@ -1376,6 +1404,7 @@ export const OrganizerAnalyticsCharts: React.FC<
                 )}
               </div>
 
+              {metrics.totalQuotaEnabled && (
               <div className="capacity-gauge-banner">
                 <div>
                   <strong>{tx("อัตราการครองโควตารวม (Confirmed + Reserved)")}</strong>
@@ -1391,6 +1420,7 @@ export const OrganizerAnalyticsCharts: React.FC<
                   {tx(fillRatePct)}%
                 </strong>
               </div>
+              )}
 
               {/* Shirt Size Stock Bars */}
               <div className="shirt-capacity-grid">
@@ -1462,21 +1492,28 @@ export const OrganizerAnalyticsCharts: React.FC<
                     </div>
                     <div className="muted-inline mono-num">
                       {tx(row.event.code)} {tx(" · วันงาน")} {tx(row.event.eventDate)} {tx(" · ยืนยัน")}{' '}
-                      {tx(row.confirmed)}/{tx(row.event.totalEventQuota)} {tx(" คน")}
+                      {tx(row.confirmed)}
+                      {row.capEnabled ? (
+                        <>/{tx(row.event.totalEventQuota)} {tx(" คน")}</>
+                      ) : (
+                        tx(" คน · ไม่จำกัดยอดรวม")
+                      )}
                     </div>
                   </div>
 
                   <div className="perf-bars-col">
-                    <div className="hbar-meter-row">
-                      <span className="muted-inline">{tx("อัตราเติมเต็มโควตา")}</span>
-                      <div className="hbar-track">
-                        <div
-                          className="hbar-fill fill-forest"
-                          style={{ width: `${Math.max(4, row.fillPct)}%` }}
-                        />
+                    {row.capEnabled && (
+                      <div className="hbar-meter-row">
+                        <span className="muted-inline">{tx("อัตราเติมเต็มโควตา")}</span>
+                        <div className="hbar-track">
+                          <div
+                            className="hbar-fill fill-forest"
+                            style={{ width: `${Math.max(4, row.fillPct)}%` }}
+                          />
+                        </div>
+                        <strong className="mono-num">{tx(row.fillPct)}%</strong>
                       </div>
-                      <strong className="mono-num">{tx(row.fillPct)}%</strong>
-                    </div>
+                    )}
                     {canViewFinance && (
                       <div className="perf-finance-metrics mono-num">
                         <span>

@@ -3,8 +3,8 @@ import { RaceEvent } from '../types';
 import { EventCoverMedia, IconAlert, IconCamera, IconCheckCircle } from './Icons';
 
 import { tx, txf } from '../i18n';
-const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
-const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
+export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+export const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 
 export interface EventMediaPatch {
   coverImageUrl?: string;
@@ -24,7 +24,7 @@ function isSafeImageUrl(value: string): boolean {
   }
 }
 
-function readFileAsDataUrl(file: File): Promise<string> {
+export function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
@@ -34,7 +34,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 /** ย่อรูปให้ด้านยาวไม่เกิน 1600px และบีบอัดเป็น JPEG เพื่อลดขนาดข้อมูลที่จัดเก็บ */
-async function downscaleImage(dataUrl: string, maxEdge = 1600): Promise<string> {
+export async function downscaleImage(dataUrl: string, maxEdge = 1600, type: 'image/jpeg' | 'image/png' = 'image/jpeg'): Promise<string> {
   const img = new Image();
   img.decoding = 'async';
   img.src = dataUrl;
@@ -48,7 +48,7 @@ async function downscaleImage(dataUrl: string, maxEdge = 1600): Promise<string> 
   const ctx = canvas.getContext('2d');
   if (!ctx) return dataUrl;
   ctx.drawImage(img, 0, 0, w, h);
-  return canvas.toDataURL('image/jpeg', 0.82);
+  return type === 'image/png' ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.82);
 }
 
 /**

@@ -1,4 +1,4 @@
-import { CustomRegistrationField } from '../types';
+import { CustomRegistrationField, RaceEvent } from '../types';
 import { tx, txf } from '../i18n';
 
 export function validateQuotaUpdate(
@@ -26,6 +26,11 @@ export function validateQuotaUpdate(
     }
 
     return { valid: true, minAllowed };
+}
+
+// โควตารวมทั้งงานเปิดอยู่หรือไม่ งานที่สร้างก่อนมีสวิตช์ (ไม่มีค่า) ถือว่าเปิด
+export function isTotalQuotaEnabled(ev: Pick<RaceEvent, 'totalEventQuotaEnabled'>): boolean {
+    return ev.totalEventQuotaEnabled !== false;
 }
 
 // ใช้ตอนกด "ทำสำเนางาน" คัดลอกเฉพาะโครงคำถามและโควตาตั้งต้น ไม่คัดลอกผู้สมัครหรือคำตอบ PII

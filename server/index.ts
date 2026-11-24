@@ -34,9 +34,11 @@ import {
 } from './db';
 import { calculateFeeQuote, getCurrentTier, quoteRegistrationShipping } from '../src/utils/pricing';
 import { PRIVACY_NOTICE_VERSION } from '../src/data/privacyNotice';
+import { normalizeDetailPage } from '../src/data/eventDetailLayout';
+import { missingRequiredData } from '../src/data/eventPageConvert';
 import { MAX_EMERGENCY_CONTACTS } from '../src/data/runnerProfileDefaults';
 import { registerReviewCommentRoutes } from './reviewComments';
-import { cloneCustomFieldsSchema, validateQuotaUpdate } from '../src/utils/eventConfig';
+import { cloneCustomFieldsSchema, isTotalQuotaEnabled, validateQuotaUpdate } from '../src/utils/eventConfig';
 import {
   ageCheckMessage,
   buildAgeSnapshot,
@@ -1466,7 +1468,10 @@ app.post('/api/registrations', (req, res) => {
         .get(ev.id, cat.id) as { cnt: number }
     ).cnt;
 
-    if (activeEventSeats >= ev.totalEventQuota || activeCategorySeats >= cat.categoryQuota) {
+    // The whole-event cap applies only while the organizer keeps it switched on;
+    // the per-distance quota always applies.
+    const eventCapReached = isTotalQuotaEnabled(ev) && activeEventSeats >= ev.totalEventQuota;
+    if (eventCapReached || activeCategorySeats >= cat.categoryQuota) {
       db.exec('ROLLBACK');
       return res.status(409).json({
         ok: false,
@@ -2339,6 +2344,7 @@ app.post('/api/events', (req, res) => {
     statusNote:
       'งานแบบร่างเพิ่งสร้างใหม่ — ตรวจ Checklist ความพร้อมด้านล่างก่อนส่งอนุมัติเปิดขาย',
     totalEventQuota: 100,
+    totalEventQuotaEnabled: true,
     feeBearerPolicy: 'runner_pays',
     editDeadlineDate: String(p.eventDate ?? '2027-02-14'),
     rulesVersion: 'v0.1-draft',
@@ -2520,6 +2526,19 @@ app.patch('/api/events/:id', (req, res) => {
   const patch = req.body ?? {};
   let nextEv: RaceEvent = { ...target };
 
+  // Checked before any other part of the patch is applied or audited.
+  if (patch.totalEventQuotaEnabled !== undefined) {
+    if (typeof patch.totalEventQuotaEnabled !== 'boolean') {
+      return res.status(400).json({ ok: false, error: 'ค่าการเปิด/ปิดโควตารวมไม่ถูกต้อง' });
+    }
+    if (!hasOrgRole(user, target.organizationId, ['owner', 'event_manager'], target.id)) {
+      return res.status(403).json({
+        ok: false,
+        error: 'เฉพาะเจ้าขององค์กรหรือผู้จัดการงานจึงเปิด/ปิดโควตารวมทั้งงานได้',
+      });
+    }
+  }
+
   if (patch.kitShippingFeeSatang !== undefined) {
     const fee = Number(patch.kitShippingFeeSatang);
     if (!Number.isInteger(fee) || fee < 0 || fee > 100000) {
@@ -2556,6 +2575,41 @@ app.patch('/api/events/:id', (req, res) => {
       `${target.totalEventQuota} -> ${patch.totalEventQuota} คน`,
       target.id
     );
+  }
+
+  if (typeof patch.totalEventQuotaEnabled === 'boolean') {
+    const wasEnabled = isTotalQuotaEnabled(target);
+    const enable = patch.totalEventQuotaEnabled;
+    if (enable && !wasEnabled) {
+      // Switching the cap back on: it must still fit everyone already confirmed or holding a seat.
+      const used = (
+        db
+          .prepare(
+            `SELECT COUNT(*) AS cnt FROM registrations
+             WHERE event_id = ? AND registration_status IN ('confirmed', 'pending_payment')`
+          )
+          .get(target.id) as { cnt: number }
+      ).cnt;
+      if (nextEv.totalEventQuota < used) {
+        return res.status(400).json({
+          ok: false,
+          error: `เปิดโควตารวมไม่ได้ เพดาน ${nextEv.totalEventQuota} คน ต่ำกว่ายอดที่สมัครและกันที่ไว้แล้ว ${used} คน — ตั้งเพดานอย่างน้อย ${used} คน`,
+          minAllowed: used,
+        });
+      }
+    }
+    if (enable !== wasEnabled) {
+      nextEv.totalEventQuotaEnabled = enable;
+      recordAudit(
+        user,
+        target.organizationId,
+        `${enable ? 'เปิด' : 'ปิด'}โควตารวมทั้งงาน ${target.code}`,
+        enable
+          ? `ใช้เพดานรวม ${nextEv.totalEventQuota} คน ร่วมกับโควตารายระยะ`
+          : `ไม่จำกัดยอดรวม ใช้เฉพาะโควตารายระยะ (เก็บเพดานเดิม ${nextEv.totalEventQuota} คน ไว้ใช้เมื่อเปิดอีกครั้ง) · ใบสมัครเดิมไม่เปลี่ยน`,
+        target.id
+      );
+    }
   }
 
   if (patch.categoryQuotaUpdate) {
@@ -2643,6 +2697,67 @@ app.patch('/api/events/:id', (req, res) => {
       `เป็น ${nextEv.feeBearerPolicy} (เฉพาะใบสมัครใหม่)`,
       target.id
     );
+  }
+
+  // Page editor (organizer): save the draft, and/or publish it. Only owner / event manager.
+  if (patch.detailPageDraft !== undefined || patch.detailPagePublish) {
+    if (!hasOrgRole(user, target.organizationId, ['owner', 'event_manager'], target.id)) {
+      return res.status(403).json({
+        ok: false,
+        error: 'เฉพาะเจ้าขององค์กรหรือผู้จัดการงานจึงแก้หน้ารายละเอียดงานได้',
+      });
+    }
+    const by = user?.fullNameTh ?? 'ผู้จัดงาน';
+    const now = new Date().toISOString();
+    if (patch.detailPageDraft !== undefined) {
+      const checked = normalizeDetailPage(patch.detailPageDraft);
+      if (!checked.ok) return res.status(400).json({ ok: false, error: checked.error });
+      nextEv.detailPageDraft = { ...checked.value, updatedAt: now, updatedBy: by };
+    }
+    if (patch.detailPagePublish) {
+      const source = nextEv.detailPageDraft ?? {
+        layout: nextEv.detailLayout ?? [],
+        customBlocks: nextEv.detailCustomBlocks ?? [],
+      };
+      const checked = normalizeDetailPage(source);
+      if (!checked.ok) return res.status(400).json({ ok: false, error: checked.error });
+      // runners must see prices and the place before signing up (decision 24 Nov 2026)
+      const missing = missingRequiredData(checked.value);
+      if (missing.length > 0) {
+        return res.status(400).json({
+          ok: false,
+          error: `หน้านี้ต้องแสดงชิ้นข้อมูล ${missing.map((m) => `"${m}"`).join(', ')} อย่างน้อยหนึ่งที่ก่อนเผยแพร่`,
+        });
+      }
+      const versions = nextEv.detailPageVersions ?? [];
+      const version = (versions[versions.length - 1]?.version ?? 0) + 1;
+      nextEv.detailLayout = checked.value.layout;
+      nextEv.detailCustomBlocks = checked.value.customBlocks;
+      nextEv.detailRegisterCard = checked.value.card;
+      // a page made of free blocks (24 Nov 2026) is read back as one, so deleted blocks stay deleted
+      if (checked.value.v === 2) nextEv.detailPageV = 2;
+      else delete nextEv.detailPageV;
+      // edited text of the built-in blocks becomes the event's own text (the page reads it from there)
+      const core = checked.value.coreText;
+      if (core?.about) {
+        nextEv.overviewParagraphs = core.about.paragraphs.filter((p) => p.trim());
+        nextEv.highlights = core.about.highlights.filter((h) => h.trim());
+      }
+      if (core?.racepack) nextEv.racePackItems = core.racepack.items.filter((i) => i.title.trim());
+      if (core?.schedule) nextEv.scheduleItems = core.schedule.items.filter((i) => i.title.trim() || i.timeLabel.trim());
+      nextEv.detailPageVersions = [
+        ...versions,
+        { ...checked.value, version, publishedAt: now, publishedBy: by },
+      ].slice(-20);
+      nextEv.detailPageDraft = undefined;
+      recordAudit(
+        user,
+        target.organizationId,
+        `เผยแพร่หน้ารายละเอียดงาน ${target.code} (ฉบับที่ ${version})`,
+        `${checked.value.layout.filter((l) => l.visible).length} บล็อกที่แสดง · บล็อกอิสระ ${checked.value.customBlocks.length} บล็อก`,
+        target.id
+      );
+    }
   }
 
   if (patch.media) {

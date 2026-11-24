@@ -21,6 +21,7 @@ import {
   UserAccount,
 } from '../types';
 import { computeMetrics, feePolicyLabel, formatThb } from '../utils/pricing';
+import { isTotalQuotaEnabled } from '../utils/eventConfig';
 import { BibLedgerStrip } from './BibLedgerStrip';
 import { RegistrationFormBuilderAdmin } from './RegistrationFormBuilderAdmin';
 import {
@@ -554,7 +555,8 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                         </strong>
                         <p>
                           {tx("วันจัดงาน ")} {tx(ev.eventDate)} {tx(" · จ.")}{tx(ev.province)} {tx(" · โควตา")}{' '}
-                          {tx(ev.totalEventQuota)} {tx(" คน — รอ Platform Owner กดอนุมัติขึ้นหน้ารวมงานวิ่งสาธารณะ")}
+                          {isTotalQuotaEnabled(ev) ? <>{tx(ev.totalEventQuota)} {tx(" คน")}</> : tx("ไม่จำกัดยอดรวม")}
+                          {tx(" — รอ Platform Owner กดอนุมัติขึ้นหน้ารวมงานวิ่งสาธารณะ")}
                         </p>
                       </div>
                     </div>
@@ -1171,7 +1173,8 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                       {tx("· จ.")}{tx(ev.province)} {tx(" · นโยบายค่าบริการ:")}{' '}
                       <strong>{feePolicyLabel(ev.feeBearerPolicy)}</strong> {tx(" · ผู้สมัครยืนยันแล้ว:")}{' '}
                       <strong className="mono-num">
-                        {tx(confirmedCount)} / {tx(ev.totalEventQuota)}
+                        {tx(confirmedCount)}
+                        {isTotalQuotaEnabled(ev) ? <> / {tx(ev.totalEventQuota)}</> : tx(" (ไม่จำกัดยอดรวม)")}
                       </strong>{' '}
                       {tx("คน · คำถามเพิ่มเติม:")}{' '}
                       <strong className="mono-num">

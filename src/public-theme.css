@@ -439,6 +439,97 @@
   color: var(--kr-slate);
 }
 
+/* register form: address book picker (same list style as the search suggestions) */
+.addr-select {
+  position: relative;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.addr-select-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0.5rem 2.5rem 0.5rem 0.75rem;
+  border: 1px solid var(--line-medium);
+  border-radius: 12px;
+  background: var(--bg-surface) var(--select-chevron) right 1rem center / 0.75rem no-repeat;
+  color: var(--kr-slate);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s var(--kr-ease);
+}
+
+.addr-select-trigger:hover {
+  border-color: var(--ink-secondary);
+}
+
+.addr-select-trigger:focus-visible,
+.addr-select-trigger.is-open {
+  outline: none;
+  border-color: var(--kr-slate);
+  box-shadow: inset 0 0 0 1px var(--kr-slate);
+}
+
+.addr-select-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kr-suggest.addr-select-list {
+  top: calc(3.5rem + 0.35rem);
+  width: 100%;
+  max-height: min(24rem, 60vh);
+  overflow-y: auto;
+}
+
+/* in the open list the address may wrap to two lines */
+.addr-select-list .addr-select-meta {
+  display: -webkit-box;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.addr-default-tag {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  background: var(--kr-mint-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: 0.1em;
+}
+
+.addr-select-new .kr-sg-title {
+  font-weight: 700;
+}
+
+.addr-picked {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  background: var(--kr-mint-3);
+  color: var(--kr-slate);
+  overflow-wrap: anywhere;
+}
+
+.addr-picked span {
+  color: var(--ink-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .addr-select-trigger {
+    transition: none;
+  }
+}
+
 /* live filter over the results */
 .kr-filter-top {
   display: flex;
@@ -1473,6 +1564,104 @@
   }
 }
 
+/* "topics on this page" links: the section being read is marked (scroll spy) */
+.app-root.is-public .event-detail-page .sticky-quick-jumps .cta-inline-row {
+  gap: 0.15rem 0.25rem;
+}
+
+.app-root.is-public .event-detail-page .section-jump {
+  min-height: 2rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  color: var(--kr-slate);
+  text-decoration-color: var(--kr-mint-line);
+  transition: background-color 0.2s var(--kr-ease), text-decoration-color 0.2s var(--kr-ease);
+}
+
+.app-root.is-public .event-detail-page .section-jump:first-child {
+  margin-left: -0.6rem;
+}
+
+.app-root.is-public .event-detail-page .section-jump:hover {
+  color: var(--kr-slate);
+  text-decoration-color: currentColor;
+}
+
+.app-root.is-public .event-detail-page .section-jump.is-current {
+  background: var(--kr-mint-2);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.app-root.is-public .event-detail-page .section-jump:focus-visible {
+  outline: 2px solid var(--kr-slate);
+  outline-offset: 2px;
+}
+
+/* register card while reading (wide screens): keep price, button and topics, drop extras */
+.app-root.is-public .event-detail-page .sticky-register-card.is-compact .kr-sticky-mascot,
+.app-root.is-public .event-detail-page .sticky-register-card.is-compact .kr-sticky-period,
+.app-root.is-public .event-detail-page .sticky-register-card.is-compact .sticky-selected-cat-summary > .muted-inline {
+  display: none;
+}
+
+/* schedule as a course line: one dot per item on a rail that fills as you read */
+.schedule-trace {
+  --trace-gutter: 1.75rem;
+  --trace-x: 0.55rem;
+  --trace-dot: 0.75rem;
+  position: relative;
+  padding-left: var(--trace-gutter);
+}
+
+.schedule-trace .schedule-timeline-row {
+  position: relative;
+}
+
+.schedule-rail {
+  position: absolute;
+  top: 1.2rem;
+  bottom: 1.2rem;
+  left: var(--trace-x);
+  width: 2px;
+  border-radius: 999px;
+  background: var(--kr-mint-2);
+  overflow: hidden;
+}
+
+.schedule-rail-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--kr-slate);
+  transform-origin: 50% 0;
+}
+
+.schedule-dot {
+  position: absolute;
+  top: 0.82rem;
+  left: calc(var(--trace-x) + 1px - var(--trace-dot) / 2 - var(--trace-gutter));
+  box-sizing: border-box;
+  width: var(--trace-dot);
+  height: var(--trace-dot);
+  border: 2px solid var(--kr-slate);
+  border-radius: 50%;
+  background: var(--kr-slate);
+  transition: background-color 0.2s var(--kr-ease), border-color 0.2s var(--kr-ease);
+}
+
+/* while the scroll fill runs, dots ahead of the reading line are hollow */
+.schedule-trace.is-tracing .schedule-timeline-row:not(.is-passed) .schedule-dot {
+  border-color: var(--kr-mint);
+  background: var(--bg-surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-root.is-public .event-detail-page .section-jump,
+  .schedule-dot {
+    transition: none;
+  }
+}
+
 /* mode tabs (details / register / shop) and section shortcuts as pill tabs */
 .app-root.is-public .event-detail-page .detail-mode-tabs {
   gap: 0.25rem 1.5rem;
@@ -2484,4 +2673,567 @@
 .app-root .minimal-footer .footer-text-link:focus-visible {
   outline: 2px solid var(--mint);
   outline-offset: 2px;
+}
+
+/* free blocks the organizer adds to the event page (1-3 columns, one on phones) */
+.custom-block-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem 1.25rem;
+}
+
+@media (min-width: 48rem) {
+  .custom-block-grid.cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .custom-block-grid.cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.custom-block-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.custom-block-text p {
+  margin: 0 0 0.6rem;
+  color: var(--ink-primary);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.custom-block-text p:last-child {
+  margin-bottom: 0;
+}
+
+.custom-block-figure {
+  margin: 0;
+}
+
+.custom-block-figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+}
+
+.custom-block-figure figcaption {
+  margin-top: 0.35rem;
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+}
+
+.custom-block-link {
+  align-self: flex-start;
+}
+
+.custom-block-empty {
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px dashed var(--kr-mint-line);
+  border-radius: 12px;
+  color: var(--ink-secondary);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+/* inside the organizer page editor (iframe): no site chrome, blocks are selectable */
+.app-root.is-embed .global-topbar,
+.app-root.is-embed .minimal-footer,
+.app-root.is-embed .review-layer,
+.app-root.is-embed .dev-demo-dock,
+.app-root.is-embed .mreg-bar,
+body:has(.app-root.is-embed) .mreg-bar {
+  display: none !important;
+}
+
+.page-preview-block {
+  position: relative;
+  border-radius: var(--kr-radius-card);
+  outline: 2px dashed transparent;
+  outline-offset: 4px;
+  cursor: pointer;
+}
+
+.page-preview-block:hover {
+  outline-color: var(--kr-mint);
+}
+
+.page-preview-block.is-picked {
+  outline: 3px solid var(--kr-slate);
+}
+
+.page-preview-tag {
+  position: absolute;
+  top: -0.7rem;
+  left: 1rem;
+  z-index: 2;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  background: var(--kr-slate);
+  color: var(--bg-surface);
+  font-size: 0.75rem;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.page-preview-block:hover .page-preview-tag,
+.page-preview-block.is-picked .page-preview-tag {
+  opacity: 1;
+}
+
+/* free block pieces: heading, list, table, FAQ, gallery, divider */
+.custom-block-heading {
+  margin: 0;
+  color: var(--kr-slate);
+  font-family: var(--kr-font-display);
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.custom-block-list {
+  margin: 0;
+  padding-left: 1.35rem;
+  color: var(--ink-primary);
+  line-height: 1.65;
+}
+
+.custom-block-list li + li {
+  margin-top: 0.25rem;
+}
+
+.custom-block-table-wrap {
+  overflow-x: auto;
+}
+
+.custom-block-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.custom-block-table th,
+.custom-block-table td {
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--kr-mint-line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.custom-block-table th {
+  background: var(--kr-mint-3);
+  color: var(--kr-slate);
+  font-weight: 700;
+}
+
+.custom-block-faq {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--kr-mint-line);
+}
+
+.custom-block-faq details {
+  border-bottom: 1px solid var(--kr-mint-line);
+}
+
+.custom-block-faq summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0;
+  color: var(--kr-slate);
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.custom-block-faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.custom-block-faq summary::after {
+  content: '';
+  flex: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  background: var(--select-chevron) center / contain no-repeat;
+  transition: transform 0.18s var(--kr-ease);
+}
+
+.custom-block-faq details[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.custom-block-faq details p {
+  margin: 0 0 0.75rem;
+  color: var(--ink-primary);
+  line-height: 1.65;
+  white-space: pre-line;
+}
+
+.custom-block-faq summary:focus-visible {
+  outline: 2px solid var(--kr-slate);
+  outline-offset: 2px;
+}
+
+.custom-block-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 8rem), 1fr));
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.custom-block-gallery img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  background: var(--kr-mint-3);
+  object-fit: contain;
+}
+
+.custom-block-divider {
+  width: 100%;
+  margin: 0.25rem 0;
+  border: 0;
+  border-top: 1px solid var(--kr-mint-line);
+}
+
+/* editor preview: pieces are selectable */
+.custom-block-piece {
+  border-radius: 10px;
+  outline: 2px dashed transparent;
+  outline-offset: 3px;
+  cursor: pointer;
+}
+
+.custom-block-piece:hover {
+  outline-color: var(--kr-mint);
+}
+
+.custom-block-piece.is-picked {
+  outline: 2px solid var(--kr-slate);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .custom-block-faq summary::after {
+    transition: none;
+  }
+}
+
+/* editor preview: box for editing organizer text in place (pagePreview.ts) */
+.page-inline-edit {
+  position: absolute;
+  z-index: 60;
+  box-sizing: border-box;
+  margin: 0;
+  border-radius: 6px;
+  outline: 2px solid var(--kr-slate);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 6px rgba(155, 232, 199, 0.35);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+
+.custom-block-faq-a > p:last-child {
+  margin-bottom: 0.75rem;
+}
+
+/* a block placed inside a column of a free block (one level deep) */
+.custom-block-nested {
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.app-root.is-public .event-detail-page .custom-block-nested > .clean-panel {
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.app-root.is-public .event-detail-page .custom-block-nested > .clean-panel h2,
+.app-root.is-public .event-detail-page .custom-block.is-nested > .custom-block-title {
+  margin-top: 0;
+  font-size: 1.125rem;
+}
+
+/* a nested block's own columns stack when its column is narrow */
+@container (max-width: 34rem) {
+  .custom-block-nested .custom-block-grid.cols-2,
+  .custom-block-nested .custom-block-grid.cols-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* built-in blocks inside a narrow column take their phone layout (same rules as the small-screen ones) */
+@container (max-width: 42.5rem) {
+  .custom-block-nested .racepack-grid,
+  .custom-block-nested .schedule-timeline-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .custom-block-nested .schedule-timeline-row {
+    gap: 0.35rem;
+  }
+}
+
+@container (max-width: 36rem) {
+  .custom-block-nested .editorial-cat-card {
+    padding: 0.9rem 0.95rem;
+  }
+
+  .custom-block-nested .editorial-cat-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .custom-block-nested .editorial-cat-price {
+    width: 100%;
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    padding-top: 0.42rem;
+    border-top: 1px dashed var(--line-light);
+  }
+
+  .custom-block-nested .editorial-cat-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* data pieces: event data shown live inside free blocks (EventDataPieceView.tsx) */
+.data-piece {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.data-piece-empty {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.data-cat-list {
+  gap: 0.6rem;
+}
+
+.data-cat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: 12px;
+  background: var(--bg-surface);
+}
+
+.data-cat-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.data-cat-name {
+  flex: 1;
+  min-width: 8rem;
+  color: var(--kr-slate);
+}
+
+.data-cat-price {
+  margin-left: auto;
+}
+
+.data-tier-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8125rem;
+}
+
+.data-tier-list li {
+  padding: 0.15rem 0.55rem;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: 999px;
+  color: var(--ink-secondary);
+}
+
+.data-tier-list li.is-current {
+  border-color: var(--kr-slate);
+  color: var(--kr-slate);
+  font-weight: 700;
+}
+
+.data-quota-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.data-quota-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--kr-mint-line);
+}
+
+.data-quota-total {
+  flex-direction: row;
+  align-items: center;
+  margin: 0;
+}
+
+.data-facts {
+  margin: 0;
+}
+
+.data-facts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.data-facts dt {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.data-facts dd {
+  margin: 0;
+  color: var(--ink-primary);
+}
+
+.data-product-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr));
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.data-product {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  width: 100%;
+  min-height: 0;
+  padding: 0.6rem;
+  border: 1px solid var(--kr-mint-line);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.data-product:hover {
+  border-color: var(--kr-slate);
+}
+
+.data-product:focus-visible {
+  outline: 2px solid var(--kr-slate);
+  outline-offset: 2px;
+}
+
+.data-product-art {
+  width: 3rem;
+  height: 3rem;
+}
+
+.data-product-name {
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+
+/* sticky register card: organizer promo line; in the editor preview the card is picked as a whole */
+.kr-sticky-promo {
+  margin: 0.35rem 0 0;
+  color: var(--kr-slate);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.kr-sticky-promo.is-placeholder {
+  color: var(--ink-placeholder);
+  font-weight: 400;
+  font-style: normal;
+}
+
+.app-root.is-embed .sticky-register-card[data-page-card] {
+  outline: 2px dashed transparent;
+  outline-offset: 3px;
+  cursor: pointer;
+}
+
+.app-root.is-embed .sticky-register-card[data-page-card]:hover {
+  outline-color: var(--kr-mint);
+}
+
+.app-root.is-embed .sticky-register-card.is-picked {
+  outline: 2px solid var(--kr-slate);
+}
+
+/* page editor preview: no way out of the event page (navigation is also blocked in pagePreview.ts) */
+.app-root.is-embed .detail-back-bar,
+.app-root.is-embed .detail-mode-tabs {
+  display: none !important;
+}
+
+/* editor preview: copy of the item being dragged (pagePreview.ts) */
+.page-drag-copy {
+  position: fixed;
+  z-index: 70;
+  margin: 0;
+  border-radius: 14px;
+  background: var(--bg-surface);
+  box-shadow: 0 22px 44px -18px rgba(52, 73, 95, 0.55);
+  opacity: 0.97;
+  pointer-events: none;
+  transform: rotate(-1deg);
+}
+
+.page-drag-copy > * {
+  margin: 0 !important;
+}
+
+.page-drag-copy.is-cut {
+  max-height: 220px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-drag-copy {
+    transform: none;
+  }
 }

@@ -35,6 +35,7 @@ import {
   AuthProviderType,
   ConditionalRule,
   CustomRegistrationField,
+  EventDetailPage,
   EventProduct,
   EventStatus,
   FeeBearerPolicy,
@@ -66,6 +67,7 @@ import {
 import { type AgeConfigValid } from './utils/age';
 import { installInvalidFieldHighlight } from './utils/formValidation';
 import { MascotLoader } from './components/MascotRunner';
+import { isPagePreviewUrl } from './components/pagePreview';
 import { ReviewComments } from './components/ReviewComments';
 import { cloneCustomFieldsSchema } from './utils/eventConfig';
 import { AuthScreen } from './components/AuthViews';
@@ -537,6 +539,9 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     // the console keeps its own address (it may live under a sub-path such as /admin/ next to the
     // public site's files); public-site URLs pushed here would reload into the public app
     if (isAdminApp) return;
+    // the page editor's preview never leaves its event page (it would lose ?preview=page and
+    // turn into the whole app inside the editor)
+    if (isPagePreviewUrl()) return;
     const currentFull = `${window.location.pathname}${window.location.search}`;
     setRegLayoutB(isRegisterBPath(url.split('?')[0]));
     if (currentFull === url) return;
@@ -1885,6 +1890,20 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     void syncApi('PATCH', `/api/events/${eventId}`, { totalEventQuota: newTotalQuota });
   };
 
+  // Whole-event cap on/off. The server checks the role and the cap against seats already used;
+  // the returned snapshot replaces local state (no optimistic update).
+  const handleToggleEventTotalQuota = async (
+    eventId: string,
+    enabled: boolean,
+    newTotalQuota?: number
+  ): Promise<{ ok: boolean; error?: string }> => {
+    const res = await syncApi('PATCH', `/api/events/${eventId}`, {
+      totalEventQuotaEnabled: enabled,
+      ...(newTotalQuota !== undefined ? { totalEventQuota: newTotalQuota } : {}),
+    });
+    return res.ok ? { ok: true } : { ok: false, error: res.error };
+  };
+
   // Server validates and stores the age rules; the returned snapshot replaces local state.
   const handleUpdateCategoryAgeRules = async (
     eventId: string,
@@ -1959,6 +1978,15 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
       target.id
     );
     void syncApi('PATCH', `/api/events/${eventId}`, { customFields: nextFields });
+  };
+
+  // Page editor: the server checks the role, validates the page and keeps the versions
+  const handleSaveDetailPage = async (eventId: string, page: EventDetailPage, publish: boolean) => {
+    const res = await syncApi('PATCH', `/api/events/${eventId}`, {
+      detailPageDraft: page,
+      ...(publish ? { detailPagePublish: true } : {}),
+    });
+    return { ok: Boolean(res.ok), error: res.ok ? undefined : String(res.error ?? '') || undefined };
   };
 
   /* ---- Dynamic Registration Form Builder (Platform Owner & Organizer) ---- */
@@ -3314,7 +3342,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     <div
       className={`app-root ${
         surface === 'organizer' || surface === 'platform_admin' ? 'is-backoffice' : 'is-public'
-      }`}
+      } ${isPagePreviewUrl() ? 'is-embed' : ''}`}
     >
       <PrivacyNoticeModal
         open={pdpaGateOpen}
@@ -4014,6 +4042,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
               }
             }}
             onUpdateEventTotalQuota={handleUpdateEventTotalQuota}
+            onToggleEventTotalQuota={handleToggleEventTotalQuota}
             onUpdateEventKitShipping={async (eventId, feeSatang) => {
               const res = await syncApi('PATCH', `/api/events/${eventId}`, { kitShippingFeeSatang: feeSatang });
               return { ok: res.ok, error: res.error };
@@ -4021,6 +4050,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
             onUpdateCategoryQuota={handleUpdateCategoryQuota}
             onUpdateCategoryAgeRules={handleUpdateCategoryAgeRules}
             onUpdateCustomFields={handleUpdateCustomFields}
+            onSaveDetailPage={handleSaveDetailPage}
             formTemplates={sys.formTemplates}
             registrationSteps={sys.registrationSteps}
             globalFields={sys.globalFields}
