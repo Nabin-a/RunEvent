@@ -35,7 +35,9 @@ import {
   AuthProviderType,
   ConditionalRule,
   CustomRegistrationField,
-  EventDetailPage,
+  OrganizerFormStep,
+  EventCoreText,
+  EventRegisterCardConfig,
   EventProduct,
   EventStatus,
   FeeBearerPolicy,
@@ -68,6 +70,7 @@ import { type AgeConfigValid } from './utils/age';
 import { installInvalidFieldHighlight } from './utils/formValidation';
 import { MascotLoader } from './components/MascotRunner';
 import { isPagePreviewUrl } from './components/pagePreview';
+import { isFormPreviewUrl } from './components/formPreview';
 import { ReviewComments } from './components/ReviewComments';
 import { cloneCustomFieldsSchema } from './utils/eventConfig';
 import { AuthScreen } from './components/AuthViews';
@@ -541,7 +544,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     if (isAdminApp) return;
     // the page editor's preview never leaves its event page (it would lose ?preview=page and
     // turn into the whole app inside the editor)
-    if (isPagePreviewUrl()) return;
+    if (isPagePreviewUrl() || isFormPreviewUrl()) return;
     const currentFull = `${window.location.pathname}${window.location.search}`;
     setRegLayoutB(isRegisterBPath(url.split('?')[0]));
     if (currentFull === url) return;
@@ -1957,35 +1960,22 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     });
   };
 
-  const handleUpdateCustomFields = (
+  // Page editor: the server checks the role, validates the page and keeps the versions
+  /** the registration form: the organizer's questions and own steps; saving publishes a new version */
+  const handleSaveRegistrationForm = async (
     eventId: string,
-    nextFields: CustomRegistrationField[]
+    form: { fields: CustomRegistrationField[]; steps: OrganizerFormStep[] }
   ) => {
-    const target = sys.events.find((e) => e.id === eventId);
-    if (!target) return;
-
-    setSys((prev) => ({
-      ...prev,
-      events: prev.events.map((ev) =>
-        ev.id === eventId ? { ...ev, customFields: nextFields } : ev
-      ),
-    }));
-
-    appendAudit(
-      target.organizationId,
-      `อัปเดตคำถามเพิ่มเติมในใบสมัครงาน ${target.code}`,
-      `จำนวนคำถามทั้งหมด ${nextFields.length} ข้อ`,
-      target.id
-    );
-    void syncApi('PATCH', `/api/events/${eventId}`, { customFields: nextFields });
+    const res = await syncApi('PATCH', `/api/events/${eventId}`, { form });
+    return { ok: Boolean(res.ok), error: res.ok ? undefined : String(res.error ?? '') || undefined };
   };
 
-  // Page editor: the server checks the role, validates the page and keeps the versions
-  const handleSaveDetailPage = async (eventId: string, page: EventDetailPage, publish: boolean) => {
-    const res = await syncApi('PATCH', `/api/events/${eventId}`, {
-      detailPageDraft: page,
-      ...(publish ? { detailPagePublish: true } : {}),
-    });
+  /** the text of the one-template event page (about, race pack, schedule, register card) */
+  const handleSavePageContent = async (
+    eventId: string,
+    content: { coreText: Required<EventCoreText>; card: EventRegisterCardConfig }
+  ) => {
+    const res = await syncApi('PATCH', `/api/events/${eventId}`, { pageContent: content });
     return { ok: Boolean(res.ok), error: res.ok ? undefined : String(res.error ?? '') || undefined };
   };
 
@@ -2190,80 +2180,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
       code,
       descriptionTh,
     });
-  };
-
-  const handleSelectEventTemplate = (eventId: string, templateId: string) => {
-    const tpl = sys.formTemplates.find((t) => t.id === templateId);
-    const targetEv = sys.events.find((e) => e.id === eventId);
-    if (!tpl || !targetEv) return;
-
-    const mappedFields: CustomRegistrationField[] = tpl.fieldIds
-      .map((fid) => sys.globalFields.find((gf) => gf.id === fid))
-      .filter((gf): gf is GlobalFormFieldDef => Boolean(gf))
-      .map((gf) => ({
-        id: gf.id,
-        fieldKey: gf.fieldKey,
-        label: gf.label,
-        descriptionTh: gf.descriptionTh,
-        placeholderTh: gf.placeholderTh,
-        type: gf.type,
-        stepKey: gf.stepKey,
-        required: gf.required,
-        options: gf.options ? [...gf.options] : undefined,
-        isSensitive: gf.isSensitive,
-        policy: gf.policy,
-        defaultValue: gf.defaultValue,
-        visibilityCondition: gf.visibilityCondition,
-      }));
-
-    const nextVer = `${tpl.versionLabel}-published`;
-    setSys((prev) => ({
-      ...prev,
-      events: prev.events.map((ev) =>
-        ev.id === eventId
-          ? {
-              ...ev,
-              activeTemplateId: templateId,
-              publishedFormVersion: nextVer,
-              customFields: mappedFields,
-            }
-          : ev
-      ),
-    }));
-
-    appendAudit(
-      targetEv.organizationId,
-      `เลือกใช้แม่แบบฟอร์ม ${tpl.code} กับงาน ${targetEv.code}`,
-      `เผยแพร่ฟอร์มงานเวอร์ชัน ${nextVer} (${mappedFields.length} ฟิลด์)`,
-      targetEv.id
-    );
-    void syncApi('PATCH', `/api/events/${eventId}`, { templateId });
-  };
-
-  const handleSubmitOrganizerFieldRequest = (
-    payload: Omit<
-      OrganizerFieldRequest,
-      'id' | 'requestCode' | 'status' | 'createdAt'
-    >
-  ) => {
-    const newReq: OrganizerFieldRequest = {
-      ...payload,
-      id: `freq-${Date.now()}`,
-      requestCode: `REQ-FRM-260${sys.fieldRequests.length + 1}`,
-      status: 'pending',
-      createdAt: '2026-11-18 09:08',
-    };
-    setSys((prev) => ({
-      ...prev,
-      fieldRequests: [newReq, ...prev.fieldRequests],
-    }));
-    appendAudit(
-      payload.organizationId,
-      `ผู้จัดส่งคำขอเพิ่มฟิลด์ใบสมัคร (${newReq.requestCode})`,
-      `${payload.requestedLabelTh} [${payload.inputType}] -> รอ Platform Owner อนุมัติ`,
-      payload.eventId
-    );
-    void syncApi('POST', '/api/form-builder/field-requests', newReq);
   };
 
   const handleResolveFieldRequest = (
@@ -3342,7 +3258,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     <div
       className={`app-root ${
         surface === 'organizer' || surface === 'platform_admin' ? 'is-backoffice' : 'is-public'
-      } ${isPagePreviewUrl() ? 'is-embed' : ''}`}
+      } ${isPagePreviewUrl() || isFormPreviewUrl() ? 'is-embed' : ''}`}
     >
       <PrivacyNoticeModal
         open={pdpaGateOpen}
@@ -3996,6 +3912,12 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
             currentUser={currentUser}
             organizations={sys.organizations}
             invitations={sys.invitations}
+            teamMembers={sys.users
+              .filter((u) => u.memberships.some((m) => m.organizationId === activeOrgId))
+              .map((u) => {
+                const m = u.memberships.find((x) => x.organizationId === activeOrgId)!;
+                return { id: u.id, name: u.fullNameTh, role: m.role, assignedEventIds: m.assignedEventIds, lastLoginAt: u.lastLoginAt };
+              })}
             activeOrgId={activeOrgId}
             activeEventId={activeEventId}
             activeSection={activeOrgSection}
@@ -4049,19 +3971,13 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
             }}
             onUpdateCategoryQuota={handleUpdateCategoryQuota}
             onUpdateCategoryAgeRules={handleUpdateCategoryAgeRules}
-            onUpdateCustomFields={handleUpdateCustomFields}
-            onSaveDetailPage={handleSaveDetailPage}
-            formTemplates={sys.formTemplates}
-            registrationSteps={sys.registrationSteps}
-            globalFields={sys.globalFields}
-            fieldRequests={sys.fieldRequests}
-            onSelectEventTemplate={handleSelectEventTemplate}
+            onSavePageContent={handleSavePageContent}
+            onSaveRegistrationForm={handleSaveRegistrationForm}
             onUpdateEventMedia={handleUpdateEventMedia}
             platformProfileConfig={
               sys.platformProfileConfig ?? DEFAULT_PLATFORM_PROFILE_CONFIG
             }
             onUpdateEventShirtConfig={handleUpdateEventShirtConfig}
-            onSubmitOrganizerFieldRequest={handleSubmitOrganizerFieldRequest}
           />
         ) : (
           <main className="customer-container">

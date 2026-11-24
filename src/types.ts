@@ -28,7 +28,10 @@ export type CustomFieldType =
   | 'image_choice'
   | 'address'
   | 'size_selector'
-  | 'distance_selector';
+  | 'distance_selector'
+  /** form content, not a question (24 Nov 2026): a sub-heading / a paragraph of explanation */
+  | 'heading'
+  | 'note';
 
 export type FormFieldPolicy = 'LOCKED' | 'CONFIGURABLE' | 'CUSTOMIZABLE';
 
@@ -522,6 +525,28 @@ export interface CustomRegistrationField {
   regexPattern?: string;
   validationMessageTh?: string;
   visibilityCondition?: ConditionalRule;
+  /** radio / multiselect: an "Other (please specify)" choice with a text box */
+  allowOther?: boolean;
+  /** multiselect: how many choices at least / at most */
+  minChoices?: number;
+  maxChoices?: number;
+  /** shown only to runners of these distances (category codes); empty = everyone */
+  categoryCodes?: string[];
+  /** retired: kept for answers already given, no longer asked */
+  hidden?: boolean;
+  /** organizer's question that asks for sensitive data: waits for the Platform Owner, not asked until approved */
+  approval?: 'pending' | 'approved';
+}
+
+/** a registration step the organizer adds (24 Nov 2026); placed after "runner details", before the shop */
+export interface OrganizerFormStep {
+  id: string;
+  title: string;
+  description?: string;
+  /** shown only to runners of these distances (category codes); empty = everyone */
+  categoryCodes?: string[];
+  /** retired: kept because it holds answered questions */
+  hidden?: boolean;
 }
 
 export interface GlobalFormFieldDef extends CustomRegistrationField {
@@ -552,6 +577,8 @@ export interface EventFormVersionRecord {
   changeSummary: string;
   steps: RegistrationStepDef[];
   fields: CustomRegistrationField[];
+  /** the organizer's own steps at that version */
+  customSteps?: OrganizerFormStep[];
 }
 
 export interface OrganizerFieldRequest {
@@ -733,10 +760,19 @@ export interface EventDataPieceOptions {
   productCategory?: string;
 }
 
-/** organizer text of the built-in blocks about / race pack / schedule (saved with the page) */
+/** one thing runners get (race pack card); `icon` = a CARD_ICONS name, `iconImage` = an uploaded icon */
+export interface RacePackItem {
+  title: string;
+  detail: string;
+  scope: string;
+  icon?: string;
+  iconImage?: string;
+}
+
+/** organizer text of the built-in blocks about / race pack / schedule */
 export interface EventCoreText {
   about?: { paragraphs: string[]; highlights: string[] };
-  racepack?: { items: { title: string; detail: string; scope: string }[] };
+  racepack?: { items: RacePackItem[] };
   schedule?: { items: { timeLabel: string; title: string; detail: string }[] };
 }
 
@@ -859,11 +895,9 @@ export interface RaceEvent {
   /** Published versions, newest last (kept to the last 20). */
   detailPageVersions?: EventDetailPageVersion[];
   overviewParagraphs?: string[];
-  racePackItems?: {
-    title: string;
-    detail: string;
-    scope: string;
-  }[];
+  racePackItems?: RacePackItem[];
+  /** when the text of a published free-block page was copied back to the fields above (24 Nov 2026) */
+  detailTextFromPageAt?: string;
   scheduleItems?: {
     timeLabel: string;
     title: string;
@@ -878,6 +912,8 @@ export interface RaceEvent {
   activeTemplateId?: string;
   publishedFormVersion?: string;
   formSteps?: RegistrationStepDef[];
+  /** the organizer's own registration steps, in order (see OrganizerFormStep) */
+  formCustomSteps?: OrganizerFormStep[];
   conditionalRules?: ConditionalRule[];
   formVersionHistory?: EventFormVersionRecord[];
   readinessChecks: ReadinessCheck[];

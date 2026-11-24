@@ -3237,3 +3237,51 @@ body:has(.app-root.is-embed) .mreg-bar {
     transform: none;
   }
 }
+
+/* runner form: content items and the "Other" choice */
+.runner-cf-heading {
+  grid-column: 1 / -1;
+  margin: 0.4rem 0 0;
+  font-size: 1rem;
+}
+
+.runner-cf-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--ink-muted);
+  white-space: pre-line;
+}
+
+.runner-cf-choices {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.runner-cf-choices legend {
+  padding: 0;
+  font-weight: 600;
+}
+
+.runner-cf-other {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.runner-cf-other input[type='text'] {
+  flex: 1 1 160px;
+}
+
+/* the runner sign-up page shown inside the organizer's form editor (?preview=form) */
+.form-preview-banner {
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px dashed var(--brand);
+  border-radius: var(--radius-sm);
+  background: var(--mint-soft);
+  color: var(--ink-primary);
+  font-size: 0.875rem;
+}

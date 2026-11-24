@@ -1,0 +1,463 @@
+/* Income and refunds (รายรับและคืนเงิน) — approved mockup 24 Nov 2026.
+   Refund decisions first, then money-in per week, payout rounds and the ledger.
+   Every state has an icon and a word. Data colors come from event-home.css. */
+
+.fin-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.fin-head h1 {
+  margin: 0;
+}
+
+.fin-head .fin-sub {
+  margin: 0.15rem 0 0;
+}
+
+.fin-sub {
+  font-size: 0.8125rem;
+  color: var(--ink-secondary);
+}
+
+.fin-block {
+  display: block;
+}
+
+.fin-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  padding: 0.9rem 1rem;
+  min-width: 0;
+}
+
+.fin-panel.is-urgent {
+  border-color: var(--danger-border);
+}
+
+.fin-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.6rem;
+}
+
+.fin-panel-head h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 1rem;
+}
+
+.fin-panel.is-urgent h2 i {
+  color: var(--danger);
+}
+
+.fin-ok {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  color: var(--forest-ink);
+  font-size: 0.875rem;
+}
+
+.fin-grid2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 1rem;
+}
+
+/* ---------- refund card ---------- */
+.fin-refund {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(16rem, 1fr);
+  gap: 1rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--line-light);
+}
+
+.fin-refund:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.fin-refund h3 {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+.fin-refund-main p,
+.fin-refund-side p {
+  margin: 0.2rem 0 0;
+}
+
+.fin-reason {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.fin-refund-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.fin-amounts {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.2rem 0.6rem;
+  margin: 0;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.fin-amounts dt {
+  color: var(--ink-secondary);
+}
+
+.fin-amounts dd {
+  margin: 0;
+  text-align: right;
+}
+
+.fin-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+.fin-refund-side textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.fin-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.fin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 42px;
+  padding: 0 1rem;
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fin-btn.is-primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-accent);
+}
+
+.fin-btn.is-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--on-accent);
+}
+
+.fin-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+}
+
+.fin-confirm p {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+  margin: 0;
+  font-weight: 600;
+}
+
+.fin-error {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 0;
+  color: var(--danger-ink);
+  font-size: 0.8125rem;
+}
+
+/* ---------- weekly columns ---------- */
+.fin-weeks {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(3rem, 1fr);
+  gap: 0.4rem;
+  height: 11rem;
+  overflow-x: auto;
+  padding-top: 0.25rem;
+}
+
+.fin-week {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-secondary);
+}
+
+.fin-week-val {
+  color: var(--ink-primary);
+  font-weight: 600;
+}
+
+.fin-week-bar {
+  width: 24px;
+  min-height: 2px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--chart-blue);
+}
+
+.fin-week-refund {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  color: var(--danger-ink);
+  font-weight: 600;
+}
+
+.fin-sw {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-sm);
+  vertical-align: -1px;
+}
+
+.fin-sw.is-blue {
+  background: var(--chart-blue);
+}
+
+/* ---------- payouts ---------- */
+.fin-stack {
+  display: flex;
+  gap: 2px;
+  height: 16px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-inset);
+}
+
+.fin-stack .is-paid {
+  background: var(--chart-aqua);
+}
+
+.fin-stack .is-next {
+  background: repeating-linear-gradient(45deg, var(--chart-aqua) 0 2.5px, var(--bg-surface) 2.5px 5px);
+}
+
+.fin-stack .is-held {
+  background: var(--ink-placeholder);
+}
+
+.fin-payouts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+}
+
+.fin-payouts li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.fin-payout-main {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- ledger ---------- */
+.fin-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.fin-chip {
+  min-height: 34px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.fin-chip.is-on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+.fin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.fin-table th {
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-secondary);
+  padding: 0.4rem 0.6rem 0.4rem 0;
+  border-bottom: 1px solid var(--line-light);
+}
+
+.fin-table td {
+  padding: 0.5rem 0.6rem 0.5rem 0;
+  border-bottom: 1px solid var(--line-light);
+  vertical-align: middle;
+}
+
+.fin-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fin-date {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.fin-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.fin-tag.is-ok {
+  background: var(--forest-soft);
+  color: var(--forest-ink);
+}
+
+.fin-tag.is-warn {
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+}
+
+.fin-tag.is-danger {
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
+
+.fin-tag.is-muted {
+  background: var(--bg-subtle);
+  color: var(--ink-secondary);
+}
+
+.fin-tag.is-navy {
+  background: var(--navy-soft);
+  color: var(--navy-ink);
+}
+
+.fin-link {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0.3rem 0;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--ink-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.fin-btn:focus-visible,
+.fin-chip:focus-visible,
+.fin-link:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+@media (max-width: 48rem) {
+  .fin-refund {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fin-table thead {
+    display: none;
+  }
+
+  .fin-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.2rem 0.5rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--line-light);
+  }
+
+  .fin-table td {
+    border: none;
+    padding: 0;
+  }
+
+  .fin-table td:nth-child(1) {
+    grid-column: 1;
+    font-size: 0.75rem;
+    color: var(--ink-secondary);
+  }
+
+  .fin-table td:nth-child(6) {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .fin-table td:nth-child(2) {
+    grid-column: 1 / -1;
+  }
+
+  .fin-table td:nth-child(4) {
+    display: none;
+  }
+}

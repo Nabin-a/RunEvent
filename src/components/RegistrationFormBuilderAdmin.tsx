@@ -79,6 +79,8 @@ const inputTypeLabels: Record<CustomFieldType, string> = {
   address: 'Address (ที่อยู่จัดส่ง)',
   size_selector: 'Size Selector (ตัวเลือกไซส์เสื้อ)',
   distance_selector: 'Race Distance Selector (ตัวเลือกระยะวิ่ง)',
+  heading: 'Heading (หัวข้อย่อย — ไม่ใช่คำถาม)',
+  note: 'Note (ข้อความอธิบาย — ไม่ใช่คำถาม)',
 };
 
 const FORBIDDEN_FIELD_KEYWORDS = [

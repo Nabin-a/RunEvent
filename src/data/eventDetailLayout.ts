@@ -525,6 +525,30 @@ function cleanDataOptions(v: unknown): EventPageItem['options'] {
   return out;
 }
 
+/**
+ * Text of the event page (single template, 24 Nov 2026): about, race pack, schedule and the
+ * register card, as the organizer saves it from the "page content" menu. Server and client share it.
+ */
+export function normalizePageContent(
+  raw: unknown
+): { ok: true; value: { coreText: Required<EventCoreText>; card?: EventRegisterCardConfig } } | { ok: false; error: string } {
+  if (!raw || typeof raw !== 'object') return { ok: false, error: 'ข้อมูลเนื้อหาหน้างานไม่ถูกต้อง' };
+  const r = raw as { coreText?: unknown; card?: unknown };
+  const text = cleanCoreText(r.coreText);
+  if (typeof text === 'string') return { ok: false, error: text };
+  if (!text?.about || !text.racepack || !text.schedule) return { ok: false, error: 'ข้อมูลเนื้อหาหน้างานไม่ครบ' };
+  const coreText: Required<EventCoreText> = {
+    about: {
+      paragraphs: text.about.paragraphs.map((p) => p.trim()).filter(Boolean),
+      highlights: text.about.highlights.map((h) => h.trim()).filter(Boolean),
+    },
+    racepack: { items: text.racepack.items.filter((i) => i.title.trim()) },
+    schedule: { items: text.schedule.items.filter((i) => i.title.trim() || i.timeLabel.trim()) },
+  };
+  const card = cleanCard(r.card);
+  return { ok: true, value: { coreText, ...(card ? { card } : {}) } };
+}
+
 /** text of the built-in blocks: lists within limits (a string = the error) */
 function cleanCoreText(v: unknown): EventCoreText | undefined | string {
   if (v === undefined || v === null) return undefined;
@@ -550,6 +574,8 @@ function cleanCoreText(v: unknown): EventCoreText | undefined | string {
         title: line(i?.title, L.racepackTitle),
         detail: cleanText(i?.detail, L.racepackDetail),
         scope: line(i?.scope, L.racepackScope),
+        ...(typeof i?.icon === 'string' && i.icon !== 'gift' && CARD_ICONS.some((c) => c.name === i.icon) ? { icon: i.icon } : {}),
+        ...(typeof i?.iconImage === 'string' && isCardIconImage(i.iconImage) ? { iconImage: i.iconImage } : {}),
       })),
     };
   }

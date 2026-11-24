@@ -1,0 +1,470 @@
+/* Organization all events (งานทั้งหมด) — approved mockup 24 Nov 2026.
+   To-dos across events reuse the event home strips (event-home.css). */
+
+.oe-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.oe-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.oe-head h1 {
+  margin: 0;
+}
+
+.oe-head .oe-sub {
+  margin: 0.15rem 0 0;
+}
+
+.oe-sub {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--ink-secondary);
+}
+
+.oe-h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0 0 0.45rem;
+  font-size: 1rem;
+}
+
+.oe-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 40px;
+  padding: 0 0.9rem;
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.oe-btn.is-primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-accent);
+}
+
+.oe-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  padding: 0.9rem 1rem;
+  min-width: 0;
+}
+
+.oe-panel h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.oe-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.6rem;
+}
+
+/* ---------- create form ---------- */
+.oe-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.75rem;
+}
+
+.oe-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+.oe-check {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  font-size: 0.875rem;
+}
+
+.oe-error {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 0;
+  color: var(--danger-ink);
+  font-size: 0.875rem;
+}
+
+.oe-form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ---------- calendar ---------- */
+.oe-cal {
+  position: relative;
+  padding: 1.4rem 0 1.3rem;
+}
+
+.oe-cal-months {
+  position: absolute;
+  top: 0;
+  left: 9.5rem;
+  right: 0;
+  height: 1.2rem;
+}
+
+.oe-cal-months span {
+  position: absolute;
+  font-size: 0.75rem;
+  color: var(--ink-secondary);
+  transform: translateX(0.2rem);
+}
+
+.oe-cal-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.oe-cal-overlay {
+  position: absolute;
+  top: -0.2rem;
+  bottom: -0.2rem;
+  left: 9.5rem;
+  right: 0;
+  pointer-events: none;
+}
+
+.oe-cal-grid,
+.oe-cal-today {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.oe-cal-grid {
+  background: var(--line-light);
+}
+
+.oe-cal-today {
+  width: 2px;
+  background: var(--ink-primary);
+  z-index: 2;
+}
+
+.oe-cal-today span {
+  position: absolute;
+  bottom: -1.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.oe-cal-row {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 34px;
+}
+
+.oe-cal-name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oe-cal-lane {
+  position: relative;
+  height: 26px;
+}
+
+.oe-cal-bar {
+  position: absolute;
+  top: 6px;
+  height: 14px;
+  border-radius: var(--radius-sm);
+  background: var(--chart-blue);
+}
+
+.oe-cal-bar.is-planned {
+  background: var(--bg-surface);
+  box-shadow: inset 0 0 0 2px var(--chart-blue);
+  background-image: repeating-linear-gradient(90deg, transparent 0 6px, var(--bg-surface) 6px 9px);
+}
+
+.oe-cal-bar.is-past {
+  background: var(--ink-placeholder);
+}
+
+.oe-cal-none {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  font-size: 0.75rem;
+  color: var(--ink-secondary);
+}
+
+.oe-cal-flag {
+  position: absolute;
+  top: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--ink-primary);
+  white-space: nowrap;
+  transform: translateX(-0.3rem);
+}
+
+.oe-sw {
+  display: inline-block;
+  width: 14px;
+  height: 9px;
+  border-radius: var(--radius-sm);
+  background: var(--chart-blue);
+  vertical-align: -1px;
+  margin-left: 0.4rem;
+}
+
+.oe-sw.is-planned {
+  background: var(--bg-surface);
+  box-shadow: inset 0 0 0 1.5px var(--chart-blue);
+}
+
+.oe-sw.is-past {
+  background: var(--ink-placeholder);
+}
+
+/* ---------- list ---------- */
+.oe-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.oe-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.oe-chip {
+  min-height: 32px;
+  padding: 0 0.7rem;
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.oe-chip.is-on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+.oe-search {
+  margin-left: auto;
+  flex: 0 1 16rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-sm);
+  color: var(--ink-placeholder);
+}
+
+.oe-search:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--mint-soft);
+}
+
+.oe-search input,
+.oe-search input[type='search'] {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--ink-primary);
+}
+
+.oe-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.oe-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(9rem, 0.9fr) minmax(10rem, 1.2fr) auto;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--line-light);
+}
+
+.oe-row-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.oe-row-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.oe-num {
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.oe-bar {
+  height: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  overflow: hidden;
+}
+
+.oe-bar span {
+  display: block;
+  height: 100%;
+  background: var(--chart-blue);
+}
+
+.oe-seg {
+  margin: 0;
+}
+
+.oe-row-actions {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.oe-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem 1rem;
+  color: var(--ink-secondary);
+}
+
+.oe-btn:focus-visible,
+.oe-chip:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+@media (max-width: 64rem) {
+  .oe-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .oe-row-progress {
+    grid-column: 1 / -1;
+  }
+
+  .oe-row-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 48rem) {
+  .oe-cal-row {
+    grid-template-columns: 6rem minmax(0, 1fr);
+  }
+
+  .oe-cal-months,
+  .oe-cal-overlay {
+    left: 6.5rem;
+  }
+
+  .oe-search {
+    margin-left: 0;
+    flex: 1 1 100%;
+  }
+}
+
+/* ---------- recent activity ---------- */
+.oe-log {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+}
+
+.oe-log li {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr);
+  gap: 0.6rem;
+}
+
+.oe-log-time {
+  font-size: 0.8125rem;
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 48rem) {
+  .oe-log li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.1rem;
+  }
+}
+
+/* race-day flags near the right edge put their date on the left */
+.oe-cal-flag.is-end {
+  flex-direction: row-reverse;
+  transform: translateX(calc(-100% + 0.6rem));
+}

@@ -29,6 +29,7 @@ import {
   SEEDED_RUNNER_901_PROFILE,
 } from '../src/data/runnerProfileDefaults';
 import { SEEDED_SAVED_BOOKS } from '../src/data/seededSavedBooks';
+import { coreTextFromFreeBlocks } from '../src/data/eventPageConvert';
 import type {
   AuditLogEntry,
   ConditionalRule,
@@ -869,6 +870,22 @@ export function seedDatabase(forceReset = false): void {
         JSON.stringify({ ...ev, totalEventQuotaEnabled: true }),
         row.id
       );
+    }
+    // Idempotent migration (24 Nov 2026): the event page is one template again. Text the
+    // organizer kept in a published free-block page (v 2) is copied back to the event's own
+    // fields once; the page data itself stays in detail_json, unused (decision: keep, not delete).
+    for (const row of db.prepare('SELECT id, detail_json FROM events').all() as { id: string; detail_json: string }[]) {
+      const ev = JSON.parse(row.detail_json) as RaceEvent;
+      if (ev.detailPageV !== 2 || ev.detailTextFromPageAt) continue;
+      const text = coreTextFromFreeBlocks({ customBlocks: ev.detailCustomBlocks ?? [] });
+      const next: RaceEvent = { ...ev, detailTextFromPageAt: new Date().toISOString() };
+      if (text.about) {
+        if (text.about.paragraphs.length > 0) next.overviewParagraphs = text.about.paragraphs;
+        next.highlights = text.about.highlights;
+      }
+      if (text.racepack && text.racepack.items.length > 0) next.racePackItems = text.racepack.items;
+      if (text.schedule && text.schedule.items.length > 0) next.scheduleItems = text.schedule.items;
+      db.prepare('UPDATE events SET detail_json = ? WHERE id = ?').run(JSON.stringify(next), row.id);
     }
     const reg07Row = db
       .prepare("SELECT detail_json FROM registrations WHERE id = 'reg-07'")

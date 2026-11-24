@@ -1,0 +1,209 @@
+/* Organization money and payouts (การเงินและรอบโอน) — approved mockup 24 Nov 2026.
+   Shares panels, tags and tables with event-finance.css; data colors from event-home.css. */
+
+.of-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.of-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.of-head h1 {
+  margin: 0;
+}
+
+.of-head .fin-sub {
+  margin: 0.15rem 0 0;
+}
+
+.of-bank {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  font-size: 0.875rem;
+}
+
+.of-bank.is-warn {
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+}
+
+.of-bank-text {
+  flex: 1 1 14rem;
+}
+
+.of-bank .fin-link {
+  align-self: center;
+}
+
+/* ---------- payout per round ---------- */
+.of-rounds {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(3.5rem, 1fr);
+  gap: 0.5rem;
+  height: 11rem;
+  overflow-x: auto;
+}
+
+.of-round {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-secondary);
+}
+
+.of-round-val {
+  color: var(--ink-primary);
+  font-weight: 600;
+}
+
+.of-round-bar {
+  width: 26px;
+  min-height: 2px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--chart-aqua);
+}
+
+.of-round-bar.is-scheduled,
+.of-round-bar.is-processing {
+  background: repeating-linear-gradient(45deg, var(--chart-aqua) 0 2.5px, var(--bg-surface) 2.5px 5px);
+  box-shadow: inset 0 0 0 1.5px var(--chart-aqua);
+}
+
+.of-round-bar.is-held {
+  background: var(--ink-placeholder);
+}
+
+.of-sw {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-sm);
+  vertical-align: -1px;
+  margin-left: 0.35rem;
+}
+
+.of-sw.is-paid {
+  background: var(--chart-aqua);
+}
+
+.of-sw.is-scheduled {
+  background: var(--bg-surface);
+  box-shadow: inset 0 0 0 1.5px var(--chart-aqua);
+}
+
+.of-sw.is-held {
+  background: var(--ink-placeholder);
+}
+
+.of-sw.is-fee {
+  background: var(--ink-placeholder);
+}
+
+.of-sw.is-refund {
+  background: var(--danger);
+}
+
+/* ---------- money per event ---------- */
+.of-events {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.of-event {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.3rem 0.35rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--ink-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.of-event:hover {
+  background: var(--bg-subtle);
+}
+
+.of-event:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.of-event-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.of-event-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.of-event-bar {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  min-width: 6px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.of-event-bar .is-paid {
+  background: var(--chart-aqua);
+}
+
+.of-event-bar .is-fee {
+  background: var(--ink-placeholder);
+  min-width: 2px;
+}
+
+.of-event-bar .is-refund {
+  background: var(--danger);
+  min-width: 2px;
+}
+
+.of-event-gross {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (max-width: 48rem) {
+  .of-event {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .of-event-bar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}

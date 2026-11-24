@@ -5,7 +5,7 @@ import type { EventDetailPage } from '../types';
  * Live preview channel between the organizer page editor and the event page shown
  * inside its iframe (`/events/<id>?preview=page`). Same-origin postMessage only.
  *
- * editor -> page : { type: 'kr-page-preview', page, selected }
+ * editor -> page : { type: 'kr-page-preview', page, selected, readOnly? }  (readOnly: a look-only preview, no text editing)
  *                  { type: 'kr-page-scroll', dy }            (auto-scroll while dragging)
  *                  { type: 'kr-page-edit-at', x, y }         (double-click: edit the text there)
  *                  { type: 'kr-page-edit-key', key }         (F2: edit the first text of a block / piece)
@@ -54,6 +54,8 @@ export interface PagePreviewState {
   selected: string | null;
   /** tell the editor the visitor clicked a block or piece */
   pick: (key: string) => void;
+  /** a look-only preview (the "page content" menu): no in-place editing marks or boxes */
+  readOnly: boolean;
 }
 
 const boxOf = (el: Element): PreviewBox => {
@@ -301,6 +303,7 @@ export function usePagePreview(): PagePreviewState {
   const active = isPagePreviewUrl();
   const [page, setPage] = useState<EventDetailPage | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [readOnly, setReadOnly] = useState(false);
 
   useEffect(() => {
     if (!active) return;
@@ -316,6 +319,7 @@ export function usePagePreview(): PagePreviewState {
         key?: string;
         target?: string;
         dx?: number;
+        readOnly?: boolean;
       };
       if (data?.type === 'kr-page-drag-start' && data.target) {
         startDragCopy(data.target, data.x ?? 0, data.y ?? 0, data.dx ?? 0, data.dy ?? 0);
@@ -344,9 +348,13 @@ export function usePagePreview(): PagePreviewState {
       if (data?.type !== 'kr-page-preview') return;
       if (data.page) setPage(data.page);
       setSelected(data.selected ?? null);
+      lookOnly = data.readOnly === true;
+      setReadOnly(lookOnly);
     };
+    let lookOnly = false;
     // a double-click that reaches the page itself (no drag layer over it) edits too
     const onDbl = (e: MouseEvent) => {
+      if (lookOnly) return;
       const el = (e.target as Element | null)?.closest<HTMLElement>('[data-page-edit]');
       if (!el) return;
       e.preventDefault();
@@ -458,5 +466,6 @@ export function usePagePreview(): PagePreviewState {
     page,
     selected,
     pick: (key: string) => window.parent?.postMessage({ type: 'kr-page-pick', key, ...lastClickMods }, window.location.origin),
+    readOnly,
   };
 }

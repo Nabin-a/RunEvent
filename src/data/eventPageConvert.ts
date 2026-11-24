@@ -1,4 +1,4 @@
-import type { EventCustomBlock, EventDetailBlockId, EventDetailLayoutKey, EventDetailPage, EventPageItem, RaceEvent } from '../types';
+import type { EventCoreText, EventCustomBlock, EventDetailBlockId, EventDetailLayoutKey, EventDetailPage, EventPageItem, RaceEvent } from '../types';
 import { customKey, isCoreBlock, layoutEntries } from './eventDetailLayout';
 import { mergedCoreText } from './eventDataPieces';
 
@@ -105,6 +105,33 @@ export function eventPage(
           ...(ev.detailPageV === 2 ? { v: 2 as const } : {}),
         };
   return convertToFreeBlocks(base, ev);
+}
+
+/**
+ * The other way (24 Nov 2026, the page went back to one template): the text the organizer kept
+ * in the converted free blocks of a published page, as event text. Only blocks still shaped as
+ * the conversion made them count; anything else is left out (the event keeps its own text).
+ */
+export function coreTextFromFreeBlocks(page: Pick<EventDetailPage, 'customBlocks'>): EventCoreText {
+  const out: EventCoreText = {};
+  const block = (id: EventDetailBlockId) => page.customBlocks.find((b) => b.id === convertedId(id));
+  const pieces = (id: EventDetailBlockId) => block(id)?.cells.flat() ?? [];
+  const about = pieces('about');
+  if (about.length > 0) {
+    const texts = about.filter((it) => it.kind === 'text').map((it) => it.text ?? '');
+    const list = about.find((it) => it.kind === 'list');
+    if (texts.length > 0 || list) {
+      out.about = {
+        paragraphs: texts.flatMap((t) => t.split(/\n\s*\n/)).map((p) => p.trim()).filter(Boolean),
+        highlights: (list?.items ?? []).map((h) => h.trim()).filter(Boolean),
+      };
+    }
+  }
+  const cards = pieces('racepack').find((it) => it.kind === 'cards');
+  if (cards) out.racepack = { items: (cards.cards ?? []).filter((c) => c.title.trim()) };
+  const timeline = pieces('schedule').find((it) => it.kind === 'timeline');
+  if (timeline) out.schedule = { items: (timeline.timeline ?? []).filter((t) => t.title.trim() || t.timeLabel.trim()) };
+  return out;
 }
 
 /* ------------------------------------------------------------------ */

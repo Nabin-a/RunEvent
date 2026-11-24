@@ -34,8 +34,9 @@ import {
 } from './db';
 import { calculateFeeQuote, getCurrentTier, quoteRegistrationShipping } from '../src/utils/pricing';
 import { PRIVACY_NOTICE_VERSION } from '../src/data/privacyNotice';
-import { normalizeDetailPage } from '../src/data/eventDetailLayout';
+import { normalizeDetailPage, normalizePageContent } from '../src/data/eventDetailLayout';
 import { missingRequiredData } from '../src/data/eventPageConvert';
+import { answeredIndex, normalizeForm, validateAnswers } from '../src/data/registrationForm';
 import { MAX_EMERGENCY_CONTACTS } from '../src/data/runnerProfileDefaults';
 import { registerReviewCommentRoutes } from './reviewComments';
 import { cloneCustomFieldsSchema, isTotalQuotaEnabled, validateQuotaUpdate } from '../src/utils/eventConfig';
@@ -1436,6 +1437,25 @@ app.post('/api/registrations', (req, res) => {
       return res.status(400).json({ ok: false, error: 'ไม่พบระยะการแข่งขันที่เลือก' });
     }
 
+    // The organizer's questions are checked by the server too, against the live form version
+    // (only the questions this runner is asked: right distance, approved, condition met).
+    const answers: Record<string, string | boolean> = {};
+    if (payload.customAnswers && typeof payload.customAnswers === 'object') {
+      for (const [k, v] of Object.entries(payload.customAnswers as Record<string, unknown>)) {
+        if (typeof v === 'string') answers[k] = v.slice(0, 4000);
+        else if (typeof v === 'boolean') answers[k] = v;
+      }
+    }
+    const answerProblems = validateAnswers(ev.customFields ?? [], answers, {
+      raceDistance: cat.code,
+      shirtSize: String(payload.shirtSize ?? ''),
+    });
+    const firstProblem = Object.values(answerProblems)[0];
+    if (firstProblem) {
+      db.exec('ROLLBACK');
+      return res.status(400).json({ ok: false, error: firstProblem });
+    }
+
     // Age eligibility is checked on the server too; the browser check is only a hint.
     const participantDob = String(payload.participantSnapshot?.dateOfBirth ?? '').trim();
     const participantGender = payload.participantSnapshot?.gender
@@ -1536,7 +1556,8 @@ app.post('/api/registrations', (req, res) => {
         ? String(payload.shippingAddressSnapshot)
         : undefined,
       participantSnapshot: payload.participantSnapshot,
-      customAnswers: payload.customAnswers,
+      customAnswers: answers,
+      formVersionUsed: ev.publishedFormVersion,
       bibNumber: null,
       qrCheckInToken: `TKN-${cat.bibPrefix}${seq}-${tokenSuffix}`,
       acceptedRulesVersion: ev.rulesVersion,
@@ -2671,13 +2692,50 @@ app.patch('/api/events/:id', (req, res) => {
     );
   }
 
-  if (Array.isArray(patch.customFields)) {
-    nextEv.customFields = patch.customFields as CustomRegistrationField[];
+  // The registration form (24 Nov 2026): questions and the organizer's own steps, checked by the
+  // shared rules (src/data/registrationForm.ts) against what runners already answered. Saving
+  // publishes a new form version; registrations keep the version they were made with.
+  if (patch.form !== undefined || Array.isArray(patch.customFields)) {
+    if (!hasOrgRole(user, target.organizationId, ['owner', 'event_manager'], target.id)) {
+      return res.status(403).json({ ok: false, error: 'เฉพาะเจ้าขององค์กรหรือผู้จัดการงานจึงแก้ฟอร์มสมัครได้' });
+    }
+    const raw =
+      patch.form !== undefined
+        ? patch.form
+        : { fields: patch.customFields, steps: target.formCustomSteps ?? [] };
+    const regs = (
+      db.prepare('SELECT detail_json FROM registrations WHERE event_id = ?').all(target.id) as { detail_json: string }[]
+    ).map((r) => JSON.parse(r.detail_json) as RegistrationRecord);
+    const checked = normalizeForm(
+      raw,
+      { fields: target.customFields ?? [], steps: target.formCustomSteps ?? [] },
+      answeredIndex(regs)
+    );
+    if (!checked.ok) return res.status(400).json({ ok: false, error: checked.error });
+    const history = target.formVersionHistory ?? [];
+    const versionLabel = `v${history.length + 2}-organizer`;
+    nextEv.customFields = checked.value.fields;
+    nextEv.formCustomSteps = checked.value.steps;
+    nextEv.publishedFormVersion = versionLabel;
+    nextEv.formVersionHistory = [
+      ...history,
+      {
+        versionId: `fv-${target.id}-${history.length + 2}`,
+        versionLabel,
+        templateId: target.activeTemplateId ?? 'organizer',
+        status: 'published' as const,
+        publishedAt: new Date().toISOString(),
+        changeSummary: checked.summary,
+        steps: target.formSteps ?? [],
+        fields: checked.value.fields,
+        customSteps: checked.value.steps,
+      },
+    ].slice(-30);
     recordAudit(
       user,
       target.organizationId,
-      `อัปเดตคำถามเพิ่มเติมในใบสมัครงาน ${target.code}`,
-      `จำนวนคำถามทั้งหมด ${nextEv.customFields.length} ข้อ`,
+      `เผยแพร่ฟอร์มสมัครงาน ${target.code} (${versionLabel})`,
+      checked.summary,
       target.id
     );
   }
@@ -2699,7 +2757,42 @@ app.patch('/api/events/:id', (req, res) => {
     );
   }
 
-  // Page editor (organizer): save the draft, and/or publish it. Only owner / event manager.
+  // The event page is one template for every event (24 Nov 2026): its text is edited in the
+  // "page content" menu. The page editor's draft / publish is closed; stored pages stay unused.
+  if (patch.detailPageDraft !== undefined || patch.detailPagePublish) {
+    return res.status(410).json({
+      ok: false,
+      error: 'หน้ารายละเอียดงานใช้แม่แบบเดียวทุกงานแล้ว แก้ข้อความได้ที่เมนู "เนื้อหาหน้างาน"',
+    });
+  }
+
+  // Page content (organizer): about, highlights, race pack, schedule, register card text.
+  if (patch.pageContent !== undefined) {
+    if (!hasOrgRole(user, target.organizationId, ['owner', 'event_manager'], target.id)) {
+      return res.status(403).json({
+        ok: false,
+        error: 'เฉพาะเจ้าขององค์กรหรือผู้จัดการงานจึงแก้เนื้อหาหน้างานได้',
+      });
+    }
+    const checked = normalizePageContent(patch.pageContent);
+    if (!checked.ok) return res.status(400).json({ ok: false, error: checked.error });
+    const { coreText, card } = checked.value;
+    nextEv.overviewParagraphs = coreText.about.paragraphs;
+    nextEv.highlights = coreText.about.highlights;
+    nextEv.racePackItems = coreText.racepack.items;
+    nextEv.scheduleItems = coreText.schedule.items;
+    if (card) nextEv.detailRegisterCard = card;
+    else delete nextEv.detailRegisterCard;
+    recordAudit(
+      user,
+      target.organizationId,
+      `แก้เนื้อหาหน้างาน ${target.code}`,
+      `เกี่ยวกับงาน ${coreText.about.paragraphs.length} ย่อหน้า · จุดเด่น ${coreText.about.highlights.length} ข้อ · สิ่งที่ได้รับ ${coreText.racepack.items.length} รายการ · กำหนดการ ${coreText.schedule.items.length} รายการ`,
+      target.id
+    );
+  }
+
+  // (closed 24 Nov 2026, kept for reference) Page editor: save the draft, and/or publish it.
   if (patch.detailPageDraft !== undefined || patch.detailPagePublish) {
     if (!hasOrgRole(user, target.organizationId, ['owner', 'event_manager'], target.id)) {
       return res.status(403).json({

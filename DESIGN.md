@@ -186,6 +186,14 @@ The visual system rejects generic SaaS decorative charts, eyebrow kickers above 
 - **Void Danger** (`#b42318`, soft `#fef0ef`, ink `#7a160f`): Succeeded refund deductions, suspended/cancelled notices, email-collision security warnings, and duplicate BIB/pickup blocks.
 - **LINE Brand Green** (`#068a3c`): Dedicated exclusively to the LINE Login button in unified account screens.
 
+### Chart data colors
+> Added 24 Nov 2026 with the organizer event home charts (mockups approved by the user). Brand slate fails the data-color chroma floor, so charts use their own pair and slate stays for chrome.
+
+- **Chart Blue** (`#2a78d6`, `--chart-blue`): registrations and other primary series (confirmed seats, sign-ups over time, shirts reserved, organizer share in the fee preview).
+- **Chart Aqua** (`#1baf7a`, `--chart-aqua`): the organizer payout total and the platform fee slice in the fee preview.
+- Checked with the dataviz palette validator: lightness, chroma, colorblind and normal-vision separation pass. Aqua is under 3:1 against white, so every aqua mark carries a visible value label or sits in a chart with a table view.
+- Pending or held amounts are a 45° hatch of Chart Blue, never a third hue. Status colors (forest, amber, danger) are not used as series colors.
+
 ### Neutrals
 - **Cool Minimal Canvas** (`#f7f8fa`), **Subtle Fill** (`#f1f4f8`), and **Crisp Surface** (`#ffffff`): Low-glare ground and clean card planes separated by `1px` hairlines (`#e2e8f0` / `#cbd5e1`).
 - **Public Mint Page (21 Nov 2026, user request).** Runner-facing pages (event search, event detail, registration, calendar, profile, account, sign-in) sit on a mint-tinted page `#e6f2ec` (`--bg-page`, set on `.app-root.is-public`) instead of near-white. Inner fills there re-tint to `#f3f8f5` / `#eef5f1` / `#e3ede8`, kept lighter than the page so card footers keep their edge. Organizer and platform-admin screens keep the neutral `#f7f8fa` canvas. Text on `#e6f2ec`: ink-primary 8.1:1, secondary 6.6:1, placeholder 5.3:1, forest 5.1:1, amber 5.1:1, danger 5.7:1.

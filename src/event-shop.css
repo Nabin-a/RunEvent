@@ -1,0 +1,447 @@
+/* Event shop (ร้านค้าของงาน) — approved mockup 24 Nov 2026.
+   Shop money is kept apart from entry fees; each product states who sells,
+   who gets paid and who delivers. Data colors come from event-home.css. */
+
+.sh-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sh-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.sh-head h1 {
+  margin: 0;
+}
+
+.sh-head .sh-sub {
+  margin: 0.15rem 0 0;
+}
+
+.sh-sub {
+  font-size: 0.8125rem;
+  color: var(--ink-secondary);
+}
+
+.sh-block {
+  display: block;
+}
+
+.sh-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.sh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 40px;
+  padding: 0 0.9rem;
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.sh-btn.is-primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-accent);
+}
+
+.sh-link {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0.3rem 0;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--ink-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.sh-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  padding: 0.9rem 1rem;
+  min-width: 0;
+}
+
+.sh-panel h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.sh-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.6rem;
+}
+
+.sh-panel-head .sh-link {
+  margin-left: auto;
+}
+
+.sh-grid2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 1rem;
+}
+
+.sh-big {
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.sh-big .sh-sub {
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.sh-share {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-inset);
+}
+
+.sh-c1 {
+  background: var(--chart-blue);
+}
+
+.sh-c2 {
+  background: var(--chart-aqua);
+}
+
+.sh-c3 {
+  background: var(--ink-placeholder);
+}
+
+.sh-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sh-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sh-sw {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-sm);
+}
+
+/* ---------- orders by state ---------- */
+.sh-states {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.sh-state {
+  display: grid;
+  grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr) 2.5rem;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 40px;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--ink-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sh-state:hover {
+  background: var(--bg-subtle);
+}
+
+.sh-state.is-on {
+  border-color: var(--brand);
+  background: var(--bg-selected);
+}
+
+.sh-state-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sh-state-track {
+  height: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  overflow: hidden;
+}
+
+.sh-state-track span {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  background: var(--chart-blue);
+}
+
+.sh-state-track span.is-neutral {
+  background: var(--ink-placeholder);
+}
+
+.sh-state strong {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- products ---------- */
+.sh-products {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sh-product {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1.6fr) minmax(8rem, 1fr) 4.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  border-top: 1px solid var(--line-light);
+}
+
+.sh-product:first-child {
+  border-top: none;
+}
+
+.sh-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-md);
+  background: var(--mint-soft);
+  color: var(--brand);
+  font-size: 1.125rem;
+}
+
+.sh-prod-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.sh-prod-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sh-prod-sold {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sh-bar {
+  height: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  overflow: hidden;
+}
+
+.sh-bar span {
+  display: block;
+  height: 100%;
+  background: var(--chart-blue);
+}
+
+.sh-price {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sh-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.sh-tag.is-ok {
+  background: var(--forest-soft);
+  color: var(--forest-ink);
+}
+
+.sh-tag.is-warn {
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+}
+
+.sh-tag.is-danger {
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
+
+.sh-tag.is-muted {
+  background: var(--bg-subtle);
+  color: var(--ink-secondary);
+}
+
+.sh-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 1.5rem 1rem;
+  color: var(--ink-secondary);
+}
+
+/* ---------- orders ---------- */
+.sh-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.sh-table th {
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-secondary);
+  padding: 0.4rem 0.6rem 0.4rem 0;
+  border-bottom: 1px solid var(--line-light);
+}
+
+.sh-table td {
+  padding: 0.5rem 0.6rem 0.5rem 0;
+  border-bottom: 1px solid var(--line-light);
+  vertical-align: middle;
+}
+
+.sh-code {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- add product ---------- */
+.sh-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem;
+}
+
+.sh-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+.sh-form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sh-error {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 0;
+  color: var(--danger-ink);
+  font-size: 0.875rem;
+}
+
+.sh-btn:focus-visible,
+.sh-link:focus-visible,
+.sh-state:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+@media (max-width: 48rem) {
+  .sh-product {
+    grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+  }
+
+  .sh-prod-sold {
+    grid-column: 2 / -1;
+  }
+
+  .sh-price {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .sh-state {
+    grid-template-columns: minmax(0, 1fr) 5rem 2rem;
+  }
+
+  .sh-table thead {
+    display: none;
+  }
+
+  .sh-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.25rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--line-light);
+  }
+
+  .sh-table td {
+    border: none;
+    padding: 0;
+  }
+
+  .sh-table td:nth-child(2) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}

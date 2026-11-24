@@ -262,15 +262,21 @@ export function CoreInspector({
           <span className="pe-label">{tx('ข้อความ (แก้ได้ หรือดับเบิลคลิกในตัวอย่างหน้า)')}</span>
           <TextList
             title={tx('สิ่งที่ได้รับ')}
-            rows={(text as Required<EventCoreText>['racepack']).items}
+            rows={(text as Required<EventCoreText>['racepack']).items.map((i) => ({
+              title: i.title,
+              detail: i.detail,
+              scope: i.scope,
+              icon: i.icon ?? '',
+              iconImage: i.iconImage ?? '',
+            }))}
             fields={[
               { key: 'title', label: tx('ชื่อ'), max: L.racepackTitle },
               { key: 'detail', label: tx('คำอธิบาย'), multi: true, max: L.racepackDetail },
               { key: 'scope', label: tx('ใครได้รับ'), max: L.racepackScope },
             ]}
             max={L.racepackItems}
-            blank={{ title: '', detail: '', scope: '' }}
-            onChange={(items) => onText({ items })}
+            blank={{ title: '', detail: '', scope: '', icon: '', iconImage: '' }}
+            onChange={(rows) => onText({ items: rows.map((r) => withCardIcon({ title: r.title, detail: r.detail, scope: r.scope }, r)) })}
           />
         </>
       )}
@@ -490,7 +496,7 @@ export function CardIconPicker({
  * row below (text after the caret moves with it), Backspace in an empty row removes it, and
  * pasting several lines makes several rows.
  */
-function TextList<R extends Record<string, string>>({
+export function TextList<R extends Record<string, string>>({
   title,
   rows,
   fields,

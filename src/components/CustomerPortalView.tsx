@@ -58,9 +58,10 @@ import { pageOf, resolveBlockKey, resolveDetailBlocksDeep, resolveDetailLayout }
 import { EventCustomBlockView } from './EventCustomBlockView';
 import { EventDataPieceView, type DataPieceCtx } from './EventDataPieceView';
 import { dataPieceHasContent, mergedCoreText } from '../data/eventDataPieces';
-import { convertToFreeBlocks } from '../data/eventPageConvert';
 import { usePagePreview } from './pagePreview';
-import type { EventDetailBlockId, EventPageItem } from '../types';
+import { useFormPreview } from './formPreview';
+import type { EventDetailBlockId, EventDetailPage, EventPageItem } from '../types';
+import { FaIcon } from './FaIcon';
 import { RaceCalendarView } from './RaceCalendarView';
 import { NoteTag, PriceTag } from './RegTags';
 import { MobileStepProgress } from './MobileStepProgress';
@@ -93,10 +94,8 @@ import {
   PaymentStatusBadge,
   RegStatusBadge,
 } from './StatusBadges';
-import {
-  evaluateConditionRule,
-  RunnerCustomFieldsInputs,
-} from './PublicEventView';
+import { RunnerCustomFieldsInputs } from './PublicEventView';
+import { CORE_STEP, answerText, fieldShown, isContentField, stepsShown, validateAnswers } from '../data/registrationForm';
 
 import { PhoneInput } from './PhoneInput';
 import { tx, txf } from '../i18n';
@@ -112,7 +111,8 @@ import {
 import { IdNumberInput } from './IdNumberInput';
 /** Registration wizard steps: 1 start, 2 participant, 3 race-kit shirt, 4 souvenirs,
  *  5 address, 6 payment, 7 done. Step 4 is skipped when the event sells nothing. */
-type RegStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+/** 1-8 as before; the organizer's own steps (24 Nov 2026) sit between 2 and 3 as 2.1, 2.2, 2.3 */
+type RegStep = number;
 
 export type CustomerSubView =
   | 'directory'
@@ -232,6 +232,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   // Event detail & step-by-step registration state (6-step dedicated page)
   // live preview inside the organizer page editor (no effect on the public page)
   const pagePreview = usePagePreview();
+  // the runner's sign-up page inside the organizer's form editor (?preview=form): the unsaved form wins
+  const formPreview = useFormPreview();
   const [detailTab, setDetailTab] = useState<
     'register' | 'storefront' | 'info_results'
   >(initialEventTab);
@@ -374,6 +376,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     Record<string, string | boolean>
   >({});
   const [step2Error, setStep2Error] = useState<string | null>(null);
+  /** the check result of the organizer's questions, by question id (shown under each one) */
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [paymentChannel, setPaymentChannel] = useState<'promptpay' | 'card'>(
     'promptpay'
   );
@@ -615,10 +619,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       matchesDirectoryFilters(ev, { ...activeDirectoryFilters, ...override })
     ).length;
 
-  const selectedEvent = useMemo(
-    () => publicVisibleEvents.find((e) => e.id === selectedEventId) ?? null,
-    [publicVisibleEvents, selectedEventId]
-  );
+  const selectedEvent = useMemo(() => {
+    const ev =
+      publicVisibleEvents.find((e) => e.id === selectedEventId) ??
+      (formPreview.active ? events.find((e) => e.id === selectedEventId) : undefined) ??
+      null;
+    if (!ev || !formPreview.active || !formPreview.form) return ev;
+    return { ...ev, customFields: formPreview.form.fields, formCustomSteps: formPreview.form.steps };
+  }, [publicVisibleEvents, events, selectedEventId, formPreview.active, formPreview.form]);
 
   const activeCategory: RaceCategory | null = useMemo(() => {
     if (!selectedEvent) return null;
@@ -628,6 +636,39 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       null
     );
   }, [selectedEvent, selectedCatId]);
+
+  // Form editor preview: the editor's step keys <-> this wizard's step numbers (own steps are 2.1-2.3)
+  const previewSteps = () =>
+    selectedEvent
+      ? stepsShown(selectedEvent.formCustomSteps, selectedEvent.customFields, customAnswers, {
+          raceDistance: activeCategory?.code,
+          shirtSize,
+        })
+      : [];
+  const PREVIEW_STEP_NO: Record<string, RegStep> = { start: 1, core: 2, shop: 3, souvenir: 4, address: 5, review: 6, pay: 7 };
+  const previewKeyOf = (n: number) => {
+    const named = Object.entries(PREVIEW_STEP_NO).find(([, v]) => v === n)?.[0];
+    if (named) return named;
+    return previewSteps()[Math.round((n - 2) * 10) - 1]?.id ?? 'core';
+  };
+  useEffect(() => {
+    if (!formPreview.active || !formPreview.step) return;
+    const key = formPreview.step.key;
+    let next: RegStep | undefined = PREVIEW_STEP_NO[key];
+    if (next === undefined) {
+      const i = previewSteps().findIndex((st) => st.id === key);
+      // a step this runner would not see (other distance, no question yet): stay where it is
+      if (i < 0) return;
+      next = 2 + (i + 1) / 10;
+    }
+    setRegStep(next);
+    // only when the editor names a step, not on every answer typed here
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formPreview.active, formPreview.step]);
+  useEffect(() => {
+    if (formPreview.active) formPreview.report(previewKeyOf(regStep));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formPreview.active, regStep]);
 
   // Age on the category's basis date and the matching age group (same rules as the server).
   const regAgeCheck = useMemo(
@@ -734,6 +775,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     // a request is already on its way: a second press must not send another booking
     // (a ref, not state: two clicks in the same tick both see the old state value)
     if (submittingRef.current) return;
+    if (formPreview.active) {
+      setCheckoutError(tx('นี่คือตัวอย่างฟอร์มในหน้าผู้จัด ไม่มีการส่งใบสมัครหรือชำระเงินจริง'));
+      return;
+    }
 
     if (!currentUser) {
       onRequireLoginWithIntent({
@@ -784,25 +829,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       return;
     }
 
-    const missingCustom = (selectedEvent.customFields ?? []).find((f) => {
-      if (!f.required) return false;
-      const isVisible = evaluateConditionRule(
-        f.visibilityCondition,
-        customAnswers,
-        {
-          raceDistance: activeCategory.code,
-          shirtSize,
-        }
-      );
-      if (!isVisible) return false;
-      const val = customAnswers[f.id] ?? f.defaultValue;
-      if (f.type === 'checkbox') return val !== true;
-      return !String(val ?? '').trim();
+    const customProblems = validateAnswers(selectedEvent.customFields ?? [], customAnswers, {
+      raceDistance: activeCategory.code,
+      shirtSize,
     });
-    if (missingCustom) {
-      setCheckoutError(
-        txf("กรุณากรอกข้อมูลเพิ่มเติมที่จำเป็น: \"{0}\" ในขั้นตอนที่ 2", missingCustom.label)
-      );
+    const firstCustomProblem = Object.values(customProblems)[0];
+    if (firstCustomProblem) {
+      setFormErrors(customProblems);
+      setCheckoutError(txf('กรุณาตรวจคำตอบที่ผู้จัดถาม: {0}', firstCustomProblem));
       return;
     }
 
@@ -1393,9 +1427,16 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       );
     }
     const hasSouvenirs = selectedEvent.products.length > 0;
+    // the organizer's own steps for this runner (right distance, with a question to answer)
+    const formCtx = { raceDistance: activeCategory?.code, shirtSize };
+    const runnerSteps = stepsShown(selectedEvent.formCustomSteps, selectedEvent.customFields, customAnswers, formCtx);
+    const stepPos = (i: number) => 2 + (i + 1) / 10;
+    const firstAfterInfo = runnerSteps.length > 0 ? stepPos(0) : 3;
+    const lastBeforeShop = runnerSteps.length > 0 ? stepPos(runnerSteps.length - 1) : 2;
     const stepLabels: { step: RegStep; label: string }[] = [
       { step: 1, label: 'เริ่ม' },
       { step: 2, label: 'ข้อมูล' },
+      ...runnerSteps.map((st, i) => ({ step: stepPos(i), label: st.title })),
       { step: 3, label: 'สินค้า' },
       ...(hasSouvenirs ? [{ step: 4 as RegStep, label: 'ของที่ระลึก' }] : []),
       { step: 5, label: 'ที่อยู่' },
@@ -1515,6 +1556,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             className="event-reg-wizard-pane"
             aria-label={tx("ขั้นตอนการสมัครเข้าร่วมงานวิ่ง")}
           >
+            {formPreview.active && (
+              <p className="form-preview-banner" role="status">
+                {tx('ตัวอย่างฟอร์มสมัคร — แสดงคำถามที่ยังไม่เผยแพร่ กรอกลองได้ แต่ไม่ส่งใบสมัครจริง')}
+              </p>
+            )}
             {regStep !== 8 && (
             <>
             {/* 6-STEP CONNECTED CIRCLE PROGRESS STEPPER */}
@@ -1534,7 +1580,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         isCurrent ? 'active' : isDone ? 'done' : ''
                       }`}
                       onClick={() => {
-                        if (item.step < regStep) {
+                        if (item.step < regStep || formPreview.active) {
                           setRegStep(item.step);
                         }
                       }}
@@ -1567,7 +1613,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               current={regStep}
               complete={false}
               onJump={(step) => {
-                if (step < regStep) setRegStep(step);
+                if (step < regStep || formPreview.active) setRegStep(step);
               }}
             />
             </>
@@ -2106,6 +2152,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
                     <RunnerCustomFieldsInputs
                       fields={selectedEvent.customFields}
+                      steps={selectedEvent.formCustomSteps ?? []}
+                      stepId={CORE_STEP}
+                      errors={formErrors}
                       answers={customAnswers}
                       raceDistanceCode={activeCategory.code}
                       shirtSize={shirtSize}
@@ -2163,27 +2212,16 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         setStep2Error(ageCheckMessage(regAgeCheck, activeCategory));
                         return;
                       }
-                      const missingField = (
-                        selectedEvent.customFields ?? []
-                      ).find((f) => {
-                        if (!f.required) return false;
-                        const isVisible = evaluateConditionRule(
-                          f.visibilityCondition,
-                          customAnswers,
-                          {
-                            raceDistance: activeCategory.code,
-                            shirtSize,
-                          }
-                        );
-                        if (!isVisible) return false;
-                        const val = customAnswers[f.id] ?? f.defaultValue;
-                        if (f.type === 'checkbox') return val !== true;
-                        return !String(val ?? '').trim();
-                      });
-                      if (missingField) {
-                        setStep2Error(
-                          txf("กรุณาระบุ \"{0}\" ให้ครบก่อนไปขั้นตอนถัดไป", missingField.label)
-                        );
+                      const stepProblems = validateAnswers(
+                        selectedEvent.customFields ?? [],
+                        customAnswers,
+                        { raceDistance: activeCategory.code, shirtSize },
+                        { steps: selectedEvent.formCustomSteps ?? [], stepId: CORE_STEP }
+                      );
+                      setFormErrors(stepProblems);
+                      const firstProblem = Object.values(stepProblems)[0];
+                      if (firstProblem) {
+                        setStep2Error(firstProblem);
                         return;
                       }
                       setStep2Error(null);
@@ -2199,7 +2237,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           applyPreferredShirt(pt?.preferredShirtSize);
                         }
                       }
-                      setRegStep(3);
+                      setRegStep(firstAfterInfo);
                     }}
                   >
                     {tx("ถัดไป")}
@@ -2207,6 +2245,86 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 </div>
               </div>
             )}
+
+            {/* the organizer's own steps (24 Nov 2026), between runner details and the shop */}
+            {regStep > 2 && regStep < 3 && activeCategory && (() => {
+              const idx = Math.round((regStep - 2) * 10) - 1;
+              const st = runnerSteps[idx];
+              if (!st) {
+                // the answers changed and this step is no longer asked: carry on
+                return (
+                  <div className="reg-step-body">
+                    <div className="reg-step-footer-between">
+                      <button type="button" className="btn-secondary" onClick={() => setRegStep(2)}>
+                        {tx('ย้อนกลับ')}
+                      </button>
+                      <button type="button" className="btn-primary reg-next-pill-btn" onClick={() => setRegStep(3)}>
+                        {tx('ถัดไป')}
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+              const goNext = () => {
+                const problems = validateAnswers(selectedEvent.customFields ?? [], customAnswers, formCtx, {
+                  steps: selectedEvent.formCustomSteps ?? [],
+                  stepId: st.id,
+                });
+                setFormErrors(problems);
+                const first = Object.values(problems)[0];
+                if (first) {
+                  setStep2Error(first);
+                  return;
+                }
+                setStep2Error(null);
+                setRegStep(idx + 1 < runnerSteps.length ? stepPos(idx + 1) : 3);
+              };
+              return (
+                <div className="reg-step-body">
+                  <div className="reg-step-head">
+                    <h2 className="reg-step-accent-heading">{tx(st.title)}</h2>
+                    {st.description && <p className="muted-block">{tx(st.description)}</p>}
+                  </div>
+                  <RunnerCustomFieldsInputs
+                    fields={selectedEvent.customFields}
+                    answers={customAnswers}
+                    raceDistanceCode={activeCategory.code}
+                    shirtSize={shirtSize}
+                    steps={selectedEvent.formCustomSteps ?? []}
+                    stepId={st.id}
+                    errors={formErrors}
+                    heading={null}
+                    onAnswerChange={(fieldId, val) => {
+                      setStep2Error(null);
+                      setFormErrors((prev) => {
+                        const next = { ...prev };
+                        delete next[fieldId];
+                        return next;
+                      });
+                      setCustomAnswers((prev) => ({ ...prev, [fieldId]: val }));
+                    }}
+                  />
+                  {step2Error && (
+                    <div className="error-callout" role="alert">
+                      <IconAlert size={16} />
+                      <span>{tx(step2Error)}</span>
+                    </div>
+                  )}
+                  <div className="reg-step-footer-between">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setRegStep(idx > 0 ? stepPos(idx - 1) : 2)}
+                    >
+                      {tx('ย้อนกลับ')}
+                    </button>
+                    <button type="button" className="btn-primary reg-next-pill-btn" onClick={goNext}>
+                      {tx('ถัดไป')}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* STEP 3: สินค้า — เลือกไซส์เสื้อตามสิทธิ์สมัคร */}
             {regStep === 3 && activeCategory && (
@@ -2283,7 +2401,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   <button
                     type="button"
                     className="btn-secondary"
-                    onClick={() => setRegStep(2)}
+                    onClick={() => setRegStep(lastBeforeShop)}
                   >
                     {tx("ย้อนกลับ")}
                   </button>
@@ -2609,12 +2727,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               const addonSatang = addonSatangTotal;
               const picked = registrationOptions.find((o) => o.optionId === currentPickedOptionId);
               const idDigits = regIdNumber.replace(/\s/g, '');
-              const answerRows = (selectedEvent.customFields ?? []).map((f) => {
+              const answerRows = (selectedEvent.customFields ?? [])
+                .filter((f) => !isContentField(f) && fieldShown(f, customAnswers, { raceDistance: activeCategory.code, shirtSize }))
+                .map((f) => {
                 const val = customAnswers[f.id] ?? f.defaultValue;
                 return {
                   label: tx(f.label),
                   value:
-                    typeof val === 'boolean' ? (val ? tx('ใช่') : tx('ไม่ใช่')) : tx(String(val ?? '').trim()),
+                    typeof val === 'boolean' ? (val ? tx('ใช่') : tx('ไม่ใช่')) : tx(answerText(f, val).trim()),
                 };
               });
               const sections: ReviewSection[] = [
@@ -2922,8 +3042,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     const racePackList = coreText.racepack.items;
     const scheduleTimeline = coreText.schedule.items;
     /** editor preview: mark text of a built-in block for in-place editing */
+    /** the page editor's preview marks text for in-place editing; a look-only preview does not */
+    const editMarks = pagePreview.active && !pagePreview.readOnly;
     const coreEd = (target: string, mode: 'line' | 'multi', value: string) =>
-      pagePreview.active ? { 'data-page-edit': `core:${target}`, 'data-edit-mode': mode, 'data-edit-value': value } : {};
+      editMarks ? { 'data-page-edit': `core:${target}`, 'data-edit-mode': mode, 'data-edit-value': value } : {};
 
     const getShirtSpec = (size: ShirtSizeCode) =>
       resolveShirtSpec(
@@ -2959,16 +3081,18 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     // resolveDetailLayout (the organizer's published order, or the default one).
     // Inside the organizer page editor (?preview=page) the unsaved page it sends wins,
     // then the saved draft.
-    // built-in blocks are free blocks now (24 Nov 2026): older pages are converted as they are read
-    const shownPage = convertToFreeBlocks(
-      pagePreview.page ??
-        (pagePreview.active && selectedEvent.detailPageDraft ? selectedEvent.detailPageDraft : pageOf(selectedEvent)),
-      selectedEvent
-    );
+    // One template for every event (24 Nov 2026): the built-in sections in their fixed order,
+    // filled from the event's own data and text. Pages organizers built before stay stored, unused.
+    const shownPage: EventDetailPage = {
+      layout: [],
+      customBlocks: [],
+      // the "page content" menu's preview sends its unsaved register-card text
+      ...((pagePreview.page?.card ?? pageOf(selectedEvent).card) ? { card: pagePreview.page?.card ?? pageOf(selectedEvent).card } : {}),
+    };
     /** the sticky register card's text and switches (EventRegisterCardConfig) */
     const cardCfg = shownPage.card ?? {};
     const detailBlocks = resolveDetailLayout(shownPage).filter(
-      (b) => b.id !== 'merch' || selectedEvent.products.length > 0 || pagePreview.active
+      (b) => b.id !== 'merch' || selectedEvent.products.length > 0 || editMarks
     );
     // the strip is a teaser: a few items, the rest live in the shop tab
     const MERCH_STRIP_MAX = 4;
@@ -3112,9 +3236,15 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
           <div className="racepack-grid">
             {racePackList.map((item, idx) => (
-              <div key={idx} className="racepack-item-card" {...(pagePreview.active ? { 'data-core-item': `racepack:${idx}` } : {})}>
+              <div key={idx} className="racepack-item-card" {...(editMarks ? { 'data-core-item': `racepack:${idx}` } : {})}>
                 <div className="cta-inline-row">
-                  <IconShirt size={16} />
+                  {item.iconImage ? (
+                    <img className="custom-card-icon" src={item.iconImage} alt="" />
+                  ) : item.icon ? (
+                    <FaIcon name={item.icon} />
+                  ) : (
+                    <IconShirt size={16} />
+                  )}
                   <strong {...coreEd(`racepack:items.${idx}.title`, 'line', item.title)}>{tx(item.title)}</strong>
                 </div>
                 <p className="muted-block" {...coreEd(`racepack:items.${idx}.detail`, 'multi', item.detail)}>
@@ -3172,8 +3302,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           <h2>{tx("กำหนดการ")}</h2>
           <ScheduleTimeline
             items={scheduleTimeline}
-            editBase={pagePreview.active ? 'core:schedule:items' : undefined}
-            dragList={pagePreview.active ? 'schedule' : undefined}
+            editBase={editMarks ? 'core:schedule:items' : undefined}
+            dragList={editMarks ? 'schedule' : undefined}
           />
         </section>
       ),
@@ -3227,7 +3357,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             <div>
               <h2 id="merch-strip-title">{tx("ของที่ระลึกประจำงาน")}</h2>
               <p className="muted-inline">{tx("ซื้อได้โดยไม่ต้องสมัครวิ่ง")}</p>
-              {pagePreview.active && selectedEvent.products.length === 0 && (
+              {editMarks && selectedEvent.products.length === 0 && (
                 <p className="custom-block-empty data-piece-empty">
                   {tx("งานนี้ยังไม่มีสินค้า หน้าจริงจะไม่แสดงส่วนนี้")}
                 </p>
@@ -3965,27 +4095,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         type="button"
                         className="btn-primary"
                         onClick={() => {
-                          const missingField = (
-                            selectedEvent.customFields ?? []
-                          ).find((f) => {
-                            if (!f.required) return false;
-                            const isVisible = evaluateConditionRule(
-                              f.visibilityCondition,
-                              customAnswers,
-                              {
-                                raceDistance: activeCategory?.code,
-                                shirtSize,
-                              }
-                            );
-                            if (!isVisible) return false;
-                            const val = customAnswers[f.id] ?? f.defaultValue;
-                            if (f.type === 'checkbox') return val !== true;
-                            return !String(val ?? '').trim();
+                          const allProblems = validateAnswers(selectedEvent.customFields ?? [], customAnswers, {
+                            raceDistance: activeCategory?.code,
+                            shirtSize,
                           });
-                          if (missingField) {
-                            setStep2Error(
-                              txf("กรุณาระบุ \"{0}\" ให้ครบก่อนไปขั้นตอนถัดไป", missingField.label)
-                            );
+                          setFormErrors(allProblems);
+                          const firstProblem = Object.values(allProblems)[0];
+                          if (firstProblem) {
+                            setStep2Error(firstProblem);
                             return;
                           }
                           setStep2Error(null);
@@ -4198,7 +4315,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   <h2>
                     <span
                       className="kr-sticky-kicker"
-                      {...(pagePreview.active
+                      {...(editMarks
                         ? { 'data-page-edit': 'card:kicker', 'data-edit-mode': 'line', 'data-edit-value': cardCfg.kicker ?? 'สมัครร่วมงาน' }
                         : {})}
                     >
@@ -4206,10 +4323,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     </span>{' '}
                     {tx(selectedEvent.titleTh)}
                   </h2>
-                  {(cardCfg.promo || pagePreview.active) && (
+                  {(cardCfg.promo || editMarks) && (
                     <p
                       className={`kr-sticky-promo ${cardCfg.promo ? '' : 'is-placeholder'}`}
-                      {...(pagePreview.active
+                      {...(editMarks
                         ? { 'data-page-edit': 'card:promo', 'data-edit-mode': 'line', 'data-edit-value': cardCfg.promo ?? '' }
                         : {})}
                     >

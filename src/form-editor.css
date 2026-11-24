@@ -1,0 +1,773 @@
+/* Registration form editor (24 Nov 2026) — RegistrationFormEditor.tsx. Uses the app's tokens. */
+
+/* where the side panels stick: below the site header, the organizer bar and the editor's own bar */
+.fe-page {
+  --fe-stick-top: calc(var(--topbar-height, 68px) + var(--orgnav-top-h, 0px) + 6.25rem);
+}
+
+.fe-page .fe-bar {
+  position: sticky;
+  /* sticks under the site header and the organizer bar (both sticky) */
+  top: calc(var(--topbar-height, 68px) + var(--orgnav-top-h, 0px));
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.fe-status {
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+}
+
+.fe-status.is-ok {
+  color: var(--ink-primary);
+}
+
+.fe-status.is-ok::before {
+  content: '✓ ';
+}
+
+.fe-status.is-err {
+  color: var(--danger-ink);
+}
+
+.fe-status.is-err::before {
+  content: '! ';
+  font-weight: 700;
+}
+
+.fe-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.fe-actions [aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.fe-count {
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.fe-seg {
+  display: inline-flex;
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.fe-seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  padding: 0 0.7rem;
+  border: 0;
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.fe-seg button + button {
+  border-left: 1px solid var(--line-medium);
+}
+
+.fe-seg button.is-on {
+  background: var(--mint-soft);
+  font-weight: 600;
+}
+
+.fe-seg button:focus-visible,
+.fe-pal-item:focus-visible,
+.fe-grip:focus-visible,
+.fe-card-face:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.fe-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.fe-palette {
+  position: sticky;
+  top: var(--fe-stick-top);
+  max-height: calc(100vh - var(--fe-stick-top) - 0.75rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.8rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.fe-pal-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.fe-pal-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+}
+
+.fe-pal-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-canvas);
+  color: var(--ink-primary);
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: grab;
+  touch-action: none;
+}
+
+.fe-pal-item:hover:not(:disabled) {
+  border-color: var(--line-medium);
+  background: var(--mint-soft);
+}
+
+.fe-pal-item span {
+  flex: 1 1 auto;
+}
+
+.fe-pal-grip {
+  color: var(--ink-muted);
+  font-size: 0.75rem;
+}
+
+.fe-pal-item.is-dragging {
+  opacity: 0.45;
+}
+
+.fe-add-step {
+  justify-content: center;
+}
+
+.fe-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+
+.fe-canvas,
+.fe-try {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-width: 0;
+  max-width: 760px;
+}
+
+.fe-step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.fe-step.is-locked {
+  background: var(--bg-canvas);
+  border-style: dashed;
+}
+
+.fe-step.is-over {
+  border-color: var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+
+.fe-step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.fe-step-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 700;
+}
+
+.fe-own-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.fe-step-title-input {
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.fe-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 3rem;
+}
+
+.fe-empty {
+  margin: 0;
+  padding: 0.9rem;
+  border: 1px dashed var(--line-medium);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+.fe-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-canvas);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.fe-badge.is-own {
+  background: var(--mint-soft);
+  color: var(--ink-primary);
+}
+
+.fe-badge.is-warn {
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
+
+.fe-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.fe-tools {
+  display: inline-flex;
+  gap: 0.15rem;
+}
+
+.fe-card {
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+
+.fe-card.is-selected {
+  border-color: var(--brand);
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+.fe-card.is-dragging {
+  opacity: 0.5;
+}
+
+.fe-card.is-hidden {
+  opacity: 0.65;
+}
+
+.fe-card.is-content {
+  background: var(--bg-canvas);
+}
+
+.fe-card-top {
+  display: flex;
+  align-items: stretch;
+}
+
+.fe-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  flex: 0 0 auto;
+  border: 0;
+  border-right: 1px solid var(--line-light);
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: grab;
+  touch-action: none;
+}
+
+.fe-card-face {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.2rem 0.55rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.55rem 0.7rem;
+  border: 0;
+  background: transparent;
+  color: var(--ink-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fe-card-face > .fe-badges {
+  grid-column: 2;
+}
+
+.fe-card-label {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.fe-card-label em {
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+
+.fe-preview-choices {
+  margin: 0 0.7rem 0.6rem 2.7rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+}
+
+.fe-preview-choices li::before {
+  content: '○ ';
+}
+
+.fe-preview-choices.is-multi li::before {
+  content: '☐ ';
+}
+
+.fe-preview-input {
+  margin: 0 0.7rem 0.6rem 2.7rem;
+  padding: 0.35rem 0.55rem;
+  border-bottom: 1px dashed var(--line-medium);
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+
+.fe-card-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.7rem 0.8rem 0.8rem;
+  border-top: 1px solid var(--line-light);
+}
+
+.fe-card-edit label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.fe-card-edit label.checkbox-row {
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+.fe-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.fe-grow {
+  flex: 1 1 260px;
+}
+
+.fe-num {
+  flex: 1 1 140px;
+}
+
+.fe-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.fe-plain,
+.fe-cats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.fe-cats {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.9rem;
+}
+
+.fe-cats legend {
+  width: 100%;
+  padding: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.fe-more summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.fe-more[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.fe-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line-light);
+}
+
+.fe-card-edit label.fe-switch {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 600;
+}
+
+.fe-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  box-shadow: 0 10px 24px -12px rgba(52, 73, 95, 0.45);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: grabbing;
+}
+
+.fe-try-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.fe-try-bar label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+@media (max-width: 1023px) {
+  .fe-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fe-palette {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+
+  .fe-pal-group {
+    display: contents;
+  }
+
+  .fe-pal-title {
+    grid-column: 1 / -1;
+  }
+}
+
+/* the editor drawn as the runner's sign-up wizard (stepper + one step at a time) */
+.fe-layout.is-try {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.fe-layout.is-try .fe-canvas {
+  max-width: 860px;
+}
+
+.fe-canvas {
+  max-width: 860px;
+}
+
+.fe-wizard {
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  padding: 1.25rem 1.4rem 1.4rem;
+}
+
+.fe-wizard .circle-stepper-bar {
+  max-width: none;
+  overflow-x: auto;
+  gap: 0.15rem;
+  padding: 0.2rem 0.1rem 0.5rem;
+}
+
+.fe-node {
+  flex: 0 0 auto;
+  min-width: 4.25rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.fe-node:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.fe-node.is-own .circle-step-label {
+  color: var(--ink-primary);
+  font-weight: 600;
+}
+
+.fe-node.is-hidden {
+  opacity: 0.55;
+}
+
+.fe-node.is-over {
+  background: var(--mint-soft);
+  box-shadow: inset 0 0 0 2px var(--brand);
+}
+
+.fe-node-lock {
+  margin-right: 0.2rem;
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+.fe-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.fe-step-body .fe-step {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.fe-step-body .fe-step.is-over .fe-list {
+  outline: 2px dashed var(--brand);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+
+.fe-step-body .reg-step-accent-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fe-system {
+  min-width: 0;
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  border: 1px dashed var(--line-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-canvas);
+}
+
+.fe-system legend {
+  padding: 0 0.3rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.fe-system input {
+  cursor: not-allowed;
+}
+
+.fe-runner-look {
+  padding: 0.35rem 0.8rem 0.7rem 2.6rem;
+  cursor: pointer;
+}
+
+.fe-runner-look:hover {
+  background: var(--bg-canvas);
+}
+
+.fe-card .fe-card-face {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.fe-card .fe-card-face > .fe-badges {
+  grid-column: 1;
+}
+
+.fe-locked-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.fe-cat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  opacity: 0.85;
+}
+
+/* the live runner sign-up page next to the editor (iframe, ?preview=form) */
+.fe-layout.has-preview {
+  grid-template-columns: 200px minmax(0, 1fr) minmax(320px, 400px);
+}
+
+.fe-layout.has-preview.is-try {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+}
+
+.fe-preview {
+  position: sticky;
+  top: var(--fe-stick-top);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.fe-preview-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.fe-preview-note {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+
+.fe-preview-note.is-dirty {
+  color: var(--ink-primary);
+}
+
+.fe-preview-note.is-dirty::before {
+  content: '● ';
+  color: var(--brand);
+}
+
+.fe-preview-frame {
+  position: relative;
+  /* the side preview fits the screen below the sticky bars (title + hint take ~5rem) */
+  height: calc(100vh - var(--fe-stick-top) - 5rem);
+  min-height: 420px;
+  overflow: hidden;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-canvas);
+}
+
+.fe-preview-frame.is-phone {
+  width: 100%;
+  max-width: 392px;
+  margin: 0 auto;
+}
+
+.fe-preview-frame iframe {
+  display: block;
+  border: 0;
+  transform-origin: 0 0;
+  background: var(--bg-surface);
+}
+
+.fe-preview-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+}
+
+/* the "ตัวอย่าง" tab: the sign-up page alone, full width */
+.fe-layout.is-preview {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.fe-preview.is-full {
+  position: static;
+}
+
+.fe-preview.is-full .fe-preview-frame {
+  height: calc(100vh - var(--fe-stick-top) - 3rem);
+}
+
+/* below 1280px there is no room beside the editor: the side preview is not shown at all
+   (it used to drop under the form); the "ตัวอย่าง" tab still works */
+@media (max-width: 1279px) {
+  .fe-layout.has-preview {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+
+  .fe-layout.has-preview.is-try {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fe-preview.is-side,
+  .fe-side-toggle {
+    display: none;
+  }
+}
+
+@media (max-width: 1023px) {
+  .fe-layout.has-preview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
