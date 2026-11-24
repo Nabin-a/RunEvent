@@ -30,6 +30,12 @@ interface WheelColumnProps {
   autoFocus?: boolean;
   /** a row was clicked / tapped (after onChange); lets a picker close on pick */
   onPick?: (index: number) => void;
+  /**
+   * a plain list instead of a wheel: no blank rows above the first and below the last item,
+   * scrolling does not change the value (only a click or the arrow keys do), and the picked
+   * row is marked instead of sitting under a centre band (date-of-birth dropdowns)
+   */
+  list?: boolean;
 }
 
 export const WheelColumn: React.FC<WheelColumnProps> = ({
@@ -40,6 +46,7 @@ export const WheelColumn: React.FC<WheelColumnProps> = ({
   className,
   autoFocus = false,
   onPick,
+  list = false,
 }) => {
   const ref = useRef<HTMLDivElement | null>(null);
   const settleTimer = useRef<number | null>(null);
@@ -53,26 +60,37 @@ export const WheelColumn: React.FC<WheelColumnProps> = ({
     const el = ref.current;
     if (!el) return;
     programmatic.current = true;
-    el.scrollTo({ top: index * itemH(), behavior: smooth ? 'smooth' : 'auto' });
+    // list: bring the row to the middle where there is room, never past the first / last row
+    const top = list
+      ? Math.max(0, Math.min(index * itemH() - (el.clientHeight - itemH()) / 2, el.scrollHeight - el.clientHeight))
+      : index * itemH();
+    el.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' });
     window.setTimeout(() => {
       programmatic.current = false;
     }, smooth ? 260 : 30);
-  }, []);
+  }, [list]);
 
   // Keep the wheel aligned with the selected value (initial open and external changes).
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
+    if (list) {
+      // only when the picked row is out of sight (opening, keyboard moves)
+      const row = itemH();
+      const rowTop = selectedIndex * row;
+      if (rowTop < el.scrollTop || rowTop + row > el.scrollTop + el.clientHeight) scrollToIndex(selectedIndex, false);
+      return;
+    }
     const current = Math.round(el.scrollTop / itemH());
     if (current !== selectedIndex) scrollToIndex(selectedIndex, false);
-  }, [selectedIndex, items.length, scrollToIndex]);
+  }, [selectedIndex, items.length, scrollToIndex, list]);
 
   useEffect(() => {
     if (autoFocus) ref.current?.focus({ preventScroll: true });
   }, [autoFocus]);
 
   const handleScroll = () => {
-    if (programmatic.current) return;
+    if (list || programmatic.current) return;
     if (settleTimer.current) window.clearTimeout(settleTimer.current);
     settleTimer.current = window.setTimeout(() => {
       const el = ref.current;
@@ -106,7 +124,7 @@ export const WheelColumn: React.FC<WheelColumnProps> = ({
   };
 
   return (
-    <div className={`wheel-column ${className ?? ''}`}>
+    <div className={`wheel-column ${list ? 'is-list' : ''} ${className ?? ''}`}>
       <div
         ref={ref}
         className="wheel-scroll"
@@ -117,7 +135,7 @@ export const WheelColumn: React.FC<WheelColumnProps> = ({
         onScroll={handleScroll}
         onKeyDown={onKeyDown}
       >
-        <div className="wheel-pad" aria-hidden="true" />
+        {!list && <div className="wheel-pad" aria-hidden="true" />}
         {items.map((item, i) => (
           <div
             key={item.value}
@@ -133,7 +151,7 @@ export const WheelColumn: React.FC<WheelColumnProps> = ({
             {item.label}
           </div>
         ))}
-        <div className="wheel-pad" aria-hidden="true" />
+        {!list && <div className="wheel-pad" aria-hidden="true" />}
       </div>
     </div>
   );

@@ -1,17 +1,13 @@
-import { RequiredFieldText } from './RequiredFieldText';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  EventProduct,
   MerchOrderRecord,
   Organization,
   PlatformProfileConfig,
   RaceCategory,
   RaceEvent,
   RegistrationRecord,
-  RegistrationStepDef,
   ReturnIntent,
   RunnerProfileData,
-  RunnerSavedAddress,
   SavedParticipant,
   ShirtSizeCode,
   UserAccount,
@@ -19,11 +15,8 @@ import {
 import { resolveShirtSpec } from '../data/runnerProfileDefaults';
 import {
   calculateFeeQuote,
-  feePolicyLabel,
   formatThb,
   getCurrentTier,
-  kitShippingFee,
-  quoteRegistrationShipping,
 } from '../utils/pricing';
 import {
   EventCoverMedia,
@@ -45,16 +38,13 @@ import {
   IconSearch,
   IconShirt,
 } from './Icons';
-import { RegistrationDone, RegistrationSummary, type ReviewLedgerGroup, type ReviewSection } from './RegistrationReview';
-import { PaymentMethodPicker } from './PaymentMethodPicker';
+import { RegistrationDone } from './RegistrationReview';
 import { StorefrontView, type CartLine, type MerchCheckoutPayload, type MerchCheckoutResult } from './StorefrontView';
-import { SouvenirPicker } from './SouvenirPicker';
-import { PAYMENT_TERMS_VERSION, RegistrationTerms } from './RegistrationTerms';
+import { PAYMENT_TERMS_VERSION } from './RegistrationTerms';
 import { displayPhone } from '../utils/phone';
-import { DateOfBirthInput } from './DateOfBirthInput';
 import { CategoryAgeGroups, categoryHasAgeGroups } from './EventAgeGroupsSection';
 import { ProductArt, souvenirArt } from './ProductArt';
-import { pageOf, resolveBlockKey, resolveDetailBlocksDeep, resolveDetailLayout } from '../data/eventDetailLayout';
+import { pageOf, resolveBlockKey, resolveDetailLayout } from '../data/eventDetailLayout';
 import { EventCustomBlockView } from './EventCustomBlockView';
 import { EventDataPieceView, type DataPieceCtx } from './EventDataPieceView';
 import { dataPieceHasContent, mergedCoreText } from '../data/eventDataPieces';
@@ -63,52 +53,35 @@ import { useFormPreview } from './formPreview';
 import type { EventDetailBlockId, EventDetailPage, EventPageItem } from '../types';
 import { FaIcon } from './FaIcon';
 import { RaceCalendarView } from './RaceCalendarView';
-import { NoteTag, PriceTag } from './RegTags';
-import { MobileStepProgress } from './MobileStepProgress';
 import { MobileRegisterBar } from './MobileRegisterBar';
-import { SectionShortcuts } from './SectionShortcuts';
 import { ScheduleTimeline } from './ScheduleTimeline';
 import { HomeScrollMotion } from './HomeScrollMotion';
-import { NEW_ADDRESS, SavedAddressSelect } from './SavedAddressSelect';
 import { StickyCardCompact } from './StickyCardCompact';
 import { MascotAnim } from './MascotAnim';
 import { isTotalQuotaEnabled } from '../utils/eventConfig';
 import { DirectoryEmptyState, HeroRegionSelect, HeroSearchField, matchesSearchText, similarSearchTerms } from './DirectorySearch';
-import { RegistrationLabView, type LabShared } from './RegistrationLabView';
-import { ProductPicker, type PickerType } from './ProductPicker';
-import { SHIRT_STYLES, shirtStyleName, type ShirtStyleId } from '../data/mockShirtStyles';
-import { MascotSprite, MascotStepTrack } from './MascotRunner';
+import { RegistrationLabView, type LabLive, type LabShared } from './RegistrationLabView';
+import { type ShirtStyleId } from '../data/mockShirtStyles';
+import { MascotSprite } from './MascotRunner';
 import { reportInvalidFieldsWithin } from '../utils/formValidation';
-import {
-  CascadingAddressValue,
-  ThaiPostalAddressSelector,
-} from './ThaiPostalAddressSelector';
-import {
-  maskIdNumber,
-  sanitizeEnglishNameInput,
-  sanitizeThaiNameInput,
-} from '../utils/dateFormat';
+import type { CascadingAddressValue } from './ThaiPostalAddressSelector';
+import { maskIdNumber } from '../utils/dateFormat';
 import {
   EventStatusBadge,
   FulfillmentStatusBadge,
   PaymentStatusBadge,
   RegStatusBadge,
 } from './StatusBadges';
-import { RunnerCustomFieldsInputs } from './PublicEventView';
-import { CORE_STEP, answerText, fieldShown, isContentField, stepsShown, validateAnswers } from '../data/registrationForm';
+import { CORE_STEP, stepsShown, validateAnswers } from '../data/registrationForm';
 
-import { PhoneInput } from './PhoneInput';
 import { tx, txf } from '../i18n';
 import { FEATURES } from '../config/features';
 import {
   ageCheckMessage,
   evaluateCategoryAge,
   formatAgeBasis,
-  formatAgeGroupLabel,
   formatAgeLimit,
-  formatBasisDate,
 } from '../utils/age';
-import { IdNumberInput } from './IdNumberInput';
 /** Registration wizard steps: 1 start, 2 participant, 3 race-kit shirt, 4 souvenirs,
  *  5 address, 6 payment, 7 done. Step 4 is skipped when the event sells nothing. */
 /** 1-8 as before; the organizer's own steps (24 Nov 2026) sit between 2 and 3 as 2.1, 2.2, 2.3 */
@@ -129,7 +102,6 @@ interface CustomerPortalViewProps {
   organizations: Organization[];
   registrations: RegistrationRecord[];
   merchOrders: MerchOrderRecord[];
-  registrationSteps?: RegistrationStepDef[];
   platformProfileConfig?: PlatformProfileConfig;
   currentUser: UserAccount | null;
   onNavigate: (
@@ -171,7 +143,6 @@ interface CustomerPortalViewProps {
   /** storefront cart checkout (server checks stock for the whole cart in one go) */
   onCheckoutMerchCart: (payload: MerchCheckoutPayload) => Promise<MerchCheckoutResult>;
   /** 'b' renders the alternative registration layout (sandbox review only, cannot submit) */
-  registrationLayout?: 'a' | 'b';
   /** event-wide quota box on the event detail page (dev-dock mockup for now) */
   showQuotaBox?: boolean;
 }
@@ -184,7 +155,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   organizations,
   registrations,
   merchOrders,
-  registrationSteps = [],
   platformProfileConfig,
   currentUser,
   onNavigate,
@@ -196,7 +166,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   onCreateRegistrationAndOptionalAddon,
   onCompletePendingPayment,
   onCheckoutMerchCart,
-  registrationLayout = 'a',
   showQuotaBox = true,
 }) => {
   // Directory filters
@@ -356,9 +325,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   const [shipPhone, setShipPhone] = useState(
     currentUser?.runnerProfile?.phone ?? ''
   );
-  // saving a newly typed address into the profile address book (separate button)
-  const [savingShipAddr, setSavingShipAddr] = useState(false);
-  const [shipAddrNotice, setShipAddrNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
   const [shirtTouched, setShirtTouched] = useState(false);
   const [regCascadeAddr, setRegCascadeAddr] = useState<CascadingAddressValue>({
     country: 'Thailand',
@@ -369,13 +335,13 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     address: currentUser?.runnerProfile?.address ?? '199/8 ถ.ห้วยแก้ว',
   });
   const [acceptedRules, setAcceptedRules] = useState(false);
-  const [marketingConsent, setMarketingConsent] = useState(false);
+  // no consent checkbox on the form yet: bookings go out without marketing consent
+  const [marketingConsent] = useState(false);
   // payment terms on the payment step (required, like the event rules)
   const [acceptedPayTerms, setAcceptedPayTerms] = useState(false);
   const [customAnswers, setCustomAnswers] = useState<
     Record<string, string | boolean>
   >({});
-  const [step2Error, setStep2Error] = useState<string | null>(null);
   /** the check result of the organizer's questions, by question id (shown under each one) */
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [paymentChannel, setPaymentChannel] = useState<'promptpay' | 'card'>(
@@ -401,7 +367,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     setDetailTab(initialEventTab);
     setShowRegForm(false);
     setCustomAnswers({});
-    setStep2Error(null);
   }, [initialEventTab, selectedEventId]);
 
   React.useEffect(() => {
@@ -432,31 +397,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     });
   };
 
-  // Fill participant fields from a saved participant (or clear for a new one)
-  const applySavedParticipant = (pt: SavedParticipant | null) => {
-    setCustomAnswers({});
-    setRegFirstNameTh(pt?.firstName ?? '');
-    setRegLastNameTh(pt?.lastName ?? '');
-    setParticipantNameTh(pt ? `${pt.firstName} ${pt.lastName}`.trim() : '');
-    setRegNicknameTh(pt?.nickname ?? '');
-    setRegFirstNameEn(pt?.firstNameEn ?? '');
-    setRegLastNameEn(pt?.lastNameEn ?? '');
-    setRegNicknameEn(pt?.nicknameEn ?? '');
-    setParticipantNameEn(
-      pt ? `${pt.firstNameEn ?? ''} ${pt.lastNameEn ?? ''}`.trim() : ''
-    );
-    setRegDob(pt?.dateOfBirth ?? '');
-    setRegGender(pt?.gender ?? 'ไม่ระบุ');
-    setRegIdType(pt?.idType && pt.idType !== 'none' ? pt.idType : 'thai_id');
-    setRegIdNumber(pt?.idNumber ?? '');
-    setRegPhone(pt?.phone ?? '');
-    setEmergencyContact(
-      pt?.emergencyContactName ?? '',
-      pt?.emergencyContactRelation ?? '',
-      pt?.emergencyContactPhone ?? ''
-    );
-  };
-
   const applySelfProfile = () => {
     if (!currentUser) return;
     const p = currentUser.runnerProfile;
@@ -472,8 +412,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         : currentUser.fullNameEn;
     setParticipantNameEn(composedEn);
     setRegNicknameTh(p?.nickname ?? '');
-    setRegFirstNameEn(p?.firstNameEn ?? '');
-    setRegLastNameEn(p?.lastNameEn ?? '');
+    const enParts = (currentUser.fullNameEn ?? '').trim().split(/\s+/).filter(Boolean);
+    setRegFirstNameEn(p?.firstNameEn || enParts[0] || '');
+    setRegLastNameEn(p?.lastNameEn || enParts.slice(1).join(' ') || '');
+    // the payer is the runner themself
+    setBuyerName(`${first} ${last}`.trim() || currentUser.fullNameTh);
     setRegNicknameEn(p?.nicknameEn ?? '');
     setRegDob(p?.dateOfBirth ?? '');
     setRegGender(p?.gender ?? 'ไม่ระบุ');
@@ -679,35 +622,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     [selectedEvent, activeCategory, regDob, regGender]
   );
 
-  const addonLines = useMemo(
-    () =>
-      selectedEvent
-        ? addonItems
-            .map((l) => ({ ...l, prd: selectedEvent.products.find((p) => p.id === l.productId) }))
-            .filter((l): l is CartLine & { prd: EventProduct } => Boolean(l.prd))
-        : [],
-    [selectedEvent, addonItems]
-  );
-  const addonSatangTotal = addonLines.reduce((n, l) => n + l.prd.priceSatang * l.qty, 0);
-  // postage shown on the delivery step, itemised on the review step and added to the total;
-  // the server works it out again with the same helper
-  const regShipQuote = quoteRegistrationShipping(
-    selectedEvent ?? {},
-    kitDeliveryOption === 'postal' ? 'postal_shipping' : 'pickup_at_expo',
-    addonLines
-  );
-  const regKitFee = kitShippingFee(selectedEvent ?? {});
-  // the older inline form on the event page still picks a single souvenir: these read and
-  // write the first line only
-  const selectedAddonProduct: EventProduct | null = addonLines[0]?.prd ?? null;
-  const includeAddonId = addonLines[0]?.productId ?? 'none';
-  const addonSize = addonLines[0]?.size ?? 'M';
   const setIncludeAddonId = (id: string) => {
     const prd = selectedEvent?.products.find((p) => p.id === id);
     setAddonItems(prd ? [{ productId: prd.id, size: prd.availableSizes[0] ?? '-', qty: 1 }] : []);
   };
-  const setAddonSize = (size: string) =>
-    setAddonItems((prev) => (prev.length > 0 ? [{ ...prev[0], size }, ...prev.slice(1)] : prev));
 
   const myRegistrations = useMemo(() => {
     if (!currentUser) return [];
@@ -983,10 +901,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     setRegStep(8);
   };
 
-  const handleRegistrationSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    void submitRegistrationOrder(true);
-  };
 
   /* ================= SUBVIEW 3: MY TICKETS & MERCH ORDERS ================= */
   if (subView === 'my_orders') {
@@ -1270,1736 +1184,323 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     const org = organizations.find(
       (o) => o.id === selectedEvent.organizationId
     );
-    if (registrationLayout === 'b') {
-      // Layout B reads and writes this form's own state, so switching A <-> B keeps
-      // everything typed. The shipping text the live form submits is rebuilt here
-      // whenever B changes an address field.
-      const savedAddrs = currentUser?.runnerProfile?.savedAddresses ?? [];
-      const shipLine = (o: {
-        mode?: 'saved' | 'manual';
-        id?: string;
-        rec?: string;
-        ph?: string;
-        addr?: CascadingAddressValue;
-      }) => {
-        const mode = o.mode ?? shipAddrMode;
-        if (mode === 'saved') {
-          const a = savedAddrs.find((x) => x.id === (o.id ?? selectedSavedAddrId));
-          if (a) {
-            setRunnerShippingAddress(
-              `${a.recipientName} (${a.phone}) — ${a.address}, ต.${a.subdistrict} อ.${a.district} จ.${a.province} ${a.postalCode}`
-            );
-          }
-          return;
+    // Layout B reads and writes this form's own state, so switching A <-> B keeps
+    // everything typed. The shipping text the live form submits is rebuilt here
+    // whenever B changes an address field.
+    const savedAddrs = currentUser?.runnerProfile?.savedAddresses ?? [];
+    const shipLine = (o: {
+      mode?: 'saved' | 'manual';
+      id?: string;
+      rec?: string;
+      ph?: string;
+      addr?: CascadingAddressValue;
+    }) => {
+      const mode = o.mode ?? shipAddrMode;
+      if (mode === 'saved') {
+        const a = savedAddrs.find((x) => x.id === (o.id ?? selectedSavedAddrId));
+        if (a) {
+          setRunnerShippingAddress(
+            `${a.recipientName} (${a.phone}) — ${a.address}, ต.${a.subdistrict} อ.${a.district} จ.${a.province} ${a.postalCode}`
+          );
         }
-        const n = o.addr ?? regCascadeAddr;
-        setRunnerShippingAddress(
-          `${o.rec ?? shipRecipient} (${o.ph ?? shipPhone}) — ${n.address}, ต.${n.subdistrict} อ.${n.district} จ.${n.province} ${n.postalCode}`.trim()
-        );
-      };
-      const labShared: LabShared = {
-        step: [regStep, (v) => setRegStep(v as RegStep)],
-        optionId: [
-          selectedDivisionOption,
-          (id) => {
-            setSelectedDivisionOption(id);
-            // option ids are `<kind>-<categoryId>` (see registrationOptions)
-            const cat = selectedEvent.categories.find((c) => id.slice(id.indexOf('-') + 1) === c.id);
-            if (cat) setSelectedCatId(cat.id);
-          },
-        ],
-        catId: selectedCatId,
-        forSelf: [
-          regModeChosen ? registerForSelf : null,
-          (v) => {
-            setRegModeChosen(v !== null);
-            if (v !== null) setRegisterForSelf(v);
-          },
-        ],
-        savedId: [selectedParticipantId, setSelectedParticipantId],
-        buyerName: [buyerName, setBuyerName],
-        firstTh: [
-          regFirstNameTh,
-          (v) => {
-            setRegFirstNameTh(v);
-            setParticipantNameTh(`${v} ${regLastNameTh}`.trim());
-          },
-        ],
-        lastTh: [
-          regLastNameTh,
-          (v) => {
-            setRegLastNameTh(v);
-            setParticipantNameTh(`${regFirstNameTh} ${v}`.trim());
-          },
-        ],
-        firstEn: [
-          regFirstNameEn,
-          (v) => {
-            setRegFirstNameEn(v);
-            setParticipantNameEn(`${v} ${regLastNameEn}`.trim());
-          },
-        ],
-        lastEn: [
-          regLastNameEn,
-          (v) => {
-            setRegLastNameEn(v);
-            setParticipantNameEn(`${regFirstNameEn} ${v}`.trim());
-          },
-        ],
-        nickTh: [regNicknameTh, setRegNicknameTh],
-        nickEn: [regNicknameEn, setRegNicknameEn],
-        dob: [regDob, setRegDob],
-        gender: [regGender, setRegGender],
-        phone: [regPhone, setRegPhone],
-        idType: [regIdType === 'passport' ? 'passport' : 'thai_id', setRegIdType],
-        idNumber: [regIdNumber, setRegIdNumber],
-        emergencyName: [
-          emergencyName,
-          (v) => {
-            setEmergencyName(v);
-            setEmergencyRelation('');
-          },
-        ],
-        emergencyRelation: [emergencyRelation, setEmergencyRelation],
-        emergencyPhone: [emergencyPhone, setEmergencyPhone],
-        answers: [customAnswers, setCustomAnswers],
-        shirtSize: [
-          shirtSize,
-          (v) => {
-            setShirtSize(v);
-            setShirtTouched(true);
-          },
-        ],
-        shirtStyle: [shirtStyle, setShirtStyle],
-        addonItems: [addonItems, setAddonItems],
-        delivery: [kitDeliveryOption, setKitDeliveryOption],
-        addrName: [shipAddrName, setShipAddrName],
-        recipient: [
-          shipRecipient,
-          (v) => {
-            setShipRecipient(v);
-            shipLine({ rec: v });
-          },
-        ],
-        shipPhone: [
-          shipPhone,
-          (v) => {
-            setShipPhone(v);
-            shipLine({ ph: v });
-          },
-        ],
-        address: [
-          regCascadeAddr,
-          (v) => {
-            setRegCascadeAddr(v);
-            shipLine({ addr: v });
-          },
-        ],
-        addrMode: [
-          shipAddrMode,
-          (v) => {
-            setShipAddrMode(v);
-            shipLine({ mode: v });
-          },
-        ],
-        bookId: [
-          selectedSavedAddrId,
-          (v) => {
-            setSelectedSavedAddrId(v);
-            shipLine({ id: v });
-          },
-        ],
-        channel: [paymentChannel, setPaymentChannel],
-        acceptRules: [acceptedRules, setAcceptedRules],
-        acceptPayTerms: [acceptedPayTerms, setAcceptedPayTerms],
-      };
-      return (
-        <RegistrationLabView
-          shared={labShared}
-          key={selectedEvent.id}
-          event={selectedEvent}
-          organization={org}
-          currentUser={currentUser}
-          platformProfileConfig={platformProfileConfig}
-          openSeatsFor={(cat) => getCategoryOpenSeats(selectedEvent.id, cat)}
-          onBack={() => onNavigate('event_detail', selectedEvent.id, 'info_results')}
-        />
+        return;
+      }
+      const n = o.addr ?? regCascadeAddr;
+      setRunnerShippingAddress(
+        `${o.rec ?? shipRecipient} (${o.ph ?? shipPhone}) — ${n.address}, ต.${n.subdistrict} อ.${n.district} จ.${n.province} ${n.postalCode}`.trim()
       );
-    }
-    const hasSouvenirs = selectedEvent.products.length > 0;
-    // the organizer's own steps for this runner (right distance, with a question to answer)
+    };
+    const labShared: LabShared = {
+      step: [regStep, (v) => setRegStep(v as RegStep)],
+      optionId: [
+        selectedDivisionOption,
+        (id) => {
+          setSelectedDivisionOption(id);
+          // option ids are `<kind>-<categoryId>` (see registrationOptions)
+          const cat = selectedEvent.categories.find((c) => id.slice(id.indexOf('-') + 1) === c.id);
+          if (cat) setSelectedCatId(cat.id);
+        },
+      ],
+      catId: selectedCatId,
+      forSelf: [
+        regModeChosen ? registerForSelf : null,
+        (v) => {
+          setRegModeChosen(v !== null);
+          if (v !== null) setRegisterForSelf(v);
+        },
+      ],
+      savedId: [selectedParticipantId, setSelectedParticipantId],
+      buyerName: [buyerName, setBuyerName],
+      firstTh: [
+        regFirstNameTh,
+        (v) => {
+          setRegFirstNameTh(v);
+          setParticipantNameTh(`${v} ${regLastNameTh}`.trim());
+        },
+      ],
+      lastTh: [
+        regLastNameTh,
+        (v) => {
+          setRegLastNameTh(v);
+          setParticipantNameTh(`${regFirstNameTh} ${v}`.trim());
+        },
+      ],
+      firstEn: [
+        regFirstNameEn,
+        (v) => {
+          setRegFirstNameEn(v);
+          setParticipantNameEn(`${v} ${regLastNameEn}`.trim());
+        },
+      ],
+      lastEn: [
+        regLastNameEn,
+        (v) => {
+          setRegLastNameEn(v);
+          setParticipantNameEn(`${regFirstNameEn} ${v}`.trim());
+        },
+      ],
+      nickTh: [regNicknameTh, setRegNicknameTh],
+      nickEn: [regNicknameEn, setRegNicknameEn],
+      dob: [regDob, setRegDob],
+      gender: [regGender, setRegGender],
+      phone: [regPhone, setRegPhone],
+      idType: [regIdType === 'passport' ? 'passport' : 'thai_id', setRegIdType],
+      idNumber: [regIdNumber, setRegIdNumber],
+      emergencyName: [
+        emergencyName,
+        (v) => {
+          setEmergencyName(v);
+          setEmergencyRelation('');
+        },
+      ],
+      emergencyRelation: [emergencyRelation, setEmergencyRelation],
+      emergencyPhone: [emergencyPhone, setEmergencyPhone],
+      answers: [customAnswers, setCustomAnswers],
+      shirtSize: [
+        shirtSize,
+        (v) => {
+          setShirtSize(v);
+          setShirtTouched(true);
+        },
+      ],
+      shirtStyle: [shirtStyle, setShirtStyle],
+      addonItems: [addonItems, setAddonItems],
+      delivery: [kitDeliveryOption, setKitDeliveryOption],
+      addrName: [shipAddrName, setShipAddrName],
+      recipient: [
+        shipRecipient,
+        (v) => {
+          setShipRecipient(v);
+          shipLine({ rec: v });
+        },
+      ],
+      shipPhone: [
+        shipPhone,
+        (v) => {
+          setShipPhone(v);
+          shipLine({ ph: v });
+        },
+      ],
+      address: [
+        regCascadeAddr,
+        (v) => {
+          setRegCascadeAddr(v);
+          shipLine({ addr: v });
+        },
+      ],
+      addrMode: [
+        shipAddrMode,
+        (v) => {
+          setShipAddrMode(v);
+          shipLine({ mode: v });
+        },
+      ],
+      bookId: [
+        selectedSavedAddrId,
+        (v) => {
+          setSelectedSavedAddrId(v);
+          shipLine({ id: v });
+        },
+      ],
+      channel: [paymentChannel, setPaymentChannel],
+      acceptRules: [acceptedRules, setAcceptedRules],
+      acceptPayTerms: [acceptedPayTerms, setAcceptedPayTerms],
+    };
+    // what layout B needs besides its state: the same checks, the organizer's steps, the booking
     const formCtx = { raceDistance: activeCategory?.code, shirtSize };
-    const runnerSteps = stepsShown(selectedEvent.formCustomSteps, selectedEvent.customFields, customAnswers, formCtx);
-    const stepPos = (i: number) => 2 + (i + 1) / 10;
-    const firstAfterInfo = runnerSteps.length > 0 ? stepPos(0) : 3;
-    const lastBeforeShop = runnerSteps.length > 0 ? stepPos(runnerSteps.length - 1) : 2;
-    const stepLabels: { step: RegStep; label: string }[] = [
-      { step: 1, label: 'เริ่ม' },
-      { step: 2, label: 'ข้อมูล' },
-      ...runnerSteps.map((st, i) => ({ step: stepPos(i), label: st.title })),
-      { step: 3, label: 'สินค้า' },
-      ...(hasSouvenirs ? [{ step: 4 as RegStep, label: 'ของที่ระลึก' }] : []),
-      { step: 5, label: 'ที่อยู่' },
-      { step: 6, label: 'สรุป' },
-      { step: 7, label: 'ชำระเงิน' },
-    ];
-
-    const getShirtSpec = (size: ShirtSizeCode) =>
-      resolveShirtSpec(
-        size,
-        currentUser?.runnerProfile?.preferredShirtType ?? 'Unisex',
-        platformProfileConfig?.shirtSizes,
-        selectedEvent.customSizeChart
-      );
-
-    // สร้างตัวเลือกรายการสมัครแบบการ์ด Radio เรียงแนวตั้งตามระยะของงานวิ่ง
-    const registrationOptions = [
-      {
-        optionId: `alumni-${selectedEvent.categories[0]?.id ?? 'cat'}`,
-        catId: selectedEvent.categories[0]?.id ?? '',
-        label: `ศิษย์เก่า / สมาชิกชมรม ${selectedEvent.titleTh.split(' ')[0]}`,
-        subLabel: `${selectedEvent.categories[0]?.name ?? ''} (${
-          selectedEvent.categories[0]?.code ?? ''
-        })`,
-      },
-      ...selectedEvent.categories.flatMap((cat) => [
-        {
-          optionId: `female-${cat.id}`,
-          catId: cat.id,
-          label: `นักวิ่งใหม่ (หญิง) : ${cat.code.toUpperCase()}`,
-          subLabel: `${cat.name} · ปล่อยตัว ${cat.startTimeLocal} น.`,
-        },
-        {
-          optionId: `male-${cat.id}`,
-          catId: cat.id,
-          label: `นักวิ่งใหม่ (ชาย) : ${cat.code.toUpperCase()}`,
-          subLabel: `${cat.name} · ปล่อยตัว ${cat.startTimeLocal} น.`,
-        },
-      ]),
-    ];
-
-    const currentPickedOptionId =
-      selectedDivisionOption ||
-      registrationOptions.find((o) => o.catId === activeCategory?.id)
-        ?.optionId ||
-      registrationOptions[0]?.optionId ||
-      '';
-
-    return (
-      <main className="event-reg-page-shell">
-        <div className="event-reg-split-frame">
-          {/* EVENT BANNER (top): cover + scrim, back, title and key facts */}
-          <header
-            className={`reg-banner ${
-              selectedEvent.coverImageUrl ? 'has-cover-photo' : 'has-cover-motif'
-            }`}
-            aria-label={tx("ข้อมูลงานวิ่งที่กำลังสมัคร")}
+    const ownSteps = stepsShown(selectedEvent.formCustomSteps, selectedEvent.customFields, customAnswers, formCtx);
+    const checkStep = (step: number, scope: HTMLElement | null): string | null => {
+      if (step === 1) {
+        if (!selectedCatId && selectedEvent.categories[0]) setSelectedCatId(selectedEvent.categories[0].id);
+        return null;
+      }
+      if (!activeCategory) return null;
+      if (step === 2) {
+        if (!regModeChosen) return 'กรุณาเลือกว่าจะสมัครให้ตนเองหรือสมัครให้ผู้อื่นก่อน';
+        // the organizer's questions are checked together with the runner fields, so every
+        // missing answer is marked at once (they used to wait until the runner fields were done)
+        const problems = validateAnswers(selectedEvent.customFields ?? [], customAnswers, formCtx, {
+          steps: selectedEvent.formCustomSteps ?? [],
+          stepId: CORE_STEP,
+        });
+        setFormErrors(problems);
+        if (!reportInvalidFieldsWithin(scope)) return 'กรุณากรอกช่องที่มีเครื่องหมาย * ให้ครบ ช่องที่ยังไม่ครบถูกไฮไลต์ไว้';
+        if (!regFirstNameEn.trim() || !regLastNameEn.trim() || !buyerName.trim()) {
+          return 'กรุณากรอกชื่อ-นามสกุลภาษาอังกฤษของผู้เข้าแข่งขันให้ครบ';
+        }
+        if (regIdType === 'thai_id' && regIdNumber.trim() && regIdNumber.trim().length !== 13) {
+          return 'เลขบัตรประจำตัวประชาชนต้องครบ 13 หลัก';
+        }
+        if (regAgeCheck && !regAgeCheck.eligible) return ageCheckMessage(regAgeCheck, activeCategory);
+        const first = Object.values(problems)[0];
+        if (first) return first;
+        if (!shirtTouched) {
+          if (registerForSelf) {
+            applyPreferredShirt(currentUser?.runnerProfile?.preferredShirtSize);
+          } else {
+            const pt = (currentUser?.runnerProfile?.savedParticipants ?? []).find((x) => x.id === selectedParticipantId);
+            applyPreferredShirt(pt?.preferredShirtSize);
+          }
+        }
+        return null;
+      }
+      if (step === 5 && kitDeliveryOption === 'postal' && !reportInvalidFieldsWithin(scope)) {
+        return 'กรุณากรอกชื่อผู้รับ หมายเลขโทรศัพท์ และที่อยู่จัดส่งให้ครบถ้วน ช่องที่ยังไม่ครบถูกไฮไลต์ไว้';
+      }
+      if (step > 2 && step < 3) {
+        const st = ownSteps[Math.round((step - 2) * 10) - 1];
+        if (!st) return null;
+        const problems = validateAnswers(selectedEvent.customFields ?? [], customAnswers, formCtx, {
+          steps: selectedEvent.formCustomSteps ?? [],
+          stepId: st.id,
+        });
+        setFormErrors(problems);
+        return Object.values(problems)[0] ?? null;
+      }
+      return null;
+    };
+    const labLive: LabLive = {
+      ownSteps,
+      check: checkStep,
+      errors: formErrors,
+      clearError: (id) =>
+        setFormErrors((prev) => {
+          if (!(id in prev)) return prev;
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        }),
+      submit: () => void submitRegistrationOrder(true),
+      submitting,
+      payError: (
+        <>
+            {checkoutError && (
+              <div className="error-callout" role="alert">
+                <IconAlert size={17} />
+                <div className="callout-flex">
+                  <span>{tx(checkoutError)}</span>
+                  {currentUser &&
+                    (FEATURES.emailVerification
+                      ? !currentUser.emailVerified
+                      : !currentUser.contactEmail) && (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={onOpenAccountSecurity}
+                    >
+                      {FEATURES.emailVerification
+                        ? tx("เพิ่มและยืนยันอีเมล")
+                        : tx("เพิ่มอีเมล")}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+            {submitting && (
+              <div className="reg-submit-wait" role="status" aria-live="polite">
+                <MascotSprite pose="run" size={34} />
+                <span>{tx("กำลังกันที่และยืนยันคำสั่งซื้อ… กรุณาอย่าปิดหน้านี้")}</span>
+              </div>
+            )}
+        </>
+      ),
+      done: createdResult ? (
+          <RegistrationDone
+            title={
+              createdResult.reg.registrationStatus === 'confirmed'
+                ? tx('สมัครวิ่งและชำระเงินสำเร็จ')
+                : tx('สร้างใบจองโควตาสำเร็จ (รอผลชำระเงินภายใน 15 นาที)')
+            }
+            subtitle={
+              <>
+                {tx('บันทึกใบสมัครด้วยฟอร์มเวอร์ชัน')}{' '}
+                <span className="mono-code">{selectedEvent.publishedFormVersion ?? 'v1.2-published'}</span>{' '}
+                {tx('เรียบร้อยแล้ว')}
+              </>
+            }
+            items={[
+              { label: tx('รหัสใบสมัครวิ่ง'), value: tx(createdResult.reg.regCode), mono: true },
+              { label: tx('ผู้เข้าแข่งขัน'), value: tx(createdResult.reg.participantNameTh) },
+              ...(activeCategory ? [{ label: tx('ระยะ'), value: tx(activeCategory.name) }] : []),
+              { label: tx('เสื้อตามสิทธิ์สมัคร'), value: `${tx('ไซส์')} ${tx(createdResult.reg.shirtSize)}` },
+              { label: tx('QR Token รับอุปกรณ์'), value: tx(createdResult.reg.qrCheckInToken), mono: true },
+              ...(createdResult.addonOrders ?? []).map((o) => ({
+                label: `${tx(o.productNameTh)}${o.variantSize !== '-' ? ` · ${o.variantSize}` : ''} × ${o.quantity}`,
+                value: o.merchOrderCode,
+                mono: true,
+              })),
+              {
+                label: tx('ยอดค่าสมัครสุทธิ'),
+                value: formatThb(createdResult.reg.snapshotTotalChargedSatang, true),
+                accent: true,
+              },
+            ]}
           >
-            <div className="poster-cover-media" aria-hidden="true">
-              <EventCoverMedia
-                event={selectedEvent}
-                illustrated
-                className="poster-cover-img"
-              />
-              <div className="poster-cover-scrim" />
-            </div>
+            <button type="button" className="btn-primary" onClick={() => onNavigate('my_orders', null)}>
+              {tx('ไปหน้าบัตรวิ่งและคำสั่งซื้อของฉัน')}
+            </button>
             <button
               type="button"
-              className="reg-banner-back"
-              aria-label={tx("กลับหน้ารายละเอียดงานวิ่ง")}
-              onClick={() =>
-                onNavigate('event_detail', selectedEvent.id, 'info_results')
-              }
-            >
-              <IconArrowLeft size={15} />
-              <span>{tx("กลับ")}</span>
-            </button>
-            <div className="reg-banner-copy">
-              <h1 className="reg-banner-title">
-                {selectedEvent.titleEn || selectedEvent.titleTh}
-              </h1>
-              <p className="reg-banner-meta">
-                <span className="reg-banner-org">
-                  {tx(org?.nameTh ?? "องค์กรผู้จัดงานวิ่ง กระต่าย")}
-                </span>
-                <span>
-                  <IconCalendar size={14} />
-                  {tx(selectedEvent.eventDate)}
-                </span>
-                <span>
-                  <IconMapPin size={14} />
-                  {tx(selectedEvent.venue)} · {tx(selectedEvent.province)}
-                </span>
-                {activeCategory && (
-                  <span>
-                    <IconFlag size={14} />
-                    {tx(activeCategory.name)}
-                  </span>
-                )}
-              </p>
-            </div>
-            {activeCategory && (
-              <PriceTag
-                onDark
-                satang={
-                  calculateFeeQuote(
-                    getCurrentTier(activeCategory).priceSatang,
-                    selectedEvent.feeBearerPolicy
-                  ).runnerNetPaySatang
-                }
-              />
-            )}
-          </header>
-
-          {/* STEP-BY-STEP WIZARD (below the banner) */}
-          <section
-            className="event-reg-wizard-pane"
-            aria-label={tx("ขั้นตอนการสมัครเข้าร่วมงานวิ่ง")}
-          >
-            {formPreview.active && (
-              <p className="form-preview-banner" role="status">
-                {tx('ตัวอย่างฟอร์มสมัคร — แสดงคำถามที่ยังไม่เผยแพร่ กรอกลองได้ แต่ไม่ส่งใบสมัครจริง')}
-              </p>
-            )}
-            {regStep !== 8 && (
-            <>
-            {/* 6-STEP CONNECTED CIRCLE PROGRESS STEPPER */}
-            <nav
-              ref={stepperRef}
-              className="circle-stepper-bar"
-              aria-label={tx("ความคืบหน้าขั้นตอนการสมัคร")}
-            >
-              {stepLabels.map((item, idx) => {
-                const isCurrent = regStep === item.step;
-                const isDone = regStep > item.step;
-                return (
-                  <React.Fragment key={item.step}>
-                    <button
-                      type="button"
-                      className={`circle-step-node ${
-                        isCurrent ? 'active' : isDone ? 'done' : ''
-                      }`}
-                      onClick={() => {
-                        if (item.step < regStep || formPreview.active) {
-                          setRegStep(item.step);
-                        }
-                      }}
-                    >
-                      <span className="circle-step-label">{tx(item.label)}</span>
-                      <span className="circle-step-ring" aria-hidden="true">
-                        {isDone && <IconCheckCircle size={14} />}
-                      </span>
-                    </button>
-                    {idx < stepLabels.length - 1 && (
-                      <div
-                        className={`circle-stepper-line ${
-                          regStep > item.step ? 'line-done' : ''
-                        }`}
-                        aria-hidden="true"
-                      />
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </nav>
-            <MascotStepTrack
-              stepperRef={stepperRef}
-              stepIndex={Math.max(0, stepLabels.findIndex((s) => s.step === regStep))}
-              complete={false}
-            />
-            {/* phones: current step + segmented bar instead of 7 squeezed circles */}
-            <MobileStepProgress
-              steps={stepLabels}
-              current={regStep}
-              complete={false}
-              onJump={(step) => {
-                if (step < regStep || formPreview.active) setRegStep(step);
+              className="btn-secondary"
+              onClick={() => {
+                setCreatedResult(null);
+                setRegStep(1);
               }}
-            />
-            </>
-            )}
-
-            {/* STEP 1: เริ่ม — เลือกประเภทการสมัคร */}
-            {regStep === 1 && (
-              <div className="reg-step-body">
-                <h2 className="reg-step-accent-heading">{tx("เลือกประเภทการสมัคร")}</h2>
-
-                <div
-                  className="reg-radio-cards-stack"
-                  role="radiogroup"
-                  aria-label={tx("เลือกประเภทการสมัคร")}
-                >
-                  {registrationOptions.map((opt) => {
-                    const cat =
-                      selectedEvent.categories.find(
-                        (c) => c.id === opt.catId
-                      ) ?? selectedEvent.categories[0];
-                    const tier = cat ? getCurrentTier(cat) : null;
-                    const quote = tier
-                      ? calculateFeeQuote(
-                          tier.priceSatang,
-                          selectedEvent.feeBearerPolicy
-                        )
-                      : null;
-                    const openCatSeats = cat
-                      ? getCategoryOpenSeats(selectedEvent.id, cat)
-                      : 0;
-                    const isSelected = currentPickedOptionId === opt.optionId;
-
-                    const isFull = openCatSeats <= 0;
-                    return (
-                      <label
-                        key={opt.optionId}
-                        className={`reg-category-radio-card ${
-                          isSelected ? 'selected' : ''
-                        } ${isFull ? 'disabled' : ''}`}
-                      >
-                        <input
-                          type="radio"
-                          name="event-reg-cat-option"
-                          disabled={isFull}
-                          checked={isSelected}
-                          onChange={() => {
-                            setSelectedDivisionOption(opt.optionId);
-                            setSelectedCatId(opt.catId);
-                          }}
-                        />
-                        <span className="custom-radio-circle" aria-hidden="true" />
-                        <div className="reg-radio-card-copy">
-                          <strong>{tx(opt.label)}</strong>
-                          <span className="muted-inline">{tx(opt.subLabel)}</span>
-                          <span className="reg-tag-row">
-                            {quote && <PriceTag satang={quote.runnerNetPaySatang} />}
-                          </span>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-
-                <div className="reg-step-footer-center">
-                  <button
-                    type="button"
-                    className="btn-primary reg-next-pill-btn"
-                    onClick={() => {
-                      if (!selectedCatId && selectedEvent.categories[0]) {
-                        setSelectedCatId(selectedEvent.categories[0].id);
-                      }
-                      setRegStep(2);
-                    }}
-                  >
-                    {tx("ถัดไป")}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 2: ข้อมูล — ข้อมูลผู้สมัคร & คำถามเฉพาะงาน */}
-            {regStep === 2 && activeCategory && (
-              <div className="reg-step-body">
-                <div className="reg-step-head">
-                <h2 className="reg-step-accent-heading">
-                  {tx("กรอกข้อมูลผู้เข้าแข่งขัน (")}{tx(activeCategory.name)})
-                </h2>
-
-                {!currentUser && (
-                  <div className="login-prompt-inline">
-                    <div>
-                      <strong>{tx("ยังไม่ได้เข้าสู่ระบบ:")}</strong>{' '}
-                      {tx("คุณสามารถกรอกข้อมูลไว้ก่อนได้ และระบบจะให้ยืนยันตัวตนก่อนชำระเงินในขั้นตอนที่ 5")}
-                    </div>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() =>
-                        onRequireLoginWithIntent({
-                          surface: 'events',
-                          eventId: selectedEvent.id,
-                          eventTab: 'register',
-                          label: `สมัครวิ่ง ${selectedEvent.titleTh}`,
-                        })
-                      }
-                    >
-                      {tx("เข้าสู่ระบบ / สมัครบัญชี")}
-                    </button>
-                  </div>
-                )}
-
-                {/* เลือกก่อนเข้าฟอร์ม: สมัครให้ตนเอง / สมัครให้ผู้อื่น */}
-                <div
-                  className={`reg-radio-cards-stack reg-mode-choice ${
-                    regModeChosen ? 'is-compact' : ''
-                  }`}
-                  role="radiogroup"
-                  aria-label={tx("เลือกผู้เข้าแข่งขัน")}
-                >
-                  <label
-                    className={`reg-category-radio-card ${
-                      regModeChosen && registerForSelf ? 'selected' : ''
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="reg-mode"
-                      checked={regModeChosen && registerForSelf}
-                      onChange={() => {
-                        setRegisterForSelf(true);
-                        setRegModeChosen(true);
-                        setStep2Error(null);
-                        applySelfProfile();
-                        setShirtTouched(false);
-                        applyPreferredShirt(
-                          currentUser?.runnerProfile?.preferredShirtSize
-                        );
-                      }}
-                    />
-                    <span className="custom-radio-circle" aria-hidden="true" />
-                    <div className="reg-radio-card-copy">
-                      <strong>{tx("สมัครให้ตนเอง")}</strong>
-                      <span className="muted-inline">
-                        {tx("ดึงข้อมูลจากโปรไฟล์นักวิ่งของคุณมาเติมให้อัตโนมัติ")}
-                      </span>
-                    </div>
-                  </label>
-                  <label
-                    className={`reg-category-radio-card ${
-                      regModeChosen && !registerForSelf ? 'selected' : ''
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="reg-mode"
-                      checked={regModeChosen && !registerForSelf}
-                      onChange={() => {
-                        setRegisterForSelf(false);
-                        setRegModeChosen(true);
-                        setStep2Error(null);
-                        const saved =
-                          currentUser?.runnerProfile?.savedParticipants ?? [];
-                        setShirtTouched(false);
-                        if (saved.length > 0) {
-                          setSelectedParticipantId(saved[0].id);
-                          applySavedParticipant(saved[0]);
-                          applyPreferredShirt(saved[0].preferredShirtSize);
-                        } else {
-                          setSelectedParticipantId('new');
-                          applySavedParticipant(null);
-                        }
-                      }}
-                    />
-                    <span className="custom-radio-circle" aria-hidden="true" />
-                    <div className="reg-radio-card-copy">
-                      <strong>{tx("สมัครให้ผู้อื่น")}</strong>
-                      <span className="muted-inline">
-                        {tx("กรอกข้อมูลผู้เข้าแข่งขันคนอื่น ระบบจะบันทึกไว้ให้เลือกใช้ครั้งถัดไป")}
-                      </span>
-                    </div>
-                  </label>
-                </div>
-
-                </div>
-
-                {regModeChosen && (
-                  <div className="reg-step-grid">
-                    <div className="reg-step-col">
-                  {regModeChosen && !registerForSelf && (
-                    <div className="form-row">
-                      <label htmlFor="p2-saved-part">
-                        {tx("เลือกผู้สมัครที่เคยกรอกไว้")}
-                      </label>
-                      <select
-                        id="p2-saved-part"
-                        value={selectedParticipantId}
-                        onChange={(e) => {
-                          const id = e.target.value;
-                          setSelectedParticipantId(id);
-                          const found = (
-                            currentUser?.runnerProfile?.savedParticipants ?? []
-                          ).find((x) => x.id === id);
-                          applySavedParticipant(found ?? null);
-                          setShirtTouched(false);
-                          applyPreferredShirt(found?.preferredShirtSize);
-                        }}
-                      >
-                        {(currentUser?.runnerProfile?.savedParticipants ?? []).map(
-                          (pt) => {
-                            const enName =
-                              `${pt.firstNameEn ?? ''} ${pt.lastNameEn ?? ''}`.trim();
-                            const thName = `${pt.firstName} ${pt.lastName}`.trim();
-                            const disp =
-                              enName && thName
-                                ? `${enName} (${thName})`
-                                : enName || thName;
-                            const nick = pt.nicknameEn || pt.nickname;
-                            return (
-                              <option key={pt.id} value={pt.id}>
-                                {disp}
-                                {nick ? ` · ${nick}` : ''}
-                              </option>
-                            );
-                          }
-                        )}
-                        <option value="new">{tx("+ เพิ่มผู้สมัครใหม่")}</option>
-                      </select>
-                    </div>
-                  )}
-                    {!registerForSelf && (
-                      <div className="form-row">
-                        <label htmlFor="p2-buyer">
-                          {<RequiredFieldText text={tx("ชื่อ-นามสกุลผู้ซื้อคำสั่งซื้อ (ผู้ชำระเงิน) *")} />}
-                        </label>
-                        <input
-                          id="p2-buyer"
-                          type="text"
-                          value={buyerName}
-                          onChange={(e) => setBuyerName(e.target.value)}
-                          required
-                        />
-                      </div>
-                    )}
-
-                    <fieldset className="reg-field-group">
-                      <legend>
-                        {tx("ชื่อผู้เข้าแข่งขัน")}{' '}
-                        <span className="reg-legend-note">
-                          · {tx("ชื่ออังกฤษแสดงบนป้าย BIB")}
-                        </span>
-                      </legend>
-                      {/* two fields per row: English name (required, printed on the BIB), Thai name, nicknames */}
-                      <div className="reg-name-grid">
-                        <div className="form-row">
-                          <label htmlFor="p2-fname-en">{<RequiredFieldText text="First Name (EN) *" />}</label>
-                          <input
-                            id="p2-fname-en"
-                            type="text"
-                            value={regFirstNameEn}
-                            onChange={(e) => {
-                              const v = sanitizeEnglishNameInput(e.target.value);
-                              setRegFirstNameEn(v);
-                              setParticipantNameEn(`${v} ${regLastNameEn}`.trim());
-                            }}
-                            placeholder="e.g. Kanpitcha"
-                            required
-                          />
-                        </div>
-                        <div className="form-row">
-                          <label htmlFor="p2-lname-en">{<RequiredFieldText text="Last Name (EN) *" />}</label>
-                          <input
-                            id="p2-lname-en"
-                            type="text"
-                            value={regLastNameEn}
-                            onChange={(e) => {
-                              const v = sanitizeEnglishNameInput(e.target.value);
-                              setRegLastNameEn(v);
-                              setParticipantNameEn(`${regFirstNameEn} ${v}`.trim());
-                            }}
-                            placeholder="e.g. Wattanakul"
-                            required
-                          />
-                        </div>
-                        <div className="form-row">
-                          <label htmlFor="p2-fname-th">{tx("ชื่อจริง (ภาษาไทย)")}</label>
-                          <input
-                            id="p2-fname-th"
-                            type="text"
-                            value={regFirstNameTh}
-                            onChange={(e) => {
-                              const v = sanitizeThaiNameInput(e.target.value);
-                              setRegFirstNameTh(v);
-                              setParticipantNameTh(
-                                `${v} ${regLastNameTh}`.trim()
-                              );
-                            }}
-                            placeholder={tx("เช่น กานต์พิชชา")}
-                          />
-                        </div>
-                        <div className="form-row">
-                          <label htmlFor="p2-lname-th">{tx("นามสกุล (ภาษาไทย)")}</label>
-                          <input
-                            id="p2-lname-th"
-                            type="text"
-                            value={regLastNameTh}
-                            onChange={(e) => {
-                              const v = sanitizeThaiNameInput(e.target.value);
-                              setRegLastNameTh(v);
-                              setParticipantNameTh(
-                                `${regFirstNameTh} ${v}`.trim()
-                              );
-                            }}
-                            placeholder={tx("เช่น วัฒนากูล")}
-                          />
-                        </div>
-                        <div className="form-row">
-                          <label htmlFor="p2-nick-th">{tx("ชื่อเล่น")}</label>
-                          <input
-                            id="p2-nick-th"
-                            type="text"
-                            value={regNicknameTh}
-                            onChange={(e) =>
-                              setRegNicknameTh(
-                                sanitizeThaiNameInput(e.target.value)
-                              )
-                            }
-                            placeholder={tx("เช่น กานต์")}
-                          />
-                        </div>
-                        <div className="form-row">
-                          <label htmlFor="p2-nick-en">Nickname (EN)</label>
-                          <input
-                            id="p2-nick-en"
-                            type="text"
-                            value={regNicknameEn}
-                            onChange={(e) =>
-                              setRegNicknameEn(
-                                sanitizeEnglishNameInput(e.target.value)
-                              )
-                            }
-                            placeholder="e.g. Kan"
-                          />
-                        </div>
-                      </div>
-                    </fieldset>
-
-
-                    </div>
-
-                    <div className="reg-step-col">
-                    <fieldset className="reg-field-group">
-                      <legend>{tx("ข้อมูลส่วนตัวและเอกสารยืนยันตัวตน")}</legend>
-                      <div className="form-grid-3">
-                        <div className="form-row reg-span-all">
-                          <label htmlFor="p2-dob">
-                            {tx("วันเกิด")}
-                          </label>
-                          <DateOfBirthInput
-                            id="p2-dob"
-                            valueIso={regDob}
-                            onChangeIso={setRegDob}
-                            ariaDescribedBy="p2-dob-age"
-                          />
-                        </div>
-                          {regAgeCheck && (
-                            <p
-                              id="p2-dob-age"
-                              className={`reg-age-hint reg-span-all ${
-                                regAgeCheck.eligible ? '' : 'is-error'
-                              }`}
-                              aria-live="polite"
-                            >
-                              {regAgeCheck.ageYears !== null ? (
-                                <>
-                                  {txf(
-                                    'อายุ {0} ปี ณ {1}',
-                                    regAgeCheck.ageYears,
-                                    formatBasisDate(regAgeCheck.basisDate)
-                                  )}
-                                  {regAgeCheck.group &&
-                                    ` · ${txf('รุ่น {0}', formatAgeGroupLabel(regAgeCheck.group))}`}
-                                  {regAgeCheck.unassigned &&
-                                    ` · ${tx('ยังไม่เข้ารุ่นอายุ (ระบุเพศชายหรือหญิงเพื่อจัดรุ่น)')}`}
-                                  {!regAgeCheck.eligible &&
-                                    ` · ${txf('ระยะนี้รับ{0}', formatAgeLimit(activeCategory) ?? '')}`}
-                                </>
-                              ) : regAgeCheck.status === 'missing_dob' ? (
-                                txf(
-                                  'ระยะนี้กำหนด{0} · {1} กรุณาระบุวันเกิด',
-                                  formatAgeLimit(activeCategory) ?? tx('รุ่นอายุ'),
-                                  formatAgeBasis(regAgeCheck.basis)
-                                )
-                              ) : regAgeCheck.status === 'invalid_dob' ? (
-                                tx('วันเกิดไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง')
-                              ) : null}
-                            </p>
-                          )}
-                        <div className="form-row reg-span-all">
-                          <label htmlFor="p2-phone">{tx("เบอร์โทรศัพท์ผู้เข้าแข่งขัน")}</label>
-                          <PhoneInput
-                            id="p2-phone"
-                            value={regPhone}
-                            onChange={(next) => setRegPhone(next)}
-                          />
-                        </div>
-                      </div>
-                      <div className="form-grid-2">
-                        <div className="form-row">
-                          <label htmlFor="p2-gender">{tx("เพศ")}</label>
-                          <select
-                            id="p2-gender"
-                            value={regGender}
-                            onChange={(e) =>
-                              setRegGender(
-                                e.target.value as 'ชาย' | 'หญิง' | 'ไม่ระบุ'
-                              )
-                            }
-                          >
-                            <option value="ไม่ระบุ">{tx("ไม่ระบุ")}</option>
-                            <option value="ชาย">{tx("ชาย")}</option>
-                            <option value="หญิง">{tx("หญิง")}</option>
-                          </select>
-                        </div>
-                        <div className="form-row">
-                          <label htmlFor="p2-idtype">{tx("ประเภทเอกสาร")}</label>
-                          <select
-                            id="p2-idtype"
-                            value={regIdType}
-                            onChange={(e) =>
-                              setRegIdType(
-                                e.target.value as 'none' | 'thai_id' | 'passport'
-                              )
-                            }
-                          >
-                            <option value="thai_id">
-                              {tx("บัตรประจำตัวประชาชน 13 หลัก")}
-                            </option>
-                            <option value="passport">
-                              {tx("หนังสือเดินทาง (Passport)")}
-                            </option>
-                          </select>
-                        </div>
-                        <div className="form-row reg-span-all">
-                          <label htmlFor="p2-idnum">
-                            {regIdType === 'thai_id'
-                              ? tx("เลขบัตรประจำตัวประชาชน")
-                              : tx("เลขหนังสือเดินทาง")}
-                          </label>
-                          <IdNumberInput
-                            id="p2-idnum"
-                            idType={regIdType}
-                            className="mono-code"
-                            value={regIdNumber}
-                            onValueChange={setRegIdNumber}
-                            placeholder={
-                              regIdType === 'thai_id'
-                                ? 'X-XXXX-XXXXX-XX-X'
-                                : 'Passport No.'
-                            }
-                          />
-                        </div>
-                      </div>
-                    </fieldset>
-
-                    </div>
-
-                    <div className="reg-step-col">
-                    <div className="reg-field-group">
-                      <div className="form-row">
-                        <label htmlFor="p2-emerg">
-                          {<RequiredFieldText text={tx("ชื่อผู้ติดต่อฉุกเฉิน *")} />}
-                        </label>
-                        <input
-                          id="p2-emerg"
-                          type="text"
-                          value={emergencyName}
-                          onChange={(e) => {
-                            setEmergencyName(e.target.value);
-                            setEmergencyRelation('');
-                          }}
-                          placeholder={tx("เช่น วีระ วัฒนากูล")}
-                          required
-                        />
-                        {emergencyRelation && (
-                          <span className="muted-inline">
-                            {txf("ความสัมพันธ์: {0}", tx(emergencyRelation))}
-                          </span>
-                        )}
-                      </div>
-                      <div className="form-row">
-                        <label htmlFor="p2-emerg-phone">
-                          {<RequiredFieldText text={tx("เบอร์โทรผู้ติดต่อฉุกเฉิน *")} />}
-                        </label>
-                        <PhoneInput
-                          id="p2-emerg-phone"
-                          value={emergencyPhone}
-                          onChange={setEmergencyPhone}
-                          required
-                        />
-                        {registerForSelf &&
-                          (currentUser?.runnerProfile?.emergencyContacts ?? []).length > 0 && (
-                          <div className="reg-ec-pick">
-                            <select
-                              aria-label={tx("เลือกผู้ติดต่อฉุกเฉินจากโปรไฟล์")}
-                              value=""
-                              onChange={(e) => {
-                                const ec = (
-                                  currentUser?.runnerProfile?.emergencyContacts ?? []
-                                ).find((x) => x.id === e.target.value);
-                                if (ec) setEmergencyContact(ec.contactName, ec.relationship, ec.phone);
-                              }}
-                            >
-                              <option value="">{tx("เลือกจากโปรไฟล์…")}</option>
-                              {(currentUser?.runnerProfile?.emergencyContacts ?? []).map(
-                                (ec) => (
-                                  <option key={ec.id} value={ec.id}>
-                                    {ec.contactName} ({tx(ec.relationship)})
-                                    {ec.isPrimary ? ` · ${tx("หลัก")}` : ''}
-                                  </option>
-                                )
-                              )}
-                            </select>
-                            {onOpenRunnerProfile && (
-                              <button
-                                type="button"
-                                className="inline-text-link"
-                                onClick={onOpenRunnerProfile}
-                              >
-                                {tx("จัดการโปรไฟล์")}
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <RunnerCustomFieldsInputs
-                      fields={selectedEvent.customFields}
-                      steps={selectedEvent.formCustomSteps ?? []}
-                      stepId={CORE_STEP}
-                      errors={formErrors}
-                      answers={customAnswers}
-                      raceDistanceCode={activeCategory.code}
-                      shirtSize={shirtSize}
-                      publishedFormVersion={
-                        selectedEvent.publishedFormVersion ?? 'v1.2-published'
-                      }
-                      onAnswerChange={(fieldId, val) => {
-                        setStep2Error(null);
-                        setCustomAnswers((prev) => ({
-                          ...prev,
-                          [fieldId]: val,
-                        }));
-                      }}
-                    />
-                    </div>
-                  </div>
-                )}
-
-                {step2Error && (
-                  <div className="error-callout" role="alert">
-                    <IconAlert size={16} />
-                    <span>{tx(step2Error)}</span>
-                  </div>
-                )}
-
-                <div className="reg-step-footer-between">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => setRegStep(1)}
-                  >
-                    {tx("ย้อนกลับ")}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary reg-next-pill-btn"
-                    onClick={(e) => {
-                      if (!regModeChosen) {
-                        setStep2Error(tx("กรุณาเลือกว่าจะสมัครให้ตนเองหรือสมัครให้ผู้อื่นก่อน"));
-                        return;
-                      }
-                      if (!reportInvalidFieldsWithin(e.currentTarget.closest('.reg-step-body'))) {
-                        setStep2Error(tx("กรุณากรอกช่องที่มีเครื่องหมาย * ให้ครบ ช่องที่ยังไม่ครบถูกไฮไลต์ไว้"));
-                        return;
-                      }
-                      if (!regFirstNameEn.trim() || !regLastNameEn.trim() || !buyerName.trim()) {
-                        setStep2Error(tx("กรุณากรอกชื่อ-นามสกุลภาษาอังกฤษของผู้เข้าแข่งขันให้ครบ"));
-                        return;
-                      }
-                      if (regIdType === 'thai_id' && regIdNumber.trim() && regIdNumber.trim().length !== 13) {
-                        setStep2Error(tx("เลขบัตรประจำตัวประชาชนต้องครบ 13 หลัก"));
-                        return;
-                      }
-                      if (regAgeCheck && !regAgeCheck.eligible) {
-                        setStep2Error(ageCheckMessage(regAgeCheck, activeCategory));
-                        return;
-                      }
-                      const stepProblems = validateAnswers(
-                        selectedEvent.customFields ?? [],
-                        customAnswers,
-                        { raceDistance: activeCategory.code, shirtSize },
-                        { steps: selectedEvent.formCustomSteps ?? [], stepId: CORE_STEP }
-                      );
-                      setFormErrors(stepProblems);
-                      const firstProblem = Object.values(stepProblems)[0];
-                      if (firstProblem) {
-                        setStep2Error(firstProblem);
-                        return;
-                      }
-                      setStep2Error(null);
-                      if (!shirtTouched) {
-                        if (registerForSelf) {
-                          applyPreferredShirt(
-                            currentUser?.runnerProfile?.preferredShirtSize
-                          );
-                        } else {
-                          const pt = (
-                            currentUser?.runnerProfile?.savedParticipants ?? []
-                          ).find((x) => x.id === selectedParticipantId);
-                          applyPreferredShirt(pt?.preferredShirtSize);
-                        }
-                      }
-                      setRegStep(firstAfterInfo);
-                    }}
-                  >
-                    {tx("ถัดไป")}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* the organizer's own steps (24 Nov 2026), between runner details and the shop */}
-            {regStep > 2 && regStep < 3 && activeCategory && (() => {
-              const idx = Math.round((regStep - 2) * 10) - 1;
-              const st = runnerSteps[idx];
-              if (!st) {
-                // the answers changed and this step is no longer asked: carry on
-                return (
-                  <div className="reg-step-body">
-                    <div className="reg-step-footer-between">
-                      <button type="button" className="btn-secondary" onClick={() => setRegStep(2)}>
-                        {tx('ย้อนกลับ')}
-                      </button>
-                      <button type="button" className="btn-primary reg-next-pill-btn" onClick={() => setRegStep(3)}>
-                        {tx('ถัดไป')}
-                      </button>
-                    </div>
-                  </div>
-                );
-              }
-              const goNext = () => {
-                const problems = validateAnswers(selectedEvent.customFields ?? [], customAnswers, formCtx, {
-                  steps: selectedEvent.formCustomSteps ?? [],
-                  stepId: st.id,
-                });
-                setFormErrors(problems);
-                const first = Object.values(problems)[0];
-                if (first) {
-                  setStep2Error(first);
-                  return;
-                }
-                setStep2Error(null);
-                setRegStep(idx + 1 < runnerSteps.length ? stepPos(idx + 1) : 3);
-              };
-              return (
-                <div className="reg-step-body">
-                  <div className="reg-step-head">
-                    <h2 className="reg-step-accent-heading">{tx(st.title)}</h2>
-                    {st.description && <p className="muted-block">{tx(st.description)}</p>}
-                  </div>
-                  <RunnerCustomFieldsInputs
-                    fields={selectedEvent.customFields}
-                    answers={customAnswers}
-                    raceDistanceCode={activeCategory.code}
-                    shirtSize={shirtSize}
-                    steps={selectedEvent.formCustomSteps ?? []}
-                    stepId={st.id}
-                    errors={formErrors}
-                    heading={null}
-                    onAnswerChange={(fieldId, val) => {
-                      setStep2Error(null);
-                      setFormErrors((prev) => {
-                        const next = { ...prev };
-                        delete next[fieldId];
-                        return next;
-                      });
-                      setCustomAnswers((prev) => ({ ...prev, [fieldId]: val }));
-                    }}
-                  />
-                  {step2Error && (
-                    <div className="error-callout" role="alert">
-                      <IconAlert size={16} />
-                      <span>{tx(step2Error)}</span>
-                    </div>
-                  )}
-                  <div className="reg-step-footer-between">
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => setRegStep(idx > 0 ? stepPos(idx - 1) : 2)}
-                    >
-                      {tx('ย้อนกลับ')}
-                    </button>
-                    <button type="button" className="btn-primary reg-next-pill-btn" onClick={goNext}>
-                      {tx('ถัดไป')}
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* STEP 3: สินค้า — เลือกไซส์เสื้อตามสิทธิ์สมัคร */}
-            {regStep === 3 && activeCategory && (
-              <div className="reg-step-body">
-                <h2 className="reg-step-accent-heading">
-                  {tx("เลือกไซส์เสื้อตามสิทธิ์สมัคร")}
-                </h2>
-
-                {registerForSelf && currentUser?.runnerProfile?.preferredShirtSize && (
-                  <div className="info-callout">
-                    <IconShirt size={15} />
-                    <span>
-                      {txf(
-                        "ดึงค่าเริ่มต้นจาก Runner Profile (ไซส์ {0} · ทรง {1}) คุณเลือกเปลี่ยนไซส์สำหรับงานนี้ได้อิสระโดยไม่กระทบงานที่ยืนยันแล้ว",
-                        currentUser.runnerProfile.preferredShirtSize,
-                        currentUser.runnerProfile.preferredShirtType ?? 'Unisex'
-                      )}
-                    </span>
-                  </div>
-                )}
-
-                <p className="reg-step-lede">
-                  {tx("เสื้อรวมในค่าสมัครแล้ว แก้ไขไซส์ได้ถึงวันที่")}{' '}
-                  <span className="mono-num">{tx(selectedEvent.editDeadlineDate)}</span>
-                </p>
-
-                {(() => {
-                  const shirtTypes: PickerType[] = SHIRT_STYLES.map((style) => {
-                    const stock = style.demoStock ?? selectedEvent.shirtStocks;
-                    return {
-                      id: style.id,
-                      name: style.nameTh,
-                      art: style.art,
-                      demo: style.demoStock !== null,
-                      optionLegend: 'ไซส์',
-                      options: stock.map((st) => {
-                        const spec = getShirtSpec(st.size);
-                        return {
-                          value: st.size,
-                          label: st.size,
-                          sub: txf('อก {0} · ยาว {1}', spec.chestInch, spec.lengthInch),
-                          left: Math.max(0, st.total - st.reservedOrConfirmed),
-                          total: st.total,
-                          unit: 'ตัว',
-                        };
-                      }),
-                    };
-                  });
-                  return (
-                    <ProductPicker
-                      idPrefix="reg-shirt"
-                      typeLegend="ประเภทเสื้อ"
-                      types={shirtTypes}
-                      typeId={shirtStyle}
-                      onTypeChange={(id) => {
-                        setShirtStyle(id as ShirtStyleId);
-                        // keep the size if the new style has it in stock, else take the first one left
-                        const next = shirtTypes.find((t) => t.id === id);
-                        const keep = next?.options.find((o) => o.value === shirtSize && o.left > 0);
-                        const first = next?.options.find((o) => o.left > 0);
-                        if (!keep && first) setShirtSize(first.value as ShirtSizeCode);
-                        setShirtTouched(true);
-                      }}
-                      optionValue={shirtSize}
-                      onOptionChange={(v) => {
-                        setShirtSize(v as ShirtSizeCode);
-                        setShirtTouched(true);
-                      }}
-                    />
-                  );
-                })()}
-
-                <div className="reg-step-footer-between">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => setRegStep(lastBeforeShop)}
-                  >
-                    {tx("ย้อนกลับ")}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary reg-next-pill-btn"
-                    onClick={() => setRegStep(hasSouvenirs ? 4 : 5)}
-                  >
-                    {tx("ถัดไป")}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 4: ของที่ระลึก — สินค้าซื้อเพิ่ม (ไม่บังคับ) */}
-            {regStep === 4 && hasSouvenirs && (
-              <div className="reg-step-body">
-                <h2 className="reg-step-accent-heading">
-                  {tx("ของที่ระลึก (ไม่บังคับ)")}
-                </h2>
-                <p className="reg-step-lede">
-                  {tx("สั่งเสื้อหรือเหรียญที่ระลึกเพิ่มพร้อมใบสมัคร ชำระรวมกับค่าสมัคร")}
-                </p>
-
-                <SouvenirPicker products={selectedEvent.products} value={addonItems} onChange={setAddonItems} />
-                <div className="reg-step-footer-between">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => setRegStep(3)}
-                  >
-                    {tx("ย้อนกลับ")}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary reg-next-pill-btn"
-                    onClick={() => setRegStep(5)}
-                  >
-                    {tx("ถัดไป")}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 5: ที่อยู่ — วิธีรับอุปกรณ์ Race Kit & ที่อยู่จัดส่ง */}
-            {regStep === 5 && (
-              <div className="reg-step-body">
-                <h2 className="reg-step-accent-heading">
-                  {tx("เลือกวิธีรับอุปกรณ์ (Race Kit) และที่อยู่ติดต่อ")}
-                </h2>
-
-                <div className="reg-radio-cards-stack">
-                  <label
-                    className={`reg-category-radio-card ${
-                      kitDeliveryOption === 'expo_pickup' ? 'selected' : ''
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="kit-delivery-mode"
-                      checked={kitDeliveryOption === 'expo_pickup'}
-                      onChange={() => setKitDeliveryOption('expo_pickup')}
-                    />
-                    <span className="custom-radio-circle" aria-hidden="true" />
-                    <div className="reg-radio-card-copy">
-                      <strong>
-                        {tx("รับเสื้อและป้าย BIB ด้วยตนเองที่หน้างาน (QR Check-in)")}
-                      </strong>
-                      <span className="muted-inline">
-                        {tx("กำหนดการรับอุปกรณ์: ")} {tx(selectedEvent.kitPickupWindow)} {tx(" ณ")}{' '}
-                        {tx(selectedEvent.venue)}
-                      </span>
-                      <span className="reg-tag-row">
-                        <NoteTag tone="ok">{tx("ไม่มีค่าจัดส่ง")}</NoteTag>
-                      </span>
-                    </div>
-                  </label>
-
-                  <label
-                    className={`reg-category-radio-card ${
-                      kitDeliveryOption === 'postal' ? 'selected' : ''
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="kit-delivery-mode"
-                      checked={kitDeliveryOption === 'postal'}
-                      onChange={() => setKitDeliveryOption('postal')}
-                    />
-                    <span className="custom-radio-circle" aria-hidden="true" />
-                    <div className="reg-radio-card-copy">
-                      <strong>
-                        {tx("ระบุที่อยู่สำหรับรับเอกสาร/จัดส่งอุปกรณ์ทางไปรษณีย์")}
-                      </strong>
-                      <span className="muted-inline">
-                        {tx("บันทึกที่อยู่สำหรับจัดส่งเสื้อและของที่ระลึกตามเงื่อนไขของผู้จัดงาน")}
-                      </span>
-                      <span className="reg-tag-row">
-                        <PriceTag prefix="+" satang={regKitFee.satang} />
-                        <NoteTag>{tx("ค่าจัดส่งชุดแข่ง")}</NoteTag>
-                        {regKitFee.isSample && <NoteTag>{tx("ค่าตัวอย่าง ผู้จัดยังไม่ได้กำหนด")}</NoteTag>}
-                      </span>
-                    </div>
-                  </label>
-                </div>
-
-                {/* Pick-up at the venue needs no address: the form only shows for postal delivery */}
-                {kitDeliveryOption === 'postal' && (
-                <div className="custom-field-creator canvas-stack" style={{ marginTop: '0.6rem' }}>
-                  <strong id="ship-addr-label">{<RequiredFieldText text={tx("ที่อยู่ติดต่อ / ที่อยู่สำหรับจัดส่งพัสดุ *")} />}</strong>
-                  {/* address book as one dropdown; its last row opens the form for a new address */}
-                  {(currentUser?.runnerProfile?.savedAddresses ?? []).length > 0 && (
-                    <SavedAddressSelect
-                      addresses={currentUser?.runnerProfile?.savedAddresses ?? []}
-                      value={shipAddrMode === 'manual' ? NEW_ADDRESS : selectedSavedAddrId}
-                      labelledBy="ship-addr-label"
-                      onChange={(id) => {
-                        setShipAddrNotice(null);
-                        if (id === NEW_ADDRESS) {
-                          setShipAddrMode('manual');
-                          const n = regCascadeAddr;
-                          setRunnerShippingAddress(
-                            `${shipRecipient} (${shipPhone}) — ${n.address}, ต.${n.subdistrict} อ.${n.district} จ.${n.province} ${n.postalCode}`.trim()
-                          );
-                          return;
-                        }
-                        const addr = (currentUser?.runnerProfile?.savedAddresses ?? []).find((x) => x.id === id);
-                        if (!addr) return;
-                        setShipAddrMode('saved');
-                        setSelectedSavedAddrId(addr.id);
-                        setRunnerShippingAddress(
-                          `${addr.recipientName} (${addr.phone}) — ${addr.address}, ต.${addr.subdistrict} อ.${addr.district} จ.${addr.province} ${addr.postalCode}`
-                        );
-                      }}
-                    />
-                  )}
-
-                  {shipAddrNotice && (
-                    <p
-                      className={`ship-addr-notice ${shipAddrNotice.tone === 'err' ? 'is-error' : ''}`}
-                      role={shipAddrNotice.tone === 'err' ? 'alert' : 'status'}
-                    >
-                      {shipAddrNotice.tone === 'err' ? <IconAlert size={15} /> : <IconCheckCircle size={15} />}
-                      <span>{shipAddrNotice.text}</span>
-                    </p>
-                  )}
-
-                  {shipAddrMode === 'manual' && (
-                    <>
-                      {/* compact grid: name | phone, recipient | postal code, street | area, then a one-line summary */}
-                      <ThaiPostalAddressSelector
-                        idPrefix="ev-reg-ship"
-                        compact
-                        compactLead={
-                          <>
-                            <div className="form-row">
-                              <label htmlFor="ship-addr-name">{tx('ชื่อเรียกที่อยู่')}</label>
-                              <input
-                                id="ship-addr-name"
-                                type="text"
-                                value={shipAddrName}
-                                maxLength={60}
-                                placeholder={tx('เช่น บ้านพัก / ที่ทำงาน')}
-                                onChange={(e) => setShipAddrName(e.target.value)}
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="ship-phone">{<RequiredFieldText text={tx("เบอร์โทรผู้รับ *")} />}</label>
-                              <PhoneInput
-                                id="ship-phone"
-                                value={shipPhone}
-                                onChange={(next) => {
-                                  setShipPhone(next);
-                                  const n = regCascadeAddr;
-                                  setRunnerShippingAddress(
-                                    `${shipRecipient} (${next}) — ${n.address}, ต.${n.subdistrict} อ.${n.district} จ.${n.province} ${n.postalCode}`.trim()
-                                  );
-                                }}
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="ship-recipient">{<RequiredFieldText text={tx("ชื่อผู้รับ *")} />}</label>
-                              <input
-                                id="ship-recipient"
-                                type="text"
-                                value={shipRecipient}
-                                onChange={(e) => {
-                                  setShipRecipient(e.target.value);
-                                  const n = regCascadeAddr;
-                                  setRunnerShippingAddress(
-                                    `${e.target.value} (${shipPhone}) — ${n.address}, ต.${n.subdistrict} อ.${n.district} จ.${n.province} ${n.postalCode}`.trim()
-                                  );
-                                }}
-                              />
-                            </div>
-                          </>
-                        }
-                        contactPhone={shipPhone}
-                        contactEmail={currentUser?.contactEmail}
-                        required
-                        streetAddressLabel="ที่อยู่ (บ้านเลขที่ อาคาร ซอย ถนน)"
-                        summaryFooter={
-                          currentUser && (
-                              <div className="ship-addr-save-row">
-                                <span className="muted-inline">
-                                  {tx('ไม่บันทึกก็ได้ ที่อยู่นี้จะใช้เฉพาะการสมัครครั้งนี้')}
-                                </span>
-                                <button
-                                  type="button"
-                                  className="btn-secondary"
-                                  disabled={savingShipAddr}
-                                  onClick={async () => {
-                                    const a = regCascadeAddr;
-                                    if (
-                                      !shipRecipient.trim() ||
-                                      !shipPhone.trim() ||
-                                      !a.address.trim() ||
-                                      !a.postalCode ||
-                                      !a.province ||
-                                      !a.district ||
-                                      !a.subdistrict
-                                    ) {
-                                      setShipAddrNotice({
-                                        tone: 'err',
-                                        text: tx('กรอกชื่อผู้รับ เบอร์โทร และที่อยู่ให้ครบก่อนบันทึก'),
-                                      });
-                                      return;
-                                    }
-                                    const existing = currentUser.runnerProfile?.savedAddresses ?? [];
-                                    const dup = existing.find(
-                                      (x) =>
-                                        x.address.trim() === a.address.trim() &&
-                                        x.postalCode === a.postalCode &&
-                                        x.subdistrict === a.subdistrict
-                                    );
-                                    const saved: RunnerSavedAddress = dup ?? {
-                                      id: `addr-${Date.now().toString(36)}`,
-                                      addressName: shipAddrName.trim() || txf('ที่อยู่จากการสมัคร {0}', selectedEvent.code),
-                                      recipientName: shipRecipient.trim(),
-                                      phone: shipPhone.trim(),
-                                      address: a.address.trim(),
-                                      province: a.province,
-                                      district: a.district,
-                                      subdistrict: a.subdistrict,
-                                      postalCode: a.postalCode,
-                                      country: a.country || 'Thailand',
-                                      isDefault: existing.length === 0,
-                                    };
-                                    if (!dup) {
-                                      setSavingShipAddr(true);
-                                      const res = await onSaveProfilePatch?.({
-                                        savedAddresses: [...existing, saved],
-                                      });
-                                      setSavingShipAddr(false);
-                                      if (res && !res.ok) {
-                                        setShipAddrNotice({
-                                          tone: 'err',
-                                          text: res.error ?? tx('บันทึกที่อยู่ไม่สำเร็จ กรุณาลองอีกครั้ง'),
-                                        });
-                                        return;
-                                      }
-                                    }
-                                    // back to the address book with the new address picked
-                                    setSelectedSavedAddrId(saved.id);
-                                    setRunnerShippingAddress(
-                                      `${saved.recipientName} (${saved.phone}) — ${saved.address}, ต.${saved.subdistrict} อ.${saved.district} จ.${saved.province} ${saved.postalCode}`
-                                    );
-                                    setShipAddrMode('saved');
-                                    setShipAddrName('');
-                                    setShipAddrNotice({
-                                      tone: 'ok',
-                                      text: dup
-                                        ? tx('ที่อยู่นี้มีในสมุดแล้ว เลือกให้แล้ว')
-                                        : tx('บันทึกลงสมุดที่อยู่แล้ว และเลือกเป็นที่อยู่จัดส่ง'),
-                                    });
-                                  }}
-                                >
-                                  {savingShipAddr ? tx('กำลังบันทึก…') : tx('บันทึกลงสมุดที่อยู่')}
-                                </button>
-                              </div>
-                          )
-                        }
-                        value={regCascadeAddr}
-                        onChange={(next) => {
-                          setRegCascadeAddr(next);
-                          const place =
-                            next.country === 'Thailand'
-                              ? `${next.address}, ต.${next.subdistrict} อ.${next.district} จ.${next.province} ${next.postalCode}`
-                              : `${next.address}, ${next.subdistrict}, ${next.district}, ${next.province} ${next.postalCode} (${next.country})`;
-                          setRunnerShippingAddress(
-                            `${shipRecipient} (${shipPhone}) — ${place}`.trim()
-                          );
-                        }}
-                      />
-                    </>
-                  )}
-                </div>
-                )}
-
-                <div className="reg-step-footer-between">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => setRegStep(hasSouvenirs ? 4 : 3)}
-                  >
-                    {tx("ย้อนกลับ")}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary reg-next-pill-btn"
-                    onClick={() => setRegStep(6)}
-                  >
-                    {tx("ถัดไป")}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 6: สรุป — ตรวจข้อมูลทั้งฟอร์มก่อนชำระเงิน */}
-            {regStep === 6 && activeCategory && (() => {
-              const tier = getCurrentTier(activeCategory);
-              const quote = calculateFeeQuote(tier.priceSatang, selectedEvent.feeBearerPolicy);
-              const addonSatang = addonSatangTotal;
-              const picked = registrationOptions.find((o) => o.optionId === currentPickedOptionId);
-              const idDigits = regIdNumber.replace(/\s/g, '');
-              const answerRows = (selectedEvent.customFields ?? [])
-                .filter((f) => !isContentField(f) && fieldShown(f, customAnswers, { raceDistance: activeCategory.code, shirtSize }))
-                .map((f) => {
-                const val = customAnswers[f.id] ?? f.defaultValue;
-                return {
-                  label: tx(f.label),
-                  value:
-                    typeof val === 'boolean' ? (val ? tx('ใช่') : tx('ไม่ใช่')) : tx(answerText(f, val).trim()),
-                };
-              });
-              const sections: ReviewSection[] = [
-                {
-                  key: 'entry',
-                  title: tx('การสมัคร'),
-                  editStep: 1,
-                  rows: [
-                    { label: tx('ประเภท'), value: picked ? tx(picked.label) : '' },
-                    {
-                      label: tx('ระยะ'),
-                      value: `${tx(activeCategory.name)} · ${tx('ปล่อยตัว')} ${activeCategory.startTimeLocal} ${tx('น.')}`,
-                    },
-                    { label: tx('อัตราค่าสมัคร'), value: tx(tier.label) },
-                    {
-                      label: tx('เสื้อตามสิทธิ์'),
-                      value: `${tx(shirtStyleName(shirtStyle))} · ${shirtSize}`,
-                      editStep: 3,
-                    },
-                  ],
-                },
-                {
-                  key: 'runner',
-                  title: tx('ผู้เข้าแข่งขัน'),
-                  editStep: 2,
-                  rows: [
-                    {
-                      label: tx('ชื่อ-นามสกุล'),
-                      value: [`${regFirstNameTh} ${regLastNameTh}`.trim(), regNicknameTh.trim() ? `(${regNicknameTh.trim()})` : '']
-                        .filter(Boolean)
-                        .join(' '),
-                    },
-                    { label: tx('ชื่อภาษาอังกฤษ'), value: `${regFirstNameEn} ${regLastNameEn}`.trim() },
-                    { label: tx('วันเกิด · เพศ'), value: [regDob, tx(regGender)].filter(Boolean).join(' · ') },
-                    { label: tx('เบอร์โทร'), value: displayPhone(regPhone) },
-                    {
-                      label: regIdType === 'passport' ? tx('หนังสือเดินทาง') : tx('เลขบัตรประชาชน'),
-                      value: idDigits ? `•••• ${idDigits.slice(-4)}` : '',
-                    },
-                    { label: tx('ผู้ติดต่อฉุกเฉิน'), value: tx(emergencyContactText.trim()) },
-                    ...answerRows,
-                  ],
-                },
-                {
-                  key: 'kit',
-                  title: tx('การรับอุปกรณ์'),
-                  editStep: 5,
-                  rows: [
-                    {
-                      label: tx('วิธีรับ'),
-                      value:
-                        kitDeliveryOption === 'postal'
-                          ? tx('จัดส่งทางไปรษณีย์')
-                          : tx('รับเองที่หน้างาน (QR Check-in)'),
-                    },
-                    ...(kitDeliveryOption === 'postal'
-                      ? [{ label: tx('ส่งถึง'), value: tx(runnerShippingAddress.trim()) }]
-                      : []),
-                  ],
-                },
-              ];
-              const ledger: ReviewLedgerGroup[] = [
-                {
-                  key: 'entry',
-                  lines: [
-                    {
-                      label: `${tx('ค่าสมัคร')} ${tx(activeCategory.name)} (${tx(tier.label)})`,
-                      sub: `${tx(shirtStyleName(shirtStyle))} · ${tx('ไซส์')} ${shirtSize}`,
-                      satang: quote.baseSatang,
-                    },
-                    {
-                      label: `${tx('ค่าบริการระบบ')} (${feePolicyLabel(selectedEvent.feeBearerPolicy)})`,
-                      satang: quote.runnerFeeSatang,
-                    },
-                  ],
-                },
-                {
-                  key: 'souvenir',
-                  title: txf('ของที่ระลึก {0} ชิ้น', addonLines.reduce((n, l) => n + l.qty, 0)),
-                  editStep: 4,
-                  lines: addonLines.map((l) => ({
-                    label: `${tx(l.prd.nameTh)}${l.size !== '-' && l.prd.availableSizes.length > 1 ? ` · ${l.size}` : ''} ×${l.qty}`,
-                    satang: l.prd.priceSatang * l.qty,
-                  })),
-                },
-                {
-                  key: 'ship',
-                  lines:
-                    regShipQuote.kitSatang > 0
-                      ? [
-                          {
-                            label: tx('ค่าจัดส่งชุดแข่ง (ของที่ระลึกจากผู้จัดส่งรวมกล่องนี้)'),
-                            satang: regShipQuote.kitSatang,
-                          },
-                          ...regShipQuote.sellers.map((x) => ({
-                            label: txf('ค่าจัดส่งของที่ระลึก ({0})', tx(x.seller)),
-                            satang: x.satang,
-                          })),
-                        ]
-                      : [],
-                },
-              ];
-              return (
-                <div className="reg-step-body">
-                  <h2 className="reg-step-accent-heading">{tx('ตรวจข้อมูลก่อนชำระเงิน')}</h2>
-                  <p className="muted-block">
-                    {tx('ตรวจทุกส่วนให้ถูกต้อง ถ้าต้องการเปลี่ยน กด "แก้ไข" เพื่อกลับไปขั้นนั้น')}
-                  </p>
-                  <RegistrationSummary
-                    sections={sections}
-                    ledger={ledger}
-                    totalSatang={quote.runnerNetPaySatang + addonSatang + regShipQuote.totalSatang}
-                    onEdit={(st) => setRegStep(st as RegStep)}
-                    action={{ label: 'ไปชำระเงิน', onClick: () => setRegStep(7) }}
-                  />
-                  <div className="reg-step-footer-between">
-                    <button type="button" className="btn-secondary" onClick={() => setRegStep(5)}>
-                      {tx('ย้อนกลับ')}
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* STEP 7: ชำระเงิน — ยอดสุทธิ ช่องทางชำระ และยอมรับกติกา */}
-            {regStep === 7 && activeCategory && (
-              <form
-                onSubmit={handleRegistrationSubmit}
-                className="reg-step-body"
-              >
-                <h2 className="reg-step-accent-heading">
-                  {tx("ชำระเงินและยืนยันการสมัคร")}
-                </h2>
-
-                {(() => {
-                  const tier = getCurrentTier(activeCategory);
-                  const quote = calculateFeeQuote(
-                    tier.priceSatang,
-                    selectedEvent.feeBearerPolicy
-                  );
-                  const addonSatang = addonSatangTotal;
-                  const grandTotal = quote.runnerNetPaySatang + addonSatang + regShipQuote.totalSatang;
-
-                  return (
-                    <div className="price-breakdown-box reg-pay-total-box">
-                      <div className="breakdown-total">
-                        <strong>{tx("ยอดชำระสุทธิทั้งหมด")}</strong>
-                        <strong className="mono-num text-vermilion">
-                          {formatThb(grandTotal, true)}
-                        </strong>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                <PaymentMethodPicker name="reg-a-pay" value={paymentChannel} onChange={setPaymentChannel} />
-
-                <RegistrationTerms
-                  event={selectedEvent}
-                  organization={org}
-                  acceptRules={acceptedRules}
-                  onAcceptRules={setAcceptedRules}
-                  acceptPayment={acceptedPayTerms}
-                  onAcceptPayment={setAcceptedPayTerms}
-                />
-
-                {checkoutError && (
-                  <div className="error-callout" role="alert">
-                    <IconAlert size={17} />
-                    <div className="callout-flex">
-                      <span>{tx(checkoutError)}</span>
-                      {currentUser &&
-                        (FEATURES.emailVerification
-                          ? !currentUser.emailVerified
-                          : !currentUser.contactEmail) && (
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          onClick={onOpenAccountSecurity}
-                        >
-                          {FEATURES.emailVerification
-                            ? tx("เพิ่มและยืนยันอีเมล")
-                            : tx("เพิ่มอีเมล")}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {submitting && (
-                  <div className="reg-submit-wait" role="status" aria-live="polite">
-                    <MascotSprite pose="run" size={34} />
-                    <span>{tx("กำลังกันที่และยืนยันคำสั่งซื้อ… กรุณาอย่าปิดหน้านี้")}</span>
-                  </div>
-                )}
-
-                <div className="reg-step-footer-between">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => setRegStep(6)}
-                    disabled={submitting}
-                  >
-                    {tx("ย้อนกลับ")}
-                  </button>
-                  <div className="cta-inline-row">
-                    <button type="submit" className="btn-primary" disabled={submitting}>
-                      {tx("ชำระเงินและยืนยันการสมัครทันที")}
-                    </button>
-                  </div>
-                </div>
-              </form>
-            )}
-
-            {/* STEP 8: สำเร็จ — หน้าแยก ไม่มีแถบขั้นตอน ข้อมูลอยู่กลางจอ */}
-            {regStep === 8 && createdResult && (
-              <RegistrationDone
-                title={
-                  createdResult.reg.registrationStatus === 'confirmed'
-                    ? tx('สมัครวิ่งและชำระเงินสำเร็จ')
-                    : tx('สร้างใบจองโควตาสำเร็จ (รอผลชำระเงินภายใน 15 นาที)')
-                }
-                subtitle={
-                  <>
-                    {tx('บันทึกใบสมัครด้วยฟอร์มเวอร์ชัน')}{' '}
-                    <span className="mono-code">{selectedEvent.publishedFormVersion ?? 'v1.2-published'}</span>{' '}
-                    {tx('เรียบร้อยแล้ว')}
-                  </>
-                }
-                items={[
-                  { label: tx('รหัสใบสมัครวิ่ง'), value: tx(createdResult.reg.regCode), mono: true },
-                  { label: tx('ผู้เข้าแข่งขัน'), value: tx(createdResult.reg.participantNameTh) },
-                  ...(activeCategory ? [{ label: tx('ระยะ'), value: tx(activeCategory.name) }] : []),
-                  { label: tx('เสื้อตามสิทธิ์สมัคร'), value: `${tx('ไซส์')} ${tx(createdResult.reg.shirtSize)}` },
-                  { label: tx('QR Token รับอุปกรณ์'), value: tx(createdResult.reg.qrCheckInToken), mono: true },
-                  ...(createdResult.addonOrders ?? []).map((o) => ({
-                    label: `${tx(o.productNameTh)}${o.variantSize !== '-' ? ` · ${o.variantSize}` : ''} × ${o.quantity}`,
-                    value: o.merchOrderCode,
-                    mono: true,
-                  })),
-                  {
-                    label: tx('ยอดค่าสมัครสุทธิ'),
-                    value: formatThb(createdResult.reg.snapshotTotalChargedSatang, true),
-                    accent: true,
-                  },
-                ]}
-              >
-                <button type="button" className="btn-primary" onClick={() => onNavigate('my_orders', null)}>
-                  {tx('ไปหน้าบัตรวิ่งและคำสั่งซื้อของฉัน')}
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => {
-                    setCreatedResult(null);
-                    setRegStep(1);
-                  }}
-                >
-                  {tx('สมัครเพิ่มอีกท่าน')}
-                </button>
-              </RegistrationDone>
-            )}
-          </section>
-        </div>
-      </main>
+            >
+              {tx('สมัครเพิ่มอีกท่าน')}
+            </button>
+          </RegistrationDone>
+        ) : null,
+      notice: formPreview.active ? (
+        <p className="form-preview-banner" role="status">
+          {tx('ตัวอย่างฟอร์มสมัคร — แสดงคำถามที่ยังไม่เผยแพร่ กรอกลองได้ แต่ไม่ส่งใบสมัครจริง')}
+        </p>
+      ) : null,
+      freeJump: formPreview.active,
+      fillSelf: () => {
+        setRegisterForSelf(true);
+        setRegModeChosen(true);
+        applySelfProfile();
+        if (!shirtTouched) applyPreferredShirt(currentUser?.runnerProfile?.preferredShirtSize);
+      },
+      openProfile: onOpenRunnerProfile,
+      saveAddresses:
+        currentUser && onSaveProfilePatch
+          ? async (list) => (await onSaveProfilePatch({ savedAddresses: list })) ?? { ok: true }
+          : undefined,
+    };
+    return (
+      <RegistrationLabView
+        live={labLive}
+        shared={labShared}
+        key={selectedEvent.id}
+        event={selectedEvent}
+        organization={org}
+        currentUser={currentUser}
+        platformProfileConfig={platformProfileConfig}
+        openSeatsFor={(cat) => getCategoryOpenSeats(selectedEvent.id, cat)}
+        onBack={() => onNavigate('event_detail', selectedEvent.id, 'info_results')}
+      />
     );
   }
 
@@ -3660,613 +2161,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               </div>
             )}
 
-            {/* MODE B: 3-STEP RACE REGISTRATION WIZARD */}
-            {showRegForm && detailTab === 'register' && (
-              <section className="clean-panel">
-                {selectedEvent.status !== 'published' ? (
-                  <div className="empty-state-box">
-                    <h2>{tx("งานวิ่งนี้ไม่ได้เปิดรับสมัครในขณะนี้")}</h2>
-                    <p>
-                      {tx("คุณสามารถกลับไปดูรายละเอียดกำหนดการ ผลการแข่งขัน อัลบั้มภาพหลังงาน หรือเลือกซื้อสินค้าที่ระลึกในร้านค้าของงานได้")}
-                    </p>
-                    <div className="cta-inline-row">
-                      <button
-                        type="button"
-                        className="btn-primary"
-                        onClick={() => {
-                          setShowRegForm(false);
-                          setDetailTab('info_results');
-                        }}
-                      >
-                        {tx("ดูรายละเอียดงานและผลการแข่งขัน")}
-                      </button>
-                      {selectedEvent.products.length > 0 && (
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          onClick={() => {
-                            setShowRegForm(false);
-                            setDetailTab('storefront');
-                          }}
-                        >
-                          {tx("เปิดร้านค้าของงาน")}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ) : createdResult ? (
-                  <div className="registration-complete-view" role="status">
-                    <div className="complete-icon-badge">
-                      <IconCheckCircle size={28} />
-                    </div>
-                    <h2>
-                      {createdResult.reg.registrationStatus === 'confirmed'
-                        ? tx("ยืนยันการสมัครวิ่งเรียบร้อยแล้ว")
-                        : tx("กันโควตาชั่วคราวแล้ว (รอชำระเงินภายใน 30 นาที)")}
-                    </h2>
-                    <p className="muted-block">
-                      {tx("ใบสมัคร")}{' '}
-                      <strong className="mono-code">
-                        {tx(createdResult.reg.regCode)}
-                      </strong>
-                      {createdResult.addonOrder && (
-                        <>
-                          {' '}
-                          {tx("และคำสั่งซื้อสินค้าเพิ่ม")}{' '}
-                          <strong className="mono-code">
-                            {tx(createdResult.addonOrder.merchOrderCode)}
-                          </strong>
-                        </>
-                      )}{' '}
-                      {tx("ได้รับการบันทึกในบัญชีของคุณแล้ว สามารถตรวจสอบสถานะและ QR รับอุปกรณ์ได้ในหน้าบัตรวิ่งของฉัน")}
-                    </p>
-
-                    <div className="receipt-summary-box">
-                      <div>
-                        <span className="muted-inline">{tx("ผู้เข้าแข่งขัน")}</span>
-                        <strong>{tx(createdResult.reg.participantNameTh)}</strong>
-                      </div>
-                      <div>
-                        <span className="muted-inline">{tx("เสื้อตามสิทธิ์สมัคร")}</span>
-                        <strong>{tx("ไซส์")} {tx(createdResult.reg.shirtSize)}</strong>
-                      </div>
-                      <div>
-                        <span className="muted-inline">{tx("QR Token รับ BIB")}</span>
-                        <strong className="mono-code">
-                          {tx(createdResult.reg.qrCheckInToken)}
-                        </strong>
-                      </div>
-                      <div>
-                        <span className="muted-inline">{tx("ยอดค่าสมัครสุทธิ")}</span>
-                        <strong className="mono-num text-vermilion">
-                          {formatThb(
-                            createdResult.reg.snapshotTotalChargedSatang,
-                            true
-                          )}
-                        </strong>
-                      </div>
-                    </div>
-
-                    <div className="cta-inline-row">
-                      <button
-                        type="button"
-                        className="btn-primary"
-                        onClick={() => onNavigate('my_orders', null)}
-                      >
-                        {tx("ไปหน้าบัตรวิ่งและคำสั่งซื้อของฉัน")}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() => {
-                          setCreatedResult(null);
-                          setRegStep(1);
-                        }}
-                      >
-                        {tx("สมัครเพิ่มอีกท่าน")}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <form
-                    onSubmit={handleRegistrationSubmit}
-                    className="wizard-stack"
-                  >
-                    <div className="wizard-steps-indicator">
-                      <button
-                        type="button"
-                        className={`step-pill ${
-                          regStep === 1 ? 'current' : 'done'
-                        }`}
-                        onClick={() => setRegStep(1)}
-                      >
-                        1.{' '}
-                        {registrationSteps.find(
-                          (s) => s.key === 'step_distance_shirt'
-                        )?.titleTh ?? tx("เลือกระยะทาง & เสื้อ")}
-                      </button>
-                      <button
-                        type="button"
-                        className={`step-pill ${
-                          regStep === 2
-                            ? 'current'
-                            : regStep > 2
-                            ? 'done'
-                            : ''
-                        }`}
-                        onClick={() => setRegStep(2)}
-                      >
-                        2.{' '}
-                        {registrationSteps.find(
-                          (s) => s.key === 'step_runner_info'
-                        )?.titleTh ?? tx("ข้อมูลผู้สมัคร & คำถามเฉพาะงาน")}
-                      </button>
-                      <button
-                        type="button"
-                        className={`step-pill ${regStep === 3 ? 'current' : ''}`}
-                        onClick={() => setRegStep(3)}
-                      >
-                        3.{' '}
-                        {registrationSteps.find(
-                          (s) => s.key === 'step_review_payment'
-                        )?.titleTh ?? tx("สรุปยอดแยกรายการ & ยืนยัน")}
-                      </button>
-                    </div>
-
-                {regStep === 1 && activeCategory && (
-                  <div className="wizard-pane">
-                    <h2>{tx("เลือกระยะทาง เสื้อตามสิทธิ์ และสินค้าซื้อเพิ่ม (ไม่บังคับ)")}</h2>
-                    <p className="muted-block">
-                      {tx("นโยบายค่าบริการงานนี้:")}{' '}
-                      <strong>{feePolicyLabel(selectedEvent.feeBearerPolicy)}</strong>
-                    </p>
-
-                    <div className="distance-choice-grid">
-                      {selectedEvent.categories.map((cat) => {
-                        const tier = getCurrentTier(cat);
-                        const quote = calculateFeeQuote(
-                          tier.priceSatang,
-                          selectedEvent.feeBearerPolicy
-                        );
-                        const left = getCategoryOpenSeats(
-                          selectedEvent.id,
-                          cat
-                        );
-                        const isPicked = activeCategory.id === cat.id;
-
-                        return (
-                          <button
-                            key={cat.id}
-                            type="button"
-                            className={`distance-option-card ${
-                              isPicked ? 'selected' : ''
-                            }`}
-                            onClick={() => setSelectedCatId(cat.id)}
-                          >
-                            <div className="dist-opt-top">
-                              <span
-                                className={`category-bib-chip tone-${cat.colorTag}`}
-                              >
-                                <strong>{tx(cat.code)}</strong>
-                              </span>
-                              <span className="mono-num muted-inline">
-                                {tx("ว่าง ")} {tx(left)}/{tx(cat.categoryQuota)}
-                              </span>
-                            </div>
-                            <strong>{tx(cat.name)}</strong>
-                            <span className="muted-inline mono-num">
-                              {tx("ปล่อยตัว ")} {tx(cat.startTimeLocal)} {tx(" น. · Cut-off")}{' '}
-                              {tx(cat.cutoffHours)} {tx(" ชม.")}
-                            </span>
-                            {formatAgeLimit(cat) && (
-                              <span className="muted-inline">{formatAgeLimit(cat)}</span>
-                            )}
-                            <div className="dist-opt-price">
-                              <strong className="mono-num">
-                                {formatThb(quote.runnerNetPaySatang, true)}
-                              </strong>
-                              <small className="muted-inline">
-                                {tx("ช่วง ")} {tx(tier.label)} {tx(" (ป้าย")}{' '}
-                                <span className="mono-num">
-                                  {formatThb(tier.priceSatang)}
-                                </span>
-                                )
-                              </small>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="shirt-picker-block">
-                      <h3>{tx("ขนาดเสื้อแข่งขันที่รวมในแพ็กเกจสมัครแล้ว")}</h3>
-                      <div className="size-pill-row">
-                        {selectedEvent.shirtStocks
-                          .filter((s) => s.total > 0)
-                          .map((st) => {
-                            const rem = Math.max(
-                              0,
-                              st.total - st.reservedOrConfirmed
-                            );
-                            return (
-                              <button
-                                key={st.size}
-                                type="button"
-                                disabled={rem <= 0}
-                                className={`size-choice-btn ${
-                                  shirtSize === st.size ? 'selected' : ''
-                                }`}
-                                onClick={() => setShirtSize(st.size)}
-                              >
-                                <strong>{tx("ไซส์")} {tx(st.size)}</strong>
-                                <span className="mono-num">{tx("เหลือ")} {tx(rem)}</span>
-                              </button>
-                            );
-                          })}
-                      </div>
-                    </div>
-
-                    {selectedEvent.products.length > 0 && (
-                      <div className="addon-box">
-                        <h3>{tx("ซื้อสินค้าที่ระลึกเพิ่มพร้อมการสมัคร (ทางเลือก — แยกรายการจากค่าสมัคร)")}</h3>
-                        <div className="form-grid-2">
-                          <div className="form-row">
-                            <label htmlFor="addon-sel">{tx("เลือกรายการซื้อเพิ่ม")}</label>
-                            <select
-                              id="addon-sel"
-                              value={includeAddonId}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setIncludeAddonId(val);
-                                const found = selectedEvent.products.find(
-                                  (p) => p.id === val
-                                );
-                                if (found) {
-                                  setAddonSize(found.availableSizes[0] ?? 'M');
-                                }
-                              }}
-                            >
-                              <option value="none">
-                                {tx("ไม่ซื้อสินค้าเพิ่ม (รับเฉพาะสิทธิ์ตามแพ็กเกจสมัคร)")}
-                              </option>
-                              {selectedEvent.products.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                  + {tx(p.nameTh)} ({formatThb(p.priceSatang)})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          {selectedAddonProduct && (
-                            <div className="form-row">
-                              <label htmlFor="addon-sz">{tx("ขนาดสินค้าซื้อเพิ่ม")}</label>
-                              <select
-                                id="addon-sz"
-                                value={addonSize}
-                                onChange={(e) => setAddonSize(e.target.value)}
-                              >
-                                {selectedAddonProduct.availableSizes.map((s) => (
-                                  <option key={s} value={s}>
-                                    {tx(s)}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="wizard-nav-row">
-                      <span className="muted-inline">
-                        {tx("ระยะที่เลือก: ")} <strong>{tx(activeCategory.name)}</strong>
-                      </span>
-                      <button
-                        type="button"
-                        className="btn-primary"
-                        onClick={() => setRegStep(2)}
-                      >
-                        <span>{tx("ถัดไป: ข้อมูลผู้สมัคร")}</span>
-                        <IconArrowRight size={15} />
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {regStep === 2 && (
-                  <div className="wizard-pane">
-                    <h2>{tx("กรอกข้อมูลผู้เข้าแข่งขันและยอมรับกติกางาน")}</h2>
-                    <label className="checkbox-row">
-                      <input
-                        type="checkbox"
-                        checked={registerForSelf}
-                        onChange={(e) => setRegisterForSelf(e.target.checked)}
-                      />
-                      <span>{tx("สมัครให้ตนเอง (ผู้ซื้อและผู้เข้าแข่งขันเป็นบุคคลเดียวกัน)")}</span>
-                    </label>
-
-                    <div className="form-grid-2">
-                      <div className="form-row">
-                        <label htmlFor="reg-b-name">{tx("ชื่อ-นามสกุลผู้ซื้อคำสั่งซื้อ")}</label>
-                        <input
-                          id="reg-b-name"
-                          type="text"
-                          value={buyerName}
-                          onChange={(e) => {
-                            setBuyerName(e.target.value);
-                            if (registerForSelf) {
-                              setParticipantNameTh(e.target.value);
-                            }
-                          }}
-                          required
-                        />
-                      </div>
-
-                      {!registerForSelf && (
-                        <div className="form-row">
-                          <label htmlFor="reg-p-name">
-                            {tx("ชื่อ-นามสกุลผู้เข้าแข่งขันจริง")}
-                          </label>
-                          <input
-                            id="reg-p-name"
-                            type="text"
-                            value={participantNameTh}
-                            onChange={(e) =>
-                              setParticipantNameTh(e.target.value)
-                            }
-                            required
-                          />
-                        </div>
-                      )}
-
-                      <div className="form-row">
-                        <label htmlFor="reg-p-en">{tx("ชื่อภาษาอังกฤษบนป้าย BIB")}</label>
-                        <input
-                          id="reg-p-en"
-                          type="text"
-                          value={participantNameEn}
-                          onChange={(e) => setParticipantNameEn(e.target.value)}
-                        />
-                      </div>
-                    </div>
-
-                    <RunnerCustomFieldsInputs
-                      fields={selectedEvent.customFields}
-                      answers={customAnswers}
-                      raceDistanceCode={activeCategory?.code}
-                      shirtSize={shirtSize}
-                      publishedFormVersion={
-                        selectedEvent.publishedFormVersion ?? 'v1.2-published'
-                      }
-                      onAnswerChange={(fieldId, val) => {
-                        setStep2Error(null);
-                        setCustomAnswers((prev) => ({
-                          ...prev,
-                          [fieldId]: val,
-                        }));
-                      }}
-                    />
-
-                    {step2Error && (
-                      <div className="error-callout" role="alert">
-                        <IconAlert size={16} />
-                        <span>{tx(step2Error)}</span>
-                      </div>
-                    )}
-
-                    <div className="consent-group">
-                      <label className="checkbox-row">
-                        <input
-                          type="checkbox"
-                          checked={acceptedRules}
-                          onChange={(e) => setAcceptedRules(e.target.checked)}
-                        />
-                        <span>
-                          <strong>{tx("[จำเป็น]")}</strong> {tx(" ยอมรับกติกาการแข่งขันและเงื่อนไขความปลอดภัยฉบับ")}{' '}
-                          <span className="mono-code">
-                            {tx(selectedEvent.rulesVersion)}
-                          </span>
-                        </span>
-                      </label>
-
-                      <label className="checkbox-row">
-                        <input
-                          type="checkbox"
-                          checked={marketingConsent}
-                          onChange={(e) =>
-                            setMarketingConsent(e.target.checked)
-                          }
-                        />
-                        <span>
-                          {tx("[ไม่บังคับ] ยินยอมรับข่าวสารประชาสัมพันธ์จากผู้จัดงาน")}
-                        </span>
-                      </label>
-                    </div>
-
-                    <div className="wizard-nav-row">
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() => setRegStep(1)}
-                      >
-                        {tx("ย้อนกลับ")}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-primary"
-                        onClick={() => {
-                          const allProblems = validateAnswers(selectedEvent.customFields ?? [], customAnswers, {
-                            raceDistance: activeCategory?.code,
-                            shirtSize,
-                          });
-                          setFormErrors(allProblems);
-                          const firstProblem = Object.values(allProblems)[0];
-                          if (firstProblem) {
-                            setStep2Error(firstProblem);
-                            return;
-                          }
-                          setStep2Error(null);
-                          setRegStep(3);
-                        }}
-                      >
-                        <span>{tx("ถัดไป: ตรวจสอบยอดรวม")}</span>
-                        <IconArrowRight size={15} />
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {regStep === 3 && activeCategory && (
-                  <div className="wizard-pane">
-                    <h2>{tx("สรุปยอดชำระแยกรายการก่อนยืนยัน")}</h2>
-                    {(() => {
-                      const tier = getCurrentTier(activeCategory);
-                      const quote = calculateFeeQuote(
-                        tier.priceSatang,
-                        selectedEvent.feeBearerPolicy
-                      );
-                      const addonSatang = addonSatangTotal;
-                      const grandTotal = quote.runnerNetPaySatang + addonSatang + regShipQuote.totalSatang;
-
-                      return (
-                        <div className="price-breakdown-box">
-                          <div className="breakdown-line">
-                            <span>
-                              {tx("ค่าสมัครวิ่ง ")} {tx(activeCategory.name)} ({tx(tier.label)}{tx(") · เสื้อสิทธิ์สมัครไซส์ ")} {tx(shirtSize)}
-                            </span>
-                            <span className="mono-num">
-                              {formatThb(quote.baseSatang, true)}
-                            </span>
-                          </div>
-                          <div className="breakdown-line">
-                            <span>{tx("ค่าบริการแพลตฟอร์มฝั่งผู้สมัคร")}</span>
-                            <span className="mono-num">
-                              {formatThb(quote.runnerFeeSatang, true)}
-                            </span>
-                          </div>
-                          {selectedAddonProduct && (
-                            <div className="breakdown-line">
-                              <span>
-                                {tx("สินค้าซื้อเพิ่ม: ")} {tx(selectedAddonProduct.nameTh)} (
-                                {tx(addonSize)}{tx(") — รับหน้างาน")}
-                              </span>
-                              <span className="mono-num">
-                                {formatThb(addonSatang, true)}
-                              </span>
-                            </div>
-                          )}
-                          <div className="breakdown-line breakdown-total">
-                            <strong>{tx("ยอดชำระสุทธิรวมทั้งหมด")}</strong>
-                            <strong className="mono-num text-vermilion">
-                              {formatThb(grandTotal, true)}
-                            </strong>
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    <div className="form-row">
-                      <label>{tx("ช่องทางชำระเงิน")}</label>
-                      <div className="pill-tabs-bar" role="radiogroup" aria-label={tx("เลือกช่องทางชำระเงิน")}>
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={paymentChannel === 'promptpay'}
-                          className={`pill-tab ${
-                            paymentChannel === 'promptpay' ? 'active' : ''
-                          }`}
-                          onClick={() => setPaymentChannel('promptpay')}
-                        >
-                          {tx("QR PromptPay (สแกนจ่ายทันที)")}
-                        </button>
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={paymentChannel === 'card'}
-                          className={`pill-tab ${
-                            paymentChannel === 'card' ? 'active' : ''
-                          }`}
-                          onClick={() => setPaymentChannel('card')}
-                        >
-                          {tx("บัตรเครดิต / เดบิต")}
-                        </button>
-                      </div>
-                    </div>
-
-                    {checkoutError && (
-                      <div className="error-callout" role="alert">
-                        <IconAlert size={16} />
-                        <div className="callout-flex">
-                          <span>{tx(checkoutError)}</span>
-                          {currentUser &&
-                            (FEATURES.emailVerification
-                              ? !currentUser.emailVerified
-                              : !currentUser.contactEmail) && (
-                            <button
-                              type="button"
-                              className="btn-secondary"
-                              onClick={onOpenAccountSecurity}
-                            >
-                              {FEATURES.emailVerification
-                                ? tx("ไปหน้าเพิ่มและยืนยันอีเมล")
-                                : tx("ไปหน้าเพิ่มอีเมล")}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="wizard-nav-row">
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() => setRegStep(2)}
-                      >
-                        {tx("ย้อนกลับ")}
-                      </button>
-                      {!currentUser ? (
-                        <button
-                          type="button"
-                          className="btn-primary"
-                          onClick={() =>
-                            onRequireLoginWithIntent({
-                              surface: 'events',
-                              eventId: selectedEvent.id,
-                              eventTab: 'register',
-                              label: `ยืนยันการสมัครงาน ${selectedEvent.titleTh}`,
-                            })
-                          }
-                        >
-                          <IconLock size={15} />
-                          <span>{tx("เข้าสู่ระบบเพื่อดำเนินการชำระเงิน")}</span>
-                        </button>
-                      ) : (
-                        <div className="cta-inline-row">
-                          {submitting && (
-                            <span className="reg-submit-wait" role="status" aria-live="polite">
-                              <MascotSprite pose="run" size={30} />
-                              <span>{tx("กำลังกันที่และยืนยันคำสั่งซื้อ…")}</span>
-                            </span>
-                          )}
-                          <button type="submit" className="btn-cta-accent" disabled={submitting}>
-                            <IconCheckCircle size={16} />
-                            <span>
-                              {tx("ชำระเงินด้วย")}{' '}
-                              {paymentChannel === 'promptpay'
-                                ? 'PromptPay'
-                                : tx("บัตร")}
-                            </span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </form>
-            )}
-          </section>
-        )}
-
             {/* MODE C: EVENT STOREFRONT FOR GENERAL CUSTOMERS */}
             {!showRegForm && detailTab === 'storefront' && (
               <StorefrontView
@@ -4430,37 +2324,22 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   <div className="sticky-selected-cat-summary">
                     <div className="section-title-bar">
                       <strong>
-                        {txf('ค่าสมัคร {0} ระยะ', selectedEvent.categories.length)}
+                        {txf('ระยะวิ่ง {0} ระยะ', selectedEvent.categories.length)}
                       </strong>
                     </div>
-                    <div className="muted-inline">
-                      {selectedEvent.categories.map((c) => tx(c.code)).join(' · ')}
-                    </div>
-                    <div className="sticky-price-row">
-                      <div>
-                        <span className="muted-inline">{tx('ราคาสุทธิเริ่มต้น')}</span>
-                        <div className="muted-inline">
-                          {selectedEvent.feeBearerPolicy === 'organizer_absorbs'
-                            ? tx("ผู้จัดรับภาระค่าบริการแทนนักวิ่ง")
-                            : tx("รวมค่าบริการแพลตฟอร์มแล้ว")}
-                        </div>
-                      </div>
-                      <strong className="sticky-price-big mono-num text-vermilion">
-                        {formatThb(priceFromSatang, true)}
-                      </strong>
-                    </div>
+                    {/* one distance per line, larger, each with its own colour (the text says it all) */}
+                    <ul className="sticky-dist-list">
+                      {selectedEvent.categories.map((c, i) => (
+                        <li key={c.id} className={`sticky-dist is-tone-${i % 4}`}>
+                          <strong className="sticky-dist-km">{tx(c.code)}</strong>
+                          <span className="sticky-dist-name">{tx(c.name)}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 </div>
               )}
 
-              {cardCfg.showShortcuts !== false && (
-                <SectionShortcuts
-                  blocks={resolveDetailBlocksDeep(shownPage)}
-                  spy={isEditorialView}
-                  pageKey={selectedEvent.id}
-                  onJump={jumpToEditorialSection}
-                />
-              )}
               <StickyCardCompact
                 firstSectionId={detailBlocks[0]?.sectionId}
                 enabled={isEditorialView}

@@ -15,7 +15,8 @@
   /* organization/event/search row and the organization tabs stay on screen while scrolling */
   position: sticky;
   top: var(--topbar-height);
-  z-index: 30;
+  /* below the site header (z-index 30) so its account menu opens over this bar */
+  z-index: 29;
 }
 
 .orgnav-top-row {
@@ -816,4 +817,29 @@
 
 .orgnav-event-pick select {
   max-width: 20rem;
+}
+
+/* medium screens: the organization and event selects shrink instead of spilling over each other;
+   their text labels become screen-reader only (the icons stay) */
+.orgnav-org select {
+  min-width: 0;
+}
+
+@media (max-width: 80rem) and (min-width: 48.01rem) {
+  .orgnav-org .orgnav-org-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .orgnav-org select {
+    max-width: 13rem;
+  }
+
+  .orgnav-event-pick select {
+    max-width: 15rem;
+  }
 }

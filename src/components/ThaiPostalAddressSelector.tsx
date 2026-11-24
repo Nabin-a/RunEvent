@@ -12,6 +12,7 @@ import {
   UNIQUE_POSTAL_CODES,
 } from '../data/thaiPostalAddresses';
 import { getLang, tx, txf } from '../i18n';
+import { SelectMenu } from './SelectMenu';
 import { displayPhone } from '../utils/phone';
 
 export interface CascadingAddressValue {
@@ -33,6 +34,8 @@ interface ThaiPostalAddressSelectorProps {
   streetAddressPlaceholder?: string;
   required?: boolean;
   singleColumn?: boolean;
+  /** Shown above the address in the read-only summary when given (recipient / owner). */
+  contactName?: string | null;
   /** Shown under the address in the read-only summary when given. */
   contactPhone?: string | null;
   contactEmail?: string | null;
@@ -216,6 +219,7 @@ export const ThaiPostalAddressSelector: React.FC<
   streetAddressLabel = 'ที่อยู่ (บ้านเลขที่ อาคาร ซอย ถนน)',
   streetAddressPlaceholder = 'เช่น 199/8 ถ.ห้วยแก้ว หมู่บ้านล้านนาวิว',
   required = false,
+  contactName,
   contactPhone,
   contactEmail,
   summaryFooter,
@@ -350,7 +354,7 @@ export const ThaiPostalAddressSelector: React.FC<
   const distTrim = value.district.trim();
   const provTrim = value.province.trim();
 
-  const formattedSummary = useMemo(() => {
+  const addressLine = useMemo(() => {
     let address: string;
     if (isEn) {
       const parts = [
@@ -369,13 +373,21 @@ export const ThaiPostalAddressSelector: React.FC<
       const parts = [addrTrim, subdLabel, distLabel, provLabel, zipTrim].filter(Boolean);
       address = parts.length > 0 ? parts.join(' ') : tx('— ยังไม่ได้กรอกข้อมูลที่อยู่ —');
     }
+    return address;
+  }, [addrTrim, zipTrim, subdTrim, distTrim, provTrim, isEn]);
+
+  // summary: recipient name, address, phone, email (each only when given)
+  const formattedSummary = useMemo(() => {
+    const name = (contactName ?? '').trim();
     const phone = displayPhone(contactPhone);
     const email = (contactEmail ?? '').trim();
-    const lines = [address];
+    const lines: string[] = [];
+    if (name) lines.push(name);
+    lines.push(addressLine);
     if (phone) lines.push(txf('โทร {0}', phone));
     if (email) lines.push(txf('อีเมล {0}', email));
     return lines.join('\n');
-  }, [addrTrim, zipTrim, subdTrim, distTrim, provTrim, isEn, contactPhone, contactEmail]);
+  }, [addressLine, contactName, contactPhone, contactEmail]);
 
   // street + postal fields are shared by the stacked and the compact layouts
   const streetField = showStreetAddress && (
@@ -678,7 +690,7 @@ export const ThaiPostalAddressSelector: React.FC<
 
         <p className="postal-compact-summary" aria-live="polite">
           <span className="postal-compact-summary-label">{tx('สรุปที่อยู่')}</span>
-          <span>{formattedSummary.split('\n')[0]}</span>
+          <span>{addressLine}</span>
         </p>
         {summaryFooter && <div className="postal-compact-full">{summaryFooter}</div>}
       </div>
@@ -708,11 +720,11 @@ export const ThaiPostalAddressSelector: React.FC<
                 {required ? <RequiredFieldText text="*" /> : ''}
               </label>
               {subdistrictOptions.length > 0 ? (
-                <select
+                <SelectMenu
                   id={`${idPrefix}-subd`}
                   value={value.subdistrict}
-                  onChange={(e) => {
-                    const nextSub = e.target.value;
+                  options={subdistrictOptions.map((sd) => ({ value: sd, label: tx(sd) }))}
+                  onChange={(nextSub) => {
                     const syncedZip = findPostalCodeForLocation(
                       value.province,
                       value.district,
@@ -726,13 +738,7 @@ export const ThaiPostalAddressSelector: React.FC<
                     });
                   }}
                   required={required}
-                >
-                  {subdistrictOptions.map((s) => (
-                    <option key={s} value={s}>
-                      {tx(s)}
-                    </option>
-                  ))}
-                </select>
+                />
               ) : (
                 <input
                   id={`${idPrefix}-subd`}
@@ -758,18 +764,13 @@ export const ThaiPostalAddressSelector: React.FC<
                 {required ? <RequiredFieldText text="*" /> : ''}
               </label>
               {districtOptions.length > 0 ? (
-                <select
+                <SelectMenu
                   id={`${idPrefix}-dist`}
                   value={value.district}
-                  onChange={(e) => handleDistrictChange(e.target.value)}
+                  onChange={handleDistrictChange}
                   required={required}
-                >
-                  {districtOptions.map((d) => (
-                    <option key={d} value={d}>
-                      {tx(d)}
-                    </option>
-                  ))}
-                </select>
+                  options={districtOptions.map((d) => ({ value: d, label: tx(d) }))}
+                />
               ) : (
                 <input
                   id={`${idPrefix}-dist`}
@@ -794,18 +795,13 @@ export const ThaiPostalAddressSelector: React.FC<
                 {tx('จังหวัด')}{' '}
                 {required ? <RequiredFieldText text="*" /> : ''}
               </label>
-              <select
+              <SelectMenu
                 id={`${idPrefix}-prov`}
                 value={value.province}
-                onChange={(e) => handleProvinceChange(e.target.value)}
+                onChange={handleProvinceChange}
                 required={required}
-              >
-                {provinceOptions.map((p) => (
-                  <option key={p} value={p}>
-                    {tx(p)}
-                  </option>
-                ))}
-              </select>
+                options={provinceOptions.map((p) => ({ value: p, label: tx(p) }))}
+              />
             </div>
           </>
         )}

@@ -3285,3 +3285,298 @@ body:has(.app-root.is-embed) .mreg-bar {
   color: var(--ink-primary);
   font-size: 0.875rem;
 }
+
+/* event page register card: one distance per line, larger, each with its own colour
+   (24 Nov 2026, user request). The distance is written out, so colour is never the only cue. */
+.sticky-dist-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sticky-dist {
+  --dist-ink: var(--navy-ink);
+  --dist-soft: var(--navy-soft);
+  --dist-line: var(--navy-border);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.6rem;
+  min-width: 0;
+}
+
+.sticky-dist.is-tone-1 {
+  --dist-ink: var(--forest);
+  --dist-soft: var(--forest-soft);
+  --dist-line: var(--forest-border);
+}
+
+.sticky-dist.is-tone-2 {
+  --dist-ink: var(--amber);
+  --dist-soft: var(--amber-soft);
+  --dist-line: var(--amber-border);
+}
+
+.sticky-dist.is-tone-3 {
+  --dist-ink: var(--danger);
+  --dist-soft: var(--danger-soft);
+  --dist-line: var(--danger-border);
+}
+
+.sticky-dist-km {
+  padding: 0.1rem 0.65rem;
+  border: 1px solid var(--dist-line);
+  border-radius: var(--radius-pill);
+  background: var(--dist-soft);
+  color: var(--dist-ink);
+  font-size: 1.125rem;
+  font-weight: 800;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sticky-dist-name {
+  min-width: 0;
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+/* the card shrinks while reading the page: the list goes with the other details */
+.app-root.is-public .event-detail-page .sticky-register-card.is-compact .sticky-dist-list {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Sign in / forgot password as one screen (24 Nov 2026, user choice:  */
+/* "ฉากเต็มจอ มาสคอตวิ่งล่างจอ"): the mint landscape fills the page,   */
+/* the card sits in the middle, the rabbit runs along the track below. */
+/* ------------------------------------------------------------------ */
+.app-root.is-public .auth-page-shell.is-scene {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  width: 100%;
+  max-width: none;
+  min-height: calc(100dvh - var(--app-header-height, 4.25rem));
+  margin: 0;
+  padding: clamp(0.75rem, 2.5dvh, 1.75rem) 1rem clamp(4.75rem, 13dvh, 8rem);
+  box-sizing: border-box;
+  overflow: hidden;
+  background: url('./assets/illustrations/hero-running-track.webp') 30% bottom / cover no-repeat,
+    var(--kr-auth-sky);
+}
+
+/* the page is the scene: no footer under it, so nothing scrolls */
+body:has(.auth-page-shell.is-scene) .minimal-footer {
+  display: none;
+}
+
+.app-root.is-public .auth-page-shell.is-scene .intent-return-banner {
+  width: min(100%, 27rem);
+  margin: 0;
+}
+
+.app-root.is-public .auth-page-shell.is-scene .auth-centered-wrap.kr-auth-split {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: none;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.auth-page-shell.is-scene .kr-auth-art {
+  position: static;
+  align-self: center;
+  align-items: center;
+  gap: 0.2rem;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  overflow: visible;
+  background: none;
+  text-align: center;
+}
+
+.auth-page-shell.is-scene .kr-auth-art-title {
+  max-width: none;
+  font-size: clamp(1.5rem, 1.2rem + 1.4dvh, 2.25rem);
+}
+
+.auth-page-shell.is-scene .kr-auth-art-sub {
+  max-width: none;
+  font-size: 1rem;
+}
+
+/* the rabbit runs down the middle lane towards the viewer, behind the card, then starts again;
+   the path is worked out from the picture in authSceneRun.ts, which also shows it (hidden until then) */
+.auth-page-shell.is-scene .kr-auth-mascot {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 0;
+  width: clamp(5rem, 11dvh, 8rem);
+  opacity: 0;
+}
+
+/* sign-up shares the scene but has no rabbit */
+.auth-page-shell.is-scene:not(.is-fit) .kr-auth-mascot {
+  display: none;
+}
+
+/* sign-up (24 Nov 2026, user request): same scene and card as sign in, but the form is long and
+   the page scrolls; the landscape stays put behind it */
+.app-root.is-public .auth-page-shell.is-scene:not(.is-fit) {
+  overflow: visible;
+  padding-block: clamp(1.25rem, 4dvh, 2.5rem);
+  background: none;
+}
+
+.app-root.is-public .auth-page-shell.is-scene:not(.is-fit)::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: url('./assets/illustrations/hero-running-track.webp') 30% bottom / cover no-repeat,
+    var(--kr-auth-sky);
+  pointer-events: none;
+}
+
+/* phones and small tablets (≤ 768px): no rabbit (user request 24 Nov 2026) */
+@media (max-width: 48rem) {
+  .auth-page-shell.is-scene .kr-auth-mascot {
+    display: none;
+  }
+}
+
+.app-root.is-public .auth-page-shell.is-scene .kr-auth-split .auth-primary-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 27rem;
+  padding: clamp(1rem, 2.6dvh, 1.75rem) clamp(1rem, 3vw, 1.75rem);
+  border: 1px solid var(--kr-mint-line);
+  border-radius: var(--kr-radius-card);
+  background: var(--bg-surface);
+  box-shadow: var(--kr-shadow-raise);
+}
+
+.app-root.is-public .auth-page-shell.is-scene .auth-card-head h1 {
+  font-size: 1.5rem;
+}
+
+/* short screens: a smaller greeting and track so the card still fits */
+@media (max-height: 48rem) {
+  .app-root.is-public .auth-page-shell.is-scene.is-fit {
+    gap: 0.4rem;
+  }
+
+  .auth-page-shell.is-scene.is-fit .kr-auth-art-sub {
+    display: none;
+  }
+
+  .auth-page-shell.is-scene.is-fit .kr-auth-art-title {
+    font-size: 1.375rem;
+  }
+
+  .auth-page-shell.is-scene.is-fit .kr-auth-mascot {
+    width: 4.5rem;
+    bottom: 0.5rem;
+  }
+
+  .app-root.is-public .auth-page-shell.is-scene.is-fit .auth-primary-card input:not([type='checkbox']):not([type='radio']) {
+    min-height: 2.625rem;
+  }
+
+  .app-root.is-public .auth-page-shell.is-scene.is-fit .auth-primary-card .btn-primary {
+    min-height: 2.875rem;
+  }
+}
+
+/* providers one per row (user request 24 Nov 2026), a little tighter so the page still fits */
+.auth-page-shell.is-scene .social-buttons-stack {
+  gap: 0.375rem;
+}
+
+.auth-page-shell.is-scene .btn-social {
+  min-height: 2.5rem;
+}
+
+.auth-page-shell.is-scene .divider-line-text {
+  margin: 0.75rem 0;
+}
+
+/* the rabbit runs behind the card (or is not shown on phones), so no room is kept for it below */
+.app-root.is-public .auth-page-shell.is-scene {
+  padding-bottom: clamp(0.75rem, 2.5dvh, 1.75rem);
+}
+
+/* short screens: the card's own heading says where you are, so the greeting steps aside,
+   and the card closes up a little */
+@media (max-height: 46rem) {
+  .auth-page-shell.is-scene.is-fit .kr-auth-art-title {
+    display: none;
+  }
+
+  /* the greeting's empty slot keeps no gap above the card */
+  .app-root.is-public .auth-page-shell.is-scene.is-fit .auth-centered-wrap.kr-auth-split {
+    gap: 0;
+  }
+}
+
+/* the card's own spacing on the scene: one even rhythm instead of stacked margins */
+.app-root.is-public .auth-page-shell.is-scene .auth-primary-card > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.app-root.is-public .auth-page-shell.is-scene .auth-primary-card > * + * {
+  margin-top: 0.85rem;
+}
+
+.app-root.is-public .auth-page-shell.is-scene .auth-card-head p {
+  margin: 0.2rem 0 0;
+}
+
+.app-root.is-public .auth-page-shell.is-scene .auth-register-footer-row {
+  padding-block: 0.25rem;
+}
+
+@media (max-height: 48rem) {
+  .app-root.is-public .auth-page-shell.is-scene.is-fit .auth-card-head p {
+    display: none;
+  }
+
+  .app-root.is-public .auth-page-shell.is-scene.is-fit .auth-primary-card > * + * {
+    margin-top: 0.65rem;
+  }
+
+  .app-root.is-public .auth-page-shell.is-scene.is-fit .auth-cred-form {
+    gap: 0.55rem;
+  }
+}
+
+@media (max-height: 46rem) {
+  .app-root.is-public .auth-page-shell.is-scene.is-fit .auth-primary-card > * + * {
+    margin-top: 0.5rem;
+  }
+
+  .app-root.is-public .auth-page-shell.is-scene.is-fit .auth-cred-form {
+    gap: 0.45rem;
+  }
+}
+
+

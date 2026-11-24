@@ -376,10 +376,6 @@ export function CardInspector({
         <span>{tx('แถบโควตารวมทั้งงาน')}</span>
       </label>
       {!totalQuotaOn && <p className="pe-hint">{tx('งานนี้ปิดโควตารวมอยู่ แถบนี้จึงไม่แสดงอยู่แล้ว')}</p>}
-      <label className="pe-check">
-        <input type="checkbox" checked={card.showShortcuts !== false} onChange={(e) => set({ showShortcuts: e.target.checked })} />
-        <span>{tx('ลิงก์ลัดไปแต่ละส่วนของหน้า')}</span>
-      </label>
       <div className="pe-source-rows">
         <span className="pe-label">{tx('ข้อมูลจากระบบ (แก้ที่เมนูต้นทาง)')}</span>
         <div className="pe-source-row">

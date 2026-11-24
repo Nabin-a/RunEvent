@@ -175,8 +175,8 @@ export function SouvenirPicker({
                 <div className="sv-copy">
                   <strong className="sv-name">{tx(p.nameTh)}</strong>
                   <span className="sv-meta">
-                    {p.saleMode === 'preorder' ? tx('พรีออเดอร์') : tx('พร้อมส่ง')} ·{' '}
-                    {out ? tx('หมดแล้ว') : txf('เหลือ {0} ชิ้น', left)}
+                    {p.saleMode === 'preorder' ? tx('พรีออเดอร์') : tx('พร้อมส่ง')}
+                    {out && <> · {tx('หมดแล้ว')}</>}
                   </span>
                 </div>
                 <span className="mono-num sv-price">{formatThb(p.priceSatang, true)}</span>

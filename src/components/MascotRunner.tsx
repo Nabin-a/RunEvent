@@ -50,6 +50,8 @@ export const MascotSprite: React.FC<{
 /* 1) Registration stepper: the rabbit runs to the current step              */
 /* ------------------------------------------------------------------------ */
 const STEP_RUN_MS = 900;
+/** half the standing rabbit's width at the stepper's 44px height (stand.webp is 130 × 240) */
+const STAND_HALF_WIDTH = Math.ceil((44 * 130) / 240 / 2);
 
 /**
  * Run state for a mascot that moves between steps: `running` is true for one
@@ -78,30 +80,42 @@ export const MascotStepTrack: React.FC<{
 }> = ({ stepperRef, stepIndex, complete }) => {
   const [x, setX] = useState<number | null>(null);
   const { running, flip } = useStepRun(stepIndex);
+  const trackRef = useRef<HTMLDivElement | null>(null);
 
+  // Where the rabbit stops: right under the current ring's centre, measured against the track
+  // the rabbit moves in (not the stepper, which can be wider or offset). Measured again when the
+  // run ends, when fonts load and when either box changes size, so a measure taken mid-run
+  // (wider running pose, form below changing height) never leaves it off the ring.
   useLayoutEffect(() => {
     const nav = stepperRef.current;
-    if (!nav) return;
+    const track = trackRef.current;
+    if (!nav || !track) return;
     const measure = () => {
-      const nodes = nav.querySelectorAll<HTMLElement>('.circle-step-node');
-      const node = nodes[stepIndex];
+      const node = nav.querySelectorAll<HTMLElement>('.circle-step-node')[stepIndex];
       if (!node) return;
-      const navBox = nav.getBoundingClientRect();
       const ring = node.querySelector<HTMLElement>('.circle-step-ring') ?? node;
       const box = ring.getBoundingClientRect();
-      // keep the whole rabbit inside the track at the first / last step
-      const half = 24;
-      setX(Math.min(Math.max(box.left + box.width / 2 - navBox.left, half), navBox.width - half));
+      const trackBox = track.getBoundingClientRect();
+      // keep the standing rabbit inside the track (its width, not the wider running pose)
+      const half = STAND_HALF_WIDTH;
+      const centre = box.left + box.width / 2 - trackBox.left;
+      setX(Math.min(Math.max(centre, half), trackBox.width - half));
     };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(nav);
-    return () => ro.disconnect();
-  }, [stepperRef, stepIndex]);
+    ro.observe(track);
+    let alive = true;
+    void document.fonts?.ready.then(() => alive && measure());
+    return () => {
+      alive = false;
+      ro.disconnect();
+    };
+  }, [stepperRef, stepIndex, running]);
 
   const pose: MascotPose = running ? 'run' : complete ? 'cheer' : 'stand';
   return (
-    <div className="mascot-step-track" aria-hidden="true">
+    <div ref={trackRef} className="mascot-step-track" aria-hidden="true">
       {x !== null && (
         // transform, not left: the run is composited on the GPU, no layout work per frame
         <span className="mascot-step-runner" style={{ transform: `translateX(${x}px) translateX(-50%)` }}>

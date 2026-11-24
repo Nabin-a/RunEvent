@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { startSceneRun } from './authSceneRun';
 import {
   AuthProviderType,
   Organization,
@@ -785,11 +786,36 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     authTab === 'signup' &&
     ENABLE_ORGANIZER_SELF_ONBOARDING &&
     (signupFlowMode === 'select_type' || signupFlowMode === 'organizer_wizard');
+  // sign in, forgot password and runner sign-up share the landscape scene (24 Nov 2026);
+  // only sign in / forgot password fit one screen and have the running rabbit
+  const isScene = !isWideOrganizerFlow;
+  const isFitScene = isScene && authTab !== 'signup';
+
+  // sign in / forgot password: the rabbit runs down the lane of the scene (wider screens)
+  useEffect(() => {
+    if (!isFitScene) return;
+    const wide = window.matchMedia('(min-width: 48.01rem)');
+    let stop: (() => void) | null = null;
+    const start = () => {
+      stop?.();
+      stop = null;
+      if (!wide.matches) return;
+      const scene = document.querySelector<HTMLElement>('.auth-page-shell.is-fit');
+      const rabbit = scene?.querySelector<HTMLElement>('.kr-auth-mascot');
+      if (scene && rabbit) stop = startSceneRun(scene, rabbit);
+    };
+    start();
+    wide.addEventListener('change', start);
+    return () => {
+      wide.removeEventListener('change', start);
+      stop?.();
+    };
+  }, [isFitScene]);
 
   return (
     <main
       className={`auth-page-shell ${isWideOrganizerFlow ? 'auth-signup-shell' : 'auth-single-shell'
-        }`}
+        } ${isScene ? 'is-scene' : ''} ${isFitScene ? 'is-fit' : ''}`}
     >
       {returnIntent && (
         <div className="intent-return-banner" role="status">
@@ -984,9 +1010,22 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   />
                 </div>
 
-                {/* Layer 2: Password */}
+                {/* Layer 2: Password, with "forgot password" on the label's line */}
                 <div className="form-row">
-                  <label htmlFor="signin-pass">{tx("รหัสผ่าน")}</label>
+                  <div className="auth-label-row">
+                    <label htmlFor="signin-pass">{tx("รหัสผ่าน")}</label>
+                    <button
+                      type="button"
+                      className="auth-inline-link-btn"
+                      onClick={() => {
+                        setAuthTab('forgot');
+                        setStatusAlert(null);
+                        window.history.replaceState({}, '', '/login?mode=forgot');
+                      }}
+                    >
+                      {tx("ลืมรหัสผ่าน?")}
+                    </button>
+                  </div>
                   <div className="password-field-wrap">
                     <input
                       id="signin-pass"
@@ -1017,21 +1056,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   </div>
                 </div>
 
-                {/* Layer 3: Forgot Password + Sign In Button */}
-                <div className="auth-forgot-row">
-                  <button
-                    type="button"
-                    className="auth-inline-link-btn"
-                    onClick={() => {
-                      setAuthTab('forgot');
-                      setStatusAlert(null);
-                      window.history.replaceState({}, '', '/login?mode=forgot');
-                    }}
-                  >
-                    {tx("ลืมรหัสผ่าน?")}
-                  </button>
-                </div>
-
+                {/* Layer 3: Sign In Button */}
                 <button type="submit" className="btn-primary btn-full">
                   <IconLock size={16} />
                   <span>{tx("เข้าสู่ระบบ")}</span>

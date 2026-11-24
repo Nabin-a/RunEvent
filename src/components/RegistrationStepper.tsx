@@ -16,6 +16,7 @@ export function RegistrationStepper<S extends number>({
   complete,
   stepperRef,
   onJump,
+  freeJump = false,
 }: {
   steps: { step: S; label: string }[];
   current: S;
@@ -23,6 +24,8 @@ export function RegistrationStepper<S extends number>({
   stepperRef: RefObject<HTMLElement | null>;
   /** reopen a finished step */
   onJump: (step: S) => void;
+  /** any step can be opened, also ahead (the organizer's preview of the form) */
+  freeJump?: boolean;
 }) {
   return (
     <>
@@ -41,7 +44,7 @@ export function RegistrationStepper<S extends number>({
                 className={`circle-step-node ${isCurrent ? 'active' : isDone ? 'done' : ''}`}
                 aria-current={isCurrent ? 'step' : undefined}
                 onClick={() => {
-                  if (item.step < current) onJump(item.step);
+                  if (item.step < current || (freeJump && item.step !== current)) onJump(item.step);
                 }}
               >
                 <span className="circle-step-label">{tx(item.label)}</span>
@@ -69,7 +72,7 @@ export function RegistrationStepper<S extends number>({
         current={current}
         complete={complete}
         onJump={(step) => {
-          if (step < current) onJump(step);
+          if (step < current || (freeJump && step !== current)) onJump(step);
         }}
       />
     </>

@@ -134,40 +134,40 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 export function validateAnswer(field: CustomRegistrationField, value: string | boolean | undefined): string | null {
   if (isContentField(field)) return null;
   const v = value ?? field.defaultValue;
-  if (field.type === 'checkbox') return field.required && v !== true ? `ติ๊กยืนยัน "${field.label}" ก่อน` : null;
+  if (field.type === 'checkbox') return field.required && v !== true ? `กรุณายืนยัน "${field.label}"` : null;
   const s = typeof v === 'string' ? v.trim() : '';
-  if (!s) return field.required ? `ตอบ "${field.label}" ก่อน` : null;
-  if (s.length > FORM_LIMITS.answer) return `"${field.label}" ยาวเกิน ${FORM_LIMITS.answer} ตัวอักษร`;
+  if (!s) return field.required ? (isChoiceField(field) ? `กรุณาเลือก "${field.label}"` : `กรุณากรอก "${field.label}"`) : null;
+  if (s.length > FORM_LIMITS.answer) return `"${field.label}" มีความยาวเกิน ${FORM_LIMITS.answer} ตัวอักษร`;
   const options = field.options ?? [];
   const okChoice = (x: string) => options.includes(x) || (field.allowOther === true && x.startsWith(OTHER_PREFIX) && x.length > OTHER_PREFIX.length);
   switch (field.type) {
     case 'email':
-      return EMAIL_RE.test(s) ? null : `"${field.label}" ต้องเป็นอีเมล เช่น name@example.com`;
+      return EMAIL_RE.test(s) ? null : `กรุณากรอก "${field.label}" เป็นอีเมลที่ถูกต้อง เช่น name@example.com`;
     case 'phone':
-      return PHONE_RE.test(s) ? null : `"${field.label}" ต้องเป็นเบอร์โทร เช่น 0812345678`;
+      return PHONE_RE.test(s) ? null : `กรุณากรอก "${field.label}" เป็นหมายเลขโทรศัพท์ที่ถูกต้อง เช่น 0812345678`;
     case 'number': {
       const n = Number(s);
-      if (!Number.isFinite(n)) return `"${field.label}" ต้องเป็นตัวเลข`;
-      if (field.minValue !== undefined && n < field.minValue) return `"${field.label}" ต้องไม่น้อยกว่า ${field.minValue}`;
-      if (field.maxValue !== undefined && n > field.maxValue) return `"${field.label}" ต้องไม่เกิน ${field.maxValue}`;
+      if (!Number.isFinite(n)) return `กรุณากรอก "${field.label}" เป็นตัวเลข`;
+      if (field.minValue !== undefined && n < field.minValue) return `"${field.label}" ต้องมีค่าไม่น้อยกว่า ${field.minValue}`;
+      if (field.maxValue !== undefined && n > field.maxValue) return `"${field.label}" ต้องมีค่าไม่เกิน ${field.maxValue}`;
       return null;
     }
     case 'date':
-      return DATE_RE.test(s) && !Number.isNaN(Date.parse(s)) ? null : `"${field.label}" ต้องเป็นวันที่`;
+      return DATE_RE.test(s) && !Number.isNaN(Date.parse(s)) ? null : `กรุณาระบุ "${field.label}" เป็นวันที่ที่ถูกต้อง`;
     case 'radio':
     case 'select':
     case 'image_choice':
-      return okChoice(s) ? null : `เลือกคำตอบของ "${field.label}" จากตัวเลือกที่มี`;
+      return okChoice(s) ? null : `กรุณาเลือก "${field.label}" จากตัวเลือกที่กำหนด`;
     case 'multiselect': {
       const picked = splitMulti(s);
-      if (picked.some((x) => !okChoice(x))) return `เลือกคำตอบของ "${field.label}" จากตัวเลือกที่มี`;
-      if (field.minChoices && picked.length < field.minChoices) return `"${field.label}" เลือกอย่างน้อย ${field.minChoices} ข้อ`;
-      if (field.maxChoices && picked.length > field.maxChoices) return `"${field.label}" เลือกได้ไม่เกิน ${field.maxChoices} ข้อ`;
+      if (picked.some((x) => !okChoice(x))) return `กรุณาเลือก "${field.label}" จากตัวเลือกที่กำหนด`;
+      if (field.minChoices && picked.length < field.minChoices) return `กรุณาเลือก "${field.label}" อย่างน้อย ${field.minChoices} ข้อ`;
+      if (field.maxChoices && picked.length > field.maxChoices) return `กรุณาเลือก "${field.label}" ไม่เกิน ${field.maxChoices} ข้อ`;
       return null;
     }
     default:
-      if (field.minLength && s.length < field.minLength) return `"${field.label}" ต้องยาวอย่างน้อย ${field.minLength} ตัวอักษร`;
-      if (field.maxLength && s.length > field.maxLength) return `"${field.label}" ยาวได้ไม่เกิน ${field.maxLength} ตัวอักษร`;
+      if (field.minLength && s.length < field.minLength) return `"${field.label}" ต้องมีความยาวอย่างน้อย ${field.minLength} ตัวอักษร`;
+      if (field.maxLength && s.length > field.maxLength) return `"${field.label}" ต้องมีความยาวไม่เกิน ${field.maxLength} ตัวอักษร`;
       return null;
   }
 }

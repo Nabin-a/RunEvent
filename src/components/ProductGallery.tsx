@@ -75,7 +75,6 @@ export function ShirtGallery({
               <th scope="col">{tx('ไซส์')}</th>
               <th scope="col">{tx('รอบอก')}</th>
               <th scope="col">{tx('ความยาว')}</th>
-              <th scope="col">{tx('คงเหลือ')}</th>
             </tr>
           </thead>
           <tbody>
@@ -100,11 +99,11 @@ export function ShirtGallery({
                         onChange={() => onSizeChange(s.size)}
                       />
                       <label htmlFor={id}>{s.size}</label>
+                      {out && <span className="pg-out-tag">{tx('หมดแล้ว')}</span>}
                     </span>
                   </th>
                   <td className="mono-num">{tx(s.chest)}</td>
                   <td className="mono-num">{tx(s.length)}</td>
-                  <td>{out ? tx('หมดแล้ว') : txf('ว่าง {0} ตัว', s.left)}</td>
                 </tr>
               );
             })}

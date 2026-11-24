@@ -6,6 +6,7 @@ import { I18nProvider } from '../src/i18n';
 import '@fortawesome/fontawesome-free/css/all.min.css';
 import '../src/styles.css';
 import '../src/public-theme.css';
+import '../src/viewport-fit.css';
 
 /*
  * Platform Owner console: a separate app (own port / host, own sign-in, own session cookie).

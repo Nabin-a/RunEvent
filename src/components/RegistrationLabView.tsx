@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   EventProduct,
+  OrganizerFormStep,
   RunnerSavedAddress,
   Organization,
   RaceCategory,
@@ -17,7 +18,8 @@ import {
   kitShippingFee,
   quoteRegistrationShipping,
 } from '../utils/pricing';
-import { evaluateCategoryAge, formatAgeGroupLabel, formatBasisDate } from '../utils/age';
+import { evaluateCategoryAge, formatAgeBasis, formatAgeGroupLabel, formatAgeLimit, formatBasisDate } from '../utils/age';
+import { sanitizeEnglishNameInput, sanitizeThaiNameInput } from '../utils/dateFormat';
 import { resolveShirtSpec } from '../data/runnerProfileDefaults';
 import type { PlatformProfileConfig } from '../types';
 import { DateOfBirthInput } from './DateOfBirthInput';
@@ -25,6 +27,7 @@ import { IdNumberInput } from './IdNumberInput';
 import { PhoneInput } from './PhoneInput';
 import { RunnerCustomFieldsInputs } from './PublicEventView';
 import { RequiredFieldText } from './RequiredFieldText';
+import { SelectMenu } from './SelectMenu';
 import { NoteTag, PriceTag } from './RegTags';
 import { RegistrationStepper } from './RegistrationStepper';
 import { ShirtGallery, type ShirtGalleryStyle } from './ProductGallery';
@@ -42,23 +45,51 @@ import { PaymentMethodPicker } from './PaymentMethodPicker';
 import { SouvenirPicker } from './SouvenirPicker';
 import { RegistrationTerms } from './RegistrationTerms';
 import type { CartLine } from './StorefrontView';
-import { RegistrationDone, RegistrationSummary, type ReviewLedgerGroup, type ReviewSection } from './RegistrationReview';
+import { RegistrationSummary, type ReviewLedgerGroup, type ReviewSection } from './RegistrationReview';
 import { EventCoverMedia } from './Icons';
 import { displayPhone } from '../utils/phone';
+import { CORE_STEP, answerText, fieldShown, isContentField } from '../data/registrationForm';
 
 /**
- * Registration form, layout B (sandbox review only).
+ * The registration form (layout B, the only layout since 24 Nov 2026 — layout A was removed on
+ * the user's request). Fields are laid out for reading: one column of titled sections, two fields
+ * per row only where they belong together, generous space between sections.
  *
- * Same steps, same questions and the same progress stepper as the live form, but
- * the fields are laid out for reading instead of fitting one screen: one column of
- * titled sections, two fields per row only where they belong together (first /
- * last name, document type / number), and generous space between sections.
- *
- * It cannot submit. State is local and nothing is sent to the server; step 6 reviews the
- * whole form, step 7 takes the (simulated) payment and step 8 shows a sample receipt.
+ * The form's state, its checks and the booking live in CustomerPortalView (`shared` and `live`):
+ * each "next" runs the same checks as before, the organizer's own steps sit between the runner
+ * details and the shop (2.1–2.3), and step 7 books and pays through the server.
  */
 
-type LabStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+/** 1 start · 2 details · 2.1–2.3 organizer's steps · 3 shirt · 4 souvenirs · 5 address · 6 review · 7 pay · 8 done */
+type LabStep = number;
+
+/** what the live form gives this layout besides its state */
+export interface LabLive {
+  /** the organizer's steps this runner is asked, in order */
+  ownSteps: OrganizerFormStep[];
+  /** checks a step before moving on: the first problem, or null (it also marks the questions) */
+  check: (step: number, scope: HTMLElement | null) => string | null;
+  /** problems per question id, shown under each question */
+  errors: Record<string, string>;
+  clearError: (fieldId: string) => void;
+  /** books the place and takes the payment (the server checks everything again) */
+  submit: () => void;
+  submitting: boolean;
+  /** booking problem, with its own actions (e.g. add an email) */
+  payError: ReactNode;
+  /** step 8, once booked */
+  done: ReactNode;
+  /** a note above the form (the organizer's preview) */
+  notice?: ReactNode;
+  /** the organizer's preview may open any step */
+  freeJump?: boolean;
+  /** opens the runner's profile (emergency contacts, saved runners) */
+  openProfile?: () => void;
+  /** "for myself": fill the runner fields from the profile, falling back to the account's names */
+  fillSelf?: () => void;
+  /** keeps a new address in the runner's profile (signed in only) */
+  saveAddresses?: (list: RunnerSavedAddress[]) => Promise<{ ok: boolean; error?: string }>;
+}
 
 /** [value, setter] owned by the live form, so switching A <-> B keeps what was typed */
 export type Pair<T> = [T, (next: T) => void];
@@ -110,6 +141,7 @@ export function RegistrationLabView({
   openSeatsFor,
   onBack,
   shared,
+  live,
 }: {
   event: RaceEvent;
   organization?: Organization;
@@ -119,12 +151,14 @@ export function RegistrationLabView({
   onBack: () => void;
   /** form state owned by the live form (see LabShared) */
   shared: LabShared;
+  live: LabLive;
 }) {
   const profile = currentUser?.runnerProfile;
   const hasSouvenirs = event.products.length > 0;
   const steps: { step: LabStep; label: string }[] = [
     { step: 1, label: 'เริ่ม' },
     { step: 2, label: 'ข้อมูล' },
+    ...live.ownSteps.map((st, i) => ({ step: 2 + (i + 1) / 10, label: st.title })),
     { step: 3, label: 'สินค้า' },
     ...(hasSouvenirs ? [{ step: 4 as LabStep, label: 'ของที่ระลึก' }] : []),
     { step: 5, label: 'ที่อยู่' },
@@ -132,9 +166,10 @@ export function RegistrationLabView({
     { step: 7, label: 'ชำระเงิน' },
   ];
 
-  const [step, setStep] = useState<LabStep>(
-    Math.min(7, Math.max(1, shared.step[0])) as LabStep
-  );
+  // the step is the live form's (the organizer's preview and the booking move it too)
+  const step: LabStep = shared.step[0];
+  const [stepError, setStepError] = useState<string | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
   const stepperRef = useRef<HTMLElement | null>(null);
   const shellRef = useRef<HTMLElement | null>(null);
 
@@ -249,7 +284,7 @@ export function RegistrationLabView({
 
   const saved = profile?.savedParticipants ?? [];
   const contacts = profile?.emergencyContacts ?? [];
-  const ageCheck = category && dob ? evaluateCategoryAge(event, category, dob, gender) : null;
+  const ageCheck = category ? evaluateCategoryAge(event, category, dob, gender) : null;
 
   /* ---------- step 3-5 ---------- */
   const [shirtSize, setShirtSize] = shared.shirtSize;
@@ -268,10 +303,11 @@ export function RegistrationLabView({
   const [addrMode, setAddrMode] = shared.addrMode;
   const [bookId, setBookId] = shared.bookId;
   const [addrNotice, setAddrNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
-  const saveToBook = () => {
+  const [addrSaving, setAddrSaving] = useState(false);
+  const saveToBook = async () => {
     const a = address;
     if (!recipient.trim() || !shipPhone.trim() || !a.address.trim() || !a.postalCode || !a.subdistrict) {
-      setAddrNotice({ tone: 'err', text: tx('กรอกชื่อผู้รับ เบอร์โทร และที่อยู่ให้ครบก่อนบันทึก') });
+      setAddrNotice({ tone: 'err', text: tx('กรุณากรอกชื่อผู้รับ หมายเลขโทรศัพท์ และที่อยู่ให้ครบถ้วนก่อนบันทึก') });
       return;
     }
     const dup = book.find(
@@ -290,7 +326,18 @@ export function RegistrationLabView({
       country: a.country || 'Thailand',
       isDefault: book.length === 0,
     };
-    if (!dup) setBook((b) => [...b, entry]);
+    if (!dup) {
+      if (live.saveAddresses) {
+        setAddrSaving(true);
+        const res = await live.saveAddresses([...(profile?.savedAddresses ?? []), entry]);
+        setAddrSaving(false);
+        if (!res.ok) {
+          setAddrNotice({ tone: 'err', text: res.error ?? tx('บันทึกที่อยู่ไม่สำเร็จ กรุณาลองอีกครั้ง') });
+          return;
+        }
+      }
+      setBook((b) => [...b, entry]);
+    }
     setAddrName('');
     setBookId(entry.id);
     setAddrMode('saved');
@@ -298,7 +345,9 @@ export function RegistrationLabView({
       tone: 'ok',
       text: dup
         ? tx('ที่อยู่นี้มีในสมุดแล้ว เลือกให้แล้ว')
-        : tx('เพิ่มลงสมุดที่อยู่แล้ว (แบบ B ไม่บันทึกลงโปรไฟล์จริง)'),
+        : live.saveAddresses
+          ? tx('บันทึกลงสมุดที่อยู่แล้ว และเลือกเป็นที่อยู่จัดส่ง')
+          : tx('ใช้ที่อยู่นี้แล้ว (เก็บไว้เฉพาะการสมัครครั้งนี้)'),
     });
   };
 
@@ -315,9 +364,22 @@ export function RegistrationLabView({
   const participantName = `${firstTh} ${lastTh}`.trim() || `${firstEn} ${lastEn}`.trim();
 
   const go = (next: LabStep) => {
-    setStep(next);
-    if (next < 8) shared.step[1](next);
+    setStepError(null);
+    shared.step[1](next);
   };
+  /** forward: the live form's checks for this step first */
+  const goNext = (next: LabStep) => {
+    const problem = live.check(step, bodyRef.current);
+    if (problem) {
+      setStepError(problem);
+      return;
+    }
+    go(next);
+  };
+  const ownPos = (i: number) => 2 + (i + 1) / 10;
+  const afterInfo: LabStep = live.ownSteps.length > 0 ? ownPos(0) : 3;
+  const beforeShirt: LabStep = live.ownSteps.length > 0 ? ownPos(live.ownSteps.length - 1) : 2;
+  const ownIndex = step > 2 && step < 3 ? Math.round((step - 2) * 10) - 1 : -1;
   const afterShirt: LabStep = hasSouvenirs ? 4 : 5;
   const beforeAddress: LabStep = hasSouvenirs ? 4 : 3;
 
@@ -346,6 +408,13 @@ export function RegistrationLabView({
   }));
 
   const footer = (back: LabStep | null, next: LabStep | null, nextLabel = 'ถัดไป') => (
+    <>
+    {stepError && (
+      <div className="error-callout" role="alert">
+        <IconAlert size={16} />
+        <span>{tx(stepError)}</span>
+      </div>
+    )}
     <div className="reg-lab-footer">
       {back ? (
         <button type="button" className="btn-secondary" onClick={() => go(back)}>
@@ -355,21 +424,17 @@ export function RegistrationLabView({
         <span />
       )}
       {next && (
-        <button type="button" className="btn-primary reg-next-pill-btn" onClick={() => go(next)}>
+        <button type="button" className="btn-primary reg-next-pill-btn" onClick={() => goNext(next)}>
           {tx(nextLabel)}
         </button>
       )}
     </div>
+    </>
   );
 
   return (
     <main className="reg-lab-shell" ref={shellRef}>
-      <p className="reg-lab-notice" role="note">
-        <IconAlert size={15} />
-        <span>
-          {tx('ฟอร์มสมัครแบบ B (ทดลอง) สำหรับเทียบการจัดวางกับแบบเดิม กรอกดูได้ แต่ส่งใบสมัครจริงไม่ได้')}
-        </span>
-      </p>
+      {live.notice}
 
       <div className="reg-lab-cover" aria-hidden="true">
         <EventCoverMedia event={event} illustrated className="reg-lab-cover-img" />
@@ -412,11 +477,12 @@ export function RegistrationLabView({
               complete={false}
               stepperRef={stepperRef}
               onJump={go}
+              freeJump={live.freeJump}
             />
           </div>
         )}
 
-        <div className={`reg-lab-body ${step === 6 ? 'is-review' : ''}`}>
+        <div ref={bodyRef} className={`reg-lab-body ${step === 6 ? 'is-review' : ''}`}>
           {/* ---------- STEP 1 ---------- */}
           {step === 1 && (
             <>
@@ -476,6 +542,10 @@ export function RegistrationLabView({
                       name="lab-mode"
                       checked={forSelf === true}
                       onChange={() => {
+                        if (live.fillSelf) {
+                          live.fillSelf();
+                          return;
+                        }
                         setForSelf(true);
                         fillFrom(profile ?? null);
                         const primary = contacts.find((c) => c.isPrimary) ?? contacts[0];
@@ -515,29 +585,28 @@ export function RegistrationLabView({
                     {saved.length > 0 && (
                       <div className="form-row reg-lab-full">
                         <label htmlFor="lab-saved">{tx('เลือกผู้สมัครที่เคยกรอกไว้')}</label>
-                        <select
+                        <SelectMenu
                           id="lab-saved"
                           value={savedId}
-                          onChange={(e) => {
-                            setSavedId(e.target.value);
-                            fillFrom(saved.find((x) => x.id === e.target.value) ?? null);
+                          onChange={(v) => {
+                            setSavedId(v);
+                            fillFrom(saved.find((x) => x.id === v) ?? null);
                           }}
-                        >
-                          {saved.map((pt) => (
-                            <option key={pt.id} value={pt.id}>
-                              {`${pt.firstName} ${pt.lastName}`.trim()}
-                              {pt.nickname ? ` · ${pt.nickname}` : ''}
-                            </option>
-                          ))}
-                          <option value="new">{tx('+ เพิ่มผู้สมัครใหม่')}</option>
-                        </select>
+                          options={[
+                            ...saved.map((pt) => ({
+                              value: pt.id,
+                              label: `${`${pt.firstName} ${pt.lastName}`.trim()}${pt.nickname ? ` · ${pt.nickname}` : ''}`,
+                            })),
+                            { value: 'new', label: tx('+ เพิ่มผู้สมัครใหม่') },
+                          ]}
+                        />
                       </div>
                     )}
                     <div className="form-row reg-lab-full">
                       <label htmlFor="lab-buyer">
                         <RequiredFieldText text={tx('ชื่อ-นามสกุลผู้ซื้อคำสั่งซื้อ (ผู้ชำระเงิน) *')} />
                       </label>
-                      <input id="lab-buyer" type="text" value={buyerName} onChange={(e) => setBuyerName(e.target.value)} />
+                      <input id="lab-buyer" type="text" required value={buyerName} onChange={(e) => setBuyerName(e.target.value)} />
                     </div>
                   </div>
                 )}
@@ -551,27 +620,27 @@ export function RegistrationLabView({
                     <div className="reg-lab-fields">
                       <div className="form-row">
                         <label htmlFor="lab-fen"><RequiredFieldText text="First Name (EN) *" /></label>
-                        <input id="lab-fen" type="text" required value={firstEn} onChange={(e) => setFirstEn(e.target.value)} placeholder="e.g. Kanpitcha" />
+                        <input id="lab-fen" type="text" required value={firstEn} onChange={(e) => setFirstEn(sanitizeEnglishNameInput(e.target.value))} placeholder="e.g. Kanpitcha" />
                       </div>
                       <div className="form-row">
                         <label htmlFor="lab-len"><RequiredFieldText text="Last Name (EN) *" /></label>
-                        <input id="lab-len" type="text" required value={lastEn} onChange={(e) => setLastEn(e.target.value)} placeholder="e.g. Wattanakul" />
+                        <input id="lab-len" type="text" required value={lastEn} onChange={(e) => setLastEn(sanitizeEnglishNameInput(e.target.value))} placeholder="e.g. Wattanakul" />
                       </div>
                       <div className="form-row">
                         <label htmlFor="lab-fth">{tx('ชื่อจริง (ภาษาไทย)')}</label>
-                        <input id="lab-fth" type="text" value={firstTh} onChange={(e) => setFirstTh(e.target.value)} placeholder={tx('เช่น กานต์พิชชา')} />
+                        <input id="lab-fth" type="text" value={firstTh} onChange={(e) => setFirstTh(sanitizeThaiNameInput(e.target.value))} placeholder={tx('เช่น กานต์พิชชา')} />
                       </div>
                       <div className="form-row">
                         <label htmlFor="lab-lth">{tx('นามสกุล (ภาษาไทย)')}</label>
-                        <input id="lab-lth" type="text" value={lastTh} onChange={(e) => setLastTh(e.target.value)} placeholder={tx('เช่น วัฒนากูล')} />
+                        <input id="lab-lth" type="text" value={lastTh} onChange={(e) => setLastTh(sanitizeThaiNameInput(e.target.value))} placeholder={tx('เช่น วัฒนากูล')} />
                       </div>
                       <div className="form-row">
                         <label htmlFor="lab-nth">{tx('ชื่อเล่น')}</label>
-                        <input id="lab-nth" type="text" value={nickTh} onChange={(e) => setNickTh(e.target.value)} placeholder={tx('เช่น กานต์')} />
+                        <input id="lab-nth" type="text" value={nickTh} onChange={(e) => setNickTh(sanitizeThaiNameInput(e.target.value))} placeholder={tx('เช่น กานต์')} />
                       </div>
                       <div className="form-row">
                         <label htmlFor="lab-nen">Nickname (EN)</label>
-                        <input id="lab-nen" type="text" value={nickEn} onChange={(e) => setNickEn(e.target.value)} placeholder="e.g. Kan" />
+                        <input id="lab-nen" type="text" value={nickEn} onChange={(e) => setNickEn(sanitizeEnglishNameInput(e.target.value))} placeholder="e.g. Kan" />
                       </div>
                     </div>
                   </section>
@@ -583,24 +652,46 @@ export function RegistrationLabView({
                         <label htmlFor="lab-dob">{tx('วันเกิด')}</label>
                         <DateOfBirthInput id="lab-dob" valueIso={dob} onChangeIso={setDob} ariaDescribedBy="lab-dob-age" />
                       </div>
-                      <div className="form-row">
-                        <label htmlFor="lab-gender">{tx('เพศ')}</label>
-                        <select id="lab-gender" value={gender} onChange={(e) => setGender(e.target.value as Gender)}>
-                          <option value="ไม่ระบุ">{tx('ไม่ระบุ')}</option>
-                          <option value="ชาย">{tx('ชาย')}</option>
-                          <option value="หญิง">{tx('หญิง')}</option>
-                        </select>
-                      </div>
-                      {ageCheck && (
+                      <fieldset className="form-row runner-gender-field">
+                        <legend>{tx('เพศ')}</legend>
+                        <div className="runner-gender-options">
+                          {/* two choices only (user request 24 Nov 2026); nothing picked = not given */}
+                          {(['ชาย', 'หญิง'] as const).map((opt) => (
+                            <label key={opt}>
+                              <input
+                                type="radio"
+                                name="lab-gender"
+                                value={opt}
+                                checked={gender === opt}
+                                onChange={() => setGender(opt as Gender)}
+                              />
+                              <span>{tx(opt)}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </fieldset>
+                      {ageCheck && category && (ageCheck.ageYears !== null || ageCheck.status === 'missing_dob' || ageCheck.status === 'invalid_dob') && (
                         <p
                           id="lab-dob-age"
                           className={`reg-lab-full reg-age-hint ${ageCheck.eligible ? '' : 'is-error'}`}
                           aria-live="polite"
                         >
-                          {ageCheck.ageYears !== null
-                            ? txf('อายุ {0} ปี ณ {1}', ageCheck.ageYears, formatBasisDate(ageCheck.basisDate))
-                            : tx('วันเกิดไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง')}
-                          {ageCheck.group ? ` · ${txf('รุ่น {0}', formatAgeGroupLabel(ageCheck.group))}` : ''}
+                          {ageCheck.ageYears !== null ? (
+                            <>
+                              {txf('อายุ {0} ปี ณ {1}', ageCheck.ageYears, formatBasisDate(ageCheck.basisDate))}
+                              {ageCheck.group && ` · ${txf('รุ่น {0}', formatAgeGroupLabel(ageCheck.group))}`}
+                              {ageCheck.unassigned && ` · ${tx('ยังไม่เข้ารุ่นอายุ (ระบุเพศชายหรือหญิงเพื่อจัดรุ่น)')}`}
+                              {!ageCheck.eligible && ` · ${txf('ระยะนี้รับ{0}', formatAgeLimit(category) ?? '')}`}
+                            </>
+                          ) : ageCheck.status === 'missing_dob' ? (
+                            txf(
+                              'ระยะนี้กำหนด{0} · {1} กรุณาระบุวันเกิด',
+                              formatAgeLimit(category) ?? tx('รุ่นอายุ'),
+                              formatAgeBasis(ageCheck.basis)
+                            )
+                          ) : (
+                            tx('วันเกิดไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง')
+                          )}
                         </p>
                       )}
                       <div className="form-row reg-lab-full">
@@ -609,10 +700,15 @@ export function RegistrationLabView({
                       </div>
                       <div className="form-row">
                         <label htmlFor="lab-idtype">{tx('ประเภทเอกสาร')}</label>
-                        <select id="lab-idtype" value={idType} onChange={(e) => setIdType(e.target.value as IdType)}>
-                          <option value="thai_id">{tx('บัตรประจำตัวประชาชน 13 หลัก')}</option>
-                          <option value="passport">{tx('หนังสือเดินทาง (Passport)')}</option>
-                        </select>
+                        <SelectMenu
+                          id="lab-idtype"
+                          value={idType}
+                          onChange={(v) => setIdType(v as IdType)}
+                          options={[
+                            { value: 'thai_id', label: tx('บัตรประจำตัวประชาชน 13 หลัก') },
+                            { value: 'passport', label: tx('หนังสือเดินทาง (Passport)') },
+                          ]}
+                        />
                       </div>
                       <div className="form-row">
                         <label htmlFor="lab-idnum">
@@ -637,21 +733,24 @@ export function RegistrationLabView({
                       {forSelf && contacts.length > 0 && (
                         <div className="form-row reg-lab-full">
                           <label htmlFor="lab-ec-pick">{tx('เลือกจากโปรไฟล์')}</label>
-                          <select
+                          <SelectMenu
                             id="lab-ec-pick"
                             value=""
-                            onChange={(e) => {
-                              const c = contacts.find((x) => x.id === e.target.value);
+                            placeholder={tx('เลือกจากโปรไฟล์…')}
+                            onChange={(v) => {
+                              const c = contacts.find((x) => x.id === v);
                               if (c) setEmergency(c.contactName, c.relationship, c.phone);
                             }}
-                          >
-                            <option value="">{tx('เลือกจากโปรไฟล์…')}</option>
-                            {contacts.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.contactName} ({c.relationship}){c.isPrimary ? ` · ${tx('หลัก')}` : ''}
-                              </option>
-                            ))}
-                          </select>
+                            options={contacts.map((c) => ({
+                              value: c.id,
+                              label: `${c.contactName} (${tx(c.relationship)})${c.isPrimary ? ` · ${tx('หลัก')}` : ''}`,
+                            }))}
+                          />
+                          {live.openProfile && (
+                            <button type="button" className="inline-text-link" onClick={live.openProfile}>
+                              {tx('จัดการโปรไฟล์')}
+                            </button>
+                          )}
                         </div>
                       )}
                       <div className="form-row">
@@ -685,18 +784,60 @@ export function RegistrationLabView({
                       <RunnerCustomFieldsInputs
                         fields={event.customFields}
                         answers={answers}
-                        onAnswerChange={(id, v) => setAnswers({ ...answers, [id]: v })}
+                        onAnswerChange={(id, v) => {
+                          live.clearError(id);
+                          setStepError(null);
+                          setAnswers({ ...answers, [id]: v });
+                        }}
                         raceDistanceCode={category.code}
                         shirtSize={shirtSize}
                         publishedFormVersion={event.publishedFormVersion}
+                        steps={event.formCustomSteps ?? []}
+                        stepId={CORE_STEP}
+                        errors={live.errors}
                       />
                     </section>
                   )}
                 </>
               )}
-              {footer(1, forSelf === null ? null : 3)}
+              {footer(1, forSelf === null ? null : afterInfo)}
             </>
           )}
+
+          {/* ---------- STEPS 2.1–2.3: the organizer's own steps ---------- */}
+          {ownIndex >= 0 && category && (() => {
+            const st = live.ownSteps[ownIndex];
+            if (!st) {
+              // the answers changed and this step is no longer asked
+              return footer(2, 3);
+            }
+            return (
+              <>
+                <div className="reg-lab-title">
+                  <h2>{tx(st.title)}</h2>
+                  {st.description && <p>{tx(st.description)}</p>}
+                </div>
+                <section className="reg-lab-section reg-lab-custom">
+                  <RunnerCustomFieldsInputs
+                    fields={event.customFields}
+                    answers={answers}
+                    onAnswerChange={(id, v) => {
+                      live.clearError(id);
+                      setStepError(null);
+                      setAnswers({ ...answers, [id]: v });
+                    }}
+                    raceDistanceCode={category.code}
+                    shirtSize={shirtSize}
+                    steps={event.formCustomSteps ?? []}
+                    stepId={st.id}
+                    errors={live.errors}
+                    heading={null}
+                  />
+                </section>
+                {footer(ownIndex > 0 ? ownPos(ownIndex - 1) : 2, ownIndex + 1 < live.ownSteps.length ? ownPos(ownIndex + 1) : 3)}
+              </>
+            );
+          })()}
 
           {/* ---------- STEP 3 ---------- */}
           {step === 3 && (
@@ -731,7 +872,7 @@ export function RegistrationLabView({
                 size={shirtSize}
                 onSizeChange={(z) => setShirtSize(z as ShirtSizeCode)}
               />
-              {footer(2, afterShirt)}
+              {footer(beforeShirt, afterShirt)}
             </>
           )}
 
@@ -885,6 +1026,7 @@ export function RegistrationLabView({
                           idPrefix="lab-ship"
                           value={address}
                           onChange={setAddress}
+                          contactName={recipient}
                           contactPhone={shipPhone}
                           contactEmail={currentUser?.contactEmail}
                           required
@@ -894,8 +1036,8 @@ export function RegistrationLabView({
                               <span className="muted-inline">
                                 {tx('ไม่บันทึกก็ได้ ที่อยู่นี้จะใช้เฉพาะการสมัครครั้งนี้')}
                               </span>
-                              <button type="button" className="btn-secondary" onClick={saveToBook}>
-                                {tx('บันทึกลงสมุดที่อยู่')}
+                              <button type="button" className="btn-secondary" disabled={addrSaving} onClick={() => void saveToBook()}>
+                                {addrSaving ? tx('กำลังบันทึก…') : tx('บันทึกลงสมุดที่อยู่')}
                               </button>
                             </div>
                           }
@@ -917,13 +1059,15 @@ export function RegistrationLabView({
               addrMode === 'saved' && bookAddr
                 ? `${bookAddr.recipientName} (${bookAddr.phone}) — ${bookAddr.address}, ต.${bookAddr.subdistrict} อ.${bookAddr.district} จ.${bookAddr.province} ${bookAddr.postalCode}`
                 : `${recipient} (${shipPhone}) — ${address.address}, ต.${address.subdistrict} อ.${address.district} จ.${address.province} ${address.postalCode}`;
-            const answerRows = (event.customFields ?? []).map((f) => {
-              const val = answers[f.id] ?? f.defaultValue;
-              return {
-                label: tx(f.label),
-                value: typeof val === 'boolean' ? (val ? tx('ใช่') : tx('ไม่ใช่')) : tx(String(val ?? '').trim()),
-              };
-            });
+            const answerRows = (event.customFields ?? [])
+              .filter((f) => !isContentField(f) && fieldShown(f, answers, { raceDistance: category.code, shirtSize }))
+              .map((f) => {
+                const val = answers[f.id] ?? f.defaultValue;
+                return {
+                  label: tx(f.label),
+                  value: typeof val === 'boolean' ? (val ? tx('ใช่') : tx('ไม่ใช่')) : tx(answerText(f, val).trim()),
+                };
+              });
             const sections: ReviewSection[] = [
               {
                 key: 'entry',
@@ -1057,6 +1201,8 @@ export function RegistrationLabView({
                 <PaymentMethodPicker name="lab-pay" value={channel} onChange={setChannel} />
               </section>
 
+              {live.payError}
+
               <section className="reg-lab-section">
                 <RegistrationTerms
                   event={event}
@@ -1069,11 +1215,16 @@ export function RegistrationLabView({
               </section>
 
               <div className="reg-lab-footer">
-                <button type="button" className="btn-secondary" onClick={() => go(6)}>
+                <button type="button" className="btn-secondary" disabled={live.submitting} onClick={() => go(6)}>
                   {tx('ย้อนกลับ')}
                 </button>
                 <div className="reg-lab-footer-actions">
-                  <button type="button" className="btn-primary" disabled={!acceptRules || !acceptPayTerms} onClick={() => go(8)}>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={!acceptRules || !acceptPayTerms || live.submitting}
+                    onClick={live.submit}
+                  >
                     {tx('ชำระเงินและยืนยันการสมัครทันที')}
                   </button>
                 </div>
@@ -1081,24 +1232,8 @@ export function RegistrationLabView({
             </>
           )}
 
-          {/* ---------- STEP 8 (sample): success on its own centred screen ---------- */}
-          {step === 8 && (
-            <RegistrationDone
-              title={tx('ตัวอย่างหน้าสมัครสำเร็จ')}
-              subtitle={tx('แบบ B ไม่ได้ส่งใบสมัครจริง ข้อมูลด้านล่างเป็นค่าที่กรอกในหน้านี้เท่านั้น')}
-              items={[
-                { label: tx('ผู้เข้าแข่งขัน'), value: participantName || '—' },
-                { label: tx('ระยะ'), value: category ? tx(category.name) : '—' },
-                { label: tx('เสื้อตามสิทธิ์สมัคร'), value: txf('{0} · ไซส์ {1}', tx(shirtStyleName(shirtStyle)), shirtSize) },
-                { label: tx('ช่องทางชำระ'), value: channel === 'card' ? tx('บัตรเครดิต / เดบิต') : 'QR PromptPay' },
-                { label: tx('ยอดชำระสุทธิทั้งหมด'), value: formatThb(totalSatang, true), accent: true },
-              ]}
-            >
-              <button type="button" className="btn-secondary" onClick={() => go(1)}>
-                {tx('เริ่มกรอกใหม่')}
-              </button>
-            </RegistrationDone>
-          )}
+          {/* ---------- STEP 8: booked, on its own centred screen ---------- */}
+          {step === 8 && live.done}
         </div>
       </section>
     </main>

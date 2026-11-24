@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CustomRegistrationField, OrganizerFormStep } from '../types';
 import { tx, txf } from '../i18n';
+import { SelectMenu } from './SelectMenu';
 import {
   CORE_STEP,
   OTHER_PREFIX,
@@ -217,14 +218,15 @@ export function RunnerQuestion({
       <label htmlFor={inputId}>{label}</label>
       {field.descriptionTh && <span className="muted-inline">{tx(field.descriptionTh)}</span>}
       {(field.type === 'select' || field.type === 'size_selector' || field.type === 'distance_selector' || field.type === 'image_choice') && (
-        <select {...common} value={strVal} onChange={(e) => onChange(e.target.value)}>
-          <option value="">{tx('-- เลือก --')}</option>
-          {options.map((opt) => (
-            <option key={opt} value={opt}>
-              {tx(opt)}
-            </option>
-          ))}
-        </select>
+        <SelectMenu
+          id={inputId}
+          value={strVal}
+          placeholder={tx('-- เลือก --')}
+          ariaInvalid={!!error}
+          ariaDescribedBy={describedBy}
+          onChange={onChange}
+          options={options.map((opt) => ({ value: opt, label: tx(opt) }))}
+        />
       )}
       {(field.type === 'textarea' || field.type === 'address') && (
         <textarea

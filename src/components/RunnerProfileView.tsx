@@ -6,7 +6,6 @@ import addressesMascot from '../assets/mascot/profile/addresses.webp';
 import participantsMascot from '../assets/mascot/profile/participants.webp';
 import historyMascot from '../assets/mascot/profile/history.webp';
 import connectionsMascot from '../assets/mascot/profile/connections.webp';
-import devicesMascot from '../assets/mascot/profile/devices.webp';
 import privacyMascot from '../assets/mascot/profile/privacy.webp';
 import { RequiredFieldText } from './RequiredFieldText';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -22,7 +21,6 @@ import type {
   RunnerNotificationPrefs,
   RunnerProfileData,
   RunnerSavedAddress,
-  RunnerSocialLinks,
   SavedParticipant,
   ShirtCutType,
   ShirtFitType,
@@ -44,31 +42,24 @@ import { FEATURES } from '../config/features';
 import {
   AccountSecuritySections,
   ConnectionsPanel,
-  DevicesPanel,
   PrivacyPanel,
 } from './AccountSettingsPanels';
 import {
   IconAlert,
   IconArrowRight,
   IconAward,
-  IconBell,
   IconBib,
   IconBuilding,
   IconCalendar,
   IconCamera,
   IconCheckCircle,
   IconChevronDown,
-  IconDevice,
   IconDownload,
   IconFlag,
-  IconGlobe,
-  IconLink,
   IconLock,
   IconMapPin,
   IconPlus,
   IconQr,
-  IconShield,
-  IconShirt,
   IconUsers,
 } from './Icons';
 import {
@@ -98,7 +89,6 @@ const PROFILE_MASCOTS: Record<string, { src: string; w: number; h: number }> = {
   participants: { src: participantsMascot, w: 163, h: 300 },
   history: { src: historyMascot, w: 203, h: 300 },
   connections: { src: connectionsMascot, w: 159, h: 300 },
-  devices: { src: devicesMascot, w: 185, h: 235 },
   privacy: { src: privacyMascot, w: 147, h: 300 },
 };
 
@@ -128,21 +118,18 @@ function localizeCountryName(raw?: string): string {
 
 export type RunnerProfileTab =
   | 'personal'
-  | 'preferences'
   | 'emergency'
   | 'addresses'
   | 'participants'
   | 'history'
-  | 'achievements'
-  | 'social'
-  | 'notifications'
   | 'organizer'
   | 'security'
-  | 'connections'
-  | 'devices'
   | 'privacy';
 
 const AVATAR_MAX_FILE_BYTES = 15 * 1024 * 1024;
+
+/** the saved-runner dialog is open for a new person, not an existing one */
+const NEW_PARTICIPANT_ID = '__new__';
 
 /** Reads the picked image for the crop dialog (the dialog makes the final 320 px square). */
 function readImageFile(file: File): Promise<string> {
@@ -238,7 +225,6 @@ export interface RunnerProfileViewProps {
   onRevokeOtherSessions: () => void;
   onRevokeSession: (sessionId: string) => Promise<{ ok: boolean; error?: string }>;
   onSetMarketingConsent: (granted: boolean) => Promise<{ ok: boolean; error?: string }>;
-  onExportMyData: () => Promise<{ ok: boolean; error?: string }>;
   onAcceptTeamInvitation: (code: string) => { ok: boolean; message: string };
   onApplyNewOrganizerOrg: (orgNameTh: string, province: string) => Organization;
   onEnterOrganizerOrg: (orgId: string) => void;
@@ -285,14 +271,10 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
   onVerifyPasswordCode,
   onLinkProvider,
   onUnlinkProvider,
-  onRevokeOtherSessions,
-  onRevokeSession,
   onSetMarketingConsent,
-  onExportMyData,
   onAcceptTeamInvitation,
   onApplyNewOrganizerOrg,
   onEnterOrganizerOrg,
-  onManageAccountStatus,
   onNavigateDiscoverEvents,
   onNavigateEventDetail,
   onPersonalDirtyChange,
@@ -303,7 +285,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     rawInitialTab === 'security' ? 'privacy' : rawInitialTab;
   const [activeTab, setActiveTab] = useState<RunnerProfileTab>(initialTab);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [showShelvedNav, setShowShelvedNav] = useState(true);
   const [banner, setBanner] = useState<{
     tone: 'ok' | 'err';
     text: string;
@@ -432,10 +413,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
   const [prefShirtFit, setPrefShirtFit] = useState<ShirtFitType>(
     prof.preferredShirtFit ?? 'Regular Fit'
   );
-  const [showSizeChart, setShowSizeChart] = useState(false);
-  const [chartPreviewType, setChartPreviewType] = useState<ShirtCutType>(
-    prof.preferredShirtType ?? 'Unisex'
-  );
   const [prefDistances, setPrefDistances] = useState<string[]>(
     prof.preferredDistances ?? ['10 KM']
   );
@@ -561,8 +538,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
   const [otherLinks, setOtherLinks] = useState<
     { id: string; label: string; url: string }[]
   >(prof.socialLinks?.otherLinks ?? []);
-  const [newSocialLabel, setNewSocialLabel] = useState('');
-  const [newSocialUrl, setNewSocialUrl] = useState('');
 
   /* ---- 9. Notification Preferences State ---- */
   const [notifPrefs, setNotifPrefs] = useState<RunnerNotificationPrefs>(
@@ -801,12 +776,12 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     });
   };
 
-  const openPartModal = (pt: SavedParticipant) => {
+  const openPartModal = (pt?: SavedParticipant) => {
     const initDraft: SavedParticipant = {
       ...createEmptyParticipantDraft(),
-      ...pt,
+      ...(pt ?? {}),
     };
-    setEditingPartId(pt.id);
+    setEditingPartId(pt ? pt.id : NEW_PARTICIPANT_ID);
     setPartDraft(initDraft);
     setPartModalBaseline(JSON.stringify(initDraft));
   };
@@ -1254,19 +1229,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     });
   };
 
-  const handleSavePreferences = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const okMsg = tx(
-      'บันทึกไซส์เสื้อเริ่มต้นและความชอบการวิ่งแล้ว (มีผลกับการสมัครครั้งถัดไป ไม่กระทบใบสมัครเดิมที่ยืนยันแล้ว)'
-    );
-    if (!(await saveProfileWithFeedback(buildMergedProfile(), undefined, okMsg)))
-      return;
-    setBanner({
-      tone: 'ok',
-      text: okMsg,
-    });
-  };
-
   const handleSaveEmergencyContact = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingEcId && emergencyList.length >= MAX_EMERGENCY_CONTACTS) {
@@ -1399,60 +1361,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     });
   };
 
-  const handleSaveSocialLinks = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const checkUrl = (u: string) =>
-      !u.trim() || /^https?:\/\//i.test(u.trim());
-    if (
-      !checkUrl(fbUrl) ||
-      !checkUrl(igUrl) ||
-      !checkUrl(stravaUrl) ||
-      !checkUrl(webUrl)
-    ) {
-      const errMsg = tx('ลิงก์โซเชียลมีเดียต้องขึ้นต้นด้วย https:// หรือ http://');
-      setBanner({ tone: 'err', text: errMsg });
-      showResultModalAlert(false, errMsg);
-      return;
-    }
-    const nextSocial: RunnerSocialLinks = {
-      facebook: fbUrl.trim() || undefined,
-      instagram: igUrl.trim() || undefined,
-      strava: stravaUrl.trim() || undefined,
-      website: webUrl.trim() || undefined,
-      otherLinks,
-    };
-    const okMsg = tx('บันทึกลิงก์โซเชียลมีเดียเรียบร้อยแล้ว');
-    if (
-      !(await saveProfileWithFeedback(
-        buildMergedProfile({ socialLinks: nextSocial }),
-        undefined,
-        okMsg
-      ))
-    )
-      return;
-    setBanner({
-      tone: 'ok',
-      text: okMsg,
-    });
-  };
-
-  const handleSaveNotificationPrefs = async (next: RunnerNotificationPrefs) => {
-    setNotifPrefs(next);
-    const okMsg = tx('อัปเดตการตั้งค่ารับการแจ้งเตือนเรียบร้อยแล้ว');
-    if (
-      !(await saveProfileWithFeedback(
-        buildMergedProfile({ notificationPrefs: next }),
-        undefined,
-        okMsg
-      ))
-    )
-      return;
-    setBanner({
-      tone: 'ok',
-      text: okMsg,
-    });
-  };
-
   const activeNavItems: {
     key: RunnerProfileTab;
     label: string;
@@ -1487,18 +1395,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
         icon: <IconBib size={16} />,
       },
       {
-        key: 'connections',
-        label: tx('การเชื่อมต่อ'),
-        icon: <IconLink size={16} />,
-        group: 'account',
-      },
-      {
-        key: 'devices',
-        label: tx('อุปกรณ์'),
-        icon: <IconDevice size={16} />,
-        group: 'account',
-      },
-      {
         key: 'privacy',
         label: tx('ความเป็นส่วนตัวและข้อมูล'),
         icon: <IconLock size={16} />,
@@ -1506,46 +1402,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
       },
     ];
 
-  // หมวดที่พักไว้และย้ายไปตำแหน่งท้ายสุด — จะไม่นำไปใช้จริงในระบบหากเปิดเป็น Public
-  const shelvedNavItems: {
-    key: RunnerProfileTab;
-    label: string;
-    icon: React.ReactNode;
-    shelved: true;
-  }[] = [
-      {
-        key: 'preferences',
-        label: tx('ไซส์เสื้อและการวิ่ง'),
-        icon: <IconShirt size={16} />,
-        shelved: true,
-      },
-      {
-        key: 'achievements',
-        label: tx('รางวัลและความสำเร็จ'),
-        icon: <IconAward size={16} />,
-        shelved: true,
-      },
-      {
-        key: 'social',
-        label: tx('โซเชียลมีเดีย'),
-        icon: <IconGlobe size={16} />,
-        shelved: true,
-      },
-      {
-        key: 'notifications',
-        label: tx('การแจ้งเตือน'),
-        icon: <IconBell size={16} />,
-        shelved: true,
-      },
-      {
-        key: 'organizer',
-        label: tx('องค์กรและคำเชิญ'),
-        icon: <IconBuilding size={16} />,
-        shelved: true,
-      },
-    ];
-
-  const navItems = [...activeNavItems, ...shelvedNavItems];
+  const navItems = activeNavItems;
 
   const isEn = getLang() === 'en';
   const heroDisplayName = isEn
@@ -1834,48 +1691,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
               </React.Fragment>
             ))}
 
-            {/* SHELVED / DIMMED NON-PUBLIC ITEMS MOVED TO THE VERY BOTTOM */}
-            <div className="runner-shelved-group">
-              <div className="runner-shelved-head">
-                <span className="runner-shelved-note">
-                  {tx('จะไม่นำไปใช้จริงในระบบเมื่อเปิดใช้งานสาธารณะ')}
-                </span>
-                <button
-                  type="button"
-                  className="runner-shelved-toggle"
-                  aria-expanded={showShelvedNav}
-                  onClick={() => setShowShelvedNav((v) => !v)}
-                >
-                  {showShelvedNav ? tx('ซ่อน') : tx('แสดง (5)')}
-                </button>
-              </div>
-
-              {showShelvedNav && (
-                <div className="runner-shelved-list">
-                  {shelvedNavItems.map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      aria-current={activeTab === item.key ? 'page' : undefined}
-                      className={`runner-nav-btn is-shelved ${activeTab === item.key ? 'active' : ''
-                        }`}
-                      title={tx('จะไม่นำไปใช้จริงในระบบเมื่อเปิดใช้งานสาธารณะ')}
-                      onClick={() => {
-                        requestSwitchProfileTab(item.key);
-                      }}
-                    >
-                      <span className="runner-nav-label">
-                        {item.icon}
-                        <span>{item.label}</span>
-                      </span>
-                      <span className="runner-shelved-tag">
-                        {tx('พักไว้')}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         </nav>
 
@@ -1889,10 +1704,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                   tx('ข้อมูลส่วนตัว'),
                   tx('ข้อมูลพื้นฐานที่นำไปเติมในฟอร์มสมัครงานวิ่งอัตโนมัติ (ช่องเลขบัตรประชาชนหรือหนังสือเดินทางไม่บังคับ เก็บเฉพาะกรณีผู้จัดต้องการใช้ออกประกันอุบัติเหตุ)'),
                 ],
-                preferences: [
-                  tx('2. ไซส์เสื้อและความชอบการวิ่ง (Running & Shirt Preferences)'),
-                  tx('ตั้งค่าไซส์เสื้อและทรงเสื้อเริ่มต้นเพื่อเลือกให้อัตโนมัติตอนสมัครงานวิ่งใหม่'),
-                ],
                 emergency: [
                   tx('ผู้ติดต่อฉุกเฉิน'),
                   txf('บันทึกได้สูงสุด {0} รายชื่อ และกำหนดผู้ติดต่อหลักเพื่อเติมในใบสมัครงานวิ่งอัตโนมัติ', MAX_EMERGENCY_CONTACTS),
@@ -1905,37 +1716,17 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                   tx('ประวัติการสมัครและผลการแข่งขัน'),
                   tx('แสดงรายการสมัครทั้งหมด แยกงานที่กำลังจะมาถึงกับงานที่ผ่านมาแล้ว พร้อมดูข้อมูลใบสมัครและดาวน์โหลดใบประกาศนียบัตร'),
                 ],
-                achievements: [
-                  tx('6. ความสำเร็จและรางวัลจากการแข่งขัน (Achievements)'),
-                  tx('บันทึกความสำเร็จที่เชื่อมโยงกับผลการแข่งขันอย่างเป็นทางการของแต่ละอีเวนต์'),
-                ],
-                social: [
-                  tx('7. โซเชียลมีเดียและโปรไฟล์กีฬา (Social Links · ไม่บังคับ)'),
-                  tx('เชื่อมโยงโปรไฟล์โซเชียลมีเดียหรือคลังสถิติการซ้อม เช่น Strava สำหรับแสดงในคอมมูนิตี้นักวิ่ง'),
-                ],
-                notifications: [
-                  tx('9. ตั้งค่าการรับแจ้งเตือน (Notification Preferences)'),
-                  tx('แยกการแจ้งเตือนที่จำเป็นต่อธุรกรรมการสมัครและการชำระเงิน ออกจากข่าวสารประชาสัมพันธ์และการตลาดอย่างชัดเจน'),
-                ],
                 organizer: [
                   tx('องค์กรผู้จัดงาน: ร่วมเป็นผู้จัดงาน / กรอกรหัสคำเชิญ'),
                   tx('บัญชีเดียวใช้ได้ทั้งนักวิ่งและผู้จัดงาน กรอกรหัสคำเชิญจากทีมผู้จัด หรือยื่นขอเปิดองค์กรใหม่เพื่อรอ Platform Owner ตรวจสอบ'),
                 ],
                 participants: [
                   tx('ผู้สมัครที่บันทึกไว้ (สมัครให้ผู้อื่น)'),
-                  tx('รายชื่อบุคคลที่คุณเคยสมัครงานวิ่งให้ ระบบบันทึกให้อัตโนมัติเมื่อสมัครให้ผู้อื่นสำเร็จ สามารถแก้ไขข้อมูลหรือลบรายการได้ที่นี่'),
-                ],
-                connections: [
-                  tx('การเชื่อมต่อ'),
-                  tx('เชื่อมบัญชีภายนอกเพื่อเข้าสู่ระบบ กระต่าย ได้หลายทาง ถ้าลืมรหัสผ่านหรือเข้าบัญชีหนึ่งไม่ได้ ยังเข้าด้วยช่องทางอื่นได้'),
-                ],
-                devices: [
-                  tx('อุปกรณ์'),
-                  tx('อุปกรณ์ที่เข้าสู่ระบบบัญชีนี้อยู่ ถ้าเห็นเครื่องที่ไม่รู้จัก ให้ออกจากระบบเครื่องนั้นแล้วเปลี่ยนรหัสผ่าน'),
+                  tx('รายชื่อบุคคลที่คุณสมัครงานวิ่งให้ เพิ่มเองได้ที่นี่ หรือระบบบันทึกให้อัตโนมัติเมื่อสมัครให้ผู้อื่นสำเร็จ แก้ไขหรือลบรายการได้'),
                 ],
                 privacy: [
                   tx('ความเป็นส่วนตัวและข้อมูล'),
-                  tx('จัดการการยินยอม สำเนาข้อมูลส่วนบุคคล (PDPA) รหัสผ่าน และการปิดหรือลบบัญชีของคุณ'),
+                  tx('จัดการการยินยอม สำเนาข้อมูลส่วนบุคคล (PDPA) ช่องทางเข้าสู่ระบบที่เชื่อมไว้ และรหัสผ่านของคุณ'),
                 ],
               };
               const head = heads[activeTab === 'security' ? 'privacy' : activeTab];
@@ -1965,23 +1756,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
               );
             })()}
           </div>
-          {shelvedNavItems.some((item) => item.key === activeTab) && (
-            <div className="shelved-public-notice" role="note">
-              <IconAlert size={17} />
-              <div>
-                <strong>
-                  {tx(
-                    'หมวดนี้ถูกพักไว้ — จะไม่นำไปใช้จริงในระบบเมื่อเปิดใช้งานสาธารณะ'
-                  )}
-                </strong>
-                <div className="muted-inline">
-                  {tx(
-                    'แสดงโครงสร้างต้นแบบไว้ท้ายสุดเพื่ออ้างอิงภายในเท่านั้น ผู้ใช้งานทั่วไปจะไม่เห็นเมนูนี้เมื่อเปิดระบบจริง'
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
           {/* ==================== 1. PERSONAL INFORMATION ==================== */}
           {activeTab === 'personal' && (
             <form className="clean-panel canvas-stack" onSubmit={handleSavePersonal}>
@@ -2293,6 +2067,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                 <ThaiPostalAddressSelector
                 typeableArea
                   idPrefix="rp-res"
+                  contactName={`${firstName} ${lastName}`.trim()}
                   contactPhone={phoneInput}
                   contactEmail={user.contactEmail}
                   value={{
@@ -2318,317 +2093,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                 <button type="submit" className="btn-primary">
                   <IconCheckCircle size={15} />
                   <span>{tx('บันทึกข้อมูลส่วนตัว')}</span>
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* ==================== 2. RUNNING & SHIRT PREFERENCES ==================== */}
-          {activeTab === 'preferences' && (
-            <form
-              className="clean-panel canvas-stack"
-              onSubmit={handleSavePreferences}
-            >
-              <div className="section-title-bar">
-                <div className="kr-sec-head">
-                  <h2>
-                    {tx('2. ไซส์เสื้อและความชอบการวิ่ง (Running & Shirt Preferences)')}
-                  </h2>
-                  <p className="muted-block">
-                    {tx(
-                      'ตั้งค่าไซส์เสื้อและทรงเสื้อเริ่มต้นเพื่อเลือกให้อัตโนมัติตอนสมัครงานวิ่งใหม่'
-                    )}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setShowSizeChart((v) => !v)}
-                >
-                  <IconShirt size={15} />
-                  <span>
-                    {showSizeChart
-                      ? tx('ซ่อนตารางไซส์เสื้อ')
-                      : tx('เปิดดูตารางไซส์มาตรฐาน (Size Chart)')}
-                  </span>
-                </button>
-              </div>
-
-              <div className="status-explanation-banner">
-                <IconShield size={16} />
-                <span>
-                  <strong>{tx('การรับประกันข้อมูลเดิม:')}</strong>{' '}
-                  {tx(
-                    'การเปลี่ยน Preferred Shirt Size ในโปรไฟล์จะมีผลเฉพาะการสมัครงานวิ่งครั้งใหม่เท่านั้น และไม่ไปแก้ไขไซส์เสื้อของงานวิ่งเดิมที่ยืนยันใบสมัครไปแล้ว'
-                  )}
-                </span>
-              </div>
-
-              <div className="form-grid-2">
-                <div className="form-row">
-                  <label htmlFor="pref-size">
-                    {tx('ไซส์เสื้อเริ่มต้น (Preferred Shirt Size)')}
-                  </label>
-                  <select
-                    id="pref-size"
-                    value={prefShirtSize}
-                    onChange={(e) => setPrefShirtSize(e.target.value)}
-                  >
-                    {enabledSizes.map((sz) => (
-                      <option key={sz.code} value={sz.code}>
-                        {sz.label} ({tx('รอบอก')}{' '}
-                        {tx(sz.chartByType[prefShirtType].chestInch)})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-row">
-                  <label htmlFor="pref-type">
-                    {tx('ประเภทเสื้อที่ต้องการ (Preferred Shirt Type)')}
-                  </label>
-                  <select
-                    id="pref-type"
-                    value={prefShirtType}
-                    onChange={(e) => {
-                      const next = e.target.value as ShirtCutType;
-                      setPrefShirtType(next);
-                      setChartPreviewType(next);
-                    }}
-                  >
-                    <option value="Unisex">Unisex</option>
-                    <option value="Men">Men ({tx('ทรงผู้ชาย')})</option>
-                    <option value="Women">Women ({tx('ทรงผู้หญิง')})</option>
-                  </select>
-                </div>
-
-                <div className="form-row">
-                  <label htmlFor="pref-fit">
-                    {tx('ทรงความกระชับ (Preferred Shirt Fit)')}
-                  </label>
-                  <select
-                    id="pref-fit"
-                    value={prefShirtFit}
-                    onChange={(e) =>
-                      setPrefShirtFit(e.target.value as ShirtFitType)
-                    }
-                  >
-                    <option value="Regular Fit">Regular Fit</option>
-                    <option value="Slim Fit">Slim Fit</option>
-                    <option value="Oversize">Oversize</option>
-                  </select>
-                </div>
-              </div>
-
-              {showSizeChart && (
-                <div className="custom-field-creator">
-                  <div className="section-title-bar">
-                    <strong>
-                      {tx('ตารางไซส์อ้างอิงกลางแยกตามประเภทเสื้อ (จัดการโดย Platform Owner)')}
-                    </strong>
-                    <div className="cta-inline-row">
-                      {(['Unisex', 'Men', 'Women'] as ShirtCutType[]).map(
-                        (cut) => (
-                          <button
-                            key={cut}
-                            type="button"
-                            className={`filter-pill ${chartPreviewType === cut ? 'active' : ''
-                              }`}
-                            onClick={() => setChartPreviewType(cut)}
-                          >
-                            {cut}
-                          </button>
-                        )
-                      )}
-                    </div>
-                  </div>
-                  <div className="table-scroll-wrap">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>{tx('ไซส์')}</th>
-                          <th>{tx('รอบอก')} ({chartPreviewType})</th>
-                          <th>{tx('ความยาวเสื้อ (นิ้ว)')}</th>
-                          <th>{tx('สถานะ')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {enabledSizes.map((sz) => {
-                          const spec = sz.chartByType[chartPreviewType];
-                          return (
-                            <tr
-                              key={sz.code}
-                              className={
-                                sz.code === prefShirtSize
-                                  ? 'selected-table-row'
-                                  : ''
-                              }
-                            >
-                              <td>
-                                <strong className="mono-num">{sz.label}</strong>
-                              </td>
-                              <td className="mono-num">
-                                {tx(spec.chestInch)}
-                              </td>
-                              <td className="mono-num">
-                                {tx(spec.lengthInch)}
-                              </td>
-                              <td>
-                                {sz.code === prefShirtSize ? (
-                                  <span className="status-pill badge-forest">
-                                    {tx('ค่าเริ่มต้นของคุณ')}
-                                  </span>
-                                ) : (
-                                  <span className="muted-inline">
-                                    {tx('พร้อมเลือกใช้')}
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="muted-inline" style={{ marginTop: '0.45rem' }}>
-                    {tx(
-                      'หมายเหตุ: ผู้จัดงานแต่ละงานสามารถกำหนดตารางไซส์เฉพาะของงานนั้น (Event Size Chart) เพิ่มเติมได้ในหน้าสมัครงานวิ่ง'
-                    )}
-                  </p>
-                </div>
-              )}
-
-              {/* 2.3 Running Preferences */}
-              <div className="form-row">
-                <label>
-                  {tx('ระยะทางวิ่งที่ชื่นชอบ (Preferred Distance)')}
-                </label>
-                <div className="cta-inline-row">
-                  {platformProfileConfig.distanceOptions.map((d) => {
-                    const active = prefDistances.includes(d);
-                    return (
-                      <button
-                        key={d}
-                        type="button"
-                        className={`filter-pill ${active ? 'active' : ''}`}
-                        onClick={() =>
-                          setPrefDistances((prev) =>
-                            active ? prev.filter((x) => x !== d) : [...prev, d]
-                          )
-                        }
-                      >
-                        {d}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="form-row">
-                <label>
-                  {tx('รูปแบบงานวิ่งที่สนใจ (Preferred Running Type)')}
-                </label>
-                <div className="cta-inline-row">
-                  {platformProfileConfig.runningTypeOptions.map((rt) => {
-                    const active = prefRunTypes.includes(rt);
-                    return (
-                      <button
-                        key={rt}
-                        type="button"
-                        className={`filter-pill ${active ? 'active' : ''}`}
-                        onClick={() =>
-                          setPrefRunTypes((prev) =>
-                            active
-                              ? prev.filter((x) => x !== rt)
-                              : [...prev, rt]
-                          )
-                        }
-                      >
-                        {tx(rt)}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="form-grid-2">
-                <div className="form-row">
-                  <label htmlFor="pref-exp">
-                    {tx('ระดับประสบการณ์การวิ่ง (Running Experience)')}
-                  </label>
-                  <select
-                    id="pref-exp"
-                    value={runExp}
-                    onChange={(e) =>
-                      setRunExp(
-                        e.target.value as
-                        | 'Beginner'
-                        | 'Intermediate'
-                        | 'Advanced'
-                      )
-                    }
-                  >
-                    <option value="Beginner">
-                      {tx('Beginner (เริ่มต้นวิ่งเพื่อสุขภาพ)')}
-                    </option>
-                    <option value="Intermediate">
-                      {tx('Intermediate (วิ่งสม่ำเสมอ 10 km – 21.1 km)')}
-                    </option>
-                    <option value="Advanced">
-                      {tx('Advanced (นักวิ่ง Half / Full Marathon / Trail)')}
-                    </option>
-                  </select>
-                </div>
-
-                <div className="form-row">
-                  <label htmlFor="pref-goal">
-                    {tx('เป้าหมายการวิ่ง (Running Goal)')}
-                  </label>
-                  <input
-                    id="pref-goal"
-                    type="text"
-                    value={runningGoal}
-                    onChange={(e) => setRunningGoal(e.target.value)}
-                    placeholder={tx(
-                      'เช่น จบ Half Marathon แรก หรือทำ Sub-1 ในระยะ 10K'
-                    )}
-                  />
-                </div>
-              </div>
-
-              <div className="form-row">
-                <label>
-                  {tx('งานวิ่งที่ชื่นชอบ / ติดตาม (Favorite Running Events)')}
-                </label>
-                <div className="cta-inline-row">
-                  {events
-                    .filter((e) => e.status !== 'draft')
-                    .map((ev) => {
-                      const fav = favEventIds.includes(ev.id);
-                      return (
-                        <button
-                          key={ev.id}
-                          type="button"
-                          className={`filter-pill ${fav ? 'active' : ''}`}
-                          onClick={() =>
-                            setFavEventIds((prev) =>
-                              fav
-                                ? prev.filter((x) => x !== ev.id)
-                                : [...prev, ev.id]
-                            )
-                          }
-                        >
-                          {tx(ev.titleTh)}
-                        </button>
-                      );
-                    })}
-                </div>
-              </div>
-
-              <div className="cta-inline-row">
-                <button type="submit" className="btn-primary">
-                  <IconCheckCircle size={15} />
-                  <span>{tx('บันทึกค่าความชอบและไซส์เสื้อเริ่มต้น')}</span>
                 </button>
               </div>
             </form>
@@ -3146,6 +2610,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                               ),
                             }}
                             idPrefix="ad-book"
+                            contactName={addrRecipient}
                             contactPhone={addrPhone}
                             contactEmail={user.contactEmail}
                             required
@@ -3538,371 +3003,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
             </section>
           )}
 
-          {/* ==================== 6. ACHIEVEMENTS (READ-ONLY) ==================== */}
-          {activeTab === 'achievements' && (
-            <section className="clean-panel canvas-stack">
-              <div className="kr-sec-head">
-                <h2>
-                  {tx('6. ความสำเร็จและรางวัลจากการแข่งขัน (Achievements)')}
-                </h2>
-                <p className="muted-block">
-                  {tx(
-                    'บันทึกความสำเร็จที่เชื่อมโยงกับผลการแข่งขันอย่างเป็นทางการของแต่ละอีเวนต์'
-                  )}
-                </p>
-              </div>
-
-              <div className="status-explanation-banner">
-                <IconLock size={16} />
-                <span>
-                  <strong>{tx('ล็อกความถูกต้องโดยระบบกลาง:')}</strong>{' '}
-                  {tx(
-                    'รายการรางวัลและสถิติเวลาออกโดยระบบประมวลผลหลังจบงาน นักวิ่งไม่สามารถเพิ่มหรือแก้ไขผลการแข่งขันเองได้'
-                  )}
-                </span>
-              </div>
-
-              {(user.achievements ?? []).length === 0 ? (
-                <div className="empty-state-box">
-                  <strong>{tx('ยังไม่มีประวัติรางวัลที่ประกาศผลแล้ว')}</strong>
-                  <p className="muted-inline">
-                    {tx(
-                      'เมื่อคุณวิ่งจบการแข่งขันและผู้จัดประกาศผลอย่างเป็นทางการ เหรียญ Finisher และสถิติจะปรากฏที่นี่อัตโนมัติ'
-                    )}
-                  </p>
-                </div>
-              ) : (
-                <div className="form-grid-2">
-                  {(user.achievements ?? []).map((ach) => (
-                    <article key={ach.id} className="custom-field-creator">
-                      <div className="cta-inline-row">
-                        <span className="status-pill badge-forest">
-                          <IconAward size={13} />
-                          <span>{ach.achievementType}</span>
-                        </span>
-                        <span className="mono-code">{ach.distanceKm} KM</span>
-                        <span className="muted-inline mono-num">
-                          {ach.achievementDate}
-                        </span>
-                      </div>
-                      <h3 style={{ margin: '0.45rem 0 0.25rem' }}>
-                        {tx(ach.title)}
-                      </h3>
-                      <p className="muted-inline">{tx(ach.eventNameTh)}</p>
-                      <div className="breakdown-line">
-                        <span>{tx('เหรียญ / รางวัล:')}</span>
-                        <strong>{tx(ach.medalOrAward)}</strong>
-                      </div>
-                      {ach.finishTime && (
-                        <div className="breakdown-line">
-                          <span>{tx('เวลาเข้าเส้นชัย:')}</span>
-                          <strong className="mono-num text-forest">
-                            {ach.finishTime}
-                          </strong>
-                        </div>
-                      )}
-                      <div className="breakdown-line">
-                        <span>{tx('รหัสใบรับรอง:')}</span>
-                        <span className="mono-code">{ach.certificateCode}</span>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* ==================== 7. SOCIAL LINKS ==================== */}
-          {activeTab === 'social' && (
-            <form
-              className="clean-panel canvas-stack"
-              onSubmit={handleSaveSocialLinks}
-            >
-              <div className="kr-sec-head">
-                <h2>{tx('7. โซเชียลมีเดียและโปรไฟล์กีฬา (Social Links · ไม่บังคับ)')}</h2>
-                <p className="muted-block">
-                  {tx(
-                    'เชื่อมโยงโปรไฟล์โซเชียลมีเดียหรือคลังสถิติการซ้อม เช่น Strava สำหรับแสดงในคอมมูนิตี้นักวิ่ง'
-                  )}
-                </p>
-              </div>
-
-              <div className="form-grid-2">
-                <div className="form-row">
-                  <label htmlFor="soc-fb">Facebook URL</label>
-                  <input
-                    id="soc-fb"
-                    type="url"
-                    value={fbUrl}
-                    onChange={(e) => setFbUrl(e.target.value)}
-                    placeholder="https://facebook.com/your.profile"
-                  />
-                </div>
-                <div className="form-row">
-                  <label htmlFor="soc-ig">Instagram URL</label>
-                  <input
-                    id="soc-ig"
-                    type="url"
-                    value={igUrl}
-                    onChange={(e) => setIgUrl(e.target.value)}
-                    placeholder="https://instagram.com/your.handle"
-                  />
-                </div>
-                <div className="form-row">
-                  <label htmlFor="soc-st">Strava Athlete URL</label>
-                  <input
-                    id="soc-st"
-                    type="url"
-                    value={stravaUrl}
-                    onChange={(e) => setStravaUrl(e.target.value)}
-                    placeholder="https://strava.com/athletes/..."
-                  />
-                </div>
-                <div className="form-row">
-                  <label htmlFor="soc-web">Website / Blog</label>
-                  <input
-                    id="soc-web"
-                    type="url"
-                    value={webUrl}
-                    onChange={(e) => setWebUrl(e.target.value)}
-                    placeholder="https://yourblog.example.com"
-                  />
-                </div>
-              </div>
-
-              <div className="custom-field-creator canvas-stack">
-                <strong>{tx('ลิงก์โซเชียลอื่น ๆ (Other Social Links)')}</strong>
-                {otherLinks.map((lnk) => (
-                  <div key={lnk.id} className="linked-provider-row">
-                    <div>
-                      <strong>{lnk.label}</strong>
-                      <div className="muted-inline">{lnk.url}</div>
-                    </div>
-                    <button
-                      type="button"
-                      className="btn-ghost-sm"
-                      onClick={() =>
-                        setOtherLinks((prev) =>
-                          prev.filter((x) => x.id !== lnk.id)
-                        )
-                      }
-                    >
-                      {tx('ลบ')}
-                    </button>
-                  </div>
-                ))}
-                <div className="form-grid-2">
-                  <div className="form-row">
-                    <input
-                      type="text"
-                      placeholder={tx('ชื่อแพลตฟอร์ม เช่น Garmin / TikTok')}
-                      value={newSocialLabel}
-                      onChange={(e) => setNewSocialLabel(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-row">
-                    <input
-                      type="url"
-                      placeholder="https://..."
-                      value={newSocialUrl}
-                      onChange={(e) => setNewSocialUrl(e.target.value)}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => {
-                      if (
-                        !newSocialLabel.trim() ||
-                        !/^https?:\/\//i.test(newSocialUrl.trim())
-                      ) {
-                        setBanner({
-                          tone: 'err',
-                          text: tx(
-                            'กรุณาระบุชื่อแพลตฟอร์มและลิงก์ที่ขึ้นต้นด้วย https://'
-                          ),
-                        });
-                        return;
-                      }
-                      setOtherLinks((prev) => [
-                        ...prev,
-                        {
-                          id: `soc-${Date.now()}`,
-                          label: newSocialLabel.trim(),
-                          url: newSocialUrl.trim(),
-                        },
-                      ]);
-                      setNewSocialLabel('');
-                      setNewSocialUrl('');
-                    }}
-                  >
-                    <IconPlus size={15} />
-                    <span>{tx('เพิ่มลิงก์')}</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="cta-inline-row">
-                <button type="submit" className="btn-primary">
-                  <IconCheckCircle size={15} />
-                  <span>{tx('บันทึก Social Links')}</span>
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* ==================== 9. NOTIFICATION PREFERENCES ==================== */}
-          {activeTab === 'notifications' && (
-            <section className="clean-panel canvas-stack">
-              <div className="kr-sec-head">
-                <h2>
-                  {tx('9. ตั้งค่าการรับแจ้งเตือน (Notification Preferences)')}
-                </h2>
-                <p className="muted-block">
-                  {tx(
-                    'แยกการแจ้งเตือนที่จำเป็นต่อธุรกรรมการสมัครและการชำระเงิน ออกจากข่าวสารประชาสัมพันธ์และการตลาดอย่างชัดเจน'
-                  )}
-                </p>
-              </div>
-
-              <div className="custom-field-creator canvas-stack">
-                <strong>
-                  {tx('ช่องทางรับการแจ้งเตือนหลัก (Delivery Channels)')}
-                </strong>
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={notifPrefs.emailNotification}
-                    onChange={(e) =>
-                      handleSaveNotificationPrefs({
-                        ...notifPrefs,
-                        emailNotification: e.target.checked,
-                      })
-                    }
-                  />
-                  <span>
-                    <strong>Email Notification</strong> —{' '}
-                    {tx('รับใบยืนยันการสมัคร ใบเสร็จ และข่าวอัปเดตงานวิ่งทางอีเมล')}
-                  </span>
-                </label>
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={notifPrefs.smsNotification}
-                    onChange={(e) =>
-                      handleSaveNotificationPrefs({
-                        ...notifPrefs,
-                        smsNotification: e.target.checked,
-                      })
-                    }
-                  />
-                  <span>
-                    <strong>SMS Notification</strong> —{' '}
-                    {tx('รับข้อความแจ้งเตือนเร่งด่วนก่อนปล่อยตัวและรหัส OTP ทาง SMS')}
-                  </span>
-                </label>
-              </div>
-
-              <div className="custom-field-creator canvas-stack">
-                <strong>
-                  {tx(
-                    'การแจ้งเตือนธุรกรรมและปฏิบัติการงานวิ่ง (Transactional & Event Operations)'
-                  )}
-                </strong>
-                <label className="checkbox-row">
-                  <input type="checkbox" checked disabled />
-                  <span>
-                    <strong>
-                      Registration Confirmation {tx('[จำเป็นต่อธุรกรรม]')}
-                    </strong>{' '}
-                    — {tx('ยืนยันสถานะใบสมัครและรหัส QR รับอุปกรณ์')}
-                  </span>
-                </label>
-                <label className="checkbox-row">
-                  <input type="checkbox" checked disabled />
-                  <span>
-                    <strong>
-                      Payment Confirmation {tx('[จำเป็นต่อธุรกรรม]')}
-                    </strong>{' '}
-                    — {tx('ใบเสร็จรับเงินและแจ้งเตือนสถานะการคืนเงิน')}
-                  </span>
-                </label>
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={notifPrefs.eventUpdates}
-                    onChange={(e) =>
-                      handleSaveNotificationPrefs({
-                        ...notifPrefs,
-                        eventUpdates: e.target.checked,
-                      })
-                    }
-                  />
-                  <span>
-                    <strong>Event Updates</strong> —{' '}
-                    {tx('ประกาศสำคัญจากผู้จัดงาน การเปลี่ยนจุดปล่อยตัว หรือกำหนดการ Expo')}
-                  </span>
-                </label>
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={notifPrefs.raceReminder}
-                    onChange={(e) =>
-                      handleSaveNotificationPrefs({
-                        ...notifPrefs,
-                        raceReminder: e.target.checked,
-                      })
-                    }
-                  />
-                  <span>
-                    <strong>Race Reminder</strong> —{' '}
-                    {tx('แจ้งเตือนล่วงหน้าก่อนวันรับ BIB และวันแข่งขัน')}
-                  </span>
-                </label>
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={notifPrefs.raceResultAnnouncement}
-                    onChange={(e) =>
-                      handleSaveNotificationPrefs({
-                        ...notifPrefs,
-                        raceResultAnnouncement: e.target.checked,
-                      })
-                    }
-                  />
-                  <span>
-                    <strong>Race Result Announcement</strong> —{' '}
-                    {tx('แจ้งเตือนทันทีเมื่อผลการแข่งขันทางการและ E-Certificate พร้อมดาวน์โหลด')}
-                  </span>
-                </label>
-              </div>
-
-              <div className="custom-field-creator canvas-stack">
-                <strong>
-                  {tx('ข่าวสารและการตลาด (Marketing & Promotions — แยกอิสระ)')}
-                </strong>
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={notifPrefs.marketingPromotion}
-                    onChange={(e) =>
-                      handleSaveNotificationPrefs({
-                        ...notifPrefs,
-                        marketingPromotion: e.target.checked,
-                      })
-                    }
-                  />
-                  <span>
-                    <strong>Marketing & Promotion</strong> —{' '}
-                    {tx(
-                      'รับข่าวสารงานวิ่งเปิดใหม่ รหัสส่วนลด Early Bird และสิทธิประโยชน์จากพาร์ตเนอร์'
-                    )}
-                  </span>
-                </label>
-              </div>
-            </section>
-          )}
-
           {/* ==================== 8. ACCOUNT & SECURITY ==================== */}
           {activeTab === 'organizer' && (
             <div className="canvas-stack">
@@ -4031,9 +3131,15 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                 <h2>{tx('ผู้สมัครที่บันทึกไว้ (สมัครให้ผู้อื่น)')}</h2>
                 <p className="muted-block">
                   {tx(
-                    'รายชื่อบุคคลที่คุณเคยสมัครงานวิ่งให้ ระบบบันทึกให้อัตโนมัติเมื่อสมัครให้ผู้อื่นสำเร็จ สามารถแก้ไขข้อมูลหรือลบรายการได้ที่นี่'
+                    'รายชื่อบุคคลที่คุณสมัครงานวิ่งให้ เพิ่มเองได้ที่นี่ หรือระบบบันทึกให้อัตโนมัติเมื่อสมัครให้ผู้อื่นสำเร็จ แก้ไขหรือลบรายการได้'
                   )}
                 </p>
+              </div>
+              <div className="cta-inline-row">
+                <button type="button" className="btn-primary" onClick={() => openPartModal()}>
+                  <IconPlus size={15} />
+                  <span>{tx('เพิ่มผู้สมัคร')}</span>
+                </button>
               </div>
 
               {participantList.length === 0 ? (
@@ -4041,7 +3147,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                   <strong>{tx('ยังไม่มีรายชื่อผู้สมัครที่บันทึกไว้')}</strong>
                   <p className="muted-inline">
                     {tx(
-                      'รายชื่อจะถูกบันทึกอัตโนมัติเมื่อเลือก "สมัครให้ผู้อื่น" ในหน้าสมัครงานวิ่ง'
+                      'กด "เพิ่มผู้สมัคร" เพื่อบันทึกไว้ล่วงหน้า หรือรายชื่อจะถูกบันทึกอัตโนมัติเมื่อเลือก "สมัครให้ผู้อื่น" ในหน้าสมัครงานวิ่ง'
                     )}
                   </p>
                 </div>
@@ -4219,9 +3325,10 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                             showResultModalAlert(false, errMsg);
                             return;
                           }
+                          const isNewPart = editingPartId === NEW_PARTICIPANT_ID;
                           const normalizedItem: SavedParticipant = {
                             ...partDraft,
-                            id: editingPartId,
+                            id: isNewPart ? `sp-${Date.now().toString(36)}` : editingPartId,
                             firstName: partDraft.firstName.trim(),
                             lastName: partDraft.lastName.trim(),
                             nickname:
@@ -4254,13 +3361,15 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                               (partDraft.emergencyContactPhone ?? '').trim() ||
                               undefined,
                           };
-                          const next = participantList.map((x) =>
-                            x.id === editingPartId ? normalizedItem : x
-                          );
+                          const next = isNewPart
+                            ? [...participantList, normalizedItem]
+                            : participantList.map((x) => (x.id === editingPartId ? normalizedItem : x));
                           setParticipantList(next);
                           setEditingPartId(null);
                           setPartDraft(createEmptyParticipantDraft());
-                          const okMsg = tx('อัปเดตข้อมูลผู้สมัครแทนเรียบร้อยแล้ว');
+                          const okMsg = isNewPart
+                            ? tx('เพิ่มผู้สมัครเรียบร้อยแล้ว')
+                            : tx('อัปเดตข้อมูลผู้สมัครแทนเรียบร้อยแล้ว');
                           if (
                             !(await saveProfileWithFeedback(
                               buildMergedProfile({ savedParticipants: next }),
@@ -4278,7 +3387,9 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                         <div className="runner-modal-header">
                           <div>
                             <h3 id="sp-modal-title">
-                              {tx('แก้ไขข้อมูลผู้สมัครแทน')}
+                              {editingPartId === NEW_PARTICIPANT_ID
+                                ? tx('เพิ่มผู้สมัคร')
+                                : tx('แก้ไขข้อมูลผู้สมัครแทน')}
                             </h3>
                             <p className="muted-inline">
                               {isEn
@@ -4648,7 +3759,9 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                           </button>
                           <button type="submit" className="btn-primary">
                             <IconCheckCircle size={15} />
-                            <span>{tx('บันทึกการแก้ไข')}</span>
+                            <span>
+                              {editingPartId === NEW_PARTICIPANT_ID ? tx('เพิ่มผู้สมัคร') : tx('บันทึกการแก้ไข')}
+                            </span>
                           </button>
                         </div>
                       </form>
@@ -4659,37 +3772,26 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
             </section>
           )}
 
-          {activeTab === 'connections' && (
-            <ConnectionsPanel
-              user={user}
-              onLinkProvider={onLinkProvider}
-              onUnlinkProvider={onUnlinkProvider}
-              notify={notifyResult}
-            />
-          )}
-
-          {activeTab === 'devices' && (
-            <DevicesPanel
-              user={user}
-              onRevokeSession={onRevokeSession}
-              onRevokeOtherSessions={onRevokeOtherSessions}
-              notify={notifyResult}
-            />
-          )}
-
           {activeTab === 'privacy' && (
             <PrivacyPanel
               user={user}
               onSetMarketingConsent={onSetMarketingConsent}
-              onExportMyData={onExportMyData}
               notify={notifyResult}
+              connections={
+                <ConnectionsPanel
+                  embedded
+                  user={user}
+                  onLinkProvider={onLinkProvider}
+                  onUnlinkProvider={onUnlinkProvider}
+                  notify={notifyResult}
+                />
+              }
               securitySections={
                 <AccountSecuritySections
                   user={user}
                   onSetOrChangePassword={onSetOrChangePassword}
                   onRequestPasswordCode={onRequestPasswordCode}
                   onVerifyPasswordCode={onVerifyPasswordCode}
-                  onManageAccountStatus={onManageAccountStatus}
                   notify={notifyResult}
                 />
               }

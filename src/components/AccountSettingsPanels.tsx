@@ -7,7 +7,6 @@ import {
   IconCheckCircle,
   IconClose,
   IconDevice,
-  IconDownload,
   IconFacebookMark,
   IconGoogleMark,
   IconLineMark,
@@ -70,11 +69,6 @@ interface AccountSecuritySectionsProps {
   onSetOrChangePassword: (newPassword: string, grant: string) => Promise<ActionResult>;
   onRequestPasswordCode: () => Promise<ActionResult & { sentTo?: string }>;
   onVerifyPasswordCode: (otp: string) => Promise<ActionResult & { grant?: string }>;
-  onManageAccountStatus: (
-    action: 'deactivate' | 'request_deletion' | 'cancel_deletion',
-    reason?: string,
-    confirmCode?: string
-  ) => Promise<ActionResult>;
   notify: Notify;
 }
 
@@ -83,7 +77,6 @@ export const AccountSecuritySections: React.FC<AccountSecuritySectionsProps> = (
   onSetOrChangePassword,
   onRequestPasswordCode,
   onVerifyPasswordCode,
-  onManageAccountStatus,
   notify,
 }) => {
   // Password change flow: idle -> send code to email -> enter code -> set new password.
@@ -95,14 +88,8 @@ export const AccountSecuritySections: React.FC<AccountSecuritySectionsProps> = (
   const [pwError, setPwError] = useState('');
   const [newPass, setNewPass] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
-  const [removalMode, setRemovalMode] = useState<'none' | 'deactivate' | 'delete'>(
-    'none'
-  );
-  const [deleteReason, setDeleteReason] = useState('');
-  const [deleteCode, setDeleteCode] = useState('');
 
   const passwordChangedText = formatDateTime(user.passwordChangedAt);
-  const deletionPending = user.accountStatus === 'deletion_requested';
 
   const resetPasswordFlow = () => {
     setPwStep('idle');
@@ -352,149 +339,6 @@ export const AccountSecuritySections: React.FC<AccountSecuritySectionsProps> = (
           </div>
         )}
       </section>
-
-      {/* Account removal */}
-      <section className="acct-section acct-danger" aria-labelledby="acct-removal-title">
-        <h3 id="acct-removal-title">{tx('ปิดหรือลบบัญชี')}</h3>
-
-        {deletionPending ? (
-          <div className="acct-setting-row">
-            <div className="acct-setting-text">
-              <strong className="text-amber">{tx('ส่งคำขอลบบัญชีแล้ว')}</strong>
-              <span className="muted-inline">
-                {txf('ส่งคำขอเมื่อ {0}', user.deletionRequestedAt ?? '-')}
-                {user.deletionRequestReason ? ` · ${tx(user.deletionRequestReason)}` : ''}
-              </span>
-              <span className="muted-inline">
-                {tx('ทีมงานจะตรวจสอบคำขอก่อนลบข้อมูล ระหว่างนี้ยังใช้งานบัญชีได้ตามปกติ')}
-              </span>
-            </div>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={async () => {
-                const r = await onManageAccountStatus('cancel_deletion');
-                notify(
-                  r.ok,
-                  r.ok ? tx('ยกเลิกคำขอลบบัญชีเรียบร้อยแล้ว') : tx(r.error ?? 'ไม่สามารถดำเนินการได้')
-                );
-              }}
-            >
-              {tx('ยกเลิกคำขอลบบัญชี')}
-            </button>
-          </div>
-        ) : (
-          <>
-            <p className="muted-block">
-              {tx(
-                'ปิดพักบัญชีจะออกจากระบบทุกอุปกรณ์และพักโปรไฟล์ไว้ กลับมาใช้ได้เมื่อเข้าสู่ระบบอีกครั้ง ส่วนการลบบัญชีเป็นคำขอให้ทีมงานลบข้อมูลส่วนบุคคล โดยรายการชำระเงินและใบสมัครที่ชำระแล้วจะยังถูกเก็บไว้ตามกฎหมาย'
-              )}
-            </p>
-            <div className="acct-danger-actions">
-              <button
-                type="button"
-                className="btn-danger-outline"
-                aria-expanded={removalMode === 'deactivate'}
-                onClick={() => setRemovalMode((m) => (m === 'deactivate' ? 'none' : 'deactivate'))}
-              >
-                {tx('ปิดพักบัญชี')}
-              </button>
-              <button
-                type="button"
-                className="btn-danger"
-                aria-expanded={removalMode === 'delete'}
-                onClick={() => setRemovalMode((m) => (m === 'delete' ? 'none' : 'delete'))}
-              >
-                {tx('ลบบัญชี')}
-              </button>
-            </div>
-
-            {removalMode === 'deactivate' && (
-              <div className="acct-confirm-panel" role="group" aria-label={tx('ยืนยันปิดพักบัญชี')}>
-                <strong>{tx('ปิดพักบัญชีและออกจากระบบทุกอุปกรณ์?')}</strong>
-                <span className="muted-inline">
-                  {tx('บัตรวิ่งและคำสั่งซื้อเดิมยังอยู่ครบ เข้าสู่ระบบอีกครั้งเพื่อเปิดใช้งาน')}
-                </span>
-                <div className="acct-inline-actions">
-                  <button type="button" className="btn-ghost-sm" onClick={() => setRemovalMode('none')}>
-                    {tx('ยกเลิก')}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-danger"
-                    onClick={() => {
-                      void onManageAccountStatus('deactivate', 'ผู้ใช้กดยืนยันปิดพักบัญชีชั่วคราว');
-                    }}
-                  >
-                    {tx('ยืนยันปิดพักบัญชี')}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {removalMode === 'delete' && (
-              <form
-                className="acct-confirm-panel"
-                aria-label={tx('ยืนยันคำขอลบบัญชี')}
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  const r = await onManageAccountStatus(
-                    'request_deletion',
-                    deleteReason.trim() || 'ขอลบข้อมูลตามสิทธิ์เจ้าของข้อมูลส่วนบุคคล',
-                    deleteCode.trim()
-                  );
-                  if (r.ok) {
-                    setDeleteReason('');
-                    setDeleteCode('');
-                    setRemovalMode('none');
-                  }
-                  notify(
-                    r.ok,
-                    r.ok ? tx('บันทึกคำขอลบบัญชีแล้ว') : tx(r.error ?? 'ไม่สามารถดำเนินการได้')
-                  );
-                }}
-              >
-                <strong>{tx('ส่งคำขอลบบัญชี')}</strong>
-                <div className="form-row">
-                  <label htmlFor="acct-del-reason">{tx('เหตุผล (ไม่บังคับ)')}</label>
-                  <input
-                    id="acct-del-reason"
-                    type="text"
-                    value={deleteReason}
-                    onChange={(e) => setDeleteReason(e.target.value)}
-                    placeholder={tx('เช่น ไม่ได้ใช้งานแล้ว')}
-                  />
-                </div>
-                <div className="form-row">
-                  <label htmlFor="acct-del-code">
-                    {txf('พิมพ์รหัสบัญชี {0} เพื่อยืนยัน', user.code)}
-                  </label>
-                  <input
-                    id="acct-del-code"
-                    type="text"
-                    className="mono-code"
-                    autoComplete="off"
-                    value={deleteCode}
-                    onChange={(e) => setDeleteCode(e.target.value)}
-                  />
-                </div>
-                <div className="acct-inline-actions">
-                  <button type="button" className="btn-ghost-sm" onClick={() => setRemovalMode('none')}>
-                    {tx('ยกเลิก')}
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn-danger"
-                    disabled={deleteCode.trim().toUpperCase() !== user.code.toUpperCase()}
-                  >
-                    {tx('ส่งคำขอลบบัญชี')}
-                  </button>
-                </div>
-              </form>
-            )}
-          </>
-        )}
-      </section>
     </>
   );
 };
@@ -504,6 +348,8 @@ export const AccountSecuritySections: React.FC<AccountSecuritySectionsProps> = (
 /* -------------------------------------------------------------------------- */
 
 interface ConnectionsPanelProps {
+  /** inside another page: no page frame or heading, one titled section */
+  embedded?: boolean;
   user: UserAccount;
   onLinkProvider: (provider: 'google' | 'line' | 'facebook') => void;
   onUnlinkProvider: (provider: AuthProviderType) => ActionResult;
@@ -511,6 +357,7 @@ interface ConnectionsPanelProps {
 }
 
 export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({
+  embedded = false,
   user,
   onLinkProvider,
   onUnlinkProvider,
@@ -522,13 +369,16 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({
     (p) => !user.identities.some((i) => i.provider === p)
   );
 
-  return (
-    <div className="clean-panel acct-page">
-      <PageHead
-        title={tx('การเชื่อมต่อ')}
-        description={tx('เชื่อมบัญชีภายนอกเพื่อเข้าสู่ระบบ กระต่าย ได้หลายทาง ถ้าลืมรหัสผ่านหรือเข้าบัญชีหนึ่งไม่ได้ ยังเข้าด้วยช่องทางอื่นได้')}
-      />
-
+  const body = (
+    <>
+      {embedded && (
+        <div className="acct-section-intro">
+          <h3 id="acct-connections">{tx('การเชื่อมต่อ')}</h3>
+          <p className="muted-inline">
+            {tx('เชื่อมบัญชีภายนอกเพื่อเข้าสู่ระบบ กระต่าย ได้หลายทาง ถ้าลืมรหัสผ่านหรือเข้าบัญชีหนึ่งไม่ได้ ยังเข้าด้วยช่องทางอื่นได้')}
+          </p>
+        </div>
+      )}
       {unlinked.length > 0 && (
         <section className="acct-section acct-section-flush" aria-labelledby="acct-add-conn">
           <h3 id="acct-add-conn">{tx('เพิ่มการเชื่อมต่อ')}</h3>
@@ -606,6 +456,23 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({
           </p>
         )}
       </section>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <section className="acct-section acct-connections" aria-labelledby="acct-connections">
+        {body}
+      </section>
+    );
+  }
+  return (
+    <div className="clean-panel acct-page">
+      <PageHead
+        title={tx('การเชื่อมต่อ')}
+        description={tx('เชื่อมบัญชีภายนอกเพื่อเข้าสู่ระบบ กระต่าย ได้หลายทาง ถ้าลืมรหัสผ่านหรือเข้าบัญชีหนึ่งไม่ได้ ยังเข้าด้วยช่องทางอื่นได้')}
+      />
+      {body}
     </div>
   );
 };
@@ -780,19 +647,20 @@ interface PrivacyPanelProps {
   user: UserAccount;
   /** Password/security and account removal sections, rendered after the data section. */
   securitySections?: React.ReactNode;
+  /** the connected sign-in methods (merged in from their own menu, 24 Nov 2026) */
+  connections?: React.ReactNode;
   onSetMarketingConsent: (granted: boolean) => Promise<ActionResult>;
-  onExportMyData: () => Promise<ActionResult>;
   notify: Notify;
 }
 
 export const PrivacyPanel: React.FC<PrivacyPanelProps> = ({
   user,
   securitySections,
+  connections,
   onSetMarketingConsent,
-  onExportMyData,
   notify,
 }) => {
-  const [busy, setBusy] = useState<'marketing' | 'export' | null>(null);
+  const [busy, setBusy] = useState<'marketing' | null>(null);
   const consents = user.consents ?? [];
   const latest = (type: 'terms' | 'privacy' | 'marketing') =>
     [...consents].reverse().find((c) => c.type === type);
@@ -838,7 +706,7 @@ export const PrivacyPanel: React.FC<PrivacyPanelProps> = ({
     <div className="clean-panel acct-page">
       <PageHead
         title={tx('ความเป็นส่วนตัวและข้อมูล')}
-        description={tx('จัดการการยินยอม สำเนาข้อมูลส่วนบุคคล (PDPA) รหัสผ่าน และการปิดหรือลบบัญชีของคุณ')}
+        description={tx('จัดการการยินยอม ช่องทางเข้าสู่ระบบที่เชื่อมไว้ และรหัสผ่านของคุณ')}
       />
 
       <section className="acct-section acct-section-flush" aria-labelledby="acct-consent">
@@ -892,36 +760,7 @@ export const PrivacyPanel: React.FC<PrivacyPanelProps> = ({
 
       </section>
 
-      <section className="acct-section" aria-labelledby="acct-mydata">
-        <h3 id="acct-mydata">{tx('ข้อมูลของฉัน')}</h3>
-
-        <div className="acct-setting-row">
-          <div className="acct-setting-text">
-            <strong>{tx('ขอสำเนาข้อมูลของฉัน')}</strong>
-            <span className="muted-inline">
-              {tx('ดาวน์โหลดไฟล์ JSON ของข้อมูลบัญชี โปรไฟล์ ช่องทางเข้าสู่ระบบ ประวัติการเข้าใช้ การยินยอม และใบสมัครของคุณ (ไม่รวมรหัสผ่าน)')}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={busy === 'export'}
-            onClick={async () => {
-              setBusy('export');
-              const r = await onExportMyData();
-              setBusy(null);
-              notify(
-                r.ok,
-                r.ok ? tx('ดาวน์โหลดสำเนาข้อมูลแล้ว') : tx(r.error ?? 'ไม่สามารถดาวน์โหลดได้')
-              );
-            }}
-          >
-            <IconDownload size={15} />
-            <span>{tx('ดาวน์โหลด')}</span>
-          </button>
-        </div>
-
-      </section>
+      {connections}
 
       {securitySections}
     </div>

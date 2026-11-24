@@ -174,9 +174,8 @@ const PartPicker: React.FC<{
           onBlur={() => setTyped(null)}
         />
         <span className="dob-part-chevron" aria-hidden="true">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m7 9 5-5 5 5" />
-            <path d="m7 15 5 5 5-5" />
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m6 9 6 6 6-6" />
           </svg>
         </span>
       </div>
@@ -209,6 +208,7 @@ const PartPicker: React.FC<{
             onPick={closeToField}
             ariaLabel={name}
             className={wheelClass}
+            list
           />
         </div>
       </WheelSheet>

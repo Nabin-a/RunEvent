@@ -93,7 +93,6 @@ import {
   IconChevronDown,
   IconClose,
   IconFlag,
-  IconGlobe,
   IconLock,
   IconMenu,
   IconShield,
@@ -317,7 +316,7 @@ function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
     const parts = cleanPath.split('/').filter(Boolean);
     const slug = parts[1] ?? null;
     const sub = parts[2] ?? '';
-    // register-b: the alternative form layout kept for side-by-side review (sandbox only)
+    // register-b: old address of the one-time layout B review, now the same form
     if ((sub === 'register' || sub === 'register-b') && slug) {
       return {
         surface: 'customer',
@@ -351,7 +350,6 @@ function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
   };
 }
 
-const isRegisterBPath = (pathname: string) => /\/register-b\/?$/.test(pathname);
 
 /** Public site address used by the Platform Owner console (VITE_PUBLIC_SITE_URL, else :5173 on this host). */
 function publicSiteOrigin(): string {
@@ -518,8 +516,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     scenario: 'new_no_email' | 'collision' | 'cancelled';
   } | null>(null);
 
-  // layout B of the registration form (/events/:id/register-b), sandbox review only
-  const [regLayoutB, setRegLayoutB] = useState(() => isRegisterBPath(window.location.pathname));
   // Mockup only (dev dock): show / hide the event-wide quota box on event detail pages.
   // The real switch will be an organizer setting per event; this browser-local flag stands in for it.
   const [mockShowQuotaBox, setMockShowQuotaBox] = useState(() => {
@@ -546,7 +542,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     // turn into the whole app inside the editor)
     if (isPagePreviewUrl() || isFormPreviewUrl()) return;
     const currentFull = `${window.location.pathname}${window.location.search}`;
-    setRegLayoutB(isRegisterBPath(url.split('?')[0]));
     if (currentFull === url) return;
     if (replace) {
       window.history.replaceState({}, '', url);
@@ -557,7 +552,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
 
   const applyRouteStateFromUrl = (pathname: string, search: string) => {
     const parsed = parseUrlRoute(pathname, search);
-    setRegLayoutB(isRegisterBPath(pathname));
     const matchedEv = findEventBySlug(sys.events, parsed.eventSlug);
     setSurface(parsed.surface);
     setCustomerSubView(
@@ -781,6 +775,24 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
         setAuthInitialTab('signin');
         setSurface('auth');
         pushUrl('/login', true);
+      } else if (
+        surface === 'customer' &&
+        customerSubView === 'event_register' &&
+        selectedPublicEventId &&
+        !isFormPreviewUrl()
+      ) {
+        // the sign-up form needs an account first (user request 24 Nov 2026); after signing in
+        // the runner lands back on this event's form
+        const ev = sys.events.find((e) => e.id === selectedPublicEventId);
+        setReturnIntent({
+          surface: 'events',
+          eventId: selectedPublicEventId,
+          eventTab: 'register',
+          label: ev ? `สมัครวิ่งงาน ${ev.titleTh}` : 'สมัครวิ่ง',
+        });
+        setAuthInitialTab('signin');
+        setSurface('auth');
+        pushUrl('/login', true);
       }
     } else if (surface === 'auth') {
       // Signed-in visitors never see the sign-in / sign-up / forgot-password forms
@@ -793,7 +805,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
       setSurface('customer');
       pushUrl('/', true);
     }
-  }, [apiBootstrapped, currentUser, surface, customerSubView]);
+  }, [apiBootstrapped, currentUser, surface, customerSubView, selectedPublicEventId]);
 
   const navigateCustomer = (
     view: CustomerSubView,
@@ -1592,25 +1604,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
       granted,
     });
     return { ok: res.ok, error: res.error };
-  };
-
-  // Downloads the signed-in user's own data as a JSON file (PDPA right of access).
-  const handleExportMyData = async (): Promise<{ ok: boolean; error?: string }> => {
-    if (!currentUser) return { ok: false, error: tx("กรุณาเข้าสู่ระบบก่อน") };
-    const res = await apiRequest('GET', '/api/account/export');
-    if (!res.ok || !res.data) return { ok: false, error: res.error };
-    const blob = new Blob([JSON.stringify(res.data, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `kratai-my-data-${currentUser.code}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    return { ok: true };
   };
 
   const handleLinkProvider = (provider: 'google' | 'line' | 'facebook') => {
@@ -3203,11 +3196,18 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     const res = await syncApi('POST', '/api/auth/login', { email, password });
     return res.ok ? null : res.error ?? tx('เข้าสู่ระบบไม่สำเร็จ กรุณาลองอีกครั้ง');
   };
-  const currentUserDisplayName = currentUser
-    ? lang === 'en'
-      ? currentUser.fullNameEn || tx(currentUser.fullNameTh)
-      : currentUser.fullNameTh
+  // the name in the top bar and the account menu: English first + last name from the runner
+  // profile in both languages (user request 24 Nov 2026), then the account's English name,
+  // then the Thai name
+  const currentUserNameEn = currentUser
+    ? [currentUser.runnerProfile?.firstNameEn, currentUser.runnerProfile?.lastNameEn]
+        .map((x) => (x ?? '').trim())
+        .filter(Boolean)
+        .join(' ') ||
+      currentUser.fullNameEn ||
+      currentUser.fullNameTh
     : '';
+  const currentUserDisplayName = currentUserNameEn;
   const currentUserAvatarUrl = currentUser?.runnerProfile?.avatarDataUrl ?? '';
   const currentUserCompletion = currentUser
     ? evaluatePersonalInfoCompletion(currentUser)
@@ -3242,14 +3242,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountNeedsPrivacyAck, currentUser?.id]);
-  const currentUserInitial = (
-    (lang === 'en'
-      ? currentUser?.runnerProfile?.firstNameEn?.trim()[0] ??
-        currentUser?.fullNameEn?.trim()[0] ??
-        currentUserDisplayName.trim()[0]
-      : currentUser?.runnerProfile?.firstName?.trim()[0] ??
-        currentUser?.fullNameTh.trim()[0]) ?? 'R'
-  ).toUpperCase();
+  const currentUserInitial = (currentUserDisplayName.trim()[0] ?? 'R').toUpperCase();
   const pendingWebhookRegs = sys.registrations.filter(
     (r) => r.registrationStatus === 'pending_payment'
   );
@@ -3379,7 +3372,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
             role="group"
             aria-label={lang === 'th' ? 'เลือกภาษา' : 'Choose language'}
           >
-            <IconGlobe size={14} />
             <button
               type="button"
               aria-pressed={lang === 'th'}
@@ -3463,7 +3455,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                       )}
                     </div>
                     <div className="profile-dropdown-identity">
-                      <strong>{currentUserDisplayName}</strong>
+                      <strong>{currentUserNameEn}</strong>
                       <div className="muted-inline profile-dropdown-email">
                         {currentUser.contactEmail ??
                           tx("เข้าใช้งานผ่าน LINE (ยังไม่ได้ผูกอีเมล)")}
@@ -3788,7 +3780,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
       {/* ACTIVE SURFACE */}
       {surface === 'customer' && (
         <CustomerPortalView
-          registrationLayout={sandboxTools && regLayoutB ? 'b' : 'a'}
           showQuotaBox={sandboxTools ? mockShowQuotaBox : true}
           subView={customerSubView}
           selectedEventId={selectedPublicEventId}
@@ -3797,7 +3788,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
           organizations={sys.organizations}
           registrations={sys.registrations}
           merchOrders={sys.merchOrders}
-          registrationSteps={sys.registrationSteps}
           platformProfileConfig={
             sys.platformProfileConfig ?? DEFAULT_PLATFORM_PROFILE_CONFIG
           }
@@ -3873,7 +3863,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
             onRevokeOtherSessions={handleRevokeOtherSessions}
             onRevokeSession={handleRevokeSession}
             onSetMarketingConsent={handleSetMarketingConsent}
-            onExportMyData={handleExportMyData}
             onAcceptTeamInvitation={handleAcceptTeamInvitation}
             onApplyNewOrganizerOrg={handleApplyNewOrganizerOrg}
             onEnterOrganizerOrg={(orgId) => navigateOrganizer(orgId, null)}
@@ -4192,35 +4181,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                   );
                 })}
             </div>
-
-            {customerSubView === 'event_register' && selectedPublicEventId && (
-              <div className="dev-drawer-section">
-                <div className="dev-section-label">
-                  {tx("เทียบฟอร์มสมัคร (แบบ B ทดลอง ยังส่งใบสมัครไม่ได้)")}
-                </div>
-                <div className="cta-inline-row">
-                  {(['a', 'b'] as const).map((layout) => {
-                    const base = window.location.pathname.replace(/\/register(-b)?\/?$/, '');
-                    const target = `${base}/${layout === 'b' ? 'register-b' : 'register'}`;
-                    const isCur = window.location.pathname.replace(/\/$/, '') === target;
-                    return (
-                      <button
-                        key={layout}
-                        type="button"
-                        className={`btn-ghost-sm ${isCur ? 'active' : ''}`}
-                        aria-pressed={isCur}
-                        onClick={() => {
-                          pushUrl(target);
-                          applyRouteStateFromUrl(target, '');
-                        }}
-                      >
-                        {layout === 'a' ? tx("แบบ A (เดิม)") : tx("แบบ B (โปร่ง)")}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
 
             {customerSubView === 'event_detail' && (
               <div className="dev-drawer-section">

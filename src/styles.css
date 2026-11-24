@@ -1895,10 +1895,12 @@ textarea::placeholder {
   border-bottom: 1px solid var(--line-light);
 }
 
-.auth-forgot-row {
+/* a field label with a small action on the same line (e.g. "forgot password") */
+.auth-label-row {
   display: flex;
-  justify-content: flex-end;
-  margin-top: -0.15rem;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .auth-inline-link-btn {
@@ -3362,7 +3364,10 @@ textarea::placeholder {
   gap: 0.1rem;
 }
 
-.profile-dropdown-identity > strong {
+.profile-dropdown-identity > strong,
+.global-topbar .profile-dropdown .profile-dropdown-identity > strong {
+  /* the dark header makes bold text white; the menu is white, so the name needs the ink colour */
+  color: var(--ink-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -8665,40 +8670,94 @@ input[type="radio"][aria-invalid="true"] {
 
 .phone-input-code-wrap {
   position: relative;
-  flex: 0 0 5.75rem;
+  flex: 0 0 7.5rem;
   min-width: 0;
 }
 
 .phone-input .phone-input-code {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   width: 100%;
+  height: 2.625rem;
   min-width: 0;
-  /* the dial code is drawn by .phone-input-code-face; the country name stays in the list.
-     A transparent text colour also hides the native arrow, so draw our own. */
-  color: transparent;
-  appearance: none;
-  padding-right: 1.6rem;
-  background-image: var(--select-chevron);
-  background-position: right 0.55rem center;
-  background-repeat: no-repeat;
-  background-size: 0.75rem;
+  padding: 0 1.6rem 0 0.65rem;
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface) var(--select-chevron) no-repeat right 0.55rem center / 0.75rem;
+  color: var(--ink-primary);
+  font: inherit;
+  font-size: 0.9375rem;
   cursor: pointer;
 }
 
-.phone-input .phone-input-code option {
-  color: var(--ink-primary);
+.phone-input .phone-input-code:hover:not(:disabled) {
+  border-color: var(--ink-secondary);
 }
 
-.phone-input-code-face {
-  position: absolute;
-  top: 50%;
-  left: 0.75rem;
-  color: var(--ink-primary);
-  pointer-events: none;
-  transform: translateY(-50%);
-}
-
-.phone-input .phone-input-code:disabled + .phone-input-code-face {
+.phone-input .phone-input-code:disabled {
   color: var(--ink-placeholder);
+  cursor: not-allowed;
+}
+
+/* flags are emoji; Windows has no flag glyphs, so a small Noto Color Emoji subset is loaded */
+.phone-flag {
+  font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+  font-size: 1.125rem;
+  line-height: 1;
+}
+
+.phone-code-list {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  z-index: 40;
+  width: 100%;
+  max-height: 16rem;
+  margin: 0;
+  padding: 0.3rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  box-shadow: 0 12px 28px -16px rgba(52, 73, 95, 0.45);
+}
+
+.phone-code-list:focus-visible {
+  outline: 2px solid var(--vermilion);
+  outline-offset: 1px;
+}
+
+.phone-code-list li {
+  display: grid;
+  grid-template-columns: auto 1.75rem auto;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  padding: 0 0.45rem;
+  border-radius: calc(var(--radius-sm) - 2px);
+  color: var(--ink-primary);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.phone-code-list li.is-active {
+  background: var(--bg-subtle);
+}
+
+.phone-code-list li.is-picked {
+  font-weight: 700;
+}
+
+.phone-code-iso {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.phone-code-dial {
+  color: var(--ink-secondary);
 }
 
 .phone-input input {
@@ -9613,8 +9672,43 @@ button.mstep-list-btn:hover {
 }
 
 /* one wheel needs far less room than the old three-wheel sheet */
+/* day and month: the list is exactly as wide as its own field */
 .wheel-sheet.wheel-sheet-single {
+  width: 100%;
+  min-width: 0;
+}
+
+/* year: two numbers per row (B.E. and A.D.) need the earlier width */
+.wheel-sheet.wheel-sheet-single:has(.wheel-year-pair) {
   width: max(100%, 11rem);
+}
+
+/* a plain list (WheelColumn list): no centre band, no snapping, the picked row is marked */
+.wheel-sheet-single .wheel-highlight {
+  display: none;
+}
+
+.wheel-column.is-list .wheel-scroll {
+  scroll-snap-type: none;
+  /* no fading towards the ends: every row reads the same */
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.wheel-column.is-list .wheel-item {
+  margin: 0 0.25rem;
+  border-radius: calc(var(--radius-sm) - 2px);
+  cursor: pointer;
+}
+
+.wheel-column.is-list .wheel-item:hover {
+  background: var(--bg-subtle);
+}
+
+.wheel-column.is-list .wheel-item.is-selected {
+  background: var(--mint-soft);
+  color: var(--ink-primary);
+  font-weight: 700;
 }
 
 .wheel-sheet.wheel-sheet-single.is-end {
@@ -11080,9 +11174,11 @@ body.review-placing [data-review-ui] * {
   border-bottom-color: var(--danger-border);
 }
 
-.pg-chart tbody tr.is-out td:last-child {
+/* the stock column is gone (24 Nov 2026): the size cell carries the "หมดแล้ว" tag instead */
+.pg-chart tbody tr.is-out .pg-out-tag {
+  background: var(--danger-soft);
   color: var(--danger-ink);
-  font-weight: 600;
+  border: 1px solid var(--danger-border);
 }
 
 .pg-summary {
@@ -15106,4 +15202,174 @@ body:has(.app-root.is-public) {
 /* a part jumped to from the preview lands below the sticky save bar */
 .page-content-settings .clean-panel {
   scroll-margin-top: 5.5rem;
+}
+
+/* ======================================================================= */
+/* One dropdown look (24 Nov 2026, user request "dropdown style ให้เหมือน   */
+/* กันหมด"): SelectMenu, the phone code list, the address suggestions and  */
+/* the date-of-birth lists share the same box, rows, hover and picked row. */
+/* ======================================================================= */
+.kr-select {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+/* the real <select> stays for the form checks, out of sight and out of the way */
+.kr-select-native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* closed: the same box and arrow as every other field */
+.kr-select-btn,
+.phone-input .phone-input-code {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  height: 2.625rem;
+  min-width: 0;
+  padding: 0 1.75rem 0 0.75rem;
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface) var(--select-chevron) no-repeat right 0.6rem center / 0.75rem;
+  color: var(--ink-primary);
+  font: inherit;
+  font-size: 0.9375rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kr-select-btn:hover:not(:disabled),
+.phone-input .phone-input-code:hover:not(:disabled) {
+  border-color: var(--ink-secondary);
+}
+
+.kr-select-btn:disabled {
+  color: var(--ink-placeholder);
+  background-color: var(--bg-subtle);
+  cursor: not-allowed;
+}
+
+.kr-select-btn.is-placeholder {
+  color: var(--ink-placeholder);
+}
+
+.kr-select-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kr-select-btn[aria-invalid='true'],
+.kr-select:has(.kr-select-native[aria-invalid='true']) .kr-select-btn {
+  border-color: var(--danger) !important;
+  background-color: var(--danger-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+/* open: one list box */
+.kr-menu,
+.phone-code-list,
+.postal-suggestions-popover {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: auto;
+  z-index: 40;
+  width: 100%;
+  max-height: 16rem;
+  margin: 0;
+  padding: 0.3rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-popover);
+}
+
+.kr-menu:focus-visible,
+.phone-code-list:focus-visible {
+  outline: 2px solid var(--vermilion);
+  outline-offset: 1px;
+}
+
+/* one row */
+.kr-menu-item,
+.phone-code-list li,
+.postal-suggestion-item,
+.wheel-column.is-list .wheel-item {
+  min-height: 2.25rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: calc(var(--radius-sm) - 2px);
+  color: var(--ink-primary);
+  font-size: 0.875rem;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.kr-menu-item {
+  display: flex;
+  align-items: center;
+}
+
+.kr-menu-item[aria-disabled='true'] {
+  color: var(--ink-placeholder);
+  cursor: default;
+}
+
+/* under the pointer / keyboard */
+.kr-menu-item.is-active,
+.phone-code-list li.is-active,
+.postal-suggestion-item:hover,
+.wheel-column.is-list .wheel-item:hover {
+  background: var(--bg-subtle);
+}
+
+/* the value that is picked */
+.kr-menu-item.is-picked,
+.phone-code-list li.is-picked,
+.postal-suggestion-item.active,
+.wheel-column.is-list .wheel-item.is-selected {
+  background: var(--bg-selected);
+  color: var(--ink-primary);
+  font-weight: 700;
+}
+
+/* lists never scroll sideways (a horizontal scrollbar covered the last row of the phone list)
+   and their height holds whole rows only, so no row is cut in half at the bottom edge */
+.kr-menu,
+.phone-code-list,
+.postal-suggestions-popover {
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  max-height: calc(7 * 2.25rem + 0.6rem + 2px);
+}
+
+.phone-code-list li {
+  height: 2.25rem;
+  min-width: 0;
+  grid-template-columns: auto 1.6rem minmax(0, auto);
+  gap: 0.35rem;
+  padding: 0 0.4rem;
+}
+
+/* sign-up form shirt chart: no stock column; a sold-out size carries a small tag */
+.pg-out-tag {
+  margin-left: 0.35rem;
+  padding: 0 0.4rem;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
