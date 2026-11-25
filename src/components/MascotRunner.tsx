@@ -4,6 +4,8 @@ import run2 from '../assets/mascot/run-2.webp';
 import run3 from '../assets/mascot/run-3.webp';
 import standImg from '../assets/mascot/stand.webp';
 import cheerImg from '../assets/mascot/cheer.webp';
+import tiredImg from '../assets/mascot/step-tired.webp';
+import finishImg from '../assets/mascot/step-finish.webp';
 import { tx } from '../i18n';
 import { useThemeId } from '../theme';
 import { themedMascot } from './mascotArt';
@@ -13,10 +15,19 @@ import { themedMascot } from './mascotArt';
  * - run:   3-frame run cycle (frames swapped with CSS steps + a small bob), loops
  * - stand: idle pose
  * - cheer: high-five jump, hops twice when it appears
+ * - tired: wiping sweat (supplied pose 07), where the stepper rabbit stops on a middle step
+ * - finish: cheerful stride (supplied pose 06), on the stepper's last step
  * With prefers-reduced-motion the run shows a single frame and nothing moves.
  * Decorative by default (aria-hidden); pass `label` when the mascot carries meaning.
  */
-export type MascotPose = 'run' | 'stand' | 'cheer';
+export type MascotPose = 'run' | 'stand' | 'cheer' | 'tired' | 'finish';
+
+const STILLS: Record<Exclude<MascotPose, 'run'>, string> = {
+  stand: standImg,
+  cheer: cheerImg,
+  tired: tiredImg,
+  finish: finishImg,
+};
 
 export const MascotSprite: React.FC<{
   pose: MascotPose;
@@ -44,7 +55,7 @@ export const MascotSprite: React.FC<{
           <img src={art(run3)} alt="" className="mascot-frame f3" draggable={false} />
         </span>
       ) : (
-        <img src={art(pose === 'cheer' ? cheerImg : standImg)} alt="" className="mascot-still" draggable={false} />
+        <img src={art(STILLS[pose])} alt="" className="mascot-still" draggable={false} />
       )}
     </span>
   );
@@ -54,8 +65,23 @@ export const MascotSprite: React.FC<{
 /* 1) Registration stepper: the rabbit runs to the current step              */
 /* ------------------------------------------------------------------------ */
 const STEP_RUN_MS = 900;
-/** half the standing rabbit's width at the stepper's 44px height (stand.webp is 130 × 240) */
-const STAND_HALF_WIDTH = Math.ceil((44 * 130) / 240 / 2);
+/** half of each resting pose's width at the stepper's 44px height (the pictures are 240px tall) */
+const HALF_WIDTH_44: Record<string, number> = {
+  stand: Math.ceil((44 * 130) / 240 / 2),
+  tired: Math.ceil((44 * 190) / 240 / 2),
+  finish: Math.ceil((44 * 166) / 240 / 2),
+};
+
+/**
+ * The pose the stepper rabbit rests in (25 Nov 2026, user request): the usual standing pose on
+ * the first step, pose 07 (wiping sweat) on every middle step, pose 06 (cheerful stride) on the
+ * last step and once the registration is complete.
+ */
+export function restingStepPose(index: number, count: number, complete: boolean): MascotPose {
+  if (complete || (count > 1 && index >= count - 1)) return 'finish';
+  if (index <= 0) return 'stand';
+  return 'tired';
+}
 
 /**
  * Run state for a mascot that moves between steps: `running` is true for one
@@ -80,8 +106,10 @@ export const MascotStepTrack: React.FC<{
   /** the stepper <nav>; its `.circle-step-node` children give the x positions */
   stepperRef: React.RefObject<HTMLElement | null>;
   stepIndex: number;
+  /** how many steps the stepper shows (first and last get their own resting pose) */
+  stepCount: number;
   complete: boolean;
-}> = ({ stepperRef, stepIndex, complete }) => {
+}> = ({ stepperRef, stepIndex, stepCount, complete }) => {
   const [x, setX] = useState<number | null>(null);
   const { running, flip } = useStepRun(stepIndex);
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -100,8 +128,8 @@ export const MascotStepTrack: React.FC<{
       const ring = node.querySelector<HTMLElement>('.circle-step-ring') ?? node;
       const box = ring.getBoundingClientRect();
       const trackBox = track.getBoundingClientRect();
-      // keep the standing rabbit inside the track (its width, not the wider running pose)
-      const half = STAND_HALF_WIDTH;
+      // keep the resting rabbit inside the track (its width, not the wider running pose)
+      const half = HALF_WIDTH_44[restingStepPose(stepIndex, stepCount, complete)] ?? HALF_WIDTH_44.stand;
       const centre = box.left + box.width / 2 - trackBox.left;
       setX(Math.min(Math.max(centre, half), trackBox.width - half));
     };
@@ -115,9 +143,9 @@ export const MascotStepTrack: React.FC<{
       alive = false;
       ro.disconnect();
     };
-  }, [stepperRef, stepIndex, running]);
+  }, [stepperRef, stepIndex, stepCount, complete, running]);
 
-  const pose: MascotPose = running ? 'run' : complete ? 'cheer' : 'stand';
+  const pose: MascotPose = running ? 'run' : restingStepPose(stepIndex, stepCount, complete);
   return (
     <div ref={trackRef} className="mascot-step-track" aria-hidden="true">
       {x !== null && (

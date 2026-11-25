@@ -1009,6 +1009,7 @@ export const EN_DICT: Record<string, string> = {
   "เปิดเมนูนำทาง": "Open navigation menu",
   "ปิดเมนูนำทาง": "Close navigation menu",
   "ภาษา:": "Language:",
+  "กรุณาระบุความสัมพันธ์กับผู้ติดต่อฉุกเฉิน": "Enter how this emergency contact is related to you",
   "เลือกจังหวัด": "Choose province",
   "เลือกเขต / อำเภอ": "Choose district",
   "เลือกแขวง / ตำบล": "Choose subdistrict",

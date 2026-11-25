@@ -818,14 +818,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       className={`auth-page-shell ${isWideOrganizerFlow ? 'auth-signup-shell' : 'auth-single-shell'
         } ${isScene ? 'is-scene' : ''} ${isFitScene ? 'is-fit' : ''}`}
     >
-      {returnIntent && (
-        <div className="intent-return-banner" role="status">
-          <IconArrowRight size={16} />
-          <span>
-            {tx("กรุณาเข้าสู่ระบบเพื่อดำเนินการต่อ: ")} <strong>{tx(returnIntent.label)}</strong>
-          </span>
-        </div>
-      )}
+      {/* the "sign in to continue: …" banner was removed (25 Nov 2026, user request); the return
+          intent still takes the runner back to where they were going after signing in */}
 
       <div
         className={`auth-centered-wrap ${isWideOrganizerFlow ? 'is-signup' : 'kr-auth-split'

@@ -65,6 +65,7 @@ export function RegistrationStepper<S extends number>({
       <MascotStepTrack
         stepperRef={stepperRef}
         stepIndex={Math.max(0, steps.findIndex((s) => s.step === current))}
+        stepCount={steps.length}
         complete={complete}
       />
       <MobileStepProgress

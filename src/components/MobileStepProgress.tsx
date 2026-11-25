@@ -1,7 +1,7 @@
 import { useId, useState } from 'react';
 import { tx, txf } from '../i18n';
 import { IconCheckCircle, IconChevronDown } from './Icons';
-import { MascotSprite, type MascotPose, useStepRun } from './MascotRunner';
+import { MascotSprite, type MascotPose, restingStepPose, useStepRun } from './MascotRunner';
 
 /**
  * Phone-sized progress for the registration wizard (shown below 48rem instead of
@@ -33,7 +33,7 @@ export function MobileStepProgress<S extends number>({
   const now = steps[index];
   const next = complete ? undefined : steps[index + 1];
   const { running, flip } = useStepRun(index);
-  const pose: MascotPose = running ? 'run' : complete ? 'cheer' : 'stand';
+  const pose: MascotPose = running ? 'run' : restingStepPose(index, total, complete);
   // centre of the current segment, kept inside the lane at both ends
   const pct = ((index + 0.5) / total) * 100;
 

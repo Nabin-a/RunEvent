@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { tx } from '../i18n';
 import { IconCard, IconCheckCircle, IconQr } from './Icons';
 
@@ -7,6 +8,14 @@ const METHODS: { id: PaymentChannel; title: string; sub: string; Icon: typeof Ic
   { id: 'promptpay', title: 'QR PromptPay', sub: 'สแกนจ่ายผ่านแอปธนาคาร', Icon: IconQr },
   { id: 'card', title: 'บัตรเครดิต / เดบิต', sub: 'Visa · Mastercard · JCB', Icon: IconCard },
 ];
+
+/**
+ * Methods kept out of sight for now (25 Nov 2026, user request "ซ่อนไว้ก่อน"): the card option is
+ * hidden on every payment step (registration and storefront). Remove it from this list to bring
+ * it back; the rest of the card flow is untouched.
+ */
+const HIDDEN_METHODS: PaymentChannel[] = ['card'];
+const SHOWN = METHODS.filter((m) => !HIDDEN_METHODS.includes(m.id));
 
 /**
  * Payment method choice with an icon per method (registration forms A and B, storefront cart).
@@ -23,10 +32,15 @@ export function PaymentMethodPicker({
   onChange: (next: PaymentChannel) => void;
   disabled?: boolean;
 }) {
+  // a draft that still says "card" falls back to the first method on show
+  useEffect(() => {
+    if (!SHOWN.some((m) => m.id === value) && SHOWN[0]) onChange(SHOWN[0].id);
+  }, [value, onChange]);
+
   return (
     <fieldset className="pay-methods" disabled={disabled}>
       <legend>{tx('เลือกช่องทางชำระเงิน (จำลอง)')}</legend>
-      {METHODS.map(({ id, title, sub, Icon }) => (
+      {SHOWN.map(({ id, title, sub, Icon }) => (
         <label key={id} className={`pay-method ${value === id ? 'is-selected' : ''}`}>
           <input type="radio" name={name} checked={value === id} onChange={() => onChange(id)} />
           <span className="pay-method-icon" aria-hidden="true">

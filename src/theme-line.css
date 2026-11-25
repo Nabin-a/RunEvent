@@ -386,3 +386,9 @@
     display: inline-flex;
   }
 }
+
+/* the hand-drawn underline under the hero title ("ไปด้วยกัน") takes LINE green in this theme
+   (25 Nov 2026, user request); same stroke as public-theme.css, only the colour changes */
+:root[data-theme='line'] .kr-swoosh::after {
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 20' preserveAspectRatio='none'%3E%3Cpath d='M3 14 C 60 4, 140 2, 197 9' fill='none' stroke='%2306c755' stroke-width='9' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat center / 100% 100%;
+}

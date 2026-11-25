@@ -3379,11 +3379,6 @@ body:has(.auth-page-shell.is-scene) .minimal-footer {
   display: none;
 }
 
-.app-root.is-public .auth-page-shell.is-scene .intent-return-banner {
-  width: min(100%, 27rem);
-  margin: 0;
-}
-
 .app-root.is-public .auth-page-shell.is-scene .auth-centered-wrap.kr-auth-split {
   display: flex;
   flex-direction: column;

@@ -455,12 +455,12 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
   const [ecModalOpen, setEcModalOpen] = useState(false);
   const [editingEcId, setEditingEcId] = useState<string | null>(null);
   const [ecName, setEcName] = useState('');
-  const [ecRel, setEcRel] = useState('คู่สมรส / ครอบครัว');
+  const [ecRel, setEcRel] = useState('');
   const [ecPhone, setEcPhone] = useState('');
   const [ecEmail, setEcEmail] = useState('');
   const [ecModalBaseline, setEcModalBaseline] = useState({
     name: '',
-    rel: 'คู่สมรส / ครอบครัว',
+    rel: '',
     phone: '',
     email: '',
   });
@@ -710,7 +710,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
       }
       : {
         name: '',
-        rel: 'คู่สมรส / ครอบครัว',
+        rel: '',
         phone: '',
         email: '',
       };
@@ -1243,6 +1243,13 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     }
     if (!ecName.trim() || ecPhone.trim().replace(/\D/g, '').length < 9) {
       const errMsg = tx('กรุณาระบุชื่อและเบอร์โทรผู้ติดต่อฉุกเฉิน (9–10 หลัก)');
+      setBanner({ tone: 'err', text: errMsg });
+      showResultModalAlert(false, errMsg);
+      return;
+    }
+    // the relationship starts empty (placeholder only), so it must be typed
+    if (!ecRel.trim()) {
+      const errMsg = tx('กรุณาระบุความสัมพันธ์กับผู้ติดต่อฉุกเฉิน');
       setBanner({ tone: 'err', text: errMsg });
       showResultModalAlert(false, errMsg);
       return;
