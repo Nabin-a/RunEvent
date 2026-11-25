@@ -2,9 +2,10 @@ import type { ThemeId } from '../theme';
 
 /**
  * Art for the LINE theme (25 Nov 2026, user request):
- * - every picture under assets/mascot has a twin at the same path under assets/mascot-line:
- *   the profile menu rabbits from output/line-night (tools/build-line-night-assets.py), the
- *   animated rabbits and step sprites recoloured by tools/recolor-mascot-line.py;
+ * - a picture under assets/mascot may have a twin at the same path under assets/mascot-line:
+ *   the profile menu rabbits from output/line-night (tools/build-line-night-assets.py) and the
+ *   stepper sprites recoloured by tools/recolor-mascot-line.py (the animated rabbits in anim/
+ *   have no twin and keep their usual colours);
  * - each painted scene assets/illustrations/<name>.webp may have a night twin <name>-night.webp
  *   (the supplied scenes in output/line-night, tools/build-line-night-assets.py).
  * Components keep importing the usual art and

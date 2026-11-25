@@ -1,6 +1,6 @@
-"""Recolour the animated Kratai rabbits for the LINE theme (25 Nov 2026): slate shirt -> LINE green,
-mint parts -> charcoal, ground shadow kept neutral; the older yellow/blue step-tracker sprites go
-yellow -> green, blue -> charcoal. Keeps every frame and its timing.
+"""Recolour the registration stepper rabbits for the LINE theme (25 Nov 2026): the yellow/blue
+sprites go yellow -> green, blue -> charcoal (map_px handles slate/mint art the same way).
+The animated clips in anim/ are skipped: they keep their usual colours in every theme.
 The profile menu rabbits are not made here: they come from output/line-night
 (tools/build-line-night-assets.py).
 Usage: python tools/recolor-mascot-line.py src/assets/mascot src/assets/mascot-line"""
@@ -68,7 +68,9 @@ def process(src, dst):
 src_root, out_root = sys.argv[1], sys.argv[2]
 for d, _, files in os.walk(src_root):
     for f in files:
-        if not f.endswith('.webp') or 'profile' in d:
+        # profile art comes from output/line-night; the animated clips (anim/) keep their usual
+        # colours in the LINE theme (user request, 25 Nov 2026), so neither is made here
+        if not f.endswith('.webp') or 'profile' in d or 'anim' in d:
             continue
         s = os.path.join(d, f)
         o = os.path.join(out_root, os.path.relpath(s, src_root))
