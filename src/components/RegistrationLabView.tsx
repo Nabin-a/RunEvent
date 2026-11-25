@@ -1030,6 +1030,8 @@ export function RegistrationLabView({
                           contactPhone={shipPhone}
                           contactEmail={currentUser?.contactEmail}
                           required
+                          // province / district / subdistrict can be typed to search (25 Nov 2026, user request)
+                          typeableArea
                           streetAddressLabel={tx('ที่อยู่ (บ้านเลขที่ อาคาร ซอย ถนน)')}
                           summaryFooter={
                             <div className="ship-addr-save-row">
