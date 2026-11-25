@@ -183,6 +183,7 @@ The visual system rejects generic SaaS decorative charts, eyebrow kickers above 
 ### LINE dark theme (optional, 25 Nov 2026)
 > Added at the user's request ("theme เขียว/ดำ แบบสี LINE"; chosen mockup: dark mode, black page, LINE green, whole system). It is a second colour theme, switched by the user with the "ธีม LINE" button next to TH/EN (or in the phone menu, and in the console top bar). The slate/mint theme above stays the default. All values live in `src/theme-line.css` under `:root[data-theme='line']`; layout, type and shapes do not change.
 
+- **Theme button (25 Nov 2026, user request):** a 36px round, raised power button next to TH/EN (and on the console's top bar), after a tactile power-button design by Jon Kantner, rebuilt in our own code: off = an unlit slate button with a sun; on = pressed in, a crescent moon (with a small star) and the inner rim glow LINE green. The icons swap with a quarter turn and the press recoils a little (no motion under reduced motion). The phone menu keeps its text pill.
 - **Ground:** page `#111111`, cards `#1b1b1b`, subtle fills `#232323`, insets `#262626`, hairlines `#2a2a2a` / `#3a3a3a`. Top bar, footer and the organizer rail are black `#000000`.
 - **Ink:** primary `#f2f2f2` (15.6:1 on cards), secondary `#b8b8b8` (9.0:1), placeholder `#8f8f8f` (5.4:1).
 - **LINE Green** (`#06c755`, hover `#05b04b`): primary buttons, current nav item and tabs, selected chips and days, progress. **Text on LINE green is black** (9.4:1); white on it is only 2.3:1. Green text on the dark page is 8.6:1. Selected rows use `#0f2b1c`.

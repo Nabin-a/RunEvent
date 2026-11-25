@@ -177,6 +177,24 @@ export const IconMoon: React.FC<IconProps> = ({ size, className }) => (
   </svg>
 );
 
+/**
+ * The LINE theme button's icon (25 Nov 2026, user request): a sun while the usual light theme is
+ * on, a crescent moon once the dark LINE theme is on. Both are drawn; CSS shows one and turns
+ * the other away (see .theme-switch in theme-line.css).
+ */
+export const IconSunMoon: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <g className="tsw-sun">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" />
+    </g>
+    <g className="tsw-moon">
+      <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" />
+      <path d="M17 4.5v2M16 5.5h2" />
+    </g>
+  </svg>
+);
+
 export const IconDownload: React.FC<IconProps> = ({ size, className }) => (
   <svg {...baseProps(size, className)}>
     <path d="M12 4v11M7.5 11.5 12 16l4.5-4.5" />

@@ -147,41 +147,129 @@
 }
 
 /* ===================================================================== */
-/* Theme switch (shown in both themes)                                    */
+/* Theme switch (shown in both themes): a round, raised button          */
+/* (25 Nov 2026, user request, after a tactile power-button design by    */
+/* Jon Kantner; our own code and colours). Off: an unlit slate button    */
+/* with a sun. On (LINE theme): pressed in, a crescent moon and the      */
+/* inner rim glow LINE green. The icons swap with a quarter turn and the */
+/* press recoils a little (overshoot curve), unless the user asks for    */
+/* reduced motion.                                                       */
 /* ===================================================================== */
 .theme-switch {
-  display: inline-flex;
+  --tsw-size: 2.25rem;
+  --tsw-ease: cubic-bezier(0.42, -1.84, 0.42, 1.84);
+  position: relative;
+  display: inline-grid;
   flex-shrink: 0;
-  align-items: center;
-  gap: 0.35rem;
-  min-height: 2rem;
-  padding: 0.2rem 0.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 999px;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.86);
-  font-family: var(--font-body);
-  font-size: 0.8125rem;
-  font-weight: 700;
-  white-space: nowrap;
+  place-items: center;
+  width: var(--tsw-size);
+  height: var(--tsw-size);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  /* socket */
+  background: radial-gradient(circle at 50% 35%, #4d6680, #24384c);
+  box-shadow:
+    inset 0 0 3px rgba(0, 0, 0, 0.55),
+    0 1px 1px rgba(255, 255, 255, 0.18);
   cursor: pointer;
-  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+  transition: box-shadow 0.3s ease-in-out;
 }
 
-.theme-switch:hover {
-  border-color: #ffffff;
+/* plinth */
+.theme-switch::before {
+  content: '';
+  position: absolute;
+  inset: 11%;
+  border-radius: 50%;
+  background: linear-gradient(#5c7590, #2f4459);
+  box-shadow: 0 4px 5px rgba(0, 0, 0, 0.45);
+  transition: box-shadow 0.3s var(--tsw-ease), transform 0.3s var(--tsw-ease);
+}
+
+/* cap */
+.theme-switch::after {
+  content: '';
+  position: absolute;
+  inset: 25%;
+  border-radius: 50%;
+  background: #3b536b;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35);
+  transition: background-color 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+}
+
+.theme-switch svg {
+  position: relative;
+  z-index: 1;
+  width: 42%;
+  height: 42%;
+  color: #b4c3d2;
+  stroke-width: 2.2;
+  transition: color 0.3s ease-in-out, filter 0.3s ease-in-out;
+}
+
+.theme-switch:hover svg {
   color: #ffffff;
 }
 
+/* sun while off, crescent moon while on: the hidden one is turned away and shrunk */
+.theme-switch .tsw-sun,
+.theme-switch .tsw-moon {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  transition: opacity 0.3s ease-in-out, transform 0.45s var(--tsw-ease);
+}
+
+.theme-switch .tsw-moon {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.4);
+}
+
+.theme-switch[aria-pressed='true'] .tsw-sun {
+  opacity: 0;
+  transform: rotate(90deg) scale(0.4);
+}
+
+.theme-switch[aria-pressed='true'] .tsw-moon {
+  opacity: 1;
+  transform: none;
+}
+
+.theme-switch:active::before,
+.theme-switch:active::after {
+  transform: scale(0.96);
+}
+
 .theme-switch[aria-pressed='true'] {
-  border-color: var(--line-green, #06c755);
-  background: var(--line-green, #06c755);
-  color: #000000;
+  background: radial-gradient(circle at 50% 35%, #1d1d1d, #050505);
+  box-shadow:
+    inset 0 0 3px rgba(0, 0, 0, 0.8),
+    0 0 0 2px rgba(6, 199, 85, 0.35);
+}
+
+.theme-switch[aria-pressed='true']::before {
+  background: linear-gradient(#262626, #0f0f0f);
+  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.6);
+  transform: scale(0.97);
+}
+
+.theme-switch[aria-pressed='true']::after {
+  background: #141414;
+  box-shadow:
+    inset 0 1px 0 rgba(6, 199, 85, 0.5),
+    inset 0 0 8px 2px rgba(6, 199, 85, 0.18);
+}
+
+.theme-switch[aria-pressed='true'] svg {
+  color: var(--line-green, #06c755);
+  filter: drop-shadow(0 0 4px var(--line-green, #06c755));
 }
 
 .theme-switch:focus-visible {
   outline: 2px solid var(--mint);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
 /* phones and tablets: the bar hides TH/EN, the drawer carries both switches */
@@ -208,7 +296,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .theme-switch {
+  .theme-switch,
+  .theme-switch::before,
+  .theme-switch::after,
+  .theme-switch svg,
+  .theme-switch .tsw-sun,
+  .theme-switch .tsw-moon {
     transition: none;
   }
 }
@@ -383,7 +476,7 @@
 /* the console's top bar has no menu drawer, so its switch stays visible on small screens */
 @media (max-width: 67.5rem) {
   .topbar-user-actions > .theme-switch.admin-theme-switch {
-    display: inline-flex;
+    display: inline-grid;
   }
 }
 

@@ -97,6 +97,7 @@ import {
   IconMenu,
   IconShield,
   IconMoon,
+  IconSunMoon,
   IconSliders,
   IconSwitch,
   IconUsers,
@@ -3303,9 +3304,9 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
               aria-pressed={theme === 'line'}
               onClick={toggleTheme}
               title={tx('ธีม LINE (โหมดมืด สีเขียว)')}
+              aria-label={tx('ธีม LINE')}
             >
-              <IconMoon size={15} />
-              <span>{tx('ธีม LINE')}</span>
+              <IconSunMoon size={15} />
             </button>
             {currentUser && (
               <>
@@ -3412,9 +3413,9 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
             aria-pressed={theme === 'line'}
             onClick={toggleTheme}
             title={tx('ธีม LINE (โหมดมืด สีเขียว)')}
+            aria-label={tx('ธีม LINE')}
           >
-            <IconMoon size={15} />
-            <span>{tx('ธีม LINE')}</span>
+            <IconSunMoon size={15} />
           </button>
           {!currentUser ? (
             <button
