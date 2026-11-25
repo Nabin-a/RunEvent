@@ -30,6 +30,7 @@ import {
 } from '../src/data/runnerProfileDefaults';
 import { SEEDED_SAVED_BOOKS } from '../src/data/seededSavedBooks';
 import { coreTextFromFreeBlocks } from '../src/data/eventPageConvert';
+import { BLOOD_GROUP_OPTIONS } from '../src/data/registrationForm';
 import type {
   AuditLogEntry,
   ConditionalRule,
@@ -887,6 +888,35 @@ export function seedDatabase(forceReset = false): void {
       if (text.schedule && text.schedule.items.length > 0) next.scheduleItems = text.schedule.items;
       db.prepare('UPDATE events SET detail_json = ? WHERE id = ?').run(JSON.stringify(next), row.id);
     }
+    // Idempotent migration (25 Nov 2026, user request): the blood group question offers
+    // A+ … O- and "unknown". Only lists still equal to an old seeded list (A, B, AB, O with or
+    // without ไม่ทราบ) are replaced, in the global field library and in each event's published
+    // form; organizer edits, drafts and answers already given stay as they are.
+    const isOldBloodList = (opts: unknown) =>
+      Array.isArray(opts) &&
+      ['A|B|AB|O', 'A|B|AB|O|ไม่ทราบ'].includes((opts as string[]).join('|'));
+    const gfBlood = db.prepare("SELECT detail_json FROM global_fields WHERE id = 'cf_blood'").get() as
+      | { detail_json: string }
+      | undefined;
+    if (gfBlood) {
+      const gf = JSON.parse(gfBlood.detail_json) as { options?: string[] };
+      if (isOldBloodList(gf.options)) {
+        db.prepare("UPDATE global_fields SET detail_json = ? WHERE id = 'cf_blood'").run(
+          JSON.stringify({ ...gf, options: [...BLOOD_GROUP_OPTIONS] })
+        );
+      }
+    }
+    for (const row of db.prepare('SELECT id, detail_json FROM events').all() as { id: string; detail_json: string }[]) {
+      const ev = JSON.parse(row.detail_json) as RaceEvent;
+      if (!(ev.customFields ?? []).some((cf) => cf.id === 'cf_blood' && isOldBloodList(cf.options))) continue;
+      const next: RaceEvent = {
+        ...ev,
+        customFields: (ev.customFields ?? []).map((cf) =>
+          cf.id === 'cf_blood' && isOldBloodList(cf.options) ? { ...cf, options: [...BLOOD_GROUP_OPTIONS] } : cf
+        ),
+      };
+      db.prepare('UPDATE events SET detail_json = ? WHERE id = ?').run(JSON.stringify(next), row.id);
+    }
     const reg07Row = db
       .prepare("SELECT detail_json FROM registrations WHERE id = 'reg-07'")
       .get() as { detail_json: string } | undefined;
@@ -983,7 +1013,7 @@ export function seedDatabase(forceReset = false): void {
           customAnswers: {
             cf_medical: 'แพ้ยาแอสไพริน',
             cf_club: 'Chiang Mai Morning Miles',
-            cf_blood: 'O',
+            cf_blood: 'O+',
           },
         };
       } else if (reg.customAnswers === undefined && reg.id === 'reg-02') {
@@ -992,7 +1022,7 @@ export function seedDatabase(forceReset = false): void {
           customAnswers: {
             cf_medical: 'ไม่มี',
             cf_club: 'Lanna Road Runners',
-            cf_blood: 'B',
+            cf_blood: 'B+',
           },
         };
       }

@@ -9,6 +9,7 @@ import {
   fieldShown,
   isContentField,
   joinMulti,
+  optionLabel,
   splitMulti,
   stepOf,
 } from '../data/registrationForm';
@@ -179,7 +180,7 @@ export function RunnerQuestion({
               checked={picked.includes(opt)}
               onChange={(e) => toggle(opt, e.target.checked)}
             />
-            <span>{tx(opt)}</span>
+            <span>{tx(optionLabel(opt))}</span>
           </label>
         ))}
         {field.allowOther && (
@@ -225,7 +226,7 @@ export function RunnerQuestion({
           ariaInvalid={!!error}
           ariaDescribedBy={describedBy}
           onChange={onChange}
-          options={options.map((opt) => ({ value: opt, label: tx(opt) }))}
+          options={options.map((opt) => ({ value: opt, label: tx(optionLabel(opt)) }))}
         />
       )}
       {(field.type === 'textarea' || field.type === 'address') && (

@@ -398,7 +398,7 @@ export const DEMO_CUSTOM_FIELDS = [
     label: 'กรุ๊ปเลือด',
     type: 'select' as const,
     required: true,
-    options: ['A', 'B', 'AB', 'O'],
+    options: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'unknown'],
     isSensitive: true,
   },
 ];
@@ -2218,7 +2218,7 @@ const BASE_REGISTRATIONS: RegistrationRecord[] = [
     customAnswers: {
       cf_medical: 'แพ้ยาแอสไพริน',
       cf_club: 'Chiang Mai Morning Miles',
-      cf_blood: 'O',
+      cf_blood: 'O+',
     },
   }),
   buildReg({
@@ -2250,7 +2250,7 @@ const BASE_REGISTRATIONS: RegistrationRecord[] = [
     customAnswers: {
       cf_medical: 'ไม่มี',
       cf_club: 'Lanna Road Runners',
-      cf_blood: 'B',
+      cf_blood: 'B+',
     },
   }),
   buildReg({

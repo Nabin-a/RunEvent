@@ -73,11 +73,25 @@ export const joinMulti = (values: string[]) => values.join('\n');
 /** the "Other" choice is stored with this prefix and the runner's text */
 export const OTHER_PREFIX = 'อื่น ๆ: ';
 
+/**
+ * Blood group choices (25 Nov 2026, user request): the stored values are the ones given by the
+ * user, "unknown" included; it reads "ไม่ทราบ" in Thai and "Unknown" in English.
+ * Answers saved before this change (A, B, AB, O) are kept as they were.
+ */
+export const BLOOD_GROUP_OPTIONS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'unknown'];
+
+/** option values whose label differs from the value: the Thai label (tx() gives the English one) */
+const OPTION_LABELS: Record<string, string> = { unknown: 'ไม่ทราบ' };
+
+/** the Thai source text shown for a choice value; wrap it in tx() for the current language */
+export const optionLabel = (value: string): string => OPTION_LABELS[value] ?? value;
+
 /** an answer as people read it (exports, the registrant panel) */
 export function answerText(field: CustomRegistrationField, value: unknown): string {
   if (value === undefined || value === null || value === '') return '';
   if (field.type === 'checkbox') return value === true ? 'ยืนยันแล้ว' : 'ไม่ได้ยืนยัน';
-  if (field.type === 'multiselect') return splitMulti(value).join(', ');
+  if (field.type === 'multiselect') return splitMulti(value).map(optionLabel).join(', ');
+  if (field.type === 'select' || field.type === 'radio') return optionLabel(String(value));
   return String(value);
 }
 
