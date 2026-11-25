@@ -5,6 +5,8 @@ import run3 from '../assets/mascot/run-3.webp';
 import standImg from '../assets/mascot/stand.webp';
 import cheerImg from '../assets/mascot/cheer.webp';
 import { tx } from '../i18n';
+import { useThemeId } from '../theme';
+import { themedMascot } from './mascotArt';
 
 /**
  * "Kratai" rabbit mascot.
@@ -25,6 +27,8 @@ export const MascotSprite: React.FC<{
   label?: string;
   className?: string;
 }> = ({ pose, size = 64, flip = false, label, className = '' }) => {
+  const theme = useThemeId();
+  const art = (url: string) => themedMascot(url, theme);
   const style = { '--mascot-h': `${size}px` } as React.CSSProperties;
   const a11y = label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true };
   return (
@@ -35,12 +39,12 @@ export const MascotSprite: React.FC<{
     >
       {pose === 'run' ? (
         <span className="mascot-frames">
-          <img src={run1} alt="" className="mascot-frame f1" draggable={false} />
-          <img src={run2} alt="" className="mascot-frame f2" draggable={false} />
-          <img src={run3} alt="" className="mascot-frame f3" draggable={false} />
+          <img src={art(run1)} alt="" className="mascot-frame f1" draggable={false} />
+          <img src={art(run2)} alt="" className="mascot-frame f2" draggable={false} />
+          <img src={art(run3)} alt="" className="mascot-frame f3" draggable={false} />
         </span>
       ) : (
-        <img src={pose === 'cheer' ? cheerImg : standImg} alt="" className="mascot-still" draggable={false} />
+        <img src={art(pose === 'cheer' ? cheerImg : standImg)} alt="" className="mascot-still" draggable={false} />
       )}
     </span>
   );

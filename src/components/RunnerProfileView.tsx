@@ -8,6 +8,8 @@ import historyMascot from '../assets/mascot/profile/history.webp';
 import connectionsMascot from '../assets/mascot/profile/connections.webp';
 import privacyMascot from '../assets/mascot/profile/privacy.webp';
 import { RequiredFieldText } from './RequiredFieldText';
+import { useThemeId } from '../theme';
+import { themedMascot } from './mascotArt';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Swal from 'sweetalert2';
@@ -280,6 +282,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
   onPersonalDirtyChange,
   discardSignal = 0,
 }) => {
+  const theme = useThemeId();
   // 'security' (old /account/security target) now lives inside the Privacy & data page.
   const initialTab: RunnerProfileTab =
     rawInitialTab === 'security' ? 'privacy' : rawInitialTab;
@@ -1743,7 +1746,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
               const still = PROFILE_MASCOTS[activeTab === 'security' ? 'privacy' : activeTab];
               return still ? (
                 <img
-                  src={still.src}
+                  src={themedMascot(still.src, theme)}
                   alt=""
                   aria-hidden="true"
                   className="kr-prof-banner-still"

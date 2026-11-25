@@ -7,12 +7,15 @@ import '@fortawesome/fontawesome-free/css/all.min.css';
 import '../src/styles.css';
 import '../src/public-theme.css';
 import '../src/viewport-fit.css';
+import '../src/theme-line.css';
+import { applyTheme, readStoredTheme } from '../src/theme';
 
 /*
  * Platform Owner console: a separate app (own port / host, own sign-in, own session cookie).
  * Every API call goes to /admin-api, where the server applies the admin scope.
  */
 enableAdminApi();
+applyTheme(readStoredTheme());
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

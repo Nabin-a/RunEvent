@@ -2,6 +2,8 @@ import React from 'react';
 import coverChiangMai from '../assets/illustrations/cover-chiang-mai.webp';
 import coverCoast from '../assets/illustrations/cover-coast.webp';
 import coverBangkok from '../assets/illustrations/cover-bangkok.webp';
+import { useThemeId } from '../theme';
+import { themedArt } from './mascotArt';
 import { RaceEvent } from '../types';
 
 interface IconProps {
@@ -166,6 +168,12 @@ export const IconShield: React.FC<IconProps> = ({ size, className }) => (
   <svg {...baseProps(size, className)}>
     <path d="M12 3 5 6v6c0 4.6 3 7.9 7 9 4-1.1 7-4.4 7-9V6l-7-3Z" />
     <path d="m9.2 12 2 2 3.8-4" />
+  </svg>
+);
+
+export const IconMoon: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" />
   </svg>
 );
 
@@ -542,12 +550,14 @@ export const EventCoverMedia: React.FC<{
   illustrated?: boolean;
 }> = ({ event, className, imgClassName, illustrated }) => {
   const [failed, setFailed] = React.useState(false);
+  const theme = useThemeId();
   React.useEffect(() => setFailed(false), [event.coverImageUrl]);
 
   if (illustrated && (!event.coverImageUrl || failed)) {
     return (
       <img
-        src={COVER_ILLUSTRATIONS[event.coverMotif] ?? COVER_ILLUSTRATIONS.mountain}
+        // the LINE theme uses the night version of the scene
+        src={themedArt(COVER_ILLUSTRATIONS[event.coverMotif] ?? COVER_ILLUSTRATIONS.mountain, theme)}
         alt=""
         className={imgClassName ?? className}
         loading="lazy"

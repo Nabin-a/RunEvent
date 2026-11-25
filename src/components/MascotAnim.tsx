@@ -16,6 +16,8 @@ import standAnim from '../assets/mascot/anim/stand.webp';
 import standStill from '../assets/mascot/anim/stand-still.webp';
 import heartAnim from '../assets/mascot/anim/heart.webp';
 import heartStill from '../assets/mascot/anim/heart-still.webp';
+import { useThemeId } from '../theme';
+import { themedMascot } from './mascotArt';
 
 /**
  * The Kratai rabbit (supplied artwork, outfit recoloured to slate + mint) as a
@@ -69,9 +71,12 @@ export function MascotAnim({
   /** omit for decoration (default): the image is hidden from screen readers */
   label?: string;
 }) {
+  const theme = useThemeId();
   const art = ART[pose];
   if (!art) return null;
-  const { moving, still } = art;
+  // the LINE theme swaps in the green-and-charcoal outfit
+  const moving = themedMascot(art.moving, theme);
+  const still = themedMascot(art.still, theme);
   const sized = scale
     ? { width: Math.round(art.w * scale), height: Math.round(art.h * scale) }
     : { width };

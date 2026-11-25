@@ -1009,6 +1009,8 @@ export const EN_DICT: Record<string, string> = {
   "เปิดเมนูนำทาง": "Open navigation menu",
   "ปิดเมนูนำทาง": "Close navigation menu",
   "ภาษา:": "Language:",
+  "ธีม LINE": "LINE theme",
+  "ธีม LINE (โหมดมืด สีเขียว)": "LINE theme (dark, green)",
   "ชื่อจริงภาษาไทย (First Name TH)": "First Name (TH)",
   "นามสกุลภาษาไทย (Last Name TH)": "Last Name (TH)",
   "ชื่อจริงภาษาอังกฤษ (First Name EN) *": "First Name (EN) *",

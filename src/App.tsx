@@ -96,10 +96,12 @@ import {
   IconLock,
   IconMenu,
   IconShield,
+  IconMoon,
   IconSliders,
   IconSwitch,
   IconUsers,
 } from './components/Icons';
+import { useTheme } from './theme';
 import {
   OrganizerDashboardView,
   OrgSection,
@@ -373,6 +375,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
   const isAdminApp = mode === 'admin';
   // ใช้ context ภาษาเพื่อให้ทั้ง tree re-render เมื่อสลับ TH/EN
   const { lang, setLang } = useI18n();
+  const { theme, toggleTheme } = useTheme();
   const [sys, setSys] = useState<PersistedSystemState>(loadSystemState);
   // Off until the server says otherwise, so production never flashes the dev tools.
   const [sandboxTools, setSandboxTools] = useState(false);
@@ -3291,14 +3294,28 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                   </span>
                 )}
               </nav>
-              <div className="topbar-user-actions">
+            </>
+          )}
+          <div className="topbar-user-actions">
+            <button
+              type="button"
+              className="theme-switch admin-theme-switch"
+              aria-pressed={theme === 'line'}
+              onClick={toggleTheme}
+              title={tx('ธีม LINE (โหมดมืด สีเขียว)')}
+            >
+              <IconMoon size={15} />
+              <span>{tx('ธีม LINE')}</span>
+            </button>
+            {currentUser && (
+              <>
                 <span className="admin-topbar-user">{currentUser.fullNameTh}</span>
                 <button type="button" className="btn-ghost-sm admin-topbar-logout" onClick={handleLogout}>
                   {tx('ออกจากระบบ')}
                 </button>
-              </div>
-            </>
-          )}
+              </>
+            )}
+          </div>
         </header>
       )}
 
@@ -3389,6 +3406,16 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
               EN
             </button>
           </div>
+          <button
+            type="button"
+            className="theme-switch"
+            aria-pressed={theme === 'line'}
+            onClick={toggleTheme}
+            title={tx('ธีม LINE (โหมดมืด สีเขียว)')}
+          >
+            <IconMoon size={15} />
+            <span>{tx('ธีม LINE')}</span>
+          </button>
           {!currentUser ? (
             <button
               type="button"
@@ -3746,6 +3773,15 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                     EN
                   </button>
                 </div>
+                <button
+                  type="button"
+                  className={`mobile-lang-pill mobile-theme-pill ${theme === 'line' ? 'active' : ''}`}
+                  aria-pressed={theme === 'line'}
+                  onClick={toggleTheme}
+                >
+                  <IconMoon size={14} />
+                  <span>{tx('ธีม LINE')}</span>
+                </button>
 
                 {currentUser ? (
                   <button

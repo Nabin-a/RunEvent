@@ -247,7 +247,8 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
             </p>
           </div>
         </div>
-        <MascotAnim pose="cheer" className="kr-cal-mascot" />
+        {/* same running pose as the home page hero (25 Nov 2026, user request) */}
+        <MascotAnim pose="run" className="kr-cal-mascot" />
         <div className="race-calendar-views" role="group" aria-label={tx('มุมมองปฏิทิน')}>
           {(
             [
