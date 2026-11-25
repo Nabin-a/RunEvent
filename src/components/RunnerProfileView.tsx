@@ -72,6 +72,7 @@ import {
 import { DateOfBirthInput } from './DateOfBirthInput';
 import { AvatarCropDialog } from './AvatarCropDialog';
 import { NationalitySelect } from './NationalitySelect';
+import { SelectMenu } from './SelectMenu';
 import { ThaiPostalAddressSelector } from './ThaiPostalAddressSelector';
 import { ALL_THAI_PROVINCES } from '../data/thaiPostalAddresses';
 import {
@@ -2021,21 +2022,16 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                   <label htmlFor="rp-idt">
                     {tx('ประเภทเอกสารยืนยันตัวตน')}
                   </label>
-                  <select
+                  <SelectMenu
                     id="rp-idt"
                     value={idType}
-                    onChange={(e) =>
-                      setIdType(
-                        e.target.value as 'none' | 'thai_id' | 'passport'
-                      )
-                    }
-                  >
-                    <option value="thai_id">
-                      {tx('บัตรประจำตัวประชาชน 13 หลัก')}
-                    </option>
-                    <option value="passport">{tx('หนังสือเดินทาง')}</option>
-                    <option value="none">{tx('-- ยังไม่ระบุเอกสาร --')}</option>
-                  </select>
+                    onChange={(v) => setIdType(v as 'none' | 'thai_id' | 'passport')}
+                    options={[
+                      { value: 'thai_id', label: tx('บัตรประจำตัวประชาชน 13 หลัก') },
+                      { value: 'passport', label: tx('หนังสือเดินทาง') },
+                      { value: 'none', label: tx('-- ยังไม่ระบุเอกสาร --') },
+                    ]}
+                  />
                 </div>
                 {idType !== 'none' && (
                   <div className="form-row">
@@ -3091,17 +3087,15 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                         onChange={(e) => setNewOrgName(e.target.value)}
                         placeholder={tx('ชื่อองค์กร/ชมรมผู้จัดงาน...')}
                       />
-                      <select
-                        aria-label={tx('จังหวัดที่ตั้งองค์กร')}
+                      <label htmlFor="rp-neworg-prov" className="sr-only">
+                        {tx('จังหวัดที่ตั้งองค์กร')}
+                      </label>
+                      <SelectMenu
+                        id="rp-neworg-prov"
                         value={newOrgProv}
-                        onChange={(e) => setNewOrgProv(e.target.value)}
-                      >
-                        {ALL_THAI_PROVINCES.map((prov) => (
-                          <option key={prov} value={prov}>
-                            {tx(prov)}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setNewOrgProv}
+                        options={ALL_THAI_PROVINCES.map((prov) => ({ value: prov, label: tx(prov) }))}
+                      />
                     </div>
                     <div>
                       <button
@@ -3548,23 +3542,21 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                             </div>
                             <div className="form-row">
                               <label htmlFor="sp-gen">{tx('เพศ')}</label>
-                              <select
+                              <SelectMenu
                                 id="sp-gen"
                                 value={partDraft.gender ?? 'ไม่ระบุ'}
-                                onChange={(e) =>
+                                onChange={(v) =>
                                   setPartDraft({
                                     ...partDraft,
-                                    gender: e.target.value as
-                                      | 'ชาย'
-                                      | 'หญิง'
-                                      | 'ไม่ระบุ',
+                                    gender: v as 'ชาย' | 'หญิง' | 'ไม่ระบุ',
                                   })
                                 }
-                              >
-                                <option value="ไม่ระบุ">{tx('ไม่ระบุ')}</option>
-                                <option value="ชาย">{tx('ชาย')}</option>
-                                <option value="หญิง">{tx('หญิง')}</option>
-                              </select>
+                                options={[
+                                  { value: 'ไม่ระบุ', label: tx('ไม่ระบุ') },
+                                  { value: 'ชาย', label: tx('ชาย') },
+                                  { value: 'หญิง', label: tx('หญิง') },
+                                ]}
+                              />
                             </div>
                             <div className="form-row">
                               <label htmlFor="sp-nat">{tx('สัญชาติ')}</label>
@@ -3611,30 +3603,24 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                               <label htmlFor="sp-idt">
                                 {tx('ประเภทเอกสาร')}
                               </label>
-                              <select
+                              <SelectMenu
                                 id="sp-idt"
                                 value={
                                   partDraft.idType && partDraft.idType !== 'none'
                                     ? partDraft.idType
                                     : 'thai_id'
                                 }
-                                onChange={(e) =>
+                                onChange={(v) =>
                                   setPartDraft({
                                     ...partDraft,
-                                    idType: e.target.value as
-                                      | 'none'
-                                      | 'thai_id'
-                                      | 'passport',
+                                    idType: v as 'none' | 'thai_id' | 'passport',
                                   })
                                 }
-                              >
-                                <option value="thai_id">
-                                  {tx('บัตรประจำตัวประชาชน 13 หลัก')}
-                                </option>
-                                <option value="passport">
-                                  {tx('หนังสือเดินทาง')}
-                                </option>
-                              </select>
+                                options={[
+                                  { value: 'thai_id', label: tx('บัตรประจำตัวประชาชน 13 หลัก') },
+                                  { value: 'passport', label: tx('หนังสือเดินทาง') },
+                                ]}
+                              />
                             </div>
                             <div className="form-row">
                               <label htmlFor="sp-idn">
@@ -3663,23 +3649,20 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                               <label htmlFor="sp-shirt">
                                 {tx('ไซส์เสื้อวิ่ง')}
                               </label>
-                              <select
+                              <SelectMenu
                                 id="sp-shirt"
                                 value={partDraft.preferredShirtSize ?? ''}
-                                onChange={(e) =>
+                                onChange={(v) =>
                                   setPartDraft({
                                     ...partDraft,
-                                    preferredShirtSize: e.target.value,
+                                    preferredShirtSize: v,
                                   })
                                 }
-                              >
-                                <option value="">{tx('ไม่ระบุ')}</option>
-                                {enabledSizes.map((sz) => (
-                                  <option key={sz.code} value={sz.code}>
-                                    {sz.code}
-                                  </option>
-                                ))}
-                              </select>
+                                options={[
+                                  { value: '', label: tx('ไม่ระบุ') },
+                                  ...enabledSizes.map((sz) => ({ value: sz.code, label: sz.code })),
+                                ]}
+                              />
                             </div>
                             <div className="form-row">
                               <label htmlFor="sp-rel-owner">

@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
 import { getLang, tx } from '../i18n';
+import { SelectMenu } from './SelectMenu';
 
 /**
- * Nationality dropdown (native <select>, same style as the other selects). Stored value stays
+ * Nationality dropdown (the shared SelectMenu list, same look as every other dropdown). Stored value stays
  * the English country name used across the app (e.g. "Thailand") so existing profiles and
  * registrations keep working. Labels are localised with Intl.DisplayNames (TH/EN).
  * Thailand is pinned first and is the default.
@@ -45,13 +46,5 @@ export const NationalitySelect: React.FC<NationalitySelectProps> = ({ id, value,
     return all;
   }, [lang, normalized]);
 
-  return (
-    <select id={id} value={normalized} onChange={(e) => onChange(e.target.value)}>
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
-  );
+  return <SelectMenu id={id} value={normalized} onChange={onChange} options={options} />;
 };
