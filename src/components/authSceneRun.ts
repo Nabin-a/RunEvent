@@ -4,6 +4,8 @@
  * end at the right horizon towards the viewer, growing with the lane, through to the bottom
  * of the screen (behind the sign-in card), then starts again at the far end, again and again.
  * User's sketch and notes, 24 Nov 2026. Wider screens only; phones show no rabbit (CSS).
+ * Sign-up (25 Nov 2026) scrolls over a fixed landscape: there the rabbit is fixed too and the
+ * path is fitted to the screen, not to the (taller) page.
  *
  * LANE is the middle of the three lanes: half way between the 2nd and 3rd white lines,
  * measured on the picture row by row (the lines converge towards the horizon), so the path
@@ -46,16 +48,23 @@ const SIZE_IN_LANE = 0.3;
 /** screen pixels per second along the path */
 const SPEED = 170;
 const STEPS_PER_SEGMENT = 4;
+/** time out of sight between laps, as if the rabbit ran round the rest of the track
+ *  (25 Nov 2026, user request: a longer wait before it starts again) */
+const LAP_GAP_MS = 10000;
 
 type Point = { x: number; y: number; k: number };
 
-export function startSceneRun(scene: HTMLElement, rabbit: HTMLElement): () => void {
+export function startSceneRun(
+  scene: HTMLElement,
+  rabbit: HTMLElement,
+  { fixed = false }: { fixed?: boolean } = {},
+): () => void {
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let anim: Animation | null = null;
 
   const measure = () => {
-    const W = scene.clientWidth;
-    const H = scene.clientHeight;
+    const W = fixed ? document.documentElement.clientWidth : scene.clientWidth;
+    const H = fixed ? window.innerHeight : scene.clientHeight;
     const s = Math.max(W / IMG_W, H / IMG_H);
     const baseW = rabbit.offsetWidth || 1;
     const baseH = rabbit.querySelector('img')?.offsetHeight || baseW * 1.2;
@@ -98,12 +107,17 @@ export function startSceneRun(scene: HTMLElement, rabbit: HTMLElement): () => vo
     const restTop = m.H - m.lift - m.baseH;
     const toTransform = (p: Point) =>
       `translate(${(p.x - FEET_X * m.baseW).toFixed(1)}px, ${(p.y - FEET_Y * m.baseH - restTop).toFixed(1)}px) scale(${p.k.toFixed(3)})`;
+    const runMs = Math.min(11000, Math.max(5000, (total / SPEED) * 1000));
+    const ms = runMs + LAP_GAP_MS;
+    // the run takes the first part of each lap; for the rest the rabbit waits below the screen
+    const runShare = runMs / ms;
     let run = 0;
     const frames: Keyframe[] = pts.map((p, i) => {
       run += dist[i];
-      return { offset: run / total, transform: toTransform(p) };
+      return { offset: (run / total) * runShare, transform: toTransform(p) };
     });
-    return { frames, ms: Math.min(11000, Math.max(5000, (total / SPEED) * 1000)), toTransform };
+    frames.push({ offset: 1, transform: toTransform(pts[pts.length - 1]) });
+    return { frames, ms, toTransform };
   };
 
   const place = () => {
@@ -132,8 +146,10 @@ export function startSceneRun(scene: HTMLElement, rabbit: HTMLElement): () => vo
   // re-fit when the window changes size
   const ro = new ResizeObserver(() => place());
   ro.observe(scene);
+  if (fixed) window.addEventListener('resize', place);
   return () => {
     ro.disconnect();
+    window.removeEventListener('resize', place);
     anim?.cancel();
     rabbit.style.transform = '';
     rabbit.style.transformOrigin = '';

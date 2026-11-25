@@ -49,67 +49,72 @@ export function ShirtGallery({
         </figcaption>
       </figure>
 
-      <fieldset className="pg-group">
-        <legend>{tx('ทรงเสื้อ')}</legend>
-        <div className="pg-thumbs">
-          {styles.map((s) => (
-            <label key={s.id} className={`pg-thumb ${s.id === current.id ? 'is-selected' : ''}`}>
-              <input
-                type="radio"
-                name="pg-style"
-                checked={s.id === current.id}
-                onChange={() => onStyleChange(s.id)}
-              />
-              <ProductArt kind={s.art} className="pg-thumb-art" />
-              <span>{tx(s.name)}</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      {/* the styles are tabs on top of the size chart, like browser tabs; the chosen tab joins the panel */}
+      <div className="pg-tabbed">
+        <fieldset className="pg-stabs">
+          <legend className="sr-only">{tx('ทรงเสื้อ')}</legend>
+          <div className="pg-stab-strip">
+            {styles.map((s) => (
+              <label key={s.id} className={`pg-stab ${s.id === current.id ? 'is-selected' : ''}`}>
+                <input
+                  type="radio"
+                  name="pg-style"
+                  checked={s.id === current.id}
+                  onChange={() => onStyleChange(s.id)}
+                />
+                <ProductArt kind={s.art} className="pg-stab-art" />
+                <span>{tx(s.name)}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
 
-      <fieldset className="pg-group">
-        <legend>{txf('ไซส์และขนาดตัวเสื้อ · {0}', tx(current.name))}</legend>
-        <table className="pg-chart">
-          <thead>
-            <tr>
-              <th scope="col">{tx('ไซส์')}</th>
-              <th scope="col">{tx('รอบอก')}</th>
-              <th scope="col">{tx('ความยาว')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {current.sizes.map((s) => {
-              const out = s.left <= 0;
-              const isSel = s.size === size;
-              const id = `pg-size-${current.id}-${s.size}`;
-              return (
-                <tr
-                  key={s.size}
-                  className={`${isSel ? 'is-selected' : ''} ${out ? 'is-out' : ''}`}
-                  onClick={() => !out && onSizeChange(s.size)}
-                >
-                  <th scope="row">
-                    <span className="pg-size-cell">
-                      <input
-                        id={id}
-                        type="radio"
-                        name="pg-size"
-                        checked={isSel}
-                        disabled={out}
-                        onChange={() => onSizeChange(s.size)}
-                      />
-                      <label htmlFor={id}>{s.size}</label>
-                      {out && <span className="pg-out-tag">{tx('หมดแล้ว')}</span>}
-                    </span>
-                  </th>
-                  <td className="mono-num">{tx(s.chest)}</td>
-                  <td className="mono-num">{tx(s.length)}</td>
+        <div className="pg-stab-panel">
+          <fieldset className="pg-group">
+            <legend>{tx('ไซส์และขนาดตัวเสื้อ')}</legend>
+            <table className="pg-chart">
+              <thead>
+                <tr>
+                  <th scope="col">{tx('ไซส์')}</th>
+                  <th scope="col">{tx('รอบอก')}</th>
+                  <th scope="col">{tx('ความยาว')}</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </fieldset>
+              </thead>
+              <tbody>
+                {current.sizes.map((s) => {
+                  const out = s.left <= 0;
+                  const isSel = s.size === size;
+                  const id = `pg-size-${current.id}-${s.size}`;
+                  return (
+                    <tr
+                      key={s.size}
+                      className={`${isSel ? 'is-selected' : ''} ${out ? 'is-out' : ''}`}
+                      onClick={() => !out && onSizeChange(s.size)}
+                    >
+                      <th scope="row">
+                        <span className="pg-size-cell">
+                          <input
+                            id={id}
+                            type="radio"
+                            name="pg-size"
+                            checked={isSel}
+                            disabled={out}
+                            onChange={() => onSizeChange(s.size)}
+                          />
+                          <label htmlFor={id}>{s.size}</label>
+                          {out && <span className="pg-out-tag">{tx('หมดแล้ว')}</span>}
+                        </span>
+                      </th>
+                      <td className="mono-num">{tx(s.chest)}</td>
+                      <td className="mono-num">{tx(s.length)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </fieldset>
+        </div>
+      </div>
 
       <p className="pg-summary" aria-live="polite">
         <span>{tx('เลือกแล้ว')}</span>

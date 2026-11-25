@@ -3432,9 +3432,23 @@ body:has(.auth-page-shell.is-scene) .minimal-footer {
   opacity: 0;
 }
 
-/* sign-up shares the scene but has no rabbit */
+/* the scene fades in without the shared slide-up: a transform left on the shell (even
+   translateY(0), kept by fill-mode both) makes it the box for position: fixed, so sign-up's
+   landscape and rabbit would scroll away with the page instead of staying on screen */
+.app-root.is-public .auth-page-shell.is-scene {
+  animation-name: auth-scene-fade-in;
+}
+
+@keyframes auth-scene-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* sign-up (25 Nov 2026, user request): the rabbit runs here too; the landscape is fixed to the
+   screen while the form scrolls, so the rabbit is fixed with it (and stays behind the card) */
 .auth-page-shell.is-scene:not(.is-fit) .kr-auth-mascot {
-  display: none;
+  position: fixed;
 }
 
 /* sign-up (24 Nov 2026, user request): same scene and card as sign in, but the form is long and

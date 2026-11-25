@@ -11038,21 +11038,49 @@ body.review-placing [data-review-ui] * {
   font-weight: 700;
 }
 
-/* style thumbnails */
-.pg-thumbs {
+/* shirt styles: browser-style tabs centred on top of the size chart (25 Nov 2026, user sketch).
+   The chosen tab is white, outlined like the panel, and covers the panel's top line so the two
+   read as one piece; the other tabs sit just above that line on a grey fill. */
+.pg-tabbed {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
-  gap: 0.6rem;
 }
 
-.pg-thumb,
+.pg-stabs {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pg-stab-strip {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: safe center;
+  gap: 0.25rem;
+  margin-bottom: -1.5px;
+  padding-inline: 0.75rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.pg-stab-panel {
+  min-width: 0;
+  padding: 1rem;
+  border: 1.5px solid var(--navy-ink);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.pg-stab,
 .pg-tab,
 .pg-chip {
   position: relative;
   cursor: pointer;
 }
 
-.pg-thumb input,
+.pg-stab input,
 .pg-tab input,
 .pg-chip input {
   position: absolute;
@@ -11064,43 +11092,63 @@ body.review-placing [data-review-ui] * {
   cursor: inherit;
 }
 
-.pg-thumb {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  min-height: 3.25rem;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--line-medium);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
-  font-size: 0.875rem;
-  transition: border-color 0.16s var(--ease-clean), background-color 0.16s var(--ease-clean);
-}
-
-.pg-thumb-art {
+.pg-stab {
+  display: inline-flex;
   flex: none;
-  width: 2.25rem;
-  height: 2.25rem;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  margin-bottom: 1.5px;
+  padding: 0.45rem 1rem;
+  border: 1.5px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: var(--bg-subtle);
   color: var(--ink-secondary);
+  font-size: 0.875rem;
+  white-space: nowrap;
+  transition: background-color 0.16s var(--ease-clean), color 0.16s var(--ease-clean);
 }
 
-.pg-thumb:hover,
+.pg-stab-art {
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.pg-stab:hover {
+  background: var(--line-light);
+  color: var(--ink-primary);
+}
+
+.pg-stab.is-selected {
+  margin-bottom: 0;
+  padding-bottom: calc(0.45rem + 1.5px);
+  border-color: var(--navy-ink);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font-weight: 700;
+}
+
 .pg-chip:hover {
   border-color: var(--ink-secondary);
 }
 
-.pg-thumb.is-selected,
 .pg-chip.is-selected {
   border-color: var(--navy-ink);
   background: var(--bg-selected);
   font-weight: 700;
 }
 
-.pg-thumb:focus-within,
 .pg-tab:focus-within,
 .pg-chip:focus-within {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
+}
+
+.pg-stab:focus-within {
+  outline: 2px solid var(--brand);
+  outline-offset: -4px;
 }
 
 /* size chart: each row is the size choice */
@@ -11314,7 +11362,7 @@ body.review-placing [data-review-ui] * {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pg-thumb,
+  .pg-stab,
   .pg-chip,
   .pg-card,
   .pg-chart tbody tr {
@@ -11332,19 +11380,35 @@ body.review-placing [data-review-ui] * {
     height: 6.5rem;
   }
 
-  /* three styles side by side: picture on top, name below */
-  .pg-thumbs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.35rem;
+  /* phones: the three tabs share the width, icon above the name, so none is cut off */
+  .pg-stab-strip {
+    gap: 0.2rem;
+    padding-inline: 0.35rem;
   }
 
-  .pg-thumb {
+  .pg-stab {
+    flex: 1 1 0;
     flex-direction: column;
     justify-content: center;
-    gap: 0.35rem;
-    padding: 0.6rem 0.35rem;
+    min-width: 0;
+    gap: 0.15rem;
+    padding: 0.4rem 0.25rem;
     font-size: 0.8125rem;
+    white-space: normal;
     text-align: center;
+  }
+
+  .pg-stab.is-selected {
+    padding-bottom: calc(0.4rem + 1.5px);
+  }
+
+  .pg-stab-art {
+    width: 1.35rem;
+    height: 1.35rem;
+  }
+
+  .pg-stab-panel {
+    padding: 0.75rem 0.5rem;
   }
 
   .pg-chart thead th,

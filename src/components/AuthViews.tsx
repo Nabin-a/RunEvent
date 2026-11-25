@@ -786,23 +786,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     authTab === 'signup' &&
     ENABLE_ORGANIZER_SELF_ONBOARDING &&
     (signupFlowMode === 'select_type' || signupFlowMode === 'organizer_wizard');
-  // sign in, forgot password and runner sign-up share the landscape scene (24 Nov 2026);
-  // only sign in / forgot password fit one screen and have the running rabbit
+  // sign in, forgot password and runner sign-up share the landscape scene and the running rabbit
+  // (24-25 Nov 2026); only sign in / forgot password fit one screen
   const isScene = !isWideOrganizerFlow;
   const isFitScene = isScene && authTab !== 'signup';
 
-  // sign in / forgot password: the rabbit runs down the lane of the scene (wider screens)
+  // the rabbit runs down the lane of the scene (wider screens); on sign-up the page scrolls over
+  // a fixed landscape, so the rabbit is fixed to the screen too
   useEffect(() => {
-    if (!isFitScene) return;
+    if (!isScene) return;
     const wide = window.matchMedia('(min-width: 48.01rem)');
     let stop: (() => void) | null = null;
     const start = () => {
       stop?.();
       stop = null;
       if (!wide.matches) return;
-      const scene = document.querySelector<HTMLElement>('.auth-page-shell.is-fit');
+      const scene = document.querySelector<HTMLElement>('.auth-page-shell.is-scene');
       const rabbit = scene?.querySelector<HTMLElement>('.kr-auth-mascot');
-      if (scene && rabbit) stop = startSceneRun(scene, rabbit);
+      if (scene && rabbit) stop = startSceneRun(scene, rabbit, { fixed: !isFitScene });
     };
     start();
     wide.addEventListener('change', start);
@@ -810,7 +811,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       wide.removeEventListener('change', start);
       stop?.();
     };
-  }, [isFitScene]);
+  }, [isScene, isFitScene]);
 
   return (
     <main
@@ -848,7 +849,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   : tx("แพลตฟอร์มงานวิ่งสำหรับนักวิ่งทุกคน")}
             </p>
             <MascotAnim
-              pose={authTab === 'signup' ? 'jump' : authTab === 'forgot' ? 'think' : 'run'}
+              pose={authTab === 'signup' ? (isScene ? 'run' : 'jump') : authTab === 'forgot' ? 'think' : 'run'}
               className="kr-auth-mascot"
             />
           </aside>
