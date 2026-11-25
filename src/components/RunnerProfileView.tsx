@@ -1680,25 +1680,25 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
           <div id="runner-profile-nav-list" className="runner-profile-nav-list">
             {activeNavItems.map((item, idx) => (
               <React.Fragment key={item.key}>
-              {(idx === 0 || activeNavItems[idx - 1].group !== item.group) && (
-                <span className="runner-nav-group-label">
-                  {item.group === 'account' ? tx('ตั้งค่าบัญชี') : tx('ข้อมูลนักวิ่ง')}
-                </span>
-              )}
-              <button
-                type="button"
-                aria-current={activeTab === item.key ? 'page' : undefined}
-                className={`runner-nav-btn ${activeTab === item.key ? 'active' : ''
-                  }`}
-                onClick={() => {
-                  requestSwitchProfileTab(item.key);
-                }}
-              >
-                <span className="runner-nav-label">
-                  {item.icon}
-                  <span>{item.label}</span>
-                </span>
-              </button>
+                {(idx === 0 || activeNavItems[idx - 1].group !== item.group) && (
+                  <span className="runner-nav-group-label">
+                    {item.group === 'account' ? tx('ตั้งค่าบัญชี') : tx('ข้อมูลนักวิ่ง')}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  aria-current={activeTab === item.key ? 'page' : undefined}
+                  className={`runner-nav-btn ${activeTab === item.key ? 'active' : ''
+                    }`}
+                  onClick={() => {
+                    requestSwitchProfileTab(item.key);
+                  }}
+                >
+                  <span className="runner-nav-label">
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </span>
+                </button>
               </React.Fragment>
             ))}
 
@@ -1800,7 +1800,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                   <div className="cta-inline-row">
                     <label className="btn-secondary file-pick-btn">
                       <IconCamera size={15} />
-                      <span>{tx('อัปโหลดรูปโปรไฟล์')}</span>
+                      <span>{tx('เปลี่ยนรูปโปรไฟล์')}</span>
                       <input
                         type="file"
                         accept="image/jpeg,image/png,image/webp"
@@ -2071,7 +2071,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                   )}
                 </strong>
                 <ThaiPostalAddressSelector
-                typeableArea
+                  typeableArea
                   idPrefix="rp-res"
                   contactName={`${firstName} ${lastName}`.trim()}
                   contactPhone={phoneInput}
@@ -2573,46 +2573,46 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                             typeableArea
                             flow={{
                               topLeft: (
-                                  <div className="form-row">
-                                    <label htmlFor="ad-lbl">{tx('ชื่อเรียกที่อยู่ (ไม่บังคับ)')}</label>
-                                    <input
-                                      id="ad-lbl"
-                                      type="text"
-                                      value={addrLabel}
-                                      maxLength={60}
-                                      onChange={(e) => setAddrLabel(e.target.value)}
-                                      placeholder={tx('เช่น บ้านพัก / ที่ทำงาน')}
-                                    />
-                                  </div>
+                                <div className="form-row">
+                                  <label htmlFor="ad-lbl">{tx('ชื่อเรียกที่อยู่ (ไม่บังคับ)')}</label>
+                                  <input
+                                    id="ad-lbl"
+                                    type="text"
+                                    value={addrLabel}
+                                    maxLength={60}
+                                    onChange={(e) => setAddrLabel(e.target.value)}
+                                    placeholder={tx('เช่น บ้านพัก / ที่ทำงาน')}
+                                  />
+                                </div>
                               ),
                               topRight: (
-                                  <div className="form-row">
-                                    <label htmlFor="ad-rec">
-                                      {<RequiredFieldText text={tx('ชื่อผู้รับพัสดุ *')} />}
-                                    </label>
-                                    <input
-                                      id="ad-rec"
-                                      type="text"
-                                      value={addrRecipient}
-                                      onChange={(e) =>
-                                        setAddrRecipient(e.target.value)
-                                      }
-                                      required
-                                    />
-                                  </div>
+                                <div className="form-row">
+                                  <label htmlFor="ad-rec">
+                                    {<RequiredFieldText text={tx('ชื่อผู้รับพัสดุ *')} />}
+                                  </label>
+                                  <input
+                                    id="ad-rec"
+                                    type="text"
+                                    value={addrRecipient}
+                                    onChange={(e) =>
+                                      setAddrRecipient(e.target.value)
+                                    }
+                                    required
+                                  />
+                                </div>
                               ),
                               left: (
-                                  <div className="form-row">
-                                    <label htmlFor="ad-ph">
-                                      {<RequiredFieldText text={tx('เบอร์โทรผู้รับ *')} />}
-                                    </label>
-                                    <PhoneInput
-                                      id="ad-ph"
-                                      value={addrPhone}
-                                      onChange={(next) => setAddrPhone(next)}
-                                      required
-                                    />
-                                  </div>
+                                <div className="form-row">
+                                  <label htmlFor="ad-ph">
+                                    {<RequiredFieldText text={tx('เบอร์โทรผู้รับ *')} />}
+                                  </label>
+                                  <PhoneInput
+                                    id="ad-ph"
+                                    value={addrPhone}
+                                    onChange={(next) => setAddrPhone(next)}
+                                    required
+                                  />
+                                </div>
                               ),
                             }}
                             idPrefix="ad-book"
@@ -3015,10 +3015,10 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
               {/* Organizer Memberships & Invitations (Unified Single Account) */}
               <section className="clean-panel canvas-stack">
                 <div className="kr-sec-head">
-                <h2>{tx('องค์กรผู้จัดงาน: ร่วมเป็นผู้จัดงาน / กรอกรหัสคำเชิญ')}</h2>
-                <p className="muted-block">
-                  {tx('บัญชีเดียวใช้ได้ทั้งนักวิ่งและผู้จัดงาน กรอกรหัสคำเชิญจากทีมผู้จัด หรือยื่นขอเปิดองค์กรใหม่เพื่อรอ Platform Owner ตรวจสอบ')}
-                </p>
+                  <h2>{tx('องค์กรผู้จัดงาน: ร่วมเป็นผู้จัดงาน / กรอกรหัสคำเชิญ')}</h2>
+                  <p className="muted-block">
+                    {tx('บัญชีเดียวใช้ได้ทั้งนักวิ่งและผู้จัดงาน กรอกรหัสคำเชิญจากทีมผู้จัด หรือยื่นขอเปิดองค์กรใหม่เพื่อรอ Platform Owner ตรวจสอบ')}
+                  </p>
                 </div>
                 {user.memberships.length === 0 && (
                   <div className="subtle-empty-note">

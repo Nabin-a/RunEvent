@@ -1,0 +1,64 @@
+{
+  "date": "2026-11-21",
+  "tool": "built-in image_gen",
+  "revision": "User requested distinct expressions; first four revised, final four generated with distinct acting directions.",
+  "base": "Create ONE full-body Kratai rabbit mascot PNG with a true transparent background. Character identity and costume must remain the same as reference: white fur, pink inner ears and nose, rounded cheeks, dark clean linework, recognizable front teeth, slate #34495F and mint #9BE8C7 sportswear and shoes, small white athlete emblem where chest is visible. IMPORTANT USER CORRECTION: every menu mascot must have a DIFFERENT expressive face, eye direction, eyebrows, mouth shape, ear gesture and body pose. Do NOT repeat the canonical wide open smiling mouth and straight-on stare. The specific acting direction below is mandatory and overrides the reference's expression. Professional coherent cartoon series, restrained shading. Props in slate/mint/white (plain kraft parcel allowed). One character, entire body/ears/feet/prop visible with generous margins. No words, numbers, UI, scenery, background, glow, shadow, watermark or unnecessary floating graphics. ",
+  "assets": [
+    {
+      "id": "01-personal",
+      "title": "ข้อมูลส่วนตัว",
+      "brief": "Holding a profile ID card with a simple avatar silhouette, pointing proudly at their own avatar on the card. No readable text or numbers.",
+      "expression": "Friendly personal introduction: wink ONE eye, small closed-mouth asymmetric smile with a tiny front tooth, head tilted slightly toward ID card. One ear playfully bent. Body in a relaxed three-quarter stance. NOT the reference's open mouth grin.",
+      "file": "01-personal.png"
+    },
+    {
+      "id": "02-emergency",
+      "title": "ผู้ติดต่อฉุกเฉิน",
+      "brief": "Holding a phone, with a small contact-person symbol and a plus symbol on its screen. Friendly reassuring pose. No text, no red cross, no floating background graphics.",
+      "expression": "Attentive reassuring concern: mouth CLOSED in a gentle almost-neutral reassuring curve, eyebrows lifted inward slightly, eyes looking toward phone, head inclined as if listening. Hold phone near one ear and show a separate small contact-plus icon on phone back. No thumbs-up, no celebratory grin. Body leaning slightly to listen.",
+      "file": "02-emergency.png"
+    },
+    {
+      "id": "03-address",
+      "title": "ที่อยู่จัดส่ง",
+      "brief": "Holding a small parcel box with a clear slate location-pin symbol on its front, confident helpful delivery pose. No text or shipping label.",
+      "expression": "Cheerful helpful delivery: small open smile WITHOUT tongue, eyes glancing toward the destination to the right, head in three-quarter profile, ears swept backward asymmetrically. Walking stride with parcel securely held against torso, clearly different from front-facing standing pose.",
+      "file": "03-address.png"
+    },
+    {
+      "id": "04-participants",
+      "title": "ผู้สมัครที่บันทึก",
+      "brief": "Holding an open saved-participants folder with three clearly drawn simple person-avatar circles, organizing the profiles with one paw. No text.",
+      "expression": "Thoughtful organizer: lips pursed in a small curious expression, ONE eyebrow raised, eyes looking DOWN into folder, head tilted forward, one ear upright and other folded. One paw extracting a participant card. No generic open-mouth happy grin. Avatar cards use slate/mint only.",
+      "file": "04-participants.png"
+    },
+    {
+      "id": "05-certificates",
+      "title": "ประวัติและใบเซอร์",
+      "brief": "Holding a white certificate with a slate decorative border, small mint ribbon seal, and simple abstract non-letter lines. Proud gentle smile. No words or numbers.",
+      "expression": "Proud achievement: eyes CLOSED as happy upward arcs, delighted modest smile showing front teeth but no tongue, chin slightly raised, certificate held up proudly, free paw on hip. Confident three-quarter pose.",
+      "file": "05-certificates.png"
+    },
+    {
+      "id": "06-connections",
+      "title": "การเชื่อมต่อ",
+      "brief": "Holding two large interlocking rounded chain links, one slate and one mint, representing connecting accounts. Links visually clear and centered, no provider logos or text.",
+      "expression": "Curious delighted discovery: wide round surprised eyes, SMALL round O mouth, slightly raised brows, gaze toward two interlocking links, head turned three-quarter toward prop, one ear tilted sideways. Show joy through surprised wonder rather than grinning.",
+      "file": "06-connections.png"
+    },
+    {
+      "id": "07-devices",
+      "title": "อุปกรณ์",
+      "brief": "Using a compact open slate laptop, with a small upright smartphone beside it, friendly focused expression. Laptop and phone blank mint screens. No logos or text.",
+      "expression": "Focused working expression: mouth closed, slightly lowered attentive eyebrows (not angry), eyes directed DOWN toward laptop screen, subtle thoughtful cheek expression. Rabbit sitting cross-legged working on laptop with smartphone upright beside it. Ears relaxed at different angles. No smile toward camera.",
+      "file": "07-devices.png"
+    },
+    {
+      "id": "08-privacy",
+      "title": "ข้อมูลและความเป็นส่วนตัว",
+      "brief": "Holding a protective slate-and-mint shield with a white padlock symbol centered on it. Reassuring smile, confident stance. No lettering.",
+      "expression": "Calm protective confidence: closed-mouth gentle side smile, eyebrows relaxed, steady sideward gaze, half-turned body with shield held forward and free hand resting behind it. One ear erect and one curved. No grin, no wide open mouth.",
+      "file": "08-privacy.png"
+    }
+  ]
+}

@@ -1,0 +1,230 @@
+[
+  {
+    "name": "IconAlert",
+    "file": "alert.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconArrowLeft",
+    "file": "arrow-left.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconArrowRight",
+    "file": "arrow-right.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconAward",
+    "file": "award.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconBag",
+    "file": "bag.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconBell",
+    "file": "bell.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconBib",
+    "file": "bib.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconBuilding",
+    "file": "building.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconCalendar",
+    "file": "calendar.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconCamera",
+    "file": "camera.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconCheckCircle",
+    "file": "check-circle.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconChevronDown",
+    "file": "chevron-down.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconClock",
+    "file": "clock.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconClose",
+    "file": "close.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconCopy",
+    "file": "copy.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconDevice",
+    "file": "device.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconDownload",
+    "file": "download.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconEye",
+    "file": "eye.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconEyeOff",
+    "file": "eye-off.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconFacebookMark",
+    "file": "facebook-mark.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": true
+  },
+  {
+    "name": "IconFlag",
+    "file": "flag.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconGlobe",
+    "file": "globe.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconGoogleMark",
+    "file": "google-mark.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": true
+  },
+  {
+    "name": "IconLedger",
+    "file": "ledger.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconLineMark",
+    "file": "line-mark.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": true
+  },
+  {
+    "name": "IconLink",
+    "file": "link.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconLock",
+    "file": "lock.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconMail",
+    "file": "mail.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconMapPin",
+    "file": "map-pin.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconMenu",
+    "file": "menu.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconPlus",
+    "file": "plus.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconQr",
+    "file": "qr.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconSearch",
+    "file": "search.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconShield",
+    "file": "shield.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconShirt",
+    "file": "shirt.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconSliders",
+    "file": "sliders.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconSwitch",
+    "file": "switch.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  },
+  {
+    "name": "IconUsers",
+    "file": "users.svg",
+    "origin": "src/components/Icons.tsx",
+    "brandMark": false
+  }
+]

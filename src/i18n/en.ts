@@ -2589,7 +2589,7 @@ export const EN_DICT: Record<string, string> = {
   "ข้อมูลพื้นฐานที่นำไปเติมในฟอร์มสมัครงานวิ่งอัตโนมัติ (ช่องเลขบัตรประชาชนหรือหนังสือเดินทางไม่บังคับ เก็บเฉพาะกรณีผู้จัดต้องการใช้ออกประกันอุบัติเหตุ)": "Core runner details used to autofill race registration forms (National ID / Passport is optional and used only when required for event accident insurance).",
   "รูปโปรไฟล์นักวิ่ง": "Profile Picture",
   "รองรับไฟล์รูปภาพ ย่อขนาดอัตโนมัติไม่เกิน 320 พิกเซล": "Supports JPG / PNG / WebP, automatically resized up to 320px",
-  "อัปโหลดรูปโปรไฟล์": "Upload Picture",
+  "เปลี่ยนรูปโปรไฟล์": "Change Profile Picture",
   "ลบรูปออก": "Remove Picture",
   "ชื่อ (ภาษาอังกฤษ) *": "First Name (English) *",
   "กรอกชื่อภาษาอังกฤษ": "e.g. Kanpitcha",
