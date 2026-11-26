@@ -420,6 +420,11 @@
   color: var(--shell-text);
 }
 
+/* no photo yet: the black and green rabbit on a dark green disc */
+:root[data-theme='line'] .runner-avatar-frame:has(.runner-avatar-default) {
+  background: #24362b;
+}
+
 /* ===================================================================== */
 /* Landscape banners: the supplied night scene (output/line-night,        */
 /* moonlit sky, glowing green lanes) replaces the daytime picture; built  */

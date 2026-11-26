@@ -11,7 +11,9 @@ import { RequiredFieldText } from './RequiredFieldText';
 import { SelectMenu } from './SelectMenu';
 import { confirmDiscardClose, useEscapeToClose } from './modalShared';
 import { AvatarCropDialog } from './AvatarCropDialog';
-import { AVATAR_MAX_FILE_BYTES, nameInitials, readImageFile } from '../utils/avatarFile';
+import { AVATAR_MAX_FILE_BYTES, readImageFile } from '../utils/avatarFile';
+import { DefaultAvatarImg } from './DefaultAvatar';
+import { firstFriendContactProblem, friendContactProblems } from '../utils/friendContact';
 
 const emptyParticipant = (): SavedParticipant => ({
   id: '',
@@ -27,6 +29,7 @@ const emptyParticipant = (): SavedParticipant => ({
   idType: 'thai_id',
   idNumber: '',
   phone: '',
+  email: '',
   preferredShirtSize: '',
   emergencyContactName: '',
   emergencyContactRelation: '',
@@ -44,6 +47,8 @@ interface SavedParticipantModalProps {
   /** save the cleaned-up participant (a new one gets its id here); the caller stores it and closes */
   onSave: (participant: SavedParticipant) => void | Promise<void>;
   onInvalid?: (message: string) => void;
+  /** the account owner's email and phone: a friend must have their own (26 Nov 2026) */
+  owner: { email?: string | null; phone?: string | null };
 }
 
 /**
@@ -57,11 +62,15 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
   onCancel,
   onSave,
   onInvalid,
+  owner,
 }) => {
   const isEn = getLang() === 'en';
   const [baseline] = useState(() => JSON.stringify({ ...emptyParticipant(), ...(participant ?? {}) }));
   const [draft, setDraft] = useState<SavedParticipant>(() => ({ ...emptyParticipant(), ...(participant ?? {}) }));
   const [error, setError] = useState<string | null>(null);
+  const [contactCheck, setContactCheck] = useState(false);
+  const contactProblems = friendContactProblems(draft, owner, { requireBoth: true });
+  const shownContactProblems = contactCheck ? contactProblems : {};
   const [saving, setSaving] = useState(false);
   const editing = Boolean(participant);
 
@@ -81,6 +90,12 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
     e.preventDefault();
     if (!(draft.firstNameEn ?? '').trim() || !(draft.lastNameEn ?? '').trim()) {
       fail(tx('กรุณากรอกชื่อและนามสกุลภาษาอังกฤษของผู้สมัครแทน'));
+      return;
+    }
+    const contactProblem = firstFriendContactProblem(contactProblems);
+    if (contactProblem) {
+      setContactCheck(true);
+      fail(tx(contactProblem));
       return;
     }
     if (draft.idType === 'thai_id' && draft.idNumber && draft.idNumber.length !== 13) {
@@ -104,6 +119,7 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
         idType: (draft.idNumber ?? '').trim() ? draft.idType ?? 'thai_id' : 'none',
         idNumber: (draft.idNumber ?? '').trim() || undefined,
         phone: (draft.phone ?? '').trim() || undefined,
+        email: (draft.email ?? '').trim().toLowerCase() || undefined,
         preferredShirtSize: draft.preferredShirtSize || undefined,
         relationshipToOwner: (draft.relationshipToOwner ?? '').trim() || undefined,
         emergencyContactName: (draft.emergencyContactName ?? '').trim() || undefined,
@@ -152,7 +168,7 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
                   {draft.avatarDataUrl ? (
                     <img src={draft.avatarDataUrl} alt={tx('รูปโปรไฟล์')} className="runner-avatar-img" />
                   ) : (
-                    <span className="runner-avatar-initials">{nameInitials(shownName)}</span>
+                    <DefaultAvatarImg />
                   )}
                 </div>
                 <div className="runner-avatar-controls">
@@ -368,17 +384,52 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
                     }
                   />
                 </div>
+              </div>
+
+              {/* the friend's own contact details, never the account owner's */}
+              <div className="form-grid-2">
                 <div className="form-row">
-                  <label htmlFor={`${idPrefix}-ph`}>{tx('เบอร์โทรศัพท์')}</label>
+                  <label htmlFor={`${idPrefix}-ph`}>
+                    <RequiredFieldText text={tx('เบอร์โทรศัพท์ *')} />
+                  </label>
                   <PhoneInput
                     id={`${idPrefix}-ph`}
                     value={draft.phone ?? ''}
+                    required
+                    ariaDescribedBy={shownContactProblems.phone ? `${idPrefix}-ph-err` : undefined}
                     onChange={(next) =>
                       setDraft({
                         ...draft,
                         phone: next,
                       })}
                   />
+                  {shownContactProblems.phone && (
+                    <span id={`${idPrefix}-ph-err`} className="field-error" role="alert">
+                      {tx(shownContactProblems.phone)}
+                    </span>
+                  )}
+                </div>
+                <div className="form-row">
+                  <label htmlFor={`${idPrefix}-em`}>
+                    <RequiredFieldText text={tx('อีเมล *')} />
+                  </label>
+                  <input
+                    id={`${idPrefix}-em`}
+                    type="email"
+                    inputMode="email"
+                    autoComplete="off"
+                    required
+                    value={draft.email ?? ''}
+                    placeholder="name@example.com"
+                    aria-invalid={shownContactProblems.email ? true : undefined}
+                    aria-describedby={shownContactProblems.email ? `${idPrefix}-em-err` : undefined}
+                    onChange={(e) => setDraft({ ...draft, email: e.target.value })}
+                  />
+                  {shownContactProblems.email && (
+                    <span id={`${idPrefix}-em-err`} className="field-error" role="alert">
+                      {tx(shownContactProblems.email)}
+                    </span>
+                  )}
                 </div>
               </div>
 

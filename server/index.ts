@@ -38,6 +38,7 @@ import { normalizeDetailPage, normalizePageContent } from '../src/data/eventDeta
 import { missingRequiredData } from '../src/data/eventPageConvert';
 import { answeredIndex, normalizeForm, validateAnswers } from '../src/data/registrationForm';
 import { AVATAR_MAX_DATA_URL_CHARS, MAX_EMERGENCY_CONTACTS } from '../src/data/runnerProfileDefaults';
+import { firstFriendContactProblem, friendContactProblems } from '../src/utils/friendContact';
 import { registerReviewCommentRoutes } from './reviewComments';
 import { cloneCustomFieldsSchema, isTotalQuotaEnabled, validateQuotaUpdate } from '../src/utils/eventConfig';
 import {
@@ -850,6 +851,15 @@ app.patch('/api/account/profile', (req, res) => {
   if (tooBig(incoming.avatarDataUrl) || (incoming.savedParticipants ?? []).some((pt) => tooBig(pt.avatarDataUrl))) {
     return res.status(400).json({ ok: false, error: 'รูปโปรไฟล์ใหญ่เกินกำหนด กรุณาเลือกรูปใหม่' });
   }
+  // saved friends never carry the owner's own email or phone (26 Nov 2026); entries saved
+  // before email was asked for may still lack one, so presence is checked when registering
+  if (incoming.savedParticipants) {
+    const owner = { email: user.contactEmail, phone: incoming.phone ?? user.runnerProfile?.phone };
+    for (const pt of incoming.savedParticipants) {
+      const problem = firstFriendContactProblem(friendContactProblems(pt, owner));
+      if (problem) return res.status(400).json({ ok: false, error: problem });
+    }
+  }
   if ((incoming.emergencyContacts?.length ?? 0) > MAX_EMERGENCY_CONTACTS) {
     return res.status(400).json({
       ok: false,
@@ -1442,6 +1452,22 @@ app.post('/api/registrations', (req, res) => {
       return res.status(400).json({ ok: false, error: 'ไม่พบระยะการแข่งขันที่เลือก' });
     }
 
+    // Registering a friend: the friend's own email and phone are required and may not be the
+    // account owner's (26 Nov 2026). Checked here too; the form check is only a hint.
+    if (payload.forFriend) {
+      const problem = firstFriendContactProblem(
+        friendContactProblems(
+          { email: payload.participantSnapshot?.email, phone: payload.phone },
+          { email: user?.contactEmail, phone: user?.runnerProfile?.phone },
+          { requireBoth: true }
+        )
+      );
+      if (problem) {
+        db.exec('ROLLBACK');
+        return res.status(400).json({ ok: false, error: problem });
+      }
+    }
+
     // The organizer's questions are checked by the server too, against the live form version
     // (only the questions this runner is asked: right distance, approved, condition met).
     const answers: Record<string, string | boolean> = {};
@@ -1543,8 +1569,9 @@ app.post('/api/registrations', (req, res) => {
       participantNameTh: String(payload.participantNameTh ?? ''),
       participantNameEn: String(payload.participantNameEn ?? ''),
       email: user?.contactEmail ?? 'verified.runner@demo.local',
+      // a friend's entry keeps the friend's phone; only your own entry falls back to the profile
       phoneMasked: String(
-        payload.phone || user?.runnerProfile?.phone || '081-•••-9900'
+        payload.phone || (payload.forFriend ? '' : user?.runnerProfile?.phone) || '081-•••-9900'
       ),
       emergencyContact: String(
         payload.emergencyContact ||

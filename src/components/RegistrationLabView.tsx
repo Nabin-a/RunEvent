@@ -35,7 +35,6 @@ import { RegistrationStepper } from './RegistrationStepper';
 import { ShirtGallery, type ShirtGalleryStyle } from './ProductGallery';
 import { SHIRT_STYLES, shirtStyleName, type ShirtStyleId } from '../data/mockShirtStyles';
 import { SHIRT_PHOTOS } from '../data/productPhotos';
-import { nameInitials } from '../utils/avatarFile';
 
 /** shirt cut picked on the shirt step */
 type ShirtCut = 'Men' | 'Women' | 'Kids';
@@ -72,6 +71,8 @@ import { RegistrationSummary, type ReviewLedgerGroup, type ReviewSection } from 
 import { EventCoverMedia } from './Icons';
 import { displayPhone } from '../utils/phone';
 import { CORE_STEP, answerText, fieldShown, isContentField } from '../data/registrationForm';
+import { DefaultAvatarImg } from './DefaultAvatar';
+import { firstFriendContactProblem, friendContactProblems } from '../utils/friendContact';
 
 /**
  * The registration form (layout B, the only layout since 24 Nov 2026 — layout A was removed on
@@ -136,6 +137,8 @@ export interface LabShared {
   dob: Pair<string>;
   gender: Pair<'ไม่ระบุ' | 'ชาย' | 'หญิง'>;
   phone: Pair<string>;
+  /** a friend's own email (registering someone else) */
+  email: Pair<string>;
   idType: Pair<'thai_id' | 'passport'>;
   idNumber: Pair<string>;
   emergencyName: Pair<string>;
@@ -260,6 +263,7 @@ export function RegistrationLabView({
   const [dob, setDob] = shared.dob;
   const [gender, setGender] = shared.gender;
   const [phone, setPhone] = shared.phone;
+  const [email, setEmail] = shared.email;
   const [idType, setIdType] = shared.idType;
   const [idNumber, setIdNumber] = shared.idNumber;
   const [emergencyName, setEmergencyName] = shared.emergencyName;
@@ -289,6 +293,7 @@ export function RegistrationLabView({
     dateOfBirth?: string;
     gender?: Gender;
     phone?: string;
+    email?: string;
     idType?: 'none' | IdType;
     idNumber?: string;
     emergencyContactName?: string;
@@ -304,6 +309,7 @@ export function RegistrationLabView({
     setDob(p?.dateOfBirth ?? '');
     setGender(p?.gender ?? 'ไม่ระบุ');
     setPhone(p?.phone ?? '');
+    setEmail(p?.email ?? '');
     setIdType(p?.idType === 'passport' ? 'passport' : 'thai_id');
     setIdNumber(p?.idNumber ?? '');
     setEmergency(p?.emergencyContactName ?? '', p?.emergencyContactRelation ?? '', p?.emergencyContactPhone ?? '');
@@ -320,6 +326,12 @@ export function RegistrationLabView({
   useEffect(() => {
     setContacts(profile?.emergencyContacts ?? []);
   }, [profile?.emergencyContacts]);
+  // a friend has their own email and phone, never the account owner's (26 Nov 2026, user request)
+  const ownerContact = { email: currentUser?.contactEmail, phone: profile?.phone };
+  const friendProblems =
+    forSelf === false ? friendContactProblems({ email, phone }, ownerContact, { requireBoth: true }) : {};
+  const [friendContactCheck, setFriendContactCheck] = useState(false);
+  const shownFriendProblems = friendContactCheck ? friendProblems : {};
   const ageCheck = category ? evaluateCategoryAge(event, category, dob, gender) : null;
   // a distance with an age limit or age groups needs the date of birth (26 Nov 2026, user request)
   const dobRequired = Boolean(ageCheck && ageCheck.status !== 'not_required');
@@ -453,6 +465,12 @@ export function RegistrationLabView({
       setStep2Notice({ tone: 'err', text: tx('กรอกชื่อและนามสกุลภาษาอังกฤษของเพื่อนก่อนบันทึก') });
       return;
     }
+    const contactProblem = firstFriendContactProblem(friendProblems);
+    if (contactProblem) {
+      setFriendContactCheck(true);
+      setStep2Notice({ tone: 'err', text: tx(contactProblem) });
+      return;
+    }
     const idDigits = idNumber.replace(/\s/g, '');
     const same = (a?: string, b?: string) => (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
     const dup = saved.find(
@@ -476,6 +494,7 @@ export function RegistrationLabView({
       idType: idDigits ? idType : 'none',
       idNumber: idDigits || undefined,
       phone: phone.trim() || undefined,
+      email: email.trim().toLowerCase() || undefined,
       emergencyContactName: emergencyName.trim() || undefined,
       emergencyContactRelation: emergencyRelation.trim() || undefined,
       emergencyContactPhone: emergencyPhone.trim() || undefined,
@@ -735,9 +754,25 @@ export function RegistrationLabView({
   };
   /** forward: the live form's checks for this step first */
   const goNext = (next: LabStep) => {
+    // show the friend's email / phone problems next to the fields along with any other gaps
+    if (step === 2 && forSelf === false) setFriendContactCheck(true);
     let problem = live.check(step, bodyRef.current);
     if (!problem && step === 2 && forSelf === false && partMode === 'saved' && (!emergencyName.trim() || !emergencyPhone.trim())) {
       problem = 'เพื่อนคนนี้ยังไม่มีผู้ติดต่อฉุกเฉิน กด แก้ไข ที่การ์ดเพื่อเพิ่ม';
+    }
+    if (!problem && step === 2 && forSelf === false) {
+      const contactProblem = firstFriendContactProblem(friendProblems);
+      if (contactProblem) {
+        setFriendContactCheck(true);
+        problem =
+          partMode === 'saved'
+            ? friendProblems.email && !email.trim()
+              ? 'เพื่อนคนนี้ยังไม่มีอีเมล กด แก้ไข ที่การ์ดเพื่อเพิ่ม'
+              : friendProblems.phone && !phone.trim()
+                ? 'เพื่อนคนนี้ยังไม่มีเบอร์โทร กด แก้ไข ที่การ์ดเพื่อเพิ่ม'
+                : `${contactProblem} กด แก้ไข ที่การ์ดเพื่อแก้`
+            : contactProblem;
+      }
     }
     if (!problem && step === 3 && !shirtSize) {
       problem = 'กรุณาเลือกไซส์เสื้อตามสิทธิ์สมัคร';
@@ -1045,7 +1080,7 @@ export function RegistrationLabView({
                                     {pt.avatarDataUrl ? (
                                       <img src={pt.avatarDataUrl} alt="" className="runner-avatar-img" />
                                     ) : (
-                                      <span className="runner-avatar-initials">{nameInitials(nameEn || nameTh)}</span>
+                                      <DefaultAvatarImg />
                                     )}
                                   </span>
                                   <strong>
@@ -1173,10 +1208,55 @@ export function RegistrationLabView({
                         </div>
                       </fieldset>
                       {ageHint}
-                      <div className="form-row reg-lab-full">
-                        <label htmlFor="lab-phone">{tx('เบอร์โทรศัพท์ผู้เข้าแข่งขัน')}</label>
-                        <PhoneInput id="lab-phone" value={phone} onChange={setPhone} />
-                      </div>
+                      {forSelf === false ? (
+                        <>
+                          {/* the friend's own phone and email, never the account owner's */}
+                          <div className="form-row">
+                            <label htmlFor="lab-phone">
+                              <RequiredFieldText text={tx('เบอร์โทรศัพท์ของเพื่อน *')} />
+                            </label>
+                            <PhoneInput
+                              id="lab-phone"
+                              value={phone}
+                              onChange={setPhone}
+                              required
+                              ariaDescribedBy={shownFriendProblems.phone ? 'lab-phone-err' : undefined}
+                            />
+                            {shownFriendProblems.phone && (
+                              <span id="lab-phone-err" className="field-error" role="alert">
+                                {tx(shownFriendProblems.phone)}
+                              </span>
+                            )}
+                          </div>
+                          <div className="form-row">
+                            <label htmlFor="lab-email">
+                              <RequiredFieldText text={tx('อีเมลของเพื่อน *')} />
+                            </label>
+                            <input
+                              id="lab-email"
+                              type="email"
+                              inputMode="email"
+                              autoComplete="off"
+                              required
+                              value={email}
+                              placeholder="name@example.com"
+                              aria-invalid={shownFriendProblems.email ? true : undefined}
+                              aria-describedby={shownFriendProblems.email ? 'lab-email-err' : undefined}
+                              onChange={(e) => setEmail(e.target.value)}
+                            />
+                            {shownFriendProblems.email && (
+                              <span id="lab-email-err" className="field-error" role="alert">
+                                {tx(shownFriendProblems.email)}
+                              </span>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="form-row reg-lab-full">
+                          <label htmlFor="lab-phone">{tx('เบอร์โทรศัพท์ผู้เข้าแข่งขัน')}</label>
+                          <PhoneInput id="lab-phone" value={phone} onChange={setPhone} />
+                        </div>
+                      )}
                       <div className="form-row">
                         <label htmlFor="lab-idtype">{tx('ประเภทเอกสาร')}</label>
                         <SelectMenu
@@ -1353,6 +1433,7 @@ export function RegistrationLabView({
               {partEditId && (
                 <SavedParticipantModal
                   key={partEditId}
+                  owner={{ email: currentUser?.contactEmail, phone: currentUser?.runnerProfile?.phone }}
                   idPrefix="lab-sp-edit"
                   participant={saved.find((x) => x.id === partEditId) ?? null}
                   shirtSizes={(platformProfileConfig?.shirtSizes ?? [])

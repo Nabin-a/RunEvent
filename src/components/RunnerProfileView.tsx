@@ -67,7 +67,7 @@ import {
 } from './StatusBadges';
 import { DateOfBirthInput } from './DateOfBirthInput';
 import { AvatarCropDialog } from './AvatarCropDialog';
-import { AVATAR_MAX_FILE_BYTES, nameInitials, readImageFile } from '../utils/avatarFile';
+import { AVATAR_MAX_FILE_BYTES, readImageFile } from '../utils/avatarFile';
 import { NationalitySelect } from './NationalitySelect';
 import { SelectMenu } from './SelectMenu';
 import { ThaiPostalAddressSelector } from './ThaiPostalAddressSelector';
@@ -84,6 +84,7 @@ import {
 import { getLang, tx, txf } from '../i18n';
 import { ageBreakdownOn, formatAgeGroupLabel, formatBasisDate, todayIsoInTimeZone } from '../utils/age';
 import { IdNumberInput } from './IdNumberInput';
+import { DefaultAvatarImg } from './DefaultAvatar';
 
 /** Profile menu artwork (one still per menu), drawn at one scale so the rabbit matches across menus. */
 const PROFILE_MASCOTS: Record<string, { src: string; w: number; h: number }> = {
@@ -1138,7 +1139,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
       },
       {
         key: 'history',
-        label: tx('ประวัติการวิ่งและใบเซอร์'),
+        label: tx('ประวัติงานที่สมัคร'),
         icon: <IconBib size={16} />,
       },
       {
@@ -1158,11 +1159,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     tx(user.fullNameTh)
     : user.fullNameTh;
   const heroDisplayNick = isEn ? nicknameEn || tx(nickname) : nickname;
-  const initials = (
-    (isEn
-      ? firstNameEn.trim()[0] ?? user.fullNameEn?.[0]
-      : firstName.trim()[0] ?? user.fullNameTh[0]) ?? 'R'
-  ).toUpperCase();
   const notifyResult = (ok: boolean, message: string) => {
     setBanner({ tone: ok ? 'ok' : 'err', text: message });
     showResultModalAlert(ok, message);
@@ -1219,7 +1215,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                   className="runner-avatar-img"
                 />
               ) : (
-                <span className="runner-avatar-initials">{initials}</span>
+                <DefaultAvatarImg />
               )}
             </div>
             <div className="runner-hero-identity">
@@ -1428,7 +1424,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                       className="runner-avatar-img"
                     />
                   ) : (
-                    <span className="runner-avatar-initials">{initials}</span>
+                    <DefaultAvatarImg />
                   )}
                 </div>
                 <div className="runner-avatar-controls">
@@ -2623,7 +2619,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                               {pt.avatarDataUrl ? (
                                 <img src={pt.avatarDataUrl} alt="" className="runner-avatar-img" />
                               ) : (
-                                <span className="runner-avatar-initials">{nameInitials(enFull || thFull)}</span>
+                                <DefaultAvatarImg />
                               )}
                             </span>
                             {/* nickname first (25 Nov 2026, user request) */}
@@ -2751,6 +2747,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
               {editingPartId && (
                 <SavedParticipantModal
                   key={editingPartId}
+                  owner={{ email: user.contactEmail, phone: prof.phone }}
                   participant={participantList.find((x) => x.id === editingPartId) ?? null}
                   shirtSizes={enabledSizes.map((sz) => sz.code)}
                   onCancel={closePartModal}

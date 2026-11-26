@@ -2,7 +2,7 @@
 export const EN_DICT: Record<string, string> = {
   "ไซส์เสื้อและการวิ่ง": "Shirt & Running",
   "ผู้สมัครที่บันทึกไว้": "Saved Participants",
-  "ประวัติการวิ่งและใบเซอร์": "Race History & Certificates",
+  "ประวัติงานที่สมัคร": "Registered events",
   "องค์กรและคำเชิญ": "Organizations & Invites",
   "ชื่อและนามสกุล": "Full Name",
   "ข้อมูลพื้นฐาน": "Basic Information",

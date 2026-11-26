@@ -248,6 +248,8 @@ export interface SavedParticipant {
   idType?: 'none' | 'thai_id' | 'passport';
   idNumber?: string;
   phone?: string;
+  /** the friend's own email; must differ from the account owner's (26 Nov 2026) */
+  email?: string;
   preferredShirtSize?: ShirtSizeCode;
   emergencyContactName?: string;
   emergencyContactRelation?: string;
@@ -956,6 +958,8 @@ export interface RegistrationRecord {
     lastNameEn?: string;
     nicknameEn?: string;
     phone?: string;
+    /** a friend's own email (registrations for someone else, from 26 Nov 2026) */
+    email?: string;
     nationality?: string;
     dateOfBirth?: string;
     gender?: string;

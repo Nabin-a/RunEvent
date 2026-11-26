@@ -114,6 +114,7 @@ import {
 import { tx, txf, useI18n } from './i18n';
 import { apiRequest } from './api/client';
 import { LangSwitch } from './components/LangSwitch';
+import { DefaultAvatarImg } from './components/DefaultAvatar';
 
 type RootSurface =
   | 'customer'
@@ -1818,6 +1819,8 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     participantNameTh: string;
     participantNameEn: string;
     phone?: string;
+    /** registering someone else: the server checks the friend's own email and phone */
+    forFriend?: boolean;
     emergencyContact?: string;
     shirtSize: ShirtSizeCode;
     kitDeliveryMethod?: 'pickup_at_expo' | 'postal_shipping';
@@ -3245,7 +3248,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountNeedsPrivacyAck, currentUser?.id]);
-  const currentUserInitial = (currentUserDisplayName.trim()[0] ?? 'R').toUpperCase();
   const pendingWebhookRegs = sys.registrations.filter(
     (r) => r.registrationStatus === 'pending_payment'
   );
@@ -3427,9 +3429,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                         className="runner-avatar-img"
                       />
                     ) : (
-                      <span className="runner-avatar-initials">
-                        {currentUserInitial}
-                      </span>
+                      <DefaultAvatarImg />
                     )}
                   </span>
                   <span className="btn-account-pill-name">
@@ -3453,9 +3453,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                             className="runner-avatar-img"
                           />
                         ) : (
-                          <span className="runner-avatar-initials">
-                            {currentUserInitial}
-                          </span>
+                          <DefaultAvatarImg />
                         )}
                       </div>
                       <div className="profile-dropdown-identity">

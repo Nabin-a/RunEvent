@@ -123,6 +123,8 @@ interface CustomerPortalViewProps {
     participantNameTh: string;
     participantNameEn: string;
     phone?: string;
+    /** registering someone else: the server checks the friend's own email and phone */
+    forFriend?: boolean;
     emergencyContact?: string;
     shirtSize: ShirtSizeCode;
     kitDeliveryMethod?: 'pickup_at_expo' | 'postal_shipping';
@@ -307,6 +309,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   const [regPhone, setRegPhone] = useState(
     currentUser?.runnerProfile?.phone ?? ''
   );
+  // a friend's own email (registering someone else; must not be the account owner's)
+  const [regEmail, setRegEmail] = useState('');
   // Shipping address mode (saved address book vs manual entry)
   const [shipAddrMode, setShipAddrMode] = useState<'saved' | 'manual'>(
     (currentUser?.runnerProfile?.savedAddresses ?? []).length > 0
@@ -757,7 +761,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       buyerName: finalBuyer,
       participantNameTh: finalParticipant,
       participantNameEn: composedBibEn,
-      phone: regPhone.trim() || prof?.phone,
+      // a friend's entry carries the friend's own phone, never the owner's (26 Nov 2026)
+      phone: registerForSelf ? regPhone.trim() || prof?.phone : regPhone.trim(),
+      forFriend: !registerForSelf,
       emergencyContact: emergencyContactText.trim(),
       shirtSize,
       kitDeliveryMethod: deliveryMode,
@@ -773,6 +779,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         lastNameEn: regLastNameEn.trim() || undefined,
         nicknameEn: regNicknameEn.trim() || undefined,
         phone: regPhone.trim() || undefined,
+        email: registerForSelf ? undefined : regEmail.trim().toLowerCase() || undefined,
         dateOfBirth: regDob || undefined,
         gender: regGender,
         nationality: registerForSelf ? prof?.nationality : undefined,
@@ -845,6 +852,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         idType: cleanId ? regIdType : 'none',
         idNumber: cleanId || undefined,
         phone: regPhone.trim() || undefined,
+        email: regEmail.trim().toLowerCase() || undefined,
         preferredShirtSize: shirtSize,
         emergencyContactName: emergencyName.trim() || undefined,
         emergencyContactRelation: emergencyRelation.trim() || undefined,
@@ -1225,6 +1233,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       dob: [regDob, setRegDob],
       gender: [regGender, setRegGender],
       phone: [regPhone, setRegPhone],
+      email: [regEmail, setRegEmail],
       idType: [regIdType === 'passport' ? 'passport' : 'thai_id', setRegIdType],
       idNumber: [regIdNumber, setRegIdNumber],
       emergencyName: [
