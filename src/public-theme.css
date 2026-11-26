@@ -87,27 +87,6 @@
   transform: scaleX(1);
 }
 
-/* TH / EN: the active language is a mint pill */
-.app-root:is(.is-public, .is-backoffice) .lang-switch button {
-  min-height: 2rem;
-  padding: 0.2rem 0.7rem;
-  border-radius: 999px;
-  color: var(--kr-slate);
-  font-family: var(--font-body);
-  font-size: 0.8125rem;
-  font-weight: 700;
-}
-
-.app-root:is(.is-public, .is-backoffice) .lang-switch button + button {
-  border-left: 0;
-  border-radius: 999px;
-}
-
-.app-root:is(.is-public, .is-backoffice) .lang-switch button[aria-pressed='true'] {
-  background: var(--kr-mint);
-  text-decoration: none;
-}
-
 .app-root:is(.is-public, .is-backoffice) .topbar-user-actions > .btn-primary {
   min-height: 2.5rem;
   padding: 0.45rem 1.35rem;
@@ -2569,29 +2548,6 @@
 
 .app-root .global-topbar .surface-switch-btn svg {
   color: currentColor;
-}
-
-/* TH / EN and the globe */
-.app-root .global-topbar .lang-switch svg,
-.app-root .global-topbar .lang-switch button {
-  color: rgba(255, 255, 255, 0.82);
-}
-
-.app-root .global-topbar .lang-switch button + button {
-  border-left-color: rgba(255, 255, 255, 0.3);
-}
-
-.app-root .global-topbar .lang-switch button:hover {
-  color: #ffffff;
-}
-
-.app-root .global-topbar .lang-switch button[aria-pressed='true'] {
-  color: #ffffff;
-}
-
-.app-root.is-public .global-topbar .lang-switch button[aria-pressed='true'] {
-  background: var(--mint);
-  color: var(--brand);
 }
 
 /* sign-in button: white pill on the slate bar */

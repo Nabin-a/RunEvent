@@ -121,27 +121,23 @@
 }
 
 /* ---------- calendar ---------- */
-/* the timeline scrolls sideways; each day is one cell (min 14px), names stay put */
-.oe-cal-scroll {
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: thin;
-}
-
+/* the whole range fits the box; the date grid gets coarser as days get narrower:
+   is-day (day cells + dates), is-week (week lines + dates), is-month (month names only) */
 .oe-cal {
   position: relative;
-  min-width: calc(9.5rem + var(--oe-days, 120) * 14px);
   padding: 2.6rem 0 1.3rem;
 }
 
-.oe-cal-corner {
-  position: sticky;
-  left: 0;
-  z-index: 4;
-  width: 9.5rem;
-  height: 2.6rem;
-  margin-top: -2.6rem;
-  background: var(--bg-surface);
+.oe-cal.is-month {
+  padding-top: 1.4rem;
+}
+
+.oe-cal-week {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--line-light);
 }
 
 .oe-cal-days {
@@ -159,7 +155,8 @@
   font-size: 0.6875rem;
   line-height: 1.1rem;
   color: var(--ink-secondary);
-  text-align: center;
+  white-space: nowrap;
+  transform: translateX(-50%);
   font-variant-numeric: tabular-nums;
 }
 
@@ -197,10 +194,12 @@
   left: 9.5rem;
   right: 0;
   pointer-events: none;
-  /* a faint line between days */
+}
+
+/* a faint line between days, only when days have room */
+.oe-cal.is-day .oe-cal-overlay {
   background-image: linear-gradient(to right, var(--line-light) 1px, transparent 1px);
   background-size: calc(100% / var(--oe-days, 120)) 100%;
-  opacity: 0.9;
 }
 
 .oe-cal-grid,
@@ -479,14 +478,6 @@
   .oe-cal-days,
   .oe-cal-overlay {
     left: 6.5rem;
-  }
-
-  .oe-cal {
-    min-width: calc(6.5rem + var(--oe-days, 120) * 14px);
-  }
-
-  .oe-cal-corner {
-    width: 6.5rem;
   }
 
   .oe-search {

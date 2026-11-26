@@ -129,12 +129,6 @@
   border-bottom-color: var(--line-green);
 }
 
-:root[data-theme='line'] .app-root .global-topbar .lang-switch button[aria-pressed='true'],
-:root[data-theme='line'] .app-root.is-public .global-topbar .lang-switch button[aria-pressed='true'] {
-  background: var(--line-green);
-  color: #000000;
-}
-
 :root[data-theme='line'] .app-root .global-topbar .topbar-user-actions > .btn-primary {
   border-color: var(--line-green);
   background: var(--line-green);
@@ -283,16 +277,33 @@
   }
 }
 
-.mobile-theme-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
+/* TH / EN slide switch in the LINE theme: black track, dark knob, green label */
+:root[data-theme='line'] .lang-slide {
+  background: #050505;
+  box-shadow:
+    inset 0 3px 8px rgba(0, 0, 0, 0.8),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.06),
+    0 0 0 2px rgba(6, 199, 85, 0.35);
 }
 
-:root[data-theme='line'] .mobile-lang-pill.active {
-  border-color: var(--line-green);
-  background: var(--line-green);
-  color: #000000;
+:root[data-theme='line'] .lang-slide-knob {
+  background: linear-gradient(to bottom, #2a2a2a, #121212);
+  box-shadow:
+    0 3px 9px rgba(0, 0, 0, 0.7),
+    inset 1px 1px rgba(255, 255, 255, 0.12),
+    inset -1px 1px rgba(255, 255, 255, 0.12);
+}
+
+:root[data-theme='line'] .lang-slide button {
+  color: #8a8a8a;
+}
+
+:root[data-theme='line'] .lang-slide button:hover {
+  color: #ffffff;
+}
+
+:root[data-theme='line'] .lang-slide button[aria-pressed='true'] {
+  color: var(--line-green);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -4514,54 +4514,79 @@ textarea::placeholder {
 }
 
 /* Header · TH/EN language switch */
-.lang-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 0;
-  padding: 0;
-  border: none;
-  background: none;
+/* TH / EN slide switch (26 Nov 2026): a raised round knob in a sunken pill track,
+   same slate as the round theme switch; the knob glides to the chosen language */
+.lang-slide {
+  --ls-h: 2.25rem;
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
   flex-shrink: 0;
+  width: calc(var(--ls-h) * 2);
+  height: var(--ls-h);
+  border-radius: 999px;
+  background: #24384c;
+  box-shadow:
+    inset 0 3px 8px rgba(0, 0, 0, 0.45),
+    inset 0 2px 2px rgba(0, 0, 0, 0.3),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.08);
+  transition: box-shadow 0.5s;
 }
 
-.lang-switch svg {
-  color: var(--ink-secondary);
-  margin: 0 0.15rem 0 0.3rem;
+.lang-slide-knob {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--ls-h);
+  height: var(--ls-h);
+  border-radius: 50%;
+  background: linear-gradient(to bottom, #5c7590, #2f4459);
+  box-shadow:
+    0 3px 9px rgba(0, 0, 0, 0.5),
+    inset 1px 1px rgba(255, 255, 255, 0.2),
+    inset -1px 1px rgba(255, 255, 255, 0.2);
+  transform: scale(0.88);
+  transition: transform 0.5s, background 0.5s, box-shadow 0.5s;
+  pointer-events: none;
 }
 
-.lang-switch button {
-  border: none;
-  background: transparent;
-  color: var(--ink-secondary);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 0.22rem 0.45rem;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  min-height: 1.75rem;
+.lang-slide[data-lang='en'] .lang-slide-knob {
+  transform: translateX(100%) scale(0.88);
 }
 
-.lang-switch button + button {
-  border-left: 1px solid var(--line-medium);
-  border-radius: 0;
-}
-
-.lang-switch button:hover {
-  color: var(--ink-primary);
-}
-
-.lang-switch button[aria-pressed='true'] {
+.lang-slide button {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
   background: none;
-  color: var(--ink-primary);
-  text-decoration: underline;
-  text-decoration-thickness: 2px;
-  text-underline-offset: 0.3em;
+  color: #8fa3b8;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: color 0.5s;
 }
 
-.lang-switch button:focus-visible {
-  outline: 2px solid var(--vermilion);
-  outline-offset: 1px;
+.lang-slide button:hover {
+  color: #ffffff;
+}
+
+.lang-slide button[aria-pressed='true'] {
+  color: #ffffff;
+}
+
+.lang-slide button:focus-visible {
+  outline: none;
+}
+
+.lang-slide:has(button:focus-visible) {
+  outline: 2px solid var(--mint);
+  outline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -4594,7 +4619,7 @@ textarea::placeholder {
   }
 
   .global-surface-nav,
-  .topbar-user-actions > .lang-switch {
+  .topbar-user-actions > .lang-slide {
     display: none;
   }
 
@@ -4729,30 +4754,6 @@ textarea::placeholder {
     padding-top: 0.55rem;
     border-top: 1px solid var(--line-light);
     font-size: 0.8125rem;
-  }
-
-  .mobile-drawer-lang {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-
-  .mobile-lang-pill {
-    padding: 0.24rem 0.58rem;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--line-medium);
-    background: var(--bg-subtle);
-    color: var(--ink-secondary);
-    font-family: var(--font-body);
-    font-size: 0.75rem;
-    font-weight: 700;
-    cursor: pointer;
-  }
-
-  .mobile-lang-pill.active {
-    background: var(--shell-navy);
-    border-color: var(--shell-navy);
-    color: var(--on-accent);
   }
 
   .mobile-drawer-logout-btn {

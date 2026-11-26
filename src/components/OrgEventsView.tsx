@@ -189,18 +189,26 @@ export const OrgEventsView: React.FC<Props> = ({
     }
     return { rows, start, end, months, dayCount, dayLabels };
   }, [events, today]);
-  // start the scrolled timeline with today in view
+  // the whole range always fits the box (26 Nov 2026, user pick "ก"); how fine the date grid
+  // is depends on the room per day: day cells, week lines, or month names only
   const calScrollRef = useRef<HTMLDivElement | null>(null);
+  const [laneWidth, setLaneWidth] = useState(0);
   useEffect(() => {
     const el = calScrollRef.current;
-    if (!el || !cal) return;
-    const inner = el.firstElementChild as HTMLElement | null;
-    if (!inner) return;
-    const nameCol = el.clientWidth < 600 ? 104 : 152;
-    const x = nameCol + ((inner.scrollWidth - nameCol) * pct(today)) / 100;
-    el.scrollLeft = Math.max(0, x - el.clientWidth / 2);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const measure = () => {
+      const lane = el.querySelector('.oe-cal-lane') as HTMLElement | null;
+      setLaneWidth(lane?.clientWidth ?? 0);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [cal?.start, cal?.end]);
+  const pxPerDay = cal && laneWidth ? laneWidth / cal.dayCount : 0;
+  const density: 'day' | 'week' | 'month' = pxPerDay >= 10 ? 'day' : pxPerDay * 7 >= 22 ? 'week' : 'month';
+  // in the week view the 29th sits 2-3 days before the next 1st, too close to read; drop it
+  const dayMarks = !cal ? [] : density === 'day' ? cal.dayLabels : cal.dayLabels.filter((t) => new Date(t).getUTCDate() !== 29);
   const pct = (ms: number) => (cal ? ((ms - cal.start) / (cal.end - cal.start)) * 100 : 0);
 
   /* ---------- list ---------- */
@@ -358,7 +366,7 @@ export const OrgEventsView: React.FC<Props> = ({
           </div>
           <div className="oe-cal-scroll" ref={calScrollRef}>
           <div
-            className="oe-cal"
+            className={`oe-cal is-${density}`}
             style={{ ['--oe-days' as string]: cal.dayCount }}
             role="img"
             aria-label={cal.rows
@@ -368,8 +376,6 @@ export const OrgEventsView: React.FC<Props> = ({
                 : txf('{0} ยังไม่ตั้งช่วงรับสมัคร วันงาน {1}', r.ev.titleTh, fmtDate(r.race))
             )
             .join('; ')}>
-            {/* covers the dates scrolled under the name column */}
-            <div className="oe-cal-corner" aria-hidden="true" />
             <div className="oe-cal-months" aria-hidden="true">
               {cal.months.map((m) => (
                 <span key={m} style={{ left: `${pct(m)}%` }}>
@@ -377,22 +383,26 @@ export const OrgEventsView: React.FC<Props> = ({
                 </span>
               ))}
             </div>
+            {density !== 'month' && (
             <div className="oe-cal-days" aria-hidden="true">
-              {cal.dayLabels.map((t) => (
+              {dayMarks.map((t) => (
                 <span
                   key={t}
                   className={t === today ? 'is-today' : undefined}
-                  style={{ left: `${pct(t)}%`, width: `${pct(cal.start + DAY)}%` }}
+                  style={{ left: `${pct(t + DAY / 2)}%` }}
                 >
                   {new Date(t).getUTCDate()}
                 </span>
               ))}
             </div>
+            )}
             <div className="oe-cal-body">
               <div className="oe-cal-overlay" aria-hidden="true">
                 {cal.months.map((m) => (
                   <i key={m} className="oe-cal-grid" style={{ left: `${pct(m)}%` }} />
                 ))}
+                {density === 'week' &&
+                  dayMarks.map((t) => <i key={`w${t}`} className="oe-cal-week" style={{ left: `${pct(t)}%` }} />)}
                 <i className="oe-cal-today" style={{ left: `${pct(today)}%` }}>
                   <span>{tx('วันนี้')}</span>
                 </i>

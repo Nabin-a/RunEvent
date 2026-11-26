@@ -95,7 +95,6 @@ import {
   IconLock,
   IconMenu,
   IconShield,
-  IconMoon,
   IconHistory,
   IconSunMoon,
   IconSliders,
@@ -114,6 +113,8 @@ import {
 
 import { tx, txf, useI18n } from './i18n';
 import { apiRequest } from './api/client';
+import { LangSwitch } from './components/LangSwitch';
+
 type RootSurface =
   | 'customer'
   | 'organizer'
@@ -3381,28 +3382,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
           </nav>
 
           <div className="topbar-user-actions">
-            <div
-              className="lang-switch"
-              role="group"
-              aria-label={lang === 'th' ? 'เลือกภาษา' : 'Choose language'}
-            >
-              <button
-                type="button"
-                aria-pressed={lang === 'th'}
-                lang="th"
-                onClick={() => setLang('th')}
-              >
-                TH
-              </button>
-              <button
-                type="button"
-                aria-pressed={lang === 'en'}
-                lang="en"
-                onClick={() => setLang('en')}
-              >
-                EN
-              </button>
-            </div>
+            <LangSwitch lang={lang} setLang={setLang} />
             <button
               type="button"
               className="theme-switch"
@@ -3728,39 +3708,17 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                 </nav>
 
                 <div className="mobile-drawer-footer">
-                  <div
-                    className="mobile-drawer-lang"
-                    role="group"
-                    aria-label={lang === 'th' ? 'เลือกภาษา' : 'Choose language'}
-                  >
-                    <span className="muted-inline">{tx("ภาษา:")}</span>
-                    <button
-                      type="button"
-                      className={`mobile-lang-pill ${lang === 'th' ? 'active' : ''}`}
-                      aria-pressed={lang === 'th'}
-                      lang="th"
-                      onClick={() => setLang('th')}
-                    >
-                      TH
-                    </button>
-                    <button
-                      type="button"
-                      className={`mobile-lang-pill ${lang === 'en' ? 'active' : ''}`}
-                      aria-pressed={lang === 'en'}
-                      lang="en"
-                      onClick={() => setLang('en')}
-                    >
-                      EN
-                    </button>
-                  </div>
+                  <LangSwitch lang={lang} setLang={setLang} />
+                  {/* same round switch as the desktop bar (26 Nov 2026, user request) */}
                   <button
                     type="button"
-                    className={`mobile-lang-pill mobile-theme-pill ${theme === 'line' ? 'active' : ''}`}
+                    className="theme-switch"
                     aria-pressed={theme === 'line'}
                     onClick={toggleTheme}
+                    title={tx('ธีม LINE (โหมดมืด สีเขียว)')}
+                    aria-label={tx('ธีม LINE')}
                   >
-                    <IconMoon size={14} />
-                    <span>{tx('ธีม LINE')}</span>
+                    <IconSunMoon size={15} />
                   </button>
 
                   {currentUser ? (
