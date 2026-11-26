@@ -266,7 +266,7 @@ export function EventDataPieceView({ item, ctx, preview }: { item: EventPageItem
             {list.map((p) => (
               <li key={p.id}>
                 <button type="button" className="data-product" onClick={() => ctx.onOpenStore(p.id)}>
-                  <ProductArt kind={souvenirArt(p.categoryLabel, p.nameTh)} className="data-product-art" />
+                  <ProductArt categoryLabel={p.categoryLabel} name={p.nameTh} kind={souvenirArt(p.categoryLabel, p.nameTh)} className="data-product-art" />
                   <span className="data-product-name">{tx(p.nameTh)}</span>
                   <strong className="mono-num">{formatThb(p.priceSatang)}</strong>
                 </button>

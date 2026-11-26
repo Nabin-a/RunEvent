@@ -339,7 +339,7 @@ export function RegistrationFormEditor({
     { key: 'start', label: tx('เริ่ม'), kind: 'locked' },
     { key: CORE_STEP, label: tx('ข้อมูล'), kind: 'core' },
     ...ownSteps.map((st) => ({ key: st.id, label: st.title || tx('ขั้นของคุณ'), kind: 'own' as const, hidden: st.hidden })),
-    { key: 'shop', label: tx('สินค้า'), kind: 'locked' },
+    { key: 'shop', label: tx('เสื้อที่ระลึก'), kind: 'locked' },
     ...(hasSouvenirs ? [{ key: 'souvenir', label: tx('ของที่ระลึก'), kind: 'locked' as const }] : []),
     { key: 'address', label: tx('ที่อยู่'), kind: 'locked' },
     { key: 'review', label: tx('สรุป'), kind: 'locked' },
@@ -809,7 +809,7 @@ function LockedBody({ stepKey, event }: { stepKey: string; event: RaceEvent }) {
     souvenir: ['ของที่ระลึก (ซื้อเพิ่มได้)', 'สินค้าของงาน จากเมนู "ร้านค้าของงาน"'],
     address: ['ที่อยู่และการรับอุปกรณ์', 'รับที่งานหรือจัดส่ง ตามที่ตั้งไว้ในเมนู "เสื้อและของที่ได้รับ"'],
     review: ['ตรวจสอบข้อมูลก่อนชำระ', 'สรุปข้อมูลผู้สมัคร รวมคำตอบของคำถามที่คุณตั้ง และยอมรับกติกา'],
-    pay: ['ชำระเงิน', 'ชำระเงินผ่านระบบ (ในต้นแบบเป็นการจำลอง)'],
+    pay: ['ชำระเงิน', 'ชำระเงินผ่านระบบ'],
   };
   const [title, note] = head[stepKey] ?? ['', ''];
   return (

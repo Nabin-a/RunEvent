@@ -1,5 +1,5 @@
-import { tx, txf } from '../i18n';
-import { NoteTag, SeatTag } from './RegTags';
+import { tx } from '../i18n';
+import { SeatTag } from './RegTags';
 import { ProductArt, type ProductArtKind } from './ProductArt';
 
 /**
@@ -63,7 +63,7 @@ export function ProductPicker({
           )}
         </div>
         <figcaption>
-          {current.art ? txf('ภาพตัวอย่าง · {0}', tx(current.name)) : tx(current.name)}
+          {tx(current.name)}
         </figcaption>
       </figure>
 
@@ -111,12 +111,6 @@ export function ProductPicker({
                 );
               })}
             </div>
-            {current.demo && (
-              <p className="pp-demo-note">
-                <NoteTag>{tx('ข้อมูลจำลอง')}</NoteTag>
-                <span>{tx('ทรงนี้ยังเป็นข้อมูลตัวอย่าง ระบบบันทึกเฉพาะไซส์ที่เลือก')}</span>
-              </p>
-            )}
           </fieldset>
         ) : (
           emptyNote && <p className="pp-empty-note">{tx(emptyNote)}</p>

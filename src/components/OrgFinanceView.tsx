@@ -292,7 +292,7 @@ export const OrgFinanceView: React.FC<Props> = ({
           </table>
         )}
       </section>
-      <p className="fin-sub">{tx('ข้อมูลในระบบนี้เป็นข้อมูลจำลอง ไม่มีการโอนเงินจริง')}</p>
+      <p className="fin-sub">{tx('ระบบนี้ยังไม่มีการโอนเงินจริง')}</p>
     </div>
   );
 };

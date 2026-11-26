@@ -727,7 +727,7 @@ const SAMPLE_EVENT_COVERS: Record<string, string> = {
   'evt-oldmoat-2026': '/event-covers/evt-oldmoat-2026.webp',
   'evt-maerim-suspended': '/event-covers/evt-maerim-suspended.webp',
 };
-const SAMPLE_COVER_ALT = 'ภาพแบนเนอร์ตัวอย่างประกอบงานวิ่ง';
+const SAMPLE_COVER_ALT = 'ภาพแบนเนอร์ประกอบงานวิ่ง';
 
 export function seedDatabase(forceReset = false): void {
   initSchema();
@@ -916,6 +916,34 @@ export function seedDatabase(forceReset = false): void {
         ),
       };
       db.prepare('UPDATE events SET detail_json = ? WHERE id = ?').run(JSON.stringify(next), row.id);
+    }
+    // Idempotent migration (26 Nov 2026, user rule: no "mock / sample" labels in the UI):
+    // strip the old seed labels such as " (ข้อมูลจำลอง)" from every text column that holds them.
+    const MOCK_LABELS: [string, string][] = [
+      [' (ข้อมูลจำลอง)', ''],
+      [' (บัญชีนิติบุคคลจำลอง)', ''],
+      [' (จำลองโมเดลบริการครบ)', ''],
+      [' (จำลองบริการครบ)', ''],
+      [' (จำลองสถานะระงับรับสมัครชั่วคราวเพื่อรอเอกสารอนุญาตพื้นที่)', ''],
+      ['ตัวอย่างการแสดงสถานะงานที่ระงับชั่วคราวโดยไม่ลบประวัติใบสมัครและธุรกรรมเดิม', 'ระงับรับสมัครชั่วคราวโดยไม่ลบประวัติใบสมัครและธุรกรรมเดิม'],
+      ['ทีมช่างภาพจำลอง ', 'ทีมช่างภาพ '],
+      ['ภาพแบนเนอร์ตัวอย่างประกอบงานวิ่ง', 'ภาพแบนเนอร์ประกอบงานวิ่ง'],
+      ['ผู้ติดต่อฉุกเฉินจำลอง ', 'ผู้ติดต่อฉุกเฉิน '],
+      ['เข้าสู่ระบบแบบจำลอง (Sandbox)', 'เข้าสู่ระบบ'],
+      ['ชมรมวิ่งเช้าสวนลุมฯ (ตัวอย่าง)', 'ชมรมวิ่งเช้าสวนลุมฯ'],
+      [' (จำลอง)', ''],
+    ];
+    const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[]).map((t) => t.name);
+    // audit logs and people's review comments are history as written; they are not rewritten
+    for (const table of tables.filter((t) => t !== 'audit_logs' && t !== 'review_comments' && t !== 'auth_sessions')) {
+      const cols = (db.prepare(`PRAGMA table_info("${table}")`).all() as { name: string; type: string }[])
+        .filter((c) => /TEXT/i.test(c.type))
+        .map((c) => c.name);
+      for (const col of cols) {
+        for (const [from, to] of MOCK_LABELS) {
+          db.prepare(`UPDATE "${table}" SET "${col}" = REPLACE("${col}", ?, ?) WHERE instr("${col}", ?) > 0`).run(from, to, from);
+        }
+      }
     }
     const reg07Row = db
       .prepare("SELECT detail_json FROM registrations WHERE id = 'reg-07'")

@@ -320,7 +320,7 @@ export function StorefrontView({
                   return (
                     <li key={`${l.productId}-${l.size}`} className="sf-cart-line">
                       <div className="sf-cart-art" aria-hidden="true">
-                        <ProductArt kind={souvenirArt(l.prd.categoryLabel, l.prd.nameTh)} className="sf-art-svg" />
+                        <ProductArt categoryLabel={l.prd.categoryLabel} name={l.prd.nameTh} kind={souvenirArt(l.prd.categoryLabel, l.prd.nameTh)} className="sf-art-svg" />
                       </div>
                       <div className="sf-cart-copy">
                         <strong>{tx(l.prd.nameTh)}</strong>
@@ -568,6 +568,7 @@ export function StorefrontView({
       <header className="sf-head">
         <div>
           <h2>{tx('ร้านค้าของที่ระลึก')}</h2>
+          <p className="muted-block">{tx('ภาพตัวอย่างประจำหมวดสินค้า กรุณาดูรายละเอียดของแต่ละรายการ')}</p>
           <p className="muted-block">
             {tx('ซื้อได้โดยไม่ต้องสมัครวิ่ง แต่ละรายการระบุผู้ขาย ผู้รับเงิน และผู้ส่งมอบ')}
             {linkedRegistrationCode && (
@@ -617,9 +618,8 @@ export function StorefrontView({
                 <article key={p.id} className={`sf-card ${left <= 0 ? 'is-out' : ''}`}>
                   <button type="button" className="sf-card-hit" onClick={() => setDetailId(p.id)}>
                     <div className="sf-card-art">
-                      <ProductArt kind={souvenirArt(p.categoryLabel, p.nameTh)} className="sf-art-svg" />
+                      <ProductArt categoryLabel={p.categoryLabel} name={p.nameTh} kind={souvenirArt(p.categoryLabel, p.nameTh)} className="sf-art-svg" />
                       <span className={`sf-badge ${left <= 0 ? 'is-out' : ''}`}>{badge}</span>
-                      <span className="sf-sample">{tx('ภาพตัวอย่าง')}</span>
                     </div>
                     <div className="sf-card-body">
                       <span className="muted-inline">{tx(p.categoryLabel)}</span>
@@ -699,8 +699,7 @@ function ProductDialog({
           <IconClose size={18} />
         </button>
         <div className="sf-dialog-art">
-          <ProductArt kind={souvenirArt(p.categoryLabel, p.nameTh)} className="sf-art-svg" />
-          <span className="sf-sample">{tx('ภาพตัวอย่าง ไม่ใช่สินค้าจริง')}</span>
+          <ProductArt categoryLabel={p.categoryLabel} name={p.nameTh} kind={souvenirArt(p.categoryLabel, p.nameTh)} className="sf-art-svg" />
         </div>
         <div className="sf-dialog-body">
           <span className="muted-inline">{tx(p.categoryLabel)}</span>

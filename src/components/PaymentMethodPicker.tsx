@@ -39,7 +39,7 @@ export function PaymentMethodPicker({
 
   return (
     <fieldset className="pay-methods" disabled={disabled}>
-      <legend>{tx('เลือกช่องทางชำระเงิน (จำลอง)')}</legend>
+      <legend>{tx('เลือกช่องทางชำระเงิน')}</legend>
       {SHOWN.map(({ id, title, sub, Icon }) => (
         <label key={id} className={`pay-method ${value === id ? 'is-selected' : ''}`}>
           <input type="radio" name={name} checked={value === id} onChange={() => onChange(id)} />

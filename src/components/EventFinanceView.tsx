@@ -424,7 +424,7 @@ export const EventFinanceView: React.FC<Props> = ({
           </button>
         )}
       </section>
-      <p className="fin-sub">{tx('ข้อมูลในระบบนี้เป็นข้อมูลจำลอง ไม่มีการตัดเงินหรือคืนเงินจริง')}</p>
+      <p className="fin-sub">{tx('ระบบนี้ยังไม่มีการตัดเงินหรือคืนเงินจริง')}</p>
     </div>
   );
 };

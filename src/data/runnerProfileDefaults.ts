@@ -362,7 +362,9 @@ export type PersonalInfoCompletionKey =
   | 'phone'
   | 'email'
   | 'identity'
-  | 'address';
+  | 'address'
+  | 'emergency_contact'
+  | 'shipping_address';
 
 export interface PersonalInfoCompletionItem {
   key: PersonalInfoCompletionKey;
@@ -372,10 +374,14 @@ export interface PersonalInfoCompletionItem {
   /** CSS selector of the field to focus inside the "ข้อมูลส่วนตัว" tab. */
   /** CSS selector of the field to focus; "a|b" tries a first, then b (e.g. when a is hidden). */
   focusSelector: string;
+  /** profile menu that holds the item when it is not on the personal tab */
+  tab?: 'emergency' | 'addresses';
 }
 
 export interface PersonalInfoCompletionSummary {
   pct: number;
+  /** red / amber / green band of the percentage */
+  tone: CompletionTone;
   completedCount: number;
   total: number;
   isComplete: boolean;
@@ -385,13 +391,17 @@ export interface PersonalInfoCompletionSummary {
 const hasText = (v: string | null | undefined): boolean => Boolean(v && v.trim());
 
 /**
- * Profile completion measured only from the saved fields that live in the
- * "ข้อมูลส่วนตัว" (personal) tab of the Runner Profile. Emergency contacts,
- * saved shipping addresses, and running preferences are intentionally excluded.
- * Optional fields (avatar, nicknames) are not counted.
+ * Profile completion (25 Nov 2026, user request): the nine saved fields of the
+ * "ข้อมูลส่วนตัว" (personal) tab, plus at least one emergency contact and at least one
+ * saved shipping address (11 items). Optional fields (avatar, nicknames) are not counted.
  */
 /** Most emergency contacts one runner profile may keep (checked in the UI and by the API). */
-export const MAX_EMERGENCY_CONTACTS = 5;
+/**
+ * Most emergency contacts one runner profile may keep (checked in the UI and by the API).
+ * 10 since 25 Nov 2026 (user request); the number is not shown on the page, only a message
+ * when someone tries to add one more.
+ */
+export const MAX_EMERGENCY_CONTACTS = 10;
 
 export function evaluatePersonalInfoCompletion(
   user: UserAccount
@@ -477,18 +487,44 @@ export function evaluatePersonalInfoCompletion(
         hasText(p.province),
       focusSelector: '#rp-res-addr',
     },
+    {
+      key: 'shipping_address',
+      labelTh: 'ที่อยู่จัดส่ง',
+      complete: (p.savedAddresses ?? []).length > 0,
+      focusSelector: '',
+      tab: 'addresses',
+    },
+    {
+      key: 'emergency_contact',
+      labelTh: 'ผู้ติดต่อฉุกเฉิน',
+      complete:
+        (p.emergencyContacts ?? []).length > 0 ||
+        (hasText(p.emergencyContactName) && hasText(p.emergencyContactPhone)),
+      focusSelector: '',
+      tab: 'emergency',
+    },
   ];
 
   const completedCount = items.filter((i) => i.complete).length;
   const total = items.length;
+  const pct = Math.round((completedCount / total) * 100);
   return {
-    pct: Math.round((completedCount / total) * 100),
+    pct,
     completedCount,
     total,
     isComplete: completedCount === total,
+    tone: completionTone(pct),
     items,
   };
 }
+
+/**
+ * Colour of the completion ring (25 Nov 2026, user request): red under 50 %, amber from
+ * 50 % up to 84 %, green from 85 % (10 of 11 items) up.
+ */
+export type CompletionTone = 'low' | 'mid' | 'high';
+export const completionTone = (pct: number): CompletionTone =>
+  pct >= 85 ? 'high' : pct >= 50 ? 'mid' : 'low';
 
 export function deriveProviderSocialHandle(
   provider: 'facebook' | 'line',

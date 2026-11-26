@@ -264,19 +264,13 @@ export const AccountSecuritySections: React.FC<AccountSecuritySectionsProps> = (
                     maxLength={6}
                     value={pwOtp}
                     onChange={(e) => setPwOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    aria-describedby="acct-pw-sandbox"
                     autoFocus
                   />
                   <button type="submit" className="btn-primary" disabled={pwBusy}>
                     {tx('ยืนยันรหัส')}
                   </button>
                 </div>
-                <p id="acct-pw-sandbox" className="acct-sandbox-note">
-                  <IconAlert size={15} />
-                  <span>
-                    {tx('โหมดทดสอบ (Sandbox): ระบบยังไม่ส่งอีเมลจริง ใช้รหัส 123456')}
-                  </span>
-                </p>
+                
                 <div>
                   <button
                     type="button"

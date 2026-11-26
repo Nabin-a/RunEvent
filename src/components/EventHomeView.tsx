@@ -752,7 +752,7 @@ export const EventHomeView: React.FC<Props> = ({
       <ShirtsBySize event={event} onOpen={() => onNavigate('evt_kit')} />
 
       <p className="eh-note">
-        {tx('ข้อมูลในระบบนี้เป็นข้อมูลจำลอง')} · {txf('ยอดเงินคิดตาม: {0}', tx(WINDOW_LABEL[timeWindow]))}
+        {txf('ยอดเงินคิดตาม: {0}', tx(WINDOW_LABEL[timeWindow]))}
       </p>
     </div>
   );

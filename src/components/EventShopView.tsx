@@ -449,7 +449,6 @@ export const EventShopView: React.FC<Props> = ({ event, orders, canEdit, canView
           </button>
         )}
       </section>
-      <p className="sh-sub">{tx('ข้อมูลในระบบนี้เป็นข้อมูลจำลอง')}</p>
     </div>
   );
 };

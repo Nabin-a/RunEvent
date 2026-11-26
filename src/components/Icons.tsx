@@ -209,6 +209,15 @@ export const IconCopy: React.FC<IconProps> = ({ size, className }) => (
   </svg>
 );
 
+/** history: a clock with a backwards arrow (account menu "ประวัติการสมัคร & การสั่งซื้อ", 25 Nov 2026) */
+export const IconHistory: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" />
+    <path d="M3.5 4.5V9H8" />
+    <path d="M12 7.5V12l3 2" />
+  </svg>
+);
+
 export const IconBag: React.FC<IconProps> = ({ size, className }) => (
   <svg {...baseProps(size, className)}>
     <path d="M6 7h12l1 13H5L6 7Z" />

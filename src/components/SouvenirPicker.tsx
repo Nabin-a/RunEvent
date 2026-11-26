@@ -26,14 +26,16 @@ export function SouvenirPicker({
   value: CartLine[];
   onChange: (next: CartLine[]) => void;
 }) {
-  const categories = useMemo(() => [...new Set(products.map((p) => p.categoryLabel))], [products]);
+  // sold-out items are hidden (26 Nov 2026, user request); `products` still prices lines already in the cart
+  const onSale = useMemo(() => products.filter((p) => p.stockOrCeiling - p.soldCount > 0), [products]);
+  const categories = useMemo(() => [...new Set(onSale.map((p) => p.categoryLabel))], [onSale]);
   const [filter, setFilter] = useState<string>(ALL);
   const [page, setPage] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   // size being edited on each card
   const [sizeOf, setSizeOf] = useState<Record<string, string>>({});
 
-  const filtered = filter === ALL ? products : products.filter((p) => p.categoryLabel === filter);
+  const filtered = filter === ALL ? onSale : onSale.filter((p) => p.categoryLabel === filter);
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageNow = Math.min(page, pageCount - 1);
   const shown = filtered.slice(pageNow * PAGE_SIZE, pageNow * PAGE_SIZE + PAGE_SIZE);
@@ -135,6 +137,7 @@ export function SouvenirPicker({
 
   return (
     <div className="sv">
+      <p className="muted-block">{tx('ภาพตัวอย่างประจำหมวดสินค้า กรุณาดูรายละเอียดของแต่ละรายการ')}</p>
       <div className="sf-filters" role="group" aria-label={tx('ประเภทของที่ระลึก')}>
         {[ALL, ...categories].map((c) => (
           <button
@@ -149,12 +152,11 @@ export function SouvenirPicker({
           >
             {c === ALL ? tx('ทั้งหมด') : tx(c)}{' '}
             <span className="mono-num sv-chip-count">
-              {c === ALL ? products.length : products.filter((p) => p.categoryLabel === c).length}
+              {c === ALL ? onSale.length : onSale.filter((p) => p.categoryLabel === c).length}
             </span>
           </button>
         ))}
       </div>
-      <p className="sv-note">{tx('ภาพประกอบเป็นภาพตัวอย่าง')}</p>
 
       {pager('top')}
 
@@ -170,7 +172,7 @@ export function SouvenirPicker({
             <article key={p.id} className={`sv-item ${totalOf(p.id) > 0 ? 'is-picked' : ''} ${out ? 'is-out' : ''}`}>
               <div className={`sv-main ${hasSizes ? '' : 'has-qty'}`}>
                 <div className="sv-art" aria-hidden="true">
-                  <ProductArt kind={souvenirArt(p.categoryLabel, p.nameTh)} className="sf-art-svg" />
+                  <ProductArt categoryLabel={p.categoryLabel} name={p.nameTh} kind={souvenirArt(p.categoryLabel, p.nameTh)} className="sf-art-svg" />
                 </div>
                 <div className="sv-copy">
                   <strong className="sv-name">{tx(p.nameTh)}</strong>

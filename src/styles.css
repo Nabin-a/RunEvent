@@ -728,20 +728,42 @@ textarea::placeholder {
   color: var(--status-icon);
 }
 
-/* Text-only statuses still get a non-text cue: a small leading mark. */
-.status-pill:not(:has(svg))::before {
-  content: '';
-  flex: none;
-  width: 0.4rem;
-  height: 0.4rem;
-  border-radius: 50%;
-  background: var(--status-icon);
+/* Text-only statuses: a soft tinted capsule instead of the leading dot
+   (26 Nov 2026, user request: no "●" marks anywhere in the project) */
+.status-pill:not(:has(svg)) {
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--status-icon) 13%, transparent);
+}
+
+/* neutral tags would be a grey that reads as disabled; give them the ink tint instead */
+.status-pill.badge-neutral:not(:has(svg)) {
+  background: color-mix(in srgb, var(--ink-secondary) 10%, transparent);
 }
 
 .status-pill > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Details (relationship, shirt size, …): icon + quiet text, no capsule. Capsules are kept
+   for statuses so those stand out (26 Nov 2026, user pick "แบบ จ. ผสม") */
+.meta-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+}
+
+.meta-tag > svg {
+  flex: none;
+  color: var(--ink-placeholder);
 }
 
 .badge-forest {
@@ -7172,6 +7194,107 @@ body.swal2-iosfix {
   }
 }
 
+/* Profile completion (25 Nov 2026, user request): one card that sits in the name card while
+   that card is on screen and in the sticky menu after it scrolls away; it shows the ring and
+   the percentage only. Colour bands: red < 50 %, amber 50–84 %, green >= 85 %. */
+.completion-ring.tone-low { color: var(--danger-ink); }
+.completion-ring.tone-low .completion-ring-fill { stroke: var(--danger); }
+.completion-ring.tone-mid { color: var(--amber-ink); }
+.completion-ring.tone-mid .completion-ring-fill { stroke: var(--amber); }
+.completion-ring.tone-high { color: var(--forest-ink); }
+.completion-ring.tone-high .completion-ring-fill { stroke: var(--forest); }
+
+.completion-nav-card {
+  animation: completion-card-in 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes completion-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+}
+
+.completion-nav-pct {
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.completion-nav-card.tone-low .completion-nav-pct { color: var(--danger-ink); }
+.completion-nav-card.tone-mid .completion-nav-pct { color: var(--amber-ink); }
+.completion-nav-card.tone-high .completion-nav-pct { color: var(--forest-ink); }
+
+/* in the name card: no menu divider, ring on the left of a short label, right-aligned */
+.completion-nav-card.is-hero {
+  width: auto;
+  margin: 0 0 0 auto;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+}
+
+.completion-nav-card.is-hero .completion-ring-pct {
+  font-size: 0.875rem;
+}
+
+/* the ring already shows the percentage on wide screens */
+@media (min-width: 67.51rem) {
+  .completion-nav-card .completion-nav-pct {
+    display: none;
+  }
+}
+
+@media (max-width: 67.5rem) {
+  /* in the name card on phones: a full-width slim row under the name */
+  .completion-nav-card.is-hero {
+    width: 100%;
+    margin: 0;
+    padding: 0.45rem 0.65rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .completion-nav-card.is-hero .completion-ring {
+    width: 1.5rem !important;
+    height: 1.5rem !important;
+  }
+
+  .completion-nav-card .completion-nav-pct {
+    margin-left: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .completion-nav-card {
+    animation: none;
+  }
+}
+
+/* Emergency contact rows: three lines (name + primary badge; relationship; phone · email) */
+.ec-row-info {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.ec-row-name {
+  font-size: 0.9375rem;
+  overflow-wrap: anywhere;
+}
+
+.ec-row-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 1rem;
+  overflow-wrap: anywhere;
+}
+
+.ec-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 /* PDPA privacy notice modal (sign-up) */
 .privacy-modal {
   width: min(44rem, 100%);
@@ -10993,6 +11116,22 @@ body.review-placing [data-review-ui] * {
   flex: none;
 }
 
+/* front photo of the shirt (26 Nov 2026) */
+.pg-hero-photo {
+  flex: none;
+  width: auto;
+  height: 11rem;
+  max-width: 55%;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+}
+
+.pg-stab-photo {
+  border-radius: 4px;
+  object-fit: cover;
+  object-position: center 30%;
+}
+
 .pg-hero figcaption {
   display: grid;
   justify-items: start;
@@ -11052,6 +11191,88 @@ body.review-placing [data-review-ui] * {
   border: 1.5px solid var(--navy-ink);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
+}
+
+/* tabs stay on top; after they scroll away the picked style is a sticky side tab joined to
+   the chart's left edge, text running down (26 Nov 2026, user request) */
+.pg-side-anchor {
+  position: sticky;
+  z-index: 3;
+  height: 0;
+}
+
+.pg-side-tab {
+  position: absolute;
+  top: 0;
+  right: calc(100% - 1.5px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  width: 2rem;
+  height: 7.25rem;
+  overflow: hidden;
+  padding: 0.55rem 0 0.7rem;
+  border: 1.5px solid var(--navy-ink);
+  border-right: 0;
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s var(--ease-clean);
+}
+
+.pg-side-tab.is-on {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.pg-side-tab:hover {
+  background: var(--bg-subtle);
+}
+
+.pg-side-tab:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.pg-side-tab-art {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.pg-side-tab-text {
+  writing-mode: vertical-rl;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pg-side-tab {
+    transition: none;
+  }
+}
+
+/* ชาย / หญิง / เด็ก */
+.pg-cuts {
+  margin-bottom: 0.85rem;
+}
+
+.pg-cut-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/* one style only (finisher shirt): no tabs, a plain panel */
+.pg-tabbed.is-single .pg-stab-panel {
+  border-color: var(--line);
 }
 
 .pg-stab,
@@ -11121,13 +11342,15 @@ body.review-placing [data-review-ui] * {
   font-weight: 700;
 }
 
-.pg-tab:focus-within,
-.pg-chip:focus-within {
+/* focus ring for the keyboard only: a mouse pick showed a second outline on top of the
+   selected-tab border (26 Nov 2026, user report) */
+.pg-tab:has(input:focus-visible),
+.pg-chip:has(input:focus-visible) {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
 
-.pg-stab:focus-within {
+.pg-stab:has(input:focus-visible) {
   outline: 2px solid var(--brand);
   outline-offset: -4px;
 }
@@ -11361,6 +11584,10 @@ body.review-placing [data-review-ui] * {
     height: 6.5rem;
   }
 
+  .pg-hero-photo {
+    height: 9rem;
+  }
+
   /* phones: the three tabs share the width, icon above the name, so none is cut off */
   .pg-stab-strip {
     gap: 0.2rem;
@@ -11458,6 +11685,238 @@ body:has(.app-root.is-public) {
 .reg-lab-addr-tabs,
 .reg-lab-book {
   margin-top: 1rem;
+}
+
+/* saved-address card: the edit button sits at the right edge, the copy takes the rest */
+.reg-lab-book .reg-radio-card-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.reg-lab-book-edit {
+  flex: none;
+  align-self: center;
+}
+
+/* name + primary/default tag on saved-item cards (26 Nov 2026, user request: stand out) */
+.reg-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.5rem;
+  min-width: 0;
+}
+
+.reg-primary-tag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: var(--forest);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.reg-primary-tag svg {
+  color: #fff;
+}
+
+/* "เสื้อแข่ง *" above the race shirt gallery */
+.reg-lab-shirt-h {
+  margin: 1rem 0 0.5rem;
+  font-size: 1rem;
+}
+
+/* saved-item picker: at most 5 cards, search + "ดูทั้งหมด" when the book is longer (25 Nov 2026) */
+.saved-picker-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.saved-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 16rem;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+}
+
+.saved-picker-search:focus-within {
+  border-color: var(--vermilion);
+  box-shadow: 0 0 0 1px var(--vermilion);
+}
+
+.saved-picker-search svg {
+  flex: none;
+}
+
+.saved-picker-search input {
+  flex: 1;
+  min-width: 0;
+  height: 2.6rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  box-shadow: none;
+}
+
+.saved-picker-search input:focus-visible {
+  outline: none;
+}
+
+.saved-picker-count {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+}
+
+.saved-picker-count + .reg-lab-book {
+  margin-top: 0.5rem;
+}
+
+.saved-all-dialog {
+  width: min(36rem, 100%);
+}
+
+.saved-all-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid var(--line-light);
+}
+
+.saved-all-sort {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.saved-all-list {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.saved-all-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.saved-all-row:hover {
+  border-color: var(--vermilion);
+  background: var(--bg-subtle);
+}
+
+.saved-all-row:focus-visible {
+  outline: 2px solid var(--vermilion);
+  outline-offset: 2px;
+}
+
+.saved-all-row.is-picked {
+  border-color: var(--vermilion);
+}
+
+.saved-all-row.is-picked .custom-radio-circle {
+  border-color: var(--vermilion);
+  background: var(--vermilion);
+}
+
+.saved-all-row-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.saved-all-row-copy > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.list-pager .btn-secondary {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  justify-content: center;
+}
+
+.list-pager-text {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* phones: the item range drops to its own line under "หน้า x / y" */
+@media (max-width: 480px) {
+  .list-pager-sep {
+    display: none;
+  }
+
+  .list-pager-range {
+    display: block;
+    font-size: 0.75rem;
+  }
+}
+
+/* inside the "ดูทั้งหมด" dialog the pager is the dialog's footer */
+.list-pager.saved-all-pager {
+  margin-top: 0;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--line-light);
+}
+
+/* profile lists: search above, pager below (25 Nov 2026) */
+.list-search-paged {
+  scroll-margin-top: calc(var(--topbar-height) + 1rem);
+}
+
+.list-search-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.list-search-tools .saved-picker-search {
+  flex: 0 1 22rem;
+}
+
+.list-search-count {
+  font-size: 0.8125rem;
 }
 
 /* =====================================================================
@@ -11993,6 +12452,17 @@ body:has(.app-root.is-public) {
 .sf-art-svg {
   width: 52%;
   height: 52%;
+}
+
+.product-preview-image {
+  display: block;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.sf-art-svg.product-preview-image {
+  width: 88%;
+  height: 88%;
 }
 
 .sf-badge {

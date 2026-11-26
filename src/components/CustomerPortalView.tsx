@@ -251,7 +251,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   ]
     .filter(Boolean)
     .join(' ');
-  const [shirtSize, setShirtSize] = useState<ShirtSizeCode>('M');
+  // no size is picked for the runner: they choose it on the shirt step (26 Nov 2026, user request)
+  const [shirtSize, setShirtSize] = useState<ShirtSizeCode>('' as ShirtSizeCode);
   // souvenirs bought with the entry: any products, sizes and quantities (one merch order per line)
   const [addonItems, setAddonItems] = useState<CartLine[]>([]);
   // shirt style in the shirt step (only 'tee' is real stock; see data/mockShirtStyles.ts)
@@ -373,29 +374,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     setRegisterForSelf(true);
     setRegModeChosen(Boolean(currentUser));
     setShirtTouched(false);
+    setShirtSize('' as ShirtSizeCode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEventId]);
 
-  // Pick a shirt size for the current event: preferred size if in stock, else keep current/first available
-  const applyPreferredShirt = (preferred?: string) => {
-    const ev = events.find((e) => e.id === selectedEventId);
-    if (!ev || ev.shirtStocks.length === 0) return;
-    const isOpen = (size: string) =>
-      ev.shirtStocks.some(
-        (st) => st.size === size && st.total - st.reservedOrConfirmed > 0
-      );
-    if (preferred && isOpen(preferred)) {
-      setShirtSize(preferred);
-      return;
-    }
-    setShirtSize((prev) => {
-      if (isOpen(prev)) return prev;
-      const firstOpen =
-        ev.shirtStocks.find((st) => st.total - st.reservedOrConfirmed > 0) ??
-        ev.shirtStocks[0];
-      return firstOpen?.size ?? prev;
-    });
-  };
+  // The shirt size used to be picked from the profile here; the runner now picks it on the
+  // shirt step with nothing selected first (26 Nov 2026, user request). Kept as a no-op so the
+  // callers stay simple.
+  const applyPreferredShirt = (_preferred?: string) => undefined;
 
   const applySelfProfile = () => {
     if (!currentUser) return;
@@ -485,31 +471,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id, registerForSelf]);
 
-  // Auto-select Preferred Shirt Size from Runner Profile when opening an Event Registration
-  React.useEffect(() => {
-    const ev = events.find((e) => e.id === selectedEventId);
-    if (!ev || ev.shirtStocks.length === 0) return;
-    const prefSize = currentUser?.runnerProfile?.preferredShirtSize;
-    if (prefSize) {
-      const match = ev.shirtStocks.find(
-        (s) => s.size === prefSize && s.total - s.reservedOrConfirmed > 0
-      );
-      if (match) {
-        setShirtSize(match.size);
-        return;
-      }
-    }
-    const currentAvailable = ev.shirtStocks.find(
-      (s) => s.size === shirtSize && s.total - s.reservedOrConfirmed > 0
-    );
-    if (!currentAvailable) {
-      const firstOpen =
-        ev.shirtStocks.find((s) => s.total - s.reservedOrConfirmed > 0) ??
-        ev.shirtStocks[0];
-      if (firstOpen) setShirtSize(firstOpen.size);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedEventId, currentUser?.id, currentUser?.runnerProfile?.preferredShirtSize, events.length]);
 
   const publicVisibleEvents = useMemo(
     () => events.filter((e) => e.status !== 'draft' && e.status !== 'in_review'),
@@ -1488,6 +1449,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         currentUser && onSaveProfilePatch
           ? async (list) => (await onSaveProfilePatch({ savedAddresses: list })) ?? { ok: true }
           : undefined,
+      saveParticipants:
+        currentUser && onSaveProfilePatch
+          ? async (list) => (await onSaveProfilePatch({ savedParticipants: list })) ?? { ok: true }
+          : undefined,
+      saveEmergencyContacts:
+        currentUser && onSaveProfilePatch
+          ? async (list) => (await onSaveProfilePatch({ emergencyContacts: list })) ?? { ok: true }
+          : undefined,
     };
     return (
       <RegistrationLabView
@@ -1878,7 +1847,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               <li key={prd.id}>
                 <button type="button" className="merch-strip-item" onClick={() => openStore(prd.id)}>
                   <span className="merch-strip-art" aria-hidden="true">
-                    <ProductArt kind={souvenirArt(prd.categoryLabel, prd.nameTh)} className="sf-art-svg" />
+                    <ProductArt categoryLabel={prd.categoryLabel} name={prd.nameTh} kind={souvenirArt(prd.categoryLabel, prd.nameTh)} className="sf-art-svg" />
                   </span>
                   <span className="merch-strip-name">{tx(prd.nameTh)}</span>
                   <strong className="merch-strip-price mono-num">{formatThb(prd.priceSatang, true)}</strong>

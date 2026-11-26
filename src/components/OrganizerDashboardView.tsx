@@ -724,7 +724,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             aria-label={tx("กำลังโหลดข้อมูล")}
           >
             <div className="skeleton-banner-note">
-              {tx("โหมดทดสอบสถานะกำลังโหลด (Skeleton): รักษาโครงสร้างหน้าจอโดยไม่แสดงตัวเลขศูนย์ปลอม")}
+              {tx("กำลังโหลดข้อมูล")}
             </div>
             <div className="skeleton-block skel-lg" />
             <div className="skeleton-block skel-md" />

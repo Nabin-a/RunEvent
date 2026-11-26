@@ -853,6 +853,8 @@ export interface EventDetailPageVersion extends EventDetailPage {
 }
 
 export interface RaceEvent {
+  /** finisher shirt size asked at registration; undefined = asked (organizer switch not built yet, 26 Nov 2026) */
+  finisherShirtEnabled?: boolean;
   id: string;
   code: string;
   organizationId: string;

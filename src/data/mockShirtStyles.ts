@@ -1,8 +1,9 @@
 import type { ShirtStock } from '../types';
 import type { ProductArtKind } from '../components/ProductArt';
+import { SHIRT_PHOTOS } from './productPhotos';
 
 /**
- * Shirt styles for the registration shirt step (ข้อมูลจำลอง).
+ * Shirt styles for the registration shirt step.
  *
  * Events only store one shirt with stock per size. "เสื้อแขนสั้น" uses that real
  * stock; the other styles are demo data so the style picker can be reviewed. The
@@ -15,16 +16,19 @@ export interface ShirtStyleDef {
   id: ShirtStyleId;
   nameTh: string;
   art: ProductArtKind;
+  /** front photo of the shirt (26 Nov 2026) */
+  photo: string;
   /** null = use the event's real shirt stock */
   demoStock: ShirtStock[] | null;
 }
 
 export const SHIRT_STYLES: ShirtStyleDef[] = [
-  { id: 'tee', nameTh: 'เสื้อแขนสั้น', art: 'tee', demoStock: null },
+  { id: 'tee', nameTh: 'เสื้อแขนสั้น', art: 'tee', photo: SHIRT_PHOTOS.tee, demoStock: null },
   {
     id: 'sleeveless',
     nameTh: 'เสื้อแขนกุด',
     art: 'sleeveless',
+    photo: SHIRT_PHOTOS.sleeveless,
     demoStock: [
       { size: 'S', total: 15, reservedOrConfirmed: 9 },
       { size: 'M', total: 20, reservedOrConfirmed: 11 },
@@ -36,6 +40,7 @@ export const SHIRT_STYLES: ShirtStyleDef[] = [
     id: 'tank',
     nameTh: 'เสื้อกล้าม',
     art: 'tank',
+    photo: SHIRT_PHOTOS.tank,
     demoStock: [
       { size: 'S', total: 10, reservedOrConfirmed: 5 },
       { size: 'M', total: 12, reservedOrConfirmed: 5 },

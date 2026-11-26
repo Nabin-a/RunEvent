@@ -483,7 +483,7 @@ const ShippingFee: React.FC<{
       )}
       <p className="es-sub" style={{ flexBasis: '100%', margin: 0 }}>
         {currentSatang === undefined
-          ? tx('ยังไม่ได้กำหนด หน้าสมัครแสดงค่าตัวอย่าง 50 บาทพร้อมป้ายกำกับ')
+          ? tx('ยังไม่ได้กำหนด หน้าสมัครใช้ค่าเริ่มต้น 50 บาท')
           : txf('ตอนนี้ {0} · จ่ายพร้อมค่าสมัคร · นับเป็นยอดของผู้จัด · มีผลกับใบสมัครใหม่', formatThb(currentSatang))}
       </p>
       {msg && (
@@ -500,7 +500,7 @@ const ShippingFee: React.FC<{
 const QUOTE_STATUS: Record<ProductionInquiry['quoteStatus'], { label: string; tone: string }> = {
   draft: { label: 'ร่าง', tone: 'is-wait' },
   submitted: { label: 'รอใบเสนอราคา', tone: 'is-wait' },
-  quoted_demo: { label: 'ได้ใบเสนอราคาแล้ว (ตัวอย่าง)', tone: 'is-wait' },
+  quoted_demo: { label: 'ได้ใบเสนอราคาแล้ว', tone: 'is-wait' },
   accepted: { label: 'อนุมัติราคาแล้ว', tone: 'is-ok' },
 };
 

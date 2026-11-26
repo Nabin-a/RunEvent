@@ -9,6 +9,8 @@ interface DateOfBirthInputProps {
   valueIso: string;
   onChangeIso: (nextIso: string) => void;
   required?: boolean;
+  /** marks day, month and year red (a date that fails the event's age rule) */
+  invalid?: boolean;
   /** id of a hint element read with the triggers (for example the computed age). */
   ariaDescribedBy?: string;
 }
@@ -68,6 +70,8 @@ const PartPicker: React.FC<{
   describedBy?: string;
   alignEnd?: boolean;
   wheelClass?: string;
+  required?: boolean;
+  invalid?: boolean;
 }> = ({
   id,
   name,
@@ -86,6 +90,8 @@ const PartPicker: React.FC<{
   describedBy,
   alignEnd,
   wheelClass,
+  required,
+  invalid,
 }) => {
   const sheet = useDraft<number>(selected ?? fallbackIndex);
   // text while the user is typing; null = show the committed value
@@ -167,6 +173,8 @@ const PartPicker: React.FC<{
           aria-haspopup="dialog"
           aria-expanded={sheet.open}
           aria-describedby={describedBy}
+          required={required}
+          aria-invalid={invalid || undefined}
           value={typed ?? display}
           onChange={(e) => onType(e.target.value)}
           onKeyDown={onKeyDown}
@@ -225,6 +233,8 @@ export const DateOfBirthInput: React.FC<DateOfBirthInputProps> = ({
   id,
   valueIso,
   onChangeIso,
+  required,
+  invalid,
   ariaDescribedBy,
 }) => {
   const lang = getLang();
@@ -346,6 +356,8 @@ export const DateOfBirthInput: React.FC<DateOfBirthInputProps> = ({
         inputMode="numeric"
         maxLength={2}
         describedBy={ariaDescribedBy}
+        required={required}
+        invalid={invalid}
       />
       <PartPicker
         id={`${id}-month`}
@@ -362,6 +374,8 @@ export const DateOfBirthInput: React.FC<DateOfBirthInputProps> = ({
         inputMode="text"
         maxLength={12}
         describedBy={ariaDescribedBy}
+        required={required}
+        invalid={invalid}
       />
       <PartPicker
         id={`${id}-year`}
@@ -382,6 +396,8 @@ export const DateOfBirthInput: React.FC<DateOfBirthInputProps> = ({
           </span>
         }
         describedBy={ariaDescribedBy}
+        required={required}
+        invalid={invalid}
         alignEnd
         wheelClass="wheel-col-year"
       />

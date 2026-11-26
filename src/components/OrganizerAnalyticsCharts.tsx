@@ -1638,7 +1638,7 @@ export const OrganizerAnalyticsCharts: React.FC<
                 <div>
                   <div className="chart-title-inline">
                     <span className="priority-chip chip-p3">P3 · Chart</span>
-                    <h3>{tx("Payment Method (วิเคราะห์ช่องทางชำระเงิน · ข้อมูลสาธิต)")}</h3>
+                    <h3>{tx("Payment Method (วิเคราะห์ช่องทางชำระเงิน)")}</h3>
                   </div>
                   <p className="muted-inline">
                     {tx("เปรียบเทียบช่องทางชำระเงินที่นักวิ่งเลือกใช้และอัตราการชำระสำเร็จของแต่ละช่องทาง")}

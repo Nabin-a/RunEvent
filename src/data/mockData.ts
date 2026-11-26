@@ -25,22 +25,22 @@ export const DEMO_ORGANIZATIONS: Organization[] = [
   {
     id: 'org-lanna',
     code: 'ORG-CMI-01',
-    nameTh: 'ลานนา สไตรด์ อีเวนต์ (ข้อมูลจำลอง)',
+    nameTh: 'ลานนา สไตรด์ อีเวนต์',
     nameEn: 'Lanna Stride Events',
     province: 'เชียงใหม่',
     verificationStatus: 'verified',
-    payoutBankSummary: 'ธ.กสิกรไทย ••••-4821 (บัญชีนิติบุคคลจำลอง)',
+    payoutBankSummary: 'ธ.กสิกรไทย ••••-4821',
     payoutReady: true,
     contactEmail: 'ops@lannastride.demo.local',
   },
   {
     id: 'org-andaman',
     code: 'ORG-PKT-02',
-    nameTh: 'อันดามัน โคสต์ รันเนอร์ (ข้อมูลจำลอง)',
+    nameTh: 'อันดามัน โคสต์ รันเนอร์',
     nameEn: 'Andaman Coast Runners',
     province: 'ภูเก็ต',
     verificationStatus: 'verified',
-    payoutBankSummary: 'ธ.ไทยพาณิชย์ ••••-9104 (บัญชีนิติบุคคลจำลอง)',
+    payoutBankSummary: 'ธ.ไทยพาณิชย์ ••••-9104',
     payoutReady: true,
     contactEmail: 'team@andamancoast.demo.local',
   },
@@ -178,7 +178,7 @@ export const INITIAL_USERS: UserAccount[] = [
     sessions: [
       {
         id: 'ses-902-1',
-        deviceLabel: 'LINE In-App Browser (จำลอง)',
+        deviceLabel: 'LINE In-App Browser',
         locationHint: 'กรุงเทพฯ, ไทย',
         lastActiveAt: 'เมื่อสักครู่',
         isCurrentDevice: true,
@@ -408,8 +408,8 @@ export const DEMO_CUSTOM_FIELDS = [
  * Fictional items and sellers; events not yet published have no sales (soldCount 0).
  * Kept in one list so the server can add them to databases seeded before this date.
  */
-const LANNA_SELLER = 'ผู้ขาย: ลานนา สไตรด์ อีเวนต์ (ข้อมูลจำลอง)';
-const ANDAMAN_SELLER = 'ผู้ขาย: อันดามัน โคสต์ รันเนอร์ (จำลอง)';
+const LANNA_SELLER = 'ผู้ขาย: ลานนา สไตรด์ อีเวนต์';
+const ANDAMAN_SELLER = 'ผู้ขาย: อันดามัน โคสต์ รันเนอร์';
 
 export const EXTRA_SOUVENIRS: EventProduct[] = [
   {
@@ -594,7 +594,7 @@ export const EXTRA_SOUVENIRS: EventProduct[] = [
     categoryLabel: 'เหรียญที่ระลึก',
     saleMode: 'preorder',
     serviceModel: 'kratai_full_service',
-    sellerLabel: 'ดูแลพรีออเดอร์และจัดส่งโดย กระต่าย (จำลองโมเดลบริการครบ)',
+    sellerLabel: 'ดูแลพรีออเดอร์และจัดส่งโดย กระต่าย',
     fulfillmentOwnerLabel: 'กระต่าย ประสานผลิตและจัดส่งตามที่อยู่หรือจุดรับ',
     priceSatang: 42000,
     shippingFeeSatang: 5000,
@@ -1365,7 +1365,7 @@ export const EXTRA_SOUVENIRS: EventProduct[] = [
     categoryLabel: 'เหรียญที่ระลึก',
     saleMode: 'preorder',
     serviceModel: 'kratai_full_service',
-    sellerLabel: 'ดูแลพรีออเดอร์และจัดส่งโดย กระต่าย (จำลองโมเดลบริการครบ)',
+    sellerLabel: 'ดูแลพรีออเดอร์และจัดส่งโดย กระต่าย',
     fulfillmentOwnerLabel: 'กระต่าย ประสานผลิตและจัดส่งตามที่อยู่หรือจุดรับ',
     priceSatang: 42000,
     shippingFeeSatang: 5000,
@@ -1385,7 +1385,7 @@ const BASE_EVENTS: RaceEvent[] = [
   {
     id: 'evt-doisuthep-2026',
     coverImageUrl: '/event-covers/evt-doisuthep-2026.webp',
-    coverImageAlt: 'ภาพแบนเนอร์ตัวอย่างประกอบงานวิ่ง',
+    coverImageAlt: 'ภาพแบนเนอร์ประกอบงานวิ่ง',
     code: 'EVT-CMI-2601',
     organizationId: 'org-lanna',
     titleTh: 'ดอยสุเทพ ดอว์น ฮาล์ฟมาราธอน 2026',
@@ -1570,7 +1570,7 @@ const BASE_EVENTS: RaceEvent[] = [
         categoryLabel: 'เสื้อที่ระลึก',
         saleMode: 'ready_stock',
         serviceModel: 'organizer_self_sell',
-        sellerLabel: 'ผู้ขาย: ลานนา สไตรด์ อีเวนต์ (ข้อมูลจำลอง)',
+        sellerLabel: 'ผู้ขาย: ลานนา สไตรด์ อีเวนต์',
         fulfillmentOwnerLabel: 'ผู้จัดงานเป็นผู้ส่งมอบที่บูธร้านค้าหรือจัดส่งไปรษณีย์',
         priceSatang: 45000,
         shippingFeeSatang: 5000,
@@ -1592,7 +1592,7 @@ const BASE_EVENTS: RaceEvent[] = [
         categoryLabel: 'เหรียญที่ระลึก',
         saleMode: 'preorder',
         serviceModel: 'kratai_full_service',
-        sellerLabel: 'ดูแลพรีออเดอร์และจัดส่งโดย กระต่าย (จำลองโมเดลบริการครบ)',
+        sellerLabel: 'ดูแลพรีออเดอร์และจัดส่งโดย กระต่าย',
         fulfillmentOwnerLabel: 'กระต่าย ประสานผลิตและจัดส่งตามที่อยู่หรือจุดรับ',
         priceSatang: 39000,
         shippingFeeSatang: 5000,
@@ -1640,7 +1640,7 @@ const BASE_EVENTS: RaceEvent[] = [
   {
     id: 'evt-promthep-2026',
     coverImageUrl: '/event-covers/evt-promthep-2026.webp',
-    coverImageAlt: 'ภาพแบนเนอร์ตัวอย่างประกอบงานวิ่ง',
+    coverImageAlt: 'ภาพแบนเนอร์ประกอบงานวิ่ง',
     code: 'EVT-PKT-2601',
     organizationId: 'org-andaman',
     titleTh: 'แหลมพรหมเทพ ซันเซ็ต รัน 2026',
@@ -1725,7 +1725,7 @@ const BASE_EVENTS: RaceEvent[] = [
         categoryLabel: 'เสื้อที่ระลึก',
         saleMode: 'ready_stock',
         serviceModel: 'organizer_self_sell',
-        sellerLabel: 'ผู้ขาย: อันดามัน โคสต์ รันเนอร์ (จำลอง)',
+        sellerLabel: 'ผู้ขาย: อันดามัน โคสต์ รันเนอร์',
         fulfillmentOwnerLabel: 'รับที่ลานหาดในหานหรือจัดส่งไปรษณีย์โดยผู้จัด',
         priceSatang: 49000,
         shippingFeeSatang: 5000,
@@ -1751,7 +1751,7 @@ const BASE_EVENTS: RaceEvent[] = [
   {
     id: 'evt-oldmoat-2026',
     coverImageUrl: '/event-covers/evt-oldmoat-2026.webp',
-    coverImageAlt: 'ภาพแบนเนอร์ตัวอย่างประกอบงานวิ่ง',
+    coverImageAlt: 'ภาพแบนเนอร์ประกอบงานวิ่ง',
     code: 'EVT-CMI-2600',
     organizationId: 'org-lanna',
     titleTh: 'เชียงใหม่ คูเมือง คลาสสิก 10K 2026',
@@ -1815,7 +1815,7 @@ const BASE_EVENTS: RaceEvent[] = [
         categoryLabel: 'เสื้อที่ระลึก',
         saleMode: 'ready_stock',
         serviceModel: 'organizer_self_sell',
-        sellerLabel: 'ผู้ขาย: ลานนา สไตรด์ อีเวนต์ (จำลอง)',
+        sellerLabel: 'ผู้ขาย: ลานนา สไตรด์ อีเวนต์',
         fulfillmentOwnerLabel: 'จัดส่งทางไปรษณีย์โดยผู้จัดงาน',
         priceSatang: 35000,
         shippingFeeSatang: 5000,
@@ -1842,14 +1842,14 @@ const BASE_EVENTS: RaceEvent[] = [
       {
         id: 'alb-1',
         title: 'อัลบั้มจุดปล่อยตัวประตูท่าแพ & กม.ที่ 5',
-        photographerCredit: 'ทีมช่างภาพจำลอง Lanna Shutter Crew',
+        photographerCredit: 'ทีมช่างภาพ Lanna Shutter Crew',
         photoCount: 1420,
         externalUrl: '#demo-album-thapae',
       },
       {
         id: 'alb-2',
         title: 'อัลบั้มซุ้มเส้นชัย Finish Line Arch',
-        photographerCredit: 'ทีมช่างภาพจำลอง North Finish Cam',
+        photographerCredit: 'ทีมช่างภาพ North Finish Cam',
         photoCount: 980,
         externalUrl: '#demo-album-finish',
       },
@@ -1955,13 +1955,13 @@ const BASE_EVENTS: RaceEvent[] = [
   {
     id: 'evt-maerim-suspended',
     coverImageUrl: '/event-covers/evt-maerim-suspended.webp',
-    coverImageAlt: 'ภาพแบนเนอร์ตัวอย่างประกอบงานวิ่ง',
+    coverImageAlt: 'ภาพแบนเนอร์ประกอบงานวิ่ง',
     code: 'EVT-CMI-2699',
     organizationId: 'org-lanna',
     titleTh: 'แม่ริม เทรล ชาเลนจ์ 2026',
     titleEn: 'Mae Rim Trail Challenge 2026',
     tagline:
-      'เส้นทางเทรลภูเขา อ.แม่ริม (จำลองสถานะระงับรับสมัครชั่วคราวเพื่อรอเอกสารอนุญาตพื้นที่)',
+      'เส้นทางเทรลภูเขา อ.แม่ริม',
     coverMotif: 'trail',
     province: 'เชียงใหม่',
     region: 'เหนือ',
@@ -1978,7 +1978,7 @@ const BASE_EVENTS: RaceEvent[] = [
     rulesVersion: 'v1.0',
     kitPickupWindow: 'รอประกาศยืนยันหลังผ่านการตรวจเอกสารเส้นทาง',
     highlights: [
-      'ตัวอย่างการแสดงสถานะงานที่ระงับชั่วคราวโดยไม่ลบประวัติใบสมัครและธุรกรรมเดิม',
+      'ระงับรับสมัครชั่วคราวโดยไม่ลบประวัติใบสมัครและธุรกรรมเดิม',
     ],
     categories: [
       {
@@ -2507,7 +2507,7 @@ export const INITIAL_MERCH_ORDERS: MerchOrderRecord[] = [
     buyerEmail: 'ติดต่อผ่าน LINE (ยังไม่ยืนยันอีเมล)',
     productId: 'prd-ds-tee',
     productNameTh: 'เสื้อที่ระลึก Doi Suthep Cloud Tee (แยกจากเสื้อสิทธิ์สมัคร)',
-    sellerLabel: 'ลานนา สไตรด์ อีเวนต์ (จำลอง)',
+    sellerLabel: 'ลานนา สไตรด์ อีเวนต์',
     variantSize: 'L',
     quantity: 2,
     deliveredQty: 0,
@@ -2530,12 +2530,12 @@ export const INITIAL_MERCH_ORDERS: MerchOrderRecord[] = [
     buyerEmail: 'kanpitcha.runner@demo.kratai.local',
     productId: 'prd-ds-medal',
     productNameTh: 'กรอบตั้งโต๊ะเหรียญที่ระลึกดอยสุเทพ (พรีออเดอร์)',
-    sellerLabel: 'กระต่าย Studio (จำลองบริการครบ)',
+    sellerLabel: 'กระต่าย Studio',
     variantSize: 'มาตรฐาน',
     quantity: 1,
     deliveredQty: 0,
     deliveryMethod: 'postal_shipping',
-    shippingAddress: '88 ถ.ห้วยแก้ว ต.สุเทพ อ.เมือง จ.เชียงใหม่ 50200 (จำลอง)',
+    shippingAddress: '88 ถ.ห้วยแก้ว ต.สุเทพ อ.เมือง จ.เชียงใหม่ 50200',
     unitPriceSatang: 39000,
     shippingSatang: 5000,
     totalPaidSatang: 44000,
@@ -2574,7 +2574,7 @@ export const INITIAL_PRODUCTION_INQUIRIES: ProductionInquiry[] = [
   {
     id: 'pinq-02',
     inquiryCode: 'RFQ-CLB-11',
-    requesterName: 'ชมรมวิ่งเช้าสวนลุมฯ (ตัวอย่าง)',
+    requesterName: 'ชมรมวิ่งเช้าสวนลุมฯ',
     requesterContact: 'club-contact@example.local',
     contextType: 'club_or_company',
     itemType: 'ชุดเสื้อพร้อมเหรียญครบวงจร',

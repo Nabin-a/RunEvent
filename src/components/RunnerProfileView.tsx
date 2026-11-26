@@ -11,7 +11,6 @@ import { RequiredFieldText } from './RequiredFieldText';
 import { useThemeId } from '../theme';
 import { themedMascot } from './mascotArt';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import Swal from 'sweetalert2';
 import type {
   AuthProviderType,
@@ -36,10 +35,7 @@ import {
   evaluatePersonalInfoCompletion,
   MAX_EMERGENCY_CONTACTS,
 } from '../data/runnerProfileDefaults';
-import {
-  ProfileCompletionBar,
-  ProfileCompletionRing,
-} from './ProfileCompletionMeter';
+import { ProfileCompletionRing } from './ProfileCompletionMeter';
 import { FEATURES } from '../config/features';
 import {
   AccountSecuritySections,
@@ -57,12 +53,12 @@ import {
   IconCheckCircle,
   IconChevronDown,
   IconDownload,
-  IconFlag,
   IconLock,
   IconMapPin,
   IconPlus,
   IconQr,
   IconUsers,
+  IconShirt,
 } from './Icons';
 import {
   FulfillmentStatusBadge,
@@ -74,6 +70,10 @@ import { AvatarCropDialog } from './AvatarCropDialog';
 import { NationalitySelect } from './NationalitySelect';
 import { SelectMenu } from './SelectMenu';
 import { ThaiPostalAddressSelector } from './ThaiPostalAddressSelector';
+import { SavedAddressModal, type SavedAddressDraft } from './SavedAddressModal';
+import { EmergencyContactModal, type EmergencyContactDraft } from './EmergencyContactModal';
+import { SavedParticipantModal } from './SavedParticipantModal';
+import { SearchPagedList } from './ListPager';
 import { ALL_THAI_PROVINCES } from '../data/thaiPostalAddresses';
 import {
   isoToDdMmYyyy,
@@ -454,16 +454,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     useState<RunnerEmergencyContact[]>(initialEmergencyList);
   const [ecModalOpen, setEcModalOpen] = useState(false);
   const [editingEcId, setEditingEcId] = useState<string | null>(null);
-  const [ecName, setEcName] = useState('');
-  const [ecRel, setEcRel] = useState('');
-  const [ecPhone, setEcPhone] = useState('');
-  const [ecEmail, setEcEmail] = useState('');
-  const [ecModalBaseline, setEcModalBaseline] = useState({
-    name: '',
-    rel: '',
-    phone: '',
-    email: '',
-  });
+
 
   /* ---- 4. Saved Addresses State ---- */
   const [addressList, setAddressList] = useState<RunnerSavedAddress[]>(
@@ -471,58 +462,14 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
   );
   const [addrModalOpen, setAddrModalOpen] = useState(false);
   const [editingAddrId, setEditingAddrId] = useState<string | null>(null);
-  const [addrLabel, setAddrLabel] = useState('');
-  const [addrRecipient, setAddrRecipient] = useState(user.fullNameTh);
-  const [addrPhone, setAddrPhone] = useState(prof.phone ?? '');
-  const [addrLine, setAddrLine] = useState('');
-  const [addrProv, setAddrProv] = useState('เชียงใหม่');
-  const [addrDist, setAddrDist] = useState('เมืองเชียงใหม่');
-  const [addrSubd, setAddrSubd] = useState('สุเทพ');
-  const [addrZip, setAddrZip] = useState('50200');
-  const [addrCountry, setAddrCountry] = useState('Thailand');
-  const [addrModalBaseline, setAddrModalBaseline] = useState({
-    label: '',
-    recipient: user.fullNameTh,
-    phone: prof.phone ?? '',
-    line: '',
-    prov: 'เชียงใหม่',
-    dist: 'เมืองเชียงใหม่',
-    subd: 'สุเทพ',
-    zip: '50200',
-    country: 'Thailand',
-  });
+
 
   /* ---- 4.1 Saved Participants State ---- */
-  const createEmptyParticipantDraft = (): SavedParticipant => ({
-    id: '',
-    firstName: '',
-    lastName: '',
-    nickname: '',
-    firstNameEn: '',
-    lastNameEn: '',
-    nicknameEn: '',
-    dateOfBirth: '',
-    gender: 'ไม่ระบุ',
-    nationality: 'Thailand',
-    idType: 'thai_id',
-    idNumber: '',
-    phone: '',
-    preferredShirtSize: '',
-    emergencyContactName: '',
-    emergencyContactRelation: '',
-    emergencyContactPhone: '',
-    relationshipToOwner: '',
-  });
   const [participantList, setParticipantList] = useState<SavedParticipant[]>(
     prof.savedParticipants ?? []
   );
   const [editingPartId, setEditingPartId] = useState<string | null>(null);
-  const [partDraft, setPartDraft] = useState<SavedParticipant>(() =>
-    createEmptyParticipantDraft()
-  );
-  const [partModalBaseline, setPartModalBaseline] = useState<string>(() =>
-    JSON.stringify(createEmptyParticipantDraft())
-  );
+
 
   /* ---- 5. Running History State ---- */
   const [historyFilter, setHistoryFilter] = useState<
@@ -613,7 +560,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     setAddrModalOpen(false);
     setEditingAddrId(null);
     setEditingPartId(null);
-    setPartDraft(createEmptyParticipantDraft());
     const syncedSocial = enrichSocialLinksFromIdentities(user);
     setFbUrl(syncedSocial.facebook ?? '');
     setIgUrl(syncedSocial.instagram ?? '');
@@ -646,184 +592,31 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     }
   }, [user.id, serializedEmergencyContacts]);
 
-  const isEcModalDirty =
-    ecModalOpen &&
-    (ecName !== ecModalBaseline.name ||
-      ecRel !== ecModalBaseline.rel ||
-      ecPhone !== ecModalBaseline.phone ||
-      ecEmail !== ecModalBaseline.email);
-
-  const isAddrModalDirty =
-    addrModalOpen &&
-    (addrLabel !== addrModalBaseline.label ||
-      addrRecipient !== addrModalBaseline.recipient ||
-      addrPhone !== addrModalBaseline.phone ||
-      addrLine !== addrModalBaseline.line ||
-      addrProv !== addrModalBaseline.prov ||
-      addrDist !== addrModalBaseline.dist ||
-      addrSubd !== addrModalBaseline.subd ||
-      addrZip !== addrModalBaseline.zip ||
-      addrCountry !== addrModalBaseline.country);
-
-  const isPartModalDirty =
-    Boolean(editingPartId) && JSON.stringify(partDraft) !== partModalBaseline;
-
-  const confirmDiscardModalClose = (isDirty: boolean, doClose: () => void) => {
-    if (!isDirty) {
-      doClose();
-      return;
-    }
-    void Swal.fire({
-      icon: 'warning',
-      title: tx('ยังไม่ได้บันทึกข้อมูล'),
-      text: tx(
-        'คุณมีการกรอกหรือแก้ไขข้อมูลค้างอยู่ ต้องการละทิ้งข้อมูลและปิดหน้าต่างนี้หรือไม่?'
-      ),
-      showCancelButton: true,
-      confirmButtonText: tx('ละทิ้งข้อมูล'),
-      cancelButtonText: tx('กลับไปแก้ไขต่อ'),
-      reverseButtons: true,
-      buttonsStyling: false,
-      heightAuto: false,
-      scrollbarPadding: false,
-      customClass: {
-        container: 'kratai-swal-top',
-        popup: 'kratai-swal-popup',
-        actions: 'kratai-swal-actions',
-        confirmButton: 'btn-primary kratai-swal-discard-btn',
-        cancelButton: 'btn-secondary',
-      },
-    }).then((res) => {
-      if (res.isConfirmed) {
-        doClose();
-      }
-    });
-  };
-
   const openEcModal = (ec?: RunnerEmergencyContact) => {
-    const init = ec
-      ? {
-        name: ec.contactName,
-        rel: ec.relationship,
-        phone: ec.phone,
-        email: ec.email ?? '',
-      }
-      : {
-        name: '',
-        rel: '',
-        phone: '',
-        email: '',
-      };
     setEditingEcId(ec ? ec.id : null);
-    setEcName(init.name);
-    setEcRel(init.rel);
-    setEcPhone(init.phone);
-    setEcEmail(init.email);
-    setEcModalBaseline(init);
     setEcModalOpen(true);
   };
 
-  const requestCloseEcModal = () => {
-    confirmDiscardModalClose(isEcModalDirty, () => {
-      setEcModalOpen(false);
-      setEditingEcId(null);
-      setEcName('');
-      setEcPhone('');
-      setEcEmail('');
-    });
+  const closeEcModal = () => {
+    setEcModalOpen(false);
+    setEditingEcId(null);
   };
 
   const openAddrModal = (addr?: RunnerSavedAddress) => {
-    const init = addr
-      ? {
-        label: addr.addressName,
-        recipient: addr.recipientName,
-        phone: addr.phone,
-        line: addr.address,
-        prov: addr.province,
-        dist: addr.district,
-        subd: addr.subdistrict,
-        zip: addr.postalCode,
-        country: addr.country,
-      }
-      : {
-        label: '',
-        recipient: user.fullNameTh,
-        phone: prof.phone ?? '',
-        line: '',
-        prov: 'เชียงใหม่',
-        dist: 'เมืองเชียงใหม่',
-        subd: 'สุเทพ',
-        zip: '50200',
-        country: 'Thailand',
-      };
     setEditingAddrId(addr ? addr.id : null);
-    setAddrLabel(init.label);
-    setAddrRecipient(init.recipient);
-    setAddrPhone(init.phone);
-    setAddrLine(init.line);
-    setAddrProv(init.prov);
-    setAddrDist(init.dist);
-    setAddrSubd(init.subd);
-    setAddrZip(init.zip);
-    setAddrCountry(init.country);
-    setAddrModalBaseline(init);
     setAddrModalOpen(true);
   };
 
-  const requestCloseAddrModal = () => {
-    confirmDiscardModalClose(isAddrModalDirty, () => {
-      setAddrModalOpen(false);
-      setEditingAddrId(null);
-      setAddrLabel('');
-      setAddrLine('');
-    });
+  const closeAddrModal = () => {
+    setAddrModalOpen(false);
+    setEditingAddrId(null);
   };
 
   const openPartModal = (pt?: SavedParticipant) => {
-    const initDraft: SavedParticipant = {
-      ...createEmptyParticipantDraft(),
-      ...(pt ?? {}),
-    };
     setEditingPartId(pt ? pt.id : NEW_PARTICIPANT_ID);
-    setPartDraft(initDraft);
-    setPartModalBaseline(JSON.stringify(initDraft));
   };
 
-  const requestClosePartModal = () => {
-    confirmDiscardModalClose(isPartModalDirty, () => {
-      setEditingPartId(null);
-      setPartDraft(createEmptyParticipantDraft());
-    });
-  };
-
-  const closeActiveModalRef = useRef<() => void>(() => { });
-  closeActiveModalRef.current = () => {
-    if (ecModalOpen) {
-      requestCloseEcModal();
-    } else if (addrModalOpen) {
-      requestCloseAddrModal();
-    } else if (editingPartId) {
-      requestClosePartModal();
-    }
-  };
-
-  const anyModalOpen =
-    Boolean(editingPartId) || ecModalOpen || addrModalOpen;
-  useEffect(() => {
-    if (!anyModalOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (Swal.isVisible()) return;
-        e.preventDefault();
-        closeActiveModalRef.current();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [anyModalOpen]);
+  const closePartModal = () => setEditingPartId(null);
 
   const savedPersonalBaseline = useMemo(() => {
     const p = user.runnerProfile ?? {};
@@ -995,6 +788,23 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
 
   const completion = useMemo(() => evaluatePersonalInfoCompletion(user), [user]);
   const firstMissingItem = completion.items.find((item) => !item.complete);
+
+  // The completion ring sits in the name card while that card is on screen and moves back to
+  // the top of the (sticky) profile menu once the card scrolls away (25 Nov 2026, user request).
+  const heroRef = useRef<HTMLElement | null>(null);
+  const [heroInView, setHeroInView] = useState(true);
+  useEffect(() => {
+    const hero = heroRef.current;
+    if (!hero || typeof IntersectionObserver === 'undefined') return;
+    // the sticky top bar covers the top of the page, so the card counts as gone once it is under it
+    const topbar = document.querySelector('.global-topbar')?.getBoundingClientRect().height ?? 0;
+    const io = new IntersectionObserver(([entry]) => setHeroInView(entry.isIntersecting), {
+      rootMargin: `-${Math.round(topbar)}px 0px 0px 0px`,
+      threshold: 0,
+    });
+    io.observe(hero);
+    return () => io.disconnect();
+  }, []);
 
   // Focus target requested from the completion box / floating ring; applied once
   // the personal tab has rendered (the switch may be deferred by tab navigation).
@@ -1233,60 +1043,21 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     });
   };
 
-  const handleSaveEmergencyContact = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveEmergencyContact = async (d: EmergencyContactDraft) => {
     if (!editingEcId && emergencyList.length >= MAX_EMERGENCY_CONTACTS) {
       const errMsg = txf('บันทึกผู้ติดต่อฉุกเฉินได้สูงสุด {0} คน', MAX_EMERGENCY_CONTACTS);
       setBanner({ tone: 'err', text: errMsg });
       showResultModalAlert(false, errMsg);
       return;
     }
-    if (!ecName.trim() || ecPhone.trim().replace(/\D/g, '').length < 9) {
-      const errMsg = tx('กรุณาระบุชื่อและเบอร์โทรผู้ติดต่อฉุกเฉิน (9–10 หลัก)');
-      setBanner({ tone: 'err', text: errMsg });
-      showResultModalAlert(false, errMsg);
-      return;
-    }
-    // the relationship starts empty (placeholder only), so it must be typed
-    if (!ecRel.trim()) {
-      const errMsg = tx('กรุณาระบุความสัมพันธ์กับผู้ติดต่อฉุกเฉิน');
-      setBanner({ tone: 'err', text: errMsg });
-      showResultModalAlert(false, errMsg);
-      return;
-    }
     let nextList: RunnerEmergencyContact[];
     if (editingEcId) {
-      nextList = emergencyList.map((c) =>
-        c.id === editingEcId
-          ? {
-            ...c,
-            contactName: ecName.trim(),
-            relationship: ecRel.trim() || 'ครอบครัว',
-            phone: ecPhone.trim(),
-            email: ecEmail.trim() || undefined,
-          }
-          : c
-      );
+      nextList = emergencyList.map((c) => (c.id === editingEcId ? { ...c, ...d } : c));
     } else {
-      const isFirst = emergencyList.length === 0;
-      nextList = [
-        ...emergencyList,
-        {
-          id: `ec-${Date.now()}`,
-          contactName: ecName.trim(),
-          relationship: ecRel.trim() || 'ครอบครัว',
-          phone: ecPhone.trim(),
-          email: ecEmail.trim() || undefined,
-          isPrimary: isFirst,
-        },
-      ];
+      nextList = [...emergencyList, { id: `ec-${Date.now()}`, ...d, isPrimary: emergencyList.length === 0 }];
     }
     setEmergencyList(nextList);
-    setEcModalOpen(false);
-    setEditingEcId(null);
-    setEcName('');
-    setEcPhone('');
-    setEcEmail('');
+    closeEcModal();
     const okMsg = tx('บันทึกข้อมูลผู้ติดต่อฉุกเฉินเรียบร้อยแล้ว');
     if (
       !(await saveProfileWithFeedback(
@@ -1302,61 +1073,34 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     });
   };
 
-  const handleSaveAddressItem = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!addrRecipient.trim() || !addrLine.trim()) {
-      const errMsg = tx('กรุณาระบุชื่อผู้รับ และบ้านเลขที่/ถนนให้ครบถ้วน');
-      setBanner({ tone: 'err', text: errMsg });
-      showResultModalAlert(false, errMsg);
-      return;
-    }
+  const handleSaveAddressItem = async (d: SavedAddressDraft) => {
     // the name is optional; a blank one becomes "ที่อยู่ที่ <n>" by its place in the book
     const editingIdx = editingAddrId ? addressList.findIndex((a) => a.id === editingAddrId) : -1;
     const addrName =
-      addrLabel.trim() ||
+      d.label ||
       txf('ที่อยู่ที่ {0}', editingIdx >= 0 ? editingIdx + 1 : addressList.length + 1);
+    const fields = {
+      addressName: addrName,
+      recipientName: d.recipientName,
+      phone: d.phone,
+      address: d.address,
+      province: d.province,
+      district: d.district,
+      subdistrict: d.subdistrict,
+      postalCode: d.postalCode,
+      country: d.country,
+    };
     let nextAddrs: RunnerSavedAddress[];
     if (editingAddrId) {
-      nextAddrs = addressList.map((a) =>
-        a.id === editingAddrId
-          ? {
-            ...a,
-            addressName: addrName,
-            recipientName: addrRecipient.trim(),
-            phone: addrPhone.trim(),
-            address: addrLine.trim(),
-            province: addrProv,
-            district: addrDist,
-            subdistrict: addrSubd,
-            postalCode: addrZip.trim(),
-            country: addrCountry.trim() || 'Thailand',
-          }
-          : a
-      );
+      nextAddrs = addressList.map((a) => (a.id === editingAddrId ? { ...a, ...fields } : a));
     } else {
-      const isFirst = addressList.length === 0;
       nextAddrs = [
         ...addressList,
-        {
-          id: `addr-${Date.now()}`,
-          addressName: addrName,
-          recipientName: addrRecipient.trim(),
-          phone: addrPhone.trim(),
-          address: addrLine.trim(),
-          province: addrProv,
-          district: addrDist,
-          subdistrict: addrSubd,
-          postalCode: addrZip.trim(),
-          country: addrCountry.trim() || 'Thailand',
-          isDefault: isFirst,
-        },
+        { id: `addr-${Date.now()}`, ...fields, isDefault: addressList.length === 0 },
       ];
     }
     setAddressList(nextAddrs);
-    setAddrModalOpen(false);
-    setEditingAddrId(null);
-    setAddrLabel('');
-    setAddrLine('');
+    closeAddrModal();
     const okMsg = tx('บันทึกที่อยู่จัดส่งเรียบร้อยแล้ว');
     if (
       !(await saveProfileWithFeedback(
@@ -1385,15 +1129,16 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
         label: tx('ข้อมูลส่วนตัว'),
         icon: <IconUsers size={16} />,
       },
-      {
-        key: 'emergency',
-        label: tx('ผู้ติดต่อฉุกเฉิน'),
-        icon: <IconAlert size={16} />,
-      },
+      // shipping addresses before emergency contacts (25 Nov 2026, user request)
       {
         key: 'addresses',
         label: tx('ที่อยู่จัดส่ง'),
         icon: <IconMapPin size={16} />,
+      },
+      {
+        key: 'emergency',
+        label: tx('ผู้ติดต่อฉุกเฉิน'),
+        icon: <IconAlert size={16} />,
       },
       {
         key: 'participants',
@@ -1432,10 +1177,47 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     showResultModalAlert(ok, message);
   };
 
+  /** go to the first missing item: a field on the personal tab, or the menu that holds it */
+  const goToMissing = () => {
+    if (firstMissingItem?.tab) requestSwitchProfileTab(firstMissingItem.tab);
+    else goToPersonalField(firstMissingItem?.focusSelector);
+  };
+
+  /**
+   * Profile completion: the ring and its percentage only (25 Nov 2026, user request; the
+   * "4/9" count and "ขาดอีก … รายการ" were dropped). Red under 50 %, amber to 84 %, green from 85 %.
+   */
+  const completionCard = (where: 'hero' | 'nav') => (
+    <button
+      type="button"
+      className={`completion-nav-card is-${where} tone-${completion.tone} ${completion.isComplete ? 'is-complete' : 'is-incomplete'}`}
+      onClick={goToMissing}
+      aria-label={
+        completion.isComplete
+          ? tx('โปรไฟล์ครบถ้วน 100%')
+          : txf('ความครบถ้วนของโปรไฟล์ {0}% — ไปกรอก{1}', completion.pct, tx(firstMissingItem?.labelTh ?? ''))
+      }
+    >
+      <ProfileCompletionRing
+        pct={completion.pct}
+        completedCount={completion.completedCount}
+        total={completion.total}
+        label={tx('ความครบถ้วนของโปรไฟล์')}
+        size={where === 'hero' ? 52 : 40}
+        tone={completion.tone}
+        decorative
+      />
+      <span className="completion-nav-text" aria-hidden="true">
+        <strong>{tx('ความครบถ้วนของโปรไฟล์')}</strong>
+        <span className="completion-nav-pct mono-num">{completion.pct}%</span>
+      </span>
+    </button>
+  );
+
   return (
     <main className="customer-container">
-      {/* TOP PROFILE HERO & COMPLETION BAR (§11) */}
-      <section className="clean-panel runner-profile-hero">
+      {/* TOP PROFILE HERO: avatar and name (the completeness strip moved out, 25 Nov 2026) */}
+      <section ref={heroRef} className="clean-panel runner-profile-hero">
         <div className="runner-hero-top">
           <div className="runner-avatar-cluster">
             <div className="runner-avatar-frame">
@@ -1455,109 +1237,19 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                   {heroDisplayName}
                   {heroDisplayNick ? ` (${heroDisplayNick})` : ''}
                 </h1>
-                <span className="mono-code">{user.code}</span>
-                <span
-                  className={`status-pill ${user.accountStatus === 'deletion_requested'
-                    ? 'badge-amber'
-                    : 'badge-forest'
-                    }`}
-                >
-                  <IconCheckCircle size={13} />
-                  <span>
-                    {user.accountStatus === 'deletion_requested'
-                      ? tx('รอพิจารณาลบบัญชี')
-                      : tx('บัญชีปกติ')}
+                {/* only a pending deletion is worth a badge here; the account code, the "normal
+                    account" badge, the page description, the find-events button and the
+                    completeness strip were removed (25 Nov 2026, user request) */}
+                {user.accountStatus === 'deletion_requested' && (
+                  <span className="status-pill badge-amber">
+                    <IconAlert size={13} />
+                    <span>{tx('รอพิจารณาลบบัญชี')}</span>
                   </span>
-                </span>
+                )}
               </div>
-              <p className="muted-block">
-                {tx(
-                  'ศูนย์กลางข้อมูลนักวิ่งสำหรับเติมฟอร์มสมัครงานวิ่งอัตโนมัติ (การแก้ไขข้อมูลในหน้านี้จะไม่เปลี่ยนแปลงข้อมูลใบสมัครเดิมที่ยืนยันไปแล้ว)'
-                )}
-              </p>
             </div>
           </div>
-
-          <div className="cta-inline-row">
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={onNavigateDiscoverEvents}
-            >
-              <IconFlag size={15} />
-              <span>{tx('ค้นหางานวิ่ง')}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Profile Completion Strip */}
-        <div
-          className={`runner-completion-box ${completion.isComplete ? 'is-complete' : 'is-incomplete'
-            }`}
-        >
-          <div className="runner-completion-head">
-            <div className="runner-completion-title">
-              <strong id="runner-completion-label">
-                {tx('ความครบถ้วนของข้อมูลส่วนตัว')}
-              </strong>
-              <span className="muted-inline">
-                {tx('นับเฉพาะข้อมูลในแท็บ “ข้อมูลส่วนตัว” ที่บันทึกแล้ว')}
-              </span>
-            </div>
-            <span className="runner-completion-score">
-              <strong className="mono-num">
-                {completion.completedCount}/{completion.total}
-              </strong>
-              <span
-                className={`status-pill ${completion.isComplete ? 'badge-forest' : 'badge-amber'
-                  }`}
-              >
-                {completion.isComplete ? (
-                  <IconCheckCircle size={15} />
-                ) : (
-                  <IconAlert size={15} />
-                )}
-                <span>
-                  {completion.isComplete
-                    ? tx('ครบถ้วนแล้ว')
-                    : txf(
-                      'ขาดอีก {0} รายการ',
-                      completion.total - completion.completedCount
-                    )}
-                </span>
-              </span>
-            </span>
-          </div>
-          <ProfileCompletionBar
-            pct={completion.pct}
-            completedCount={completion.completedCount}
-            total={completion.total}
-            label={tx('ความครบถ้วนของข้อมูลส่วนตัว')}
-          />
-          <ul
-            className="runner-completion-checklist"
-            aria-labelledby="runner-completion-label"
-          >
-            {completion.items.map((item) => (
-              <li key={item.key}>
-                <button
-                  type="button"
-                  className={`completion-check-item ${item.complete ? 'is-complete' : 'is-missing'
-                    }`}
-                  onClick={() => goToPersonalField(item.focusSelector)}
-                  aria-label={`${tx(item.labelTh)}: ${item.complete ? tx('ครบแล้ว') : tx('ยังไม่ได้กรอก')
-                    }`}
-                >
-                  {item.complete ? (
-                    <IconCheckCircle size={15} />
-                  ) : (
-                    <IconAlert size={15} />
-                  )}
-                  <span>{tx(item.labelTh)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          {heroInView && completionCard('hero')}
         </div>
       </section>
 
@@ -1630,52 +1322,8 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
             );
           })()}
 
-          {/* Personal-info completion lives inside the sticky menu on every screen size:
-              a card at the top of the sidebar on desktop, a slim row under the collapsed
-              menu bar on mobile. Nothing floats over the page content. */}
-          <button
-            type="button"
-            className={`completion-nav-card ${completion.isComplete ? 'is-complete' : 'is-incomplete'
-              }`}
-            onClick={() => goToPersonalField(firstMissingItem?.focusSelector)}
-            aria-label={
-              completion.isComplete
-                ? tx('ข้อมูลส่วนตัวครบถ้วน')
-                : txf(
-                  'ข้อมูลส่วนตัวครบ {0}% — ไปกรอก{1}',
-                  completion.pct,
-                  tx(firstMissingItem?.labelTh ?? '')
-                )
-            }
-          >
-            <ProfileCompletionRing
-              pct={completion.pct}
-              completedCount={completion.completedCount}
-              total={completion.total}
-              label={tx('ความครบถ้วนของข้อมูลส่วนตัว')}
-              size={40}
-              decorative
-            />
-            <span className="completion-nav-text" aria-hidden="true">
-              <strong>
-                {tx('ข้อมูลส่วนตัว')}{' '}
-                <span className="completion-nav-count mono-num">
-                  {completion.completedCount}/{completion.total}
-                </span>
-              </strong>
-              <span className="completion-nav-status">
-                {completion.isComplete
-                  ? tx('ครบถ้วนแล้ว')
-                  : txf('ขาดอีก {0} รายการ', completion.total - completion.completedCount)}
-              </span>
-            </span>
-            {!completion.isComplete && (
-              <span className="completion-nav-go" aria-hidden="true">
-                {tx('ไปกรอก')}
-                <IconArrowRight size={13} />
-              </span>
-            )}
-          </button>
+          {/* the completion ring comes back here once the name card has scrolled away */}
+          {!heroInView && completionCard('nav')}
 
           <div id="runner-profile-nav-list" className="runner-profile-nav-list">
             {activeNavItems.map((item, idx) => (
@@ -1717,7 +1365,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                 ],
                 emergency: [
                   tx('ผู้ติดต่อฉุกเฉิน'),
-                  txf('บันทึกได้สูงสุด {0} รายชื่อ และกำหนดผู้ติดต่อหลักเพื่อเติมในใบสมัครงานวิ่งอัตโนมัติ', MAX_EMERGENCY_CONTACTS),
+                  tx('กำหนดผู้ติดต่อหลักเพื่อเติมในใบสมัครงานวิ่งอัตโนมัติ'),
                 ],
                 addresses: [
                   tx('ที่อยู่จัดส่ง'),
@@ -2110,28 +1758,28 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
               <div className="kr-sec-head">
                 <h2>{tx('ผู้ติดต่อฉุกเฉิน')}</h2>
                 <p className="muted-block">
-                  {txf(
-                    'บันทึกได้สูงสุด {0} รายชื่อ และกำหนดผู้ติดต่อหลักเพื่อเติมในใบสมัครงานวิ่งอัตโนมัติ',
-                    MAX_EMERGENCY_CONTACTS
-                  )}
+                  {tx('กำหนดผู้ติดต่อหลักเพื่อเติมในใบสมัครงานวิ่งอัตโนมัติ')}
                 </p>
               </div>
               <div className="cta-inline-row">
                 <button
                   type="button"
                   className="btn-primary"
-                  onClick={() => openEcModal()}
-                  disabled={emergencyList.length >= MAX_EMERGENCY_CONTACTS}
-                  aria-describedby="ec-limit-note"
+                  onClick={() => {
+                    // the limit (10) is not shown on the page; it is only said when someone hits it
+                    if (emergencyList.length >= MAX_EMERGENCY_CONTACTS) {
+                      notifyResult(
+                        false,
+                        txf('บันทึกผู้ติดต่อฉุกเฉินได้สูงสุด {0} คน ลบรายชื่อเดิมก่อนเพิ่มใหม่', MAX_EMERGENCY_CONTACTS)
+                      );
+                      return;
+                    }
+                    openEcModal();
+                  }}
                 >
                   <IconPlus size={15} />
                   <span>{tx('เพิ่มผู้ติดต่อฉุกเฉิน')}</span>
                 </button>
-                <span id="ec-limit-note" className="muted-inline mono-num">
-                  {emergencyList.length >= MAX_EMERGENCY_CONTACTS
-                    ? txf('ครบ {0} คนแล้ว ลบรายชื่อเดิมก่อนเพิ่มใหม่', MAX_EMERGENCY_CONTACTS)
-                    : txf('{0}/{1} คน', emergencyList.length, MAX_EMERGENCY_CONTACTS)}
-                </span>
               </div>
 
               {emergencyList.length === 0 ? (
@@ -2144,15 +1792,21 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                   </p>
                 </div>
               ) : (
+                <SearchPagedList
+                  items={emergencyList}
+                  searchText={(ec) => [ec.contactName, ec.relationship, ec.phone, ec.email].filter(Boolean).join(' ')}
+                  searchPlaceholder="ค้นหาชื่อ ความสัมพันธ์ หรือเบอร์โทร"
+                  idPrefix="pf-ec"
+                >
+                  {(pageItems) => (
                 <div className="linked-provider-list">
-                  {emergencyList.map((ec) => (
+                  {pageItems.map((ec) => (
                     <div key={ec.id} className="linked-provider-row">
-                      <div>
-                        <div className="cta-inline-row">
-                          <strong>{tx(ec.contactName)}</strong>
-                          <span className="status-pill badge-neutral">
-                            {tx(ec.relationship)}
-                          </span>
+                      {/* three lines per contact (25 Nov 2026, user request): name and the primary
+                          badge; relationship; phone and email */}
+                      <div className="ec-row-info">
+                        <div className="ec-row-meta">
+                          <strong className="ec-row-name">{tx(ec.contactName)}</strong>
                           {ec.isPrimary && (
                             <span className="status-pill badge-forest">
                               <IconCheckCircle size={12} />
@@ -2160,9 +1814,22 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                             </span>
                           )}
                         </div>
-                        <div className="muted-inline mono-num">
-                          {ec.phone}
-                          {ec.email ? ` · ${ec.email}` : ''}
+                        <div className="ec-row-meta">
+                          <span className="meta-tag">
+                            <IconUsers size={14} />
+                            <span>{tx(ec.relationship)}</span>
+                          </span>
+                        </div>
+                        {/* line 3 names each value (25 Nov 2026, user request) */}
+                        <div className="ec-row-contact muted-inline">
+                          <span>
+                            {tx('เบอร์โทร')}: <span className="mono-num">{ec.phone}</span>
+                          </span>
+                          {ec.email && (
+                            <span>
+                              {tx('อีเมล')}: <span className="mono-num">{ec.email}</span>
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="cta-inline-row">
@@ -2257,126 +1924,22 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                     </div>
                   ))}
                 </div>
+                  )}
+                </SearchPagedList>
               )}
 
-              {ecModalOpen &&
-                createPortal(
-                  <div
-                    className="runner-modal-backdrop"
-                    onMouseDown={(e) => {
-                      if (e.target === e.currentTarget) {
-                        requestCloseEcModal();
-                      }
-                    }}
-                  >
-                    <div
-                      className="runner-modal-dialog"
-                      role="dialog"
-                      aria-modal="true"
-                      aria-labelledby="ec-modal-title"
-                    >
-                      <form
-                        className="runner-modal-form"
-                        onSubmit={handleSaveEmergencyContact}
-                      >
-                        <div className="runner-modal-header">
-                          <div>
-                            <h3 id="ec-modal-title">
-                              {editingEcId
-                                ? tx('แก้ไขผู้ติดต่อฉุกเฉิน')
-                                : tx('เพิ่มผู้ติดต่อฉุกเฉินใหม่')}
-                            </h3>
-                          </div>
-                          <button
-                            type="button"
-                            className="runner-modal-close-btn"
-                            aria-label={tx('ปิดหน้าต่างแก้ไข')}
-                            onClick={requestCloseEcModal}
-                          >
-                            ×
-                          </button>
-                        </div>
-
-                        <div className="runner-modal-body canvas-stack">
-                          <div className="form-grid-2">
-                            <div className="form-row">
-                              <label htmlFor="ec-name">
-                                {<RequiredFieldText text={tx('ชื่อ-นามสกุลผู้ติดต่อ *')} />}
-                              </label>
-                              <input
-                                id="ec-name"
-                                type="text"
-                                value={ecName}
-                                onChange={(e) => setEcName(e.target.value)}
-                                placeholder={tx('เช่น วีระ วัฒนากูล')}
-                                required
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="ec-rel">
-                                {<RequiredFieldText text={tx('ความสัมพันธ์ *')} />}
-                              </label>
-                              <input
-                                id="ec-rel"
-                                type="text"
-                                value={ecRel}
-                                onChange={(e) => setEcRel(e.target.value)}
-                                placeholder={tx('เช่น บิดา / มารดา / คู่สมรส')}
-                                required
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="ec-phone">
-                                {<RequiredFieldText text={tx('เบอร์โทรศัพท์ *')} />}
-                              </label>
-                              <PhoneInput
-                                id="ec-phone"
-                                value={ecPhone}
-                                onChange={(next) => setEcPhone(next)}
-                                required
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="ec-email">
-                                {tx('อีเมล (ไม่บังคับ)')}
-                              </label>
-                              <input
-                                id="ec-email"
-                                type="email"
-                                value={ecEmail}
-                                onChange={(e) => setEcEmail(e.target.value)}
-                                placeholder={tx('กรอกอีเมลผู้ติดต่อ')}
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="runner-modal-footer">
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            onClick={requestCloseEcModal}
-                          >
-                            {tx('ยกเลิก')}
-                          </button>
-                          <button type="submit" className="btn-primary">
-                            {editingEcId ? (
-                              <IconCheckCircle size={15} />
-                            ) : (
-                              <IconPlus size={15} />
-                            )}
-                            <span>
-                              {editingEcId
-                                ? tx('บันทึกการแก้ไข')
-                                : tx('เพิ่มรายชื่อผู้ติดต่อฉุกเฉิน')}
-                            </span>
-                          </button>
-                        </div>
-                      </form>
-                    </div>
-                  </div>,
-                  document.body
-                )}
+              {ecModalOpen && (
+                <EmergencyContactModal
+                  key={editingEcId ?? 'new'}
+                  contact={emergencyList.find((c) => c.id === editingEcId) ?? null}
+                  onCancel={closeEcModal}
+                  onSave={handleSaveEmergencyContact}
+                  onInvalid={(msg) => {
+                    setBanner({ tone: 'err', text: msg });
+                    showResultModalAlert(false, msg);
+                  }}
+                />
+              )}
             </section>
           )}
 
@@ -2410,8 +1973,16 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                   </p>
                 </div>
               ) : (
+                <SearchPagedList
+                  items={addressList}
+                  searchText={(addr) =>
+                    [addr.addressName, addr.recipientName, addr.phone, addr.address, addr.subdistrict, addr.district, addr.province, addr.postalCode].join(' ')}
+                  searchPlaceholder="ค้นหาชื่อที่อยู่ ผู้รับ เบอร์โทร หรือจังหวัด"
+                  idPrefix="pf-addr"
+                >
+                  {(pageItems) => (
                 <div className="linked-provider-list">
-                  {addressList.map((addr) => (
+                  {pageItems.map((addr) => (
                     <div key={addr.id} className="linked-provider-row">
                       <div>
                         <div className="cta-inline-row">
@@ -2526,147 +2097,25 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                     </div>
                   ))}
                 </div>
+                  )}
+                </SearchPagedList>
               )}
 
-              {addrModalOpen &&
-                createPortal(
-                  <div
-                    className="runner-modal-backdrop"
-                    onMouseDown={(e) => {
-                      if (e.target === e.currentTarget) {
-                        requestCloseAddrModal();
-                      }
-                    }}
-                  >
-                    <div
-                      className="runner-modal-dialog"
-                      role="dialog"
-                      aria-modal="true"
-                      aria-labelledby="addr-modal-title"
-                    >
-                      <form
-                        className="runner-modal-form"
-                        onSubmit={handleSaveAddressItem}
-                      >
-                        <div className="runner-modal-header">
-                          <div>
-                            <h3 id="addr-modal-title">
-                              {editingAddrId
-                                ? tx('แก้ไขที่อยู่จัดส่ง')
-                                : tx('เพิ่มที่อยู่จัดส่งใหม่')}
-                            </h3>
-                          </div>
-                          <button
-                            type="button"
-                            className="runner-modal-close-btn"
-                            aria-label={tx('ปิดหน้าต่างแก้ไข')}
-                            onClick={requestCloseAddrModal}
-                          >
-                            ×
-                          </button>
-                        </div>
-
-                        <div className="runner-modal-body canvas-stack">
-                          {/* right column (recipient, then the summary) rises next to the phone row;
-                              fields stay in reading order so Tab goes name, recipient, phone, address */}
-                          <ThaiPostalAddressSelector
-                            typeableArea
-                            flow={{
-                              topLeft: (
-                                <div className="form-row">
-                                  <label htmlFor="ad-lbl">{tx('ชื่อเรียกที่อยู่ (ไม่บังคับ)')}</label>
-                                  <input
-                                    id="ad-lbl"
-                                    type="text"
-                                    value={addrLabel}
-                                    maxLength={60}
-                                    onChange={(e) => setAddrLabel(e.target.value)}
-                                    placeholder={tx('เช่น บ้านพัก / ที่ทำงาน')}
-                                  />
-                                </div>
-                              ),
-                              topRight: (
-                                <div className="form-row">
-                                  <label htmlFor="ad-rec">
-                                    {<RequiredFieldText text={tx('ชื่อผู้รับพัสดุ *')} />}
-                                  </label>
-                                  <input
-                                    id="ad-rec"
-                                    type="text"
-                                    value={addrRecipient}
-                                    onChange={(e) =>
-                                      setAddrRecipient(e.target.value)
-                                    }
-                                    required
-                                  />
-                                </div>
-                              ),
-                              left: (
-                                <div className="form-row">
-                                  <label htmlFor="ad-ph">
-                                    {<RequiredFieldText text={tx('เบอร์โทรผู้รับ *')} />}
-                                  </label>
-                                  <PhoneInput
-                                    id="ad-ph"
-                                    value={addrPhone}
-                                    onChange={(next) => setAddrPhone(next)}
-                                    required
-                                  />
-                                </div>
-                              ),
-                            }}
-                            idPrefix="ad-book"
-                            contactName={addrRecipient}
-                            contactPhone={addrPhone}
-                            contactEmail={user.contactEmail}
-                            required
-                            streetAddressLabel="ที่อยู่ (บ้านเลขที่ อาคาร ซอย ถนน)"
-                            streetAddressPlaceholder="เช่น 199/8 ถ.ห้วยแก้ว หมู่บ้านล้านนาวิว"
-                            value={{
-                              country: addrCountry,
-                              postalCode: addrZip,
-                              province: addrProv,
-                              district: addrDist,
-                              subdistrict: addrSubd,
-                              address: addrLine,
-                            }}
-                            onChange={(next) => {
-                              setAddrCountry(next.country);
-                              setAddrZip(next.postalCode);
-                              setAddrProv(next.province);
-                              setAddrDist(next.district);
-                              setAddrSubd(next.subdistrict);
-                              setAddrLine(next.address);
-                            }}
-                          />
-                        </div>
-
-                        <div className="runner-modal-footer">
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            onClick={requestCloseAddrModal}
-                          >
-                            {tx('ยกเลิก')}
-                          </button>
-                          <button type="submit" className="btn-primary">
-                            {editingAddrId ? (
-                              <IconCheckCircle size={15} />
-                            ) : (
-                              <IconPlus size={15} />
-                            )}
-                            <span>
-                              {editingAddrId
-                                ? tx('บันทึกการแก้ไขที่อยู่')
-                                : tx('บันทึกที่อยู่จัดส่ง')}
-                            </span>
-                          </button>
-                        </div>
-                      </form>
-                    </div>
-                  </div>,
-                  document.body
-                )}
+              {addrModalOpen && (
+                <SavedAddressModal
+                  key={editingAddrId ?? 'new'}
+                  address={addressList.find((a) => a.id === editingAddrId) ?? null}
+                  defaultRecipient={user.fullNameTh}
+                  defaultPhone={prof.phone ?? ''}
+                  contactEmail={user.contactEmail ?? undefined}
+                  onCancel={closeAddrModal}
+                  onSave={handleSaveAddressItem}
+                  onInvalid={(msg) => {
+                    setBanner({ tone: 'err', text: msg });
+                    showResultModalAlert(false, msg);
+                  }}
+                />
+              )}
             </section>
           )}
 
@@ -3156,8 +2605,16 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                   </p>
                 </div>
               ) : (
+                <SearchPagedList
+                  items={participantList}
+                  searchText={(pt) =>
+                    [pt.firstName, pt.lastName, pt.nickname, pt.firstNameEn, pt.lastNameEn, pt.nicknameEn, pt.phone, pt.relationshipToOwner].filter(Boolean).join(' ')}
+                  searchPlaceholder="ค้นหาชื่อ ชื่อเล่น หรือเบอร์โทร"
+                  idPrefix="pf-sp"
+                >
+                  {(pageItems) => (
                 <div className="linked-provider-list">
-                  {participantList.map((pt) => {
+                  {pageItems.map((pt) => {
                     const enFull =
                       `${pt.firstNameEn ?? ''} ${pt.lastNameEn ?? ''}`.trim();
                     const thFull = `${pt.firstName} ${pt.lastName}`.trim();
@@ -3171,18 +2628,24 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                       <div key={pt.id} className="linked-provider-row">
                         <div>
                           <div className="cta-inline-row">
+                            {/* nickname first (25 Nov 2026, user request) */}
                             <strong>
+                              {nickDisplay ? `(${nickDisplay}) ` : ''}
                               {primaryTitle}
-                              {nickDisplay ? ` (${nickDisplay})` : ''}
                             </strong>
                             {pt.relationshipToOwner && (
-                              <span className="status-pill badge-navy">
-                                {tx(pt.relationshipToOwner)}
+                              // details are icon + text; capsules are kept for statuses (26 Nov 2026)
+                              <span className="meta-tag">
+                                <IconUsers size={14} />
+                                <span>{tx(pt.relationshipToOwner)}</span>
                               </span>
                             )}
                             {pt.preferredShirtSize && (
-                              <span className="status-pill badge-neutral">
-                                {tx('เสื้อ')} {pt.preferredShirtSize}
+                              <span className="meta-tag">
+                                <IconShirt size={14} />
+                                <span>
+                                  {tx('เสื้อ')} {pt.preferredShirtSize}
+                                </span>
                               </span>
                             )}
                           </div>
@@ -3233,7 +2696,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                               void Swal.fire({
                                 icon: 'warning',
                                 title: tx('ยืนยันการลบผู้สมัครแทน?'),
-                                text: `${primaryTitle}${nickDisplay ? ` (${nickDisplay})` : ''}`,
+                                text: `${nickDisplay ? `(${nickDisplay}) ` : ''}${primaryTitle}`,
                                 showCancelButton: true,
                                 confirmButtonText: tx('ลบรายการ'),
                                 cancelButtonText: tx('ยกเลิก'),
@@ -3257,7 +2720,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                                 setParticipantList(next);
                                 if (editingPartId === pt.id) {
                                   setEditingPartId(null);
-                                  setPartDraft(createEmptyParticipantDraft());
                                 }
                                 const okMsg = tx('ลบผู้สมัครที่บันทึกไว้แล้ว');
                                 if (
@@ -3284,484 +2746,42 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                     );
                   })}
                 </div>
+                  )}
+                </SearchPagedList>
               )}
 
-              {editingPartId &&
-                createPortal(
-                  <div
-                    className="runner-modal-backdrop"
-                    onMouseDown={(e) => {
-                      if (e.target === e.currentTarget) {
-                        requestClosePartModal();
-                      }
-                    }}
-                  >
-                    <div
-                      className="runner-modal-dialog"
-                      role="dialog"
-                      aria-modal="true"
-                      aria-labelledby="sp-modal-title"
-                    >
-                      <form
-                        className="runner-modal-form"
-                        onSubmit={async (e) => {
-                          e.preventDefault();
-                          if (
-                            !(partDraft.firstNameEn ?? '').trim() ||
-                            !(partDraft.lastNameEn ?? '').trim()
-                          ) {
-                            const errMsg = tx(
-                              'กรุณากรอกชื่อและนามสกุลภาษาอังกฤษของผู้สมัครแทน'
-                            );
-                            setBanner({ tone: 'err', text: errMsg });
-                            showResultModalAlert(false, errMsg);
-                            return;
-                          }
-                          if (
-                            partDraft.idType === 'thai_id' &&
-                            partDraft.idNumber &&
-                            partDraft.idNumber.length !== 13
-                          ) {
-                            const errMsg = tx(
-                              'เลขบัตรประจำตัวประชาชนต้องครบ 13 หลัก'
-                            );
-                            setBanner({ tone: 'err', text: errMsg });
-                            showResultModalAlert(false, errMsg);
-                            return;
-                          }
-                          const isNewPart = editingPartId === NEW_PARTICIPANT_ID;
-                          const normalizedItem: SavedParticipant = {
-                            ...partDraft,
-                            id: isNewPart ? `sp-${Date.now().toString(36)}` : editingPartId,
-                            firstName: partDraft.firstName.trim(),
-                            lastName: partDraft.lastName.trim(),
-                            nickname:
-                              (partDraft.nickname ?? '').trim() || undefined,
-                            firstNameEn: (partDraft.firstNameEn ?? '').trim(),
-                            lastNameEn: (partDraft.lastNameEn ?? '').trim(),
-                            nicknameEn:
-                              (partDraft.nicknameEn ?? '').trim() || undefined,
-                            dateOfBirth: partDraft.dateOfBirth || undefined,
-                            nationality:
-                              (partDraft.nationality ?? '').trim() || 'Thailand',
-                            idType: (partDraft.idNumber ?? '').trim()
-                              ? partDraft.idType ?? 'thai_id'
-                              : 'none',
-                            idNumber:
-                              (partDraft.idNumber ?? '').trim() || undefined,
-                            phone: (partDraft.phone ?? '').trim() || undefined,
-                            preferredShirtSize:
-                              partDraft.preferredShirtSize || undefined,
-                            relationshipToOwner:
-                              (partDraft.relationshipToOwner ?? '').trim() ||
-                              undefined,
-                            emergencyContactName:
-                              (partDraft.emergencyContactName ?? '').trim() ||
-                              undefined,
-                            emergencyContactRelation:
-                              (partDraft.emergencyContactRelation ?? '').trim() ||
-                              undefined,
-                            emergencyContactPhone:
-                              (partDraft.emergencyContactPhone ?? '').trim() ||
-                              undefined,
-                          };
-                          const next = isNewPart
-                            ? [...participantList, normalizedItem]
-                            : participantList.map((x) => (x.id === editingPartId ? normalizedItem : x));
-                          setParticipantList(next);
-                          setEditingPartId(null);
-                          setPartDraft(createEmptyParticipantDraft());
-                          const okMsg = isNewPart
-                            ? tx('เพิ่มผู้สมัครเรียบร้อยแล้ว')
-                            : tx('อัปเดตข้อมูลผู้สมัครแทนเรียบร้อยแล้ว');
-                          if (
-                            !(await saveProfileWithFeedback(
-                              buildMergedProfile({ savedParticipants: next }),
-                              undefined,
-                              okMsg
-                            ))
-                          )
-                            return;
-                          setBanner({
-                            tone: 'ok',
-                            text: okMsg,
-                          });
-                        }}
-                      >
-                        <div className="runner-modal-header">
-                          <div>
-                            <h3 id="sp-modal-title">
-                              {editingPartId === NEW_PARTICIPANT_ID
-                                ? tx('เพิ่มผู้สมัคร')
-                                : tx('แก้ไขข้อมูลผู้สมัครแทน')}
-                            </h3>
-                            <p className="muted-inline">
-                              {isEn
-                                ? `${partDraft.firstNameEn ?? ''} ${partDraft.lastNameEn ?? ''}`.trim() ||
-                                `${partDraft.firstName} ${partDraft.lastName}`.trim()
-                                : `${partDraft.firstName} ${partDraft.lastName}`.trim() ||
-                                `${partDraft.firstNameEn ?? ''} ${partDraft.lastNameEn ?? ''}`.trim()}
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            className="runner-modal-close-btn"
-                            aria-label={tx('ปิดหน้าต่างแก้ไข')}
-                            onClick={requestClosePartModal}
-                          >
-                            ×
-                          </button>
-                        </div>
-
-                        <div className="runner-modal-body canvas-stack">
-                          <div className="form-grid-2">
-                            <div className="form-row">
-                              <label htmlFor="sp-fne">
-                                {<RequiredFieldText text={tx('ชื่อ (ภาษาอังกฤษ) *')} />}
-                              </label>
-                              <input
-                                id="sp-fne"
-                                type="text"
-                                placeholder={tx('กรอกชื่อภาษาอังกฤษ')}
-                                value={partDraft.firstNameEn ?? ''}
-                                onChange={(e) =>
-                                  setPartDraft({
-                                    ...partDraft,
-                                    firstNameEn: sanitizeEnglishNameInput(
-                                      e.target.value
-                                    ),
-                                  })
-                                }
-                                required
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="sp-lne">
-                                {<RequiredFieldText text={tx('นามสกุล (ภาษาอังกฤษ) *')} />}
-                              </label>
-                              <input
-                                id="sp-lne"
-                                type="text"
-                                placeholder={tx('กรอกนามสกุลภาษาอังกฤษ')}
-                                value={partDraft.lastNameEn ?? ''}
-                                onChange={(e) =>
-                                  setPartDraft({
-                                    ...partDraft,
-                                    lastNameEn: sanitizeEnglishNameInput(
-                                      e.target.value
-                                    ),
-                                  })
-                                }
-                                required
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="sp-nke">
-                                {tx('ชื่อเล่น (ภาษาอังกฤษ)')}
-                              </label>
-                              <input
-                                id="sp-nke"
-                                type="text"
-                                placeholder={tx('กรอกชื่อเล่นภาษาอังกฤษ')}
-                                value={partDraft.nicknameEn ?? ''}
-                                onChange={(e) =>
-                                  setPartDraft({
-                                    ...partDraft,
-                                    nicknameEn: sanitizeEnglishNameInput(
-                                      e.target.value
-                                    ),
-                                  })
-                                }
-                              />
-                            </div>
-                          </div>
-
-                          <div className="form-grid-2">
-                            <div className="form-row">
-                              <label htmlFor="sp-fn">
-                                {tx('ชื่อ (ภาษาไทย)')}
-                              </label>
-                              <input
-                                id="sp-fn"
-                                type="text"
-                                placeholder={tx('ไม่บังคับสำหรับชาวต่างชาติ')}
-                                value={partDraft.firstName}
-                                onChange={(e) =>
-                                  setPartDraft({
-                                    ...partDraft,
-                                    firstName: sanitizeThaiNameInput(
-                                      e.target.value
-                                    ),
-                                  })
-                                }
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="sp-ln">
-                                {tx('นามสกุล (ภาษาไทย)')}
-                              </label>
-                              <input
-                                id="sp-ln"
-                                type="text"
-                                placeholder={tx('ไม่บังคับสำหรับชาวต่างชาติ')}
-                                value={partDraft.lastName}
-                                onChange={(e) =>
-                                  setPartDraft({
-                                    ...partDraft,
-                                    lastName: sanitizeThaiNameInput(
-                                      e.target.value
-                                    ),
-                                  })
-                                }
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="sp-nk">
-                                {tx('ชื่อเล่น (ภาษาไทย)')}
-                              </label>
-                              <input
-                                id="sp-nk"
-                                type="text"
-                                placeholder={tx('กรอกชื่อเล่นภาษาไทย')}
-                                value={partDraft.nickname ?? ''}
-                                onChange={(e) =>
-                                  setPartDraft({
-                                    ...partDraft,
-                                    nickname: sanitizeThaiNameInput(
-                                      e.target.value
-                                    ),
-                                  })
-                                }
-                              />
-                            </div>
-                          </div>
-
-                          <div className="form-grid-2">
-                            <div className="form-row">
-                              <label htmlFor="sp-dob">{tx('วันเกิด')}</label>
-                              <DateOfBirthInput
-                                id="sp-dob"
-                                valueIso={partDraft.dateOfBirth ?? ''}
-                                onChangeIso={(v) =>
-                                  setPartDraft({ ...partDraft, dateOfBirth: v })
-                                }
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="sp-gen">{tx('เพศ')}</label>
-                              <SelectMenu
-                                id="sp-gen"
-                                value={partDraft.gender ?? 'ไม่ระบุ'}
-                                onChange={(v) =>
-                                  setPartDraft({
-                                    ...partDraft,
-                                    gender: v as 'ชาย' | 'หญิง' | 'ไม่ระบุ',
-                                  })
-                                }
-                                options={[
-                                  { value: 'ไม่ระบุ', label: tx('ไม่ระบุ') },
-                                  { value: 'ชาย', label: tx('ชาย') },
-                                  { value: 'หญิง', label: tx('หญิง') },
-                                ]}
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="sp-nat">{tx('สัญชาติ')}</label>
-                              <input
-                                id="sp-nat"
-                                type="text"
-                                placeholder={tx('ระบุสัญชาติ')}
-                                value={
-                                  !isEn &&
-                                    (partDraft.nationality ?? '')
-                                      .trim()
-                                      .toLowerCase() === 'thailand'
-                                    ? 'ไทย'
-                                    : isEn &&
-                                      (partDraft.nationality ?? '').trim() ===
-                                      'ไทย'
-                                      ? 'Thailand'
-                                      : partDraft.nationality ?? 'Thailand'
-                                }
-                                onChange={(e) =>
-                                  setPartDraft({
-                                    ...partDraft,
-                                    nationality: e.target.value,
-                                  })
-                                }
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="sp-ph">{tx('เบอร์โทรศัพท์')}</label>
-                              <PhoneInput
-                                id="sp-ph"
-                                value={partDraft.phone ?? ''}
-                                onChange={(next) =>
-                                  setPartDraft({
-                                    ...partDraft,
-                                    phone: next,
-                                  })}
-                              />
-                            </div>
-                          </div>
-
-                          <div className="form-grid-2">
-                            <div className="form-row">
-                              <label htmlFor="sp-idt">
-                                {tx('ประเภทเอกสาร')}
-                              </label>
-                              <SelectMenu
-                                id="sp-idt"
-                                value={
-                                  partDraft.idType && partDraft.idType !== 'none'
-                                    ? partDraft.idType
-                                    : 'thai_id'
-                                }
-                                onChange={(v) =>
-                                  setPartDraft({
-                                    ...partDraft,
-                                    idType: v as 'none' | 'thai_id' | 'passport',
-                                  })
-                                }
-                                options={[
-                                  { value: 'thai_id', label: tx('บัตรประจำตัวประชาชน 13 หลัก') },
-                                  { value: 'passport', label: tx('หนังสือเดินทาง') },
-                                ]}
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="sp-idn">
-                                {tx('เลขบัตร / เลขหนังสือเดินทาง')}
-                              </label>
-                              <IdNumberInput
-                                id="sp-idn"
-                                idType={
-                                  partDraft.idType && partDraft.idType !== 'none'
-                                    ? partDraft.idType
-                                    : 'thai_id'
-                                }
-                                className="mono-code"
-                                value={partDraft.idNumber ?? ''}
-                                onValueChange={(next) =>
-                                  setPartDraft({ ...partDraft, idNumber: next })
-                                }
-                                placeholder={
-                                  partDraft.idType === 'passport'
-                                    ? tx('กรอกเลขหนังสือเดินทาง')
-                                    : 'X-XXXX-XXXXX-XX-X'
-                                }
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="sp-shirt">
-                                {tx('ไซส์เสื้อวิ่ง')}
-                              </label>
-                              <SelectMenu
-                                id="sp-shirt"
-                                value={partDraft.preferredShirtSize ?? ''}
-                                onChange={(v) =>
-                                  setPartDraft({
-                                    ...partDraft,
-                                    preferredShirtSize: v,
-                                  })
-                                }
-                                options={[
-                                  { value: '', label: tx('ไม่ระบุ') },
-                                  ...enabledSizes.map((sz) => ({ value: sz.code, label: sz.code })),
-                                ]}
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="sp-rel-owner">
-                                {tx('ความสัมพันธ์')}
-                              </label>
-                              <input
-                                id="sp-rel-owner"
-                                type="text"
-                                placeholder={tx('เช่น น้องชาย / เพื่อนร่วมทีม')}
-                                value={partDraft.relationshipToOwner ?? ''}
-                                onChange={(e) =>
-                                  setPartDraft({
-                                    ...partDraft,
-                                    relationshipToOwner: e.target.value,
-                                  })
-                                }
-                              />
-                            </div>
-                          </div>
-
-                          <div className="form-grid-2">
-                            <div className="form-row">
-                              <label htmlFor="sp-em-name">
-                                {tx('ชื่อผู้ติดต่อฉุกเฉิน')}
-                              </label>
-                              <input
-                                id="sp-em-name"
-                                type="text"
-                                placeholder={tx('ชื่อ-นามสกุลผู้ติดต่อฉุกเฉิน')}
-                                value={partDraft.emergencyContactName ?? ''}
-                                onChange={(e) =>
-                                  setPartDraft({
-                                    ...partDraft,
-                                    emergencyContactName: e.target.value,
-                                  })
-                                }
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="sp-em-rel">
-                                {tx('ความสัมพันธ์ผู้ติดต่อฉุกเฉิน')}
-                              </label>
-                              <input
-                                id="sp-em-rel"
-                                type="text"
-                                placeholder={tx('เช่น บิดา / มารดา / คู่สมรส')}
-                                value={partDraft.emergencyContactRelation ?? ''}
-                                onChange={(e) =>
-                                  setPartDraft({
-                                    ...partDraft,
-                                    emergencyContactRelation: e.target.value,
-                                  })
-                                }
-                              />
-                            </div>
-                            <div className="form-row">
-                              <label htmlFor="sp-em-phone">
-                                {tx('เบอร์โทรฉุกเฉิน')}
-                              </label>
-                              <PhoneInput
-                                id="sp-em-phone"
-                                value={partDraft.emergencyContactPhone ?? ''}
-                                onChange={(next) =>
-                                  setPartDraft({
-                                    ...partDraft,
-                                    emergencyContactPhone: next,
-                                  })}
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="runner-modal-footer">
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            onClick={requestClosePartModal}
-                          >
-                            {tx('ยกเลิก')}
-                          </button>
-                          <button type="submit" className="btn-primary">
-                            <IconCheckCircle size={15} />
-                            <span>
-                              {editingPartId === NEW_PARTICIPANT_ID ? tx('เพิ่มผู้สมัคร') : tx('บันทึกการแก้ไข')}
-                            </span>
-                          </button>
-                        </div>
-                      </form>
-                    </div>
-                  </div>,
-                  document.body
-                )}
+              {editingPartId && (
+                <SavedParticipantModal
+                  key={editingPartId}
+                  participant={participantList.find((x) => x.id === editingPartId) ?? null}
+                  shirtSizes={enabledSizes.map((sz) => sz.code)}
+                  onCancel={closePartModal}
+                  onInvalid={(msg) => {
+                    setBanner({ tone: 'err', text: msg });
+                    showResultModalAlert(false, msg);
+                  }}
+                  onSave={async (item) => {
+                    const isNewPart = editingPartId === NEW_PARTICIPANT_ID;
+                    const next = isNewPart
+                      ? [...participantList, item]
+                      : participantList.map((x) => (x.id === editingPartId ? item : x));
+                    setParticipantList(next);
+                    setEditingPartId(null);
+                    const okMsg = isNewPart
+                      ? tx('เพิ่มผู้สมัครเรียบร้อยแล้ว')
+                      : tx('อัปเดตข้อมูลผู้สมัครแทนเรียบร้อยแล้ว');
+                    if (
+                      !(await saveProfileWithFeedback(
+                        buildMergedProfile({ savedParticipants: next }),
+                        undefined,
+                        okMsg
+                      ))
+                    )
+                      return;
+                    setBanner({ tone: 'ok', text: okMsg });
+                  }}
+                />
+              )}
             </section>
           )}
 

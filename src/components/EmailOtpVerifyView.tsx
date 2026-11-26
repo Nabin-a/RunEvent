@@ -131,10 +131,6 @@ export const EmailOtpVerifyView: React.FC<EmailOtpVerifyViewProps> = ({
           </p>
         </div>
 
-        <div className="otp-sandbox-note">
-          {tx('โหมดทดสอบบนเครื่อง: ใช้รหัสจำลอง')}{' '}
-          <strong className="mono-code">123456</strong>
-        </div>
 
         <form className="canvas-stack" onSubmit={handleSubmit}>
           <div className="otp-digit-section">

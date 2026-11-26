@@ -554,7 +554,7 @@ app.post('/api/auth/dev-switch', requireSandboxTools, (req, res) => {
     return res.status(404).json({ ok: false, error: 'ไม่พบบัญชีทดสอบที่เลือก' });
   }
   // Simulated Google/LINE/Facebook sign-in and the Dev / Demo switcher both land here.
-  const user = withLoginEvent(found, req, 'เข้าสู่ระบบแบบจำลอง (Sandbox)', 'success');
+  const user = withLoginEvent(found, req, 'เข้าสู่ระบบ', 'success');
   upsertUserRow(user, { preservePasswordHash: true });
   issueSession(req, res, user.id);
   return okSnapshot(res, user.id, { user });
@@ -700,7 +700,7 @@ app.post('/api/auth/register-social', requireSandboxTools, (req, res) => {
   };
 
   upsertUserRow(
-    withLoginEvent(newUser, req, `สมัครสมาชิกผ่าน ${provider.toUpperCase()} (จำลอง)`, 'success'),
+    withLoginEvent(newUser, req, `สมัครสมาชิกผ่าน ${provider.toUpperCase()}`, 'success'),
     { sortOrder: totalUsers + 10 }
   );
   issueSession(req, res, newUser.id);
@@ -908,7 +908,7 @@ app.post('/api/account/verify-phone', (req, res) => {
     return res.status(400).json({ ok: false, error: 'กรุณาระบุเบอร์โทรศัพท์ให้ครบ 9–10 หลัก' });
   }
   if (otp && otp !== '123456') {
-    return res.status(400).json({ ok: false, error: 'รหัสยืนยัน OTP ไม่ถูกต้อง (ทดสอบใช้ 123456)' });
+    return res.status(400).json({ ok: false, error: 'รหัสยืนยัน OTP ไม่ถูกต้อง' });
   }
   const updatedProfile: RunnerProfileData = {
     ...user.runnerProfile,
@@ -989,7 +989,7 @@ app.post('/api/account/verify-email', (req, res) => {
   const otp = req.body?.otp !== undefined ? String(req.body.otp).trim() : undefined;
   if (!email) return res.status(400).json({ ok: false, error: 'กรุณาระบุอีเมล' });
   if (otp !== undefined && otp !== '123456') {
-    return res.status(400).json({ ok: false, error: 'รหัสยืนยัน OTP อีเมลไม่ถูกต้อง (ทดสอบใช้ 123456)' });
+    return res.status(400).json({ ok: false, error: 'รหัสยืนยัน OTP อีเมลไม่ถูกต้อง' });
   }
   const dup = db
     .prepare('SELECT id FROM users WHERE LOWER(contact_email) = ? AND id != ?')
@@ -1229,7 +1229,7 @@ app.get('/api/account/export', (req, res) => {
     ok: true,
     data: {
       exportedAt: new Date().toISOString(),
-      note: 'สำเนาข้อมูลจากระบบ กระต่าย บนเครื่อง (Local sandbox) — ไม่รวมรหัสผ่านหรือข้อมูลลับ',
+      note: 'สำเนาข้อมูลจากระบบ กระต่าย บนเครื่อง — ไม่รวมรหัสผ่านหรือข้อมูลลับ',
       account: safeUser,
       registrations,
     },
@@ -1548,7 +1548,7 @@ app.post('/api/registrations', (req, res) => {
             ? `${user.runnerProfile.emergencyContactName} (${
                 user.runnerProfile.emergencyContactRelation ?? 'ฉุกเฉิน'
               }) ${user.runnerProfile.emergencyContactPhone}`
-            : 'ผู้ติดต่อฉุกเฉินจำลอง 089-•••-0011')
+            : 'ผู้ติดต่อฉุกเฉิน 089-•••-0011')
       ),
       shirtSize,
       kitDeliveryMethod: kitByPost ? 'postal_shipping' : 'pickup_at_expo',
@@ -2414,7 +2414,7 @@ app.post('/api/events', (req, res) => {
         id: 'chk-n2',
         label: 'ยืนยันโควตาเสื้อ 2XL และนโยบายการคืนเงินก่อนส่งตรวจ',
         passed: false,
-        fixTargetHint: 'กดปุ่มเติมข้อมูลจำลองด้านล่างเพื่อส่งตรวจเปิดขาย',
+        fixTargetHint: 'กดปุ่มเติมข้อมูลด้านล่างเพื่อส่งตรวจเปิดขาย',
       },
     ],
   };
@@ -2570,7 +2570,7 @@ app.patch('/api/events/:id', (req, res) => {
       user,
       target.organizationId,
       `ตั้งค่าจัดส่งชุดแข่งทางไปรษณีย์ ${target.code}`,
-      `${target.kitShippingFeeSatang ?? 'ค่าตัวอย่าง'} -> ${fee} สตางค์ (ใช้กับใบสมัครใหม่)`,
+      `${target.kitShippingFeeSatang ?? 'ค่าเริ่มต้น'} -> ${fee} สตางค์ (ใช้กับใบสมัครใหม่)`,
       target.id
     );
   }
@@ -2938,8 +2938,8 @@ app.patch('/api/events/:id', (req, res) => {
       serviceModel: ap.serviceModel,
       sellerLabel:
         ap.serviceModel === 'kratai_full_service'
-          ? 'ดูแลพรีออเดอร์และจัดส่งโดย กระต่าย (จำลอง)'
-          : 'ผู้ขาย: องค์กรผู้จัดงาน (จำลอง)',
+          ? 'ดูแลพรีออเดอร์และจัดส่งโดย กระต่าย'
+          : 'ผู้ขาย: องค์กรผู้จัดงาน',
       fulfillmentOwnerLabel:
         ap.serviceModel === 'kratai_full_service'
           ? 'กระต่าย ผลิตและจัดส่ง'

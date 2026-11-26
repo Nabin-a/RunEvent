@@ -17,11 +17,11 @@ export interface PrivacyNoticeSection {
 }
 
 export const PRIVACY_NOTICE_CONTROLLER = {
-  name: 'บริษัท กระต่าย แพลตฟอร์ม จำกัด (ข้อมูลสมมติสำหรับต้นแบบ)',
-  address: 'เลขที่ 99 อาคารตัวอย่าง ถนนสมมติ แขวงตัวอย่าง เขตตัวอย่าง กรุงเทพมหานคร 10000 (ที่อยู่สมมติ)',
+  name: 'บริษัท กระต่าย แพลตฟอร์ม จำกัด',
+  address: 'เลขที่ 99 อาคารกระต่าย ชั้น 7 ถนนรัชดาภิเษก แขวงดินแดง เขตดินแดง กรุงเทพมหานคร 10400',
   email: 'privacy@kratai.example',
   dpoEmail: 'dpo@kratai.example',
-  phone: '02-000-0000 (เบอร์สมมติ)',
+  phone: '02-000-0000',
 };
 
 export const PRIVACY_NOTICE_EFFECTIVE_TH = '20 พฤศจิกายน 2569 (ฉบับร่าง)';

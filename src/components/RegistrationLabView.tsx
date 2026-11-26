@@ -3,13 +3,15 @@ import type {
   EventProduct,
   OrganizerFormStep,
   RunnerSavedAddress,
+  RunnerEmergencyContact,
+  SavedParticipant,
   Organization,
   RaceCategory,
   RaceEvent,
   ShirtSizeCode,
   UserAccount,
 } from '../types';
-import { tx, txf } from '../i18n';
+import { getLang, tx, txf } from '../i18n';
 import {
   calculateFeeQuote,
   feePolicyLabel,
@@ -32,7 +34,27 @@ import { NoteTag, PriceTag } from './RegTags';
 import { RegistrationStepper } from './RegistrationStepper';
 import { ShirtGallery, type ShirtGalleryStyle } from './ProductGallery';
 import { SHIRT_STYLES, shirtStyleName, type ShirtStyleId } from '../data/mockShirtStyles';
+import { SHIRT_PHOTOS } from '../data/productPhotos';
+
+/** shirt cut picked on the shirt step */
+type ShirtCut = 'Men' | 'Women' | 'Kids';
+const SHIRT_CUTS: { id: ShirtCut; label: string }[] = [
+  { id: 'Men', label: 'ชาย' },
+  { id: 'Women', label: 'หญิง' },
+  { id: 'Kids', label: 'เด็ก' },
+];
+/** sample kids' measurements: the unisex chart minus 8" chest and 6" length (no real kids chart yet) */
+const shrinkInch = (v: string, by: number) => v.replace(/\d+(\.\d+)?/, (n) => String(Math.max(0, Number(n) - by)));
+const kidsSampleSpec = (m: { chestInch: string; lengthInch: string }) => ({
+  ...m,
+  chestInch: shrinkInch(m.chestInch, 8),
+  lengthInch: shrinkInch(m.lengthInch, 6),
+});
 import { ThaiPostalAddressSelector, type CascadingAddressValue } from './ThaiPostalAddressSelector';
+import { SavedAddressModal, type SavedAddressDraft } from './SavedAddressModal';
+import { SavedParticipantModal } from './SavedParticipantModal';
+import { SavedCardPicker } from './SavedCardPicker';
+import { EmergencyContactModal, type EmergencyContactDraft } from './EmergencyContactModal';
 import {
   IconAlert,
   IconArrowLeft,
@@ -89,6 +111,9 @@ export interface LabLive {
   fillSelf?: () => void;
   /** keeps a new address in the runner's profile (signed in only) */
   saveAddresses?: (list: RunnerSavedAddress[]) => Promise<{ ok: boolean; error?: string }>;
+  /** keeps an edited saved participant / emergency contact in the runner's profile (signed in only) */
+  saveParticipants?: (list: SavedParticipant[]) => Promise<{ ok: boolean; error?: string }>;
+  saveEmergencyContacts?: (list: RunnerEmergencyContact[]) => Promise<{ ok: boolean; error?: string }>;
 }
 
 /** [value, setter] owned by the live form, so switching A <-> B keeps what was typed */
@@ -154,12 +179,13 @@ export function RegistrationLabView({
   live: LabLive;
 }) {
   const profile = currentUser?.runnerProfile;
-  const hasSouvenirs = event.products.length > 0;
+  // the souvenir step shows only when something is still on sale (sold-out items are hidden)
+  const hasSouvenirs = event.products.some((p) => p.stockOrCeiling - p.soldCount > 0);
   const steps: { step: LabStep; label: string }[] = [
     { step: 1, label: 'เริ่ม' },
     { step: 2, label: 'ข้อมูล' },
     ...live.ownSteps.map((st, i) => ({ step: 2 + (i + 1) / 10, label: st.title })),
-    { step: 3, label: 'สินค้า' },
+    { step: 3, label: 'เสื้อที่ระลึก' },
     ...(hasSouvenirs ? [{ step: 4 as LabStep, label: 'ของที่ระลึก' }] : []),
     { step: 5, label: 'ที่อยู่' },
     { step: 6, label: 'สรุป' },
@@ -282,9 +308,197 @@ export function RegistrationLabView({
     setEmergency(p?.emergencyContactName ?? '', p?.emergencyContactRelation ?? '', p?.emergencyContactPhone ?? '');
   };
 
-  const saved = profile?.savedParticipants ?? [];
-  const contacts = profile?.emergencyContacts ?? [];
+  // saved participants and emergency contacts start from the profile; edits made here are kept
+  // in the profile too and shown at once (25 Nov 2026, user request: work like the address step)
+  const [saved, setSaved] = useState<SavedParticipant[]>(profile?.savedParticipants ?? []);
+  const [contacts, setContacts] = useState<RunnerEmergencyContact[]>(profile?.emergencyContacts ?? []);
+  // the profile can arrive after this page opens (a direct link / reload), and saving here updates it
+  useEffect(() => {
+    setSaved(profile?.savedParticipants ?? []);
+  }, [profile?.savedParticipants]);
+  useEffect(() => {
+    setContacts(profile?.emergencyContacts ?? []);
+  }, [profile?.emergencyContacts]);
   const ageCheck = category ? evaluateCategoryAge(event, category, dob, gender) : null;
+  // a distance with an age limit or age groups needs the date of birth (26 Nov 2026, user request)
+  const dobRequired = Boolean(ageCheck && ageCheck.status !== 'not_required');
+
+  /* participant: "เลือกจากรายชื่อที่บันทึกไว้" or "กรอกผู้สมัครใหม่" ('new') */
+  const partMode: 'saved' | 'manual' = saved.length > 0 && savedId !== 'new' ? 'saved' : 'manual';
+  const lastSavedId = useRef<string>('');
+  const [partEditId, setPartEditId] = useState<string | null>(null);
+  const [step2Notice, setStep2Notice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
+  const pickParticipant = (id: string) => {
+    setSavedId(id);
+    fillFrom(saved.find((x) => x.id === id) ?? null);
+  };
+  const saveEditedParticipant = async (item: SavedParticipant) => {
+    const next = saved.map((x) => (x.id === item.id ? item : x));
+    if (live.saveParticipants) {
+      const res = await live.saveParticipants(next);
+      if (!res.ok) {
+        setStep2Notice({ tone: 'err', text: res.error ?? tx('บันทึกข้อมูลไม่สำเร็จ กรุณาลองอีกครั้ง') });
+        setPartEditId(null);
+        return;
+      }
+    }
+    setSaved(next);
+    if (savedId === item.id) fillFrom(item);
+    setPartEditId(null);
+    setStep2Notice({ tone: 'ok', text: tx('อัปเดตข้อมูลผู้สมัครแทนเรียบร้อยแล้ว') });
+  };
+
+  /* emergency contact (registering for yourself): pick from the profile or type a new one */
+  const [ecMode, setEcMode] = useState<'saved' | 'manual'>('saved');
+  const [ecEditId, setEcEditId] = useState<string | null>(null);
+  const pickedEc = contacts.find(
+    (c) => c.contactName === emergencyName && c.phone === emergencyPhone
+  );
+  const ecFromProfile = forSelf === true && contacts.length > 0 && ecMode === 'saved';
+  // in "from the profile" mode one contact is always picked, so the hidden fields are never empty
+  useEffect(() => {
+    if (!ecFromProfile || pickedEc) return;
+    const primary = contacts.find((c) => c.isPrimary) ?? contacts[0];
+    if (primary) setEmergency(primary.contactName, primary.relationship, primary.phone);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ecFromProfile, pickedEc, contacts]);
+  const saveEditedContact = async (d: EmergencyContactDraft) => {
+    const wasPicked = pickedEc?.id === ecEditId;
+    const next = contacts.map((c) => (c.id === ecEditId ? { ...c, ...d } : c));
+    if (live.saveEmergencyContacts) {
+      const res = await live.saveEmergencyContacts(next);
+      if (!res.ok) {
+        setStep2Notice({ tone: 'err', text: res.error ?? tx('บันทึกข้อมูลไม่สำเร็จ กรุณาลองอีกครั้ง') });
+        setEcEditId(null);
+        return;
+      }
+    }
+    setContacts(next);
+    if (wasPicked) setEmergency(d.contactName, d.relationship, d.phone);
+    setEcEditId(null);
+    setStep2Notice({ tone: 'ok', text: tx('บันทึกข้อมูลผู้ติดต่อฉุกเฉินเรียบร้อยแล้ว') });
+  };
+
+  const step2NoticeEl = step2Notice && (
+    <p
+      className={`ship-addr-notice ${step2Notice.tone === 'err' ? 'is-error' : ''}`}
+      role={step2Notice.tone === 'err' ? 'alert' : 'status'}
+    >
+      {step2Notice.tone === 'err' ? <IconAlert size={15} /> : <IconCheckCircle size={15} />}
+      <span>{step2Notice.text}</span>
+    </p>
+  );
+
+  /** two tabs like the address step ("เลือกจาก…" / "กรอก…ใหม่") */
+  const modeTabs = (
+    name: string,
+    legend: string,
+    value: 'saved' | 'manual',
+    labels: [string, string],
+    onPick: (mode: 'saved' | 'manual') => void
+  ) => (
+    <fieldset className="pg-group reg-lab-addr-tabs">
+      <legend className="sr-only">{tx(legend)}</legend>
+      <div className="pg-tabs">
+        {(['saved', 'manual'] as const).map((mode, i) => (
+          <label key={mode} className={`pg-tab ${value === mode ? 'is-selected' : ''}`}>
+            <input
+              type="radio"
+              name={name}
+              checked={value === mode}
+              onChange={() => {
+                setStep2Notice(null);
+                onPick(mode);
+              }}
+            />
+            <span>{tx(labels[i])}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+
+  /** age at the event's basis date + age group (shown under the cards when the fields are hidden) */
+  const ageHint = (
+    ageCheck && category && (ageCheck.ageYears !== null || ageCheck.status === 'missing_dob' || ageCheck.status === 'invalid_dob') && (
+                        <p
+                          id="lab-dob-age"
+                          className={`reg-lab-full reg-age-hint ${ageCheck.eligible ? '' : 'is-error'}`}
+                          aria-live="polite"
+                        >
+                          {ageCheck.ageYears !== null ? (
+                            <>
+                              {txf('อายุ {0} ปี ณ {1}', ageCheck.ageYears, formatBasisDate(ageCheck.basisDate))}
+                              {ageCheck.group && ` · ${txf('รุ่น {0}', formatAgeGroupLabel(ageCheck.group))}`}
+                              {ageCheck.unassigned && ` · ${tx('ยังไม่เข้ารุ่นอายุ (ระบุเพศชายหรือหญิงเพื่อจัดรุ่น)')}`}
+                              {!ageCheck.eligible && ` · ${txf('ระยะนี้รับ{0}', formatAgeLimit(category) ?? '')}`}
+                            </>
+                          ) : ageCheck.status === 'missing_dob' ? (
+                            txf(
+                              'ระยะนี้กำหนด{0} · {1} กรุณาระบุวันเกิด',
+                              formatAgeLimit(category) ?? tx('รุ่นอายุ'),
+                              formatAgeBasis(ageCheck.basis)
+                            )
+                          ) : (
+                            tx('วันเกิดไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง')
+                          )}
+                        </p>
+                      )
+  );
+
+  /* saved-item text for the card picker's search, its "ดูทั้งหมด" rows and its order */
+  /** Thai nickname, or the English one when there is none (English first in EN), like the profile page */
+  const ptNick = (pt: SavedParticipant) =>
+    getLang() === 'en' ? pt.nicknameEn || pt.nickname || '' : pt.nickname || pt.nicknameEn || '';
+  const ptName = (pt: SavedParticipant) => {
+    const th = `${pt.firstName} ${pt.lastName}`.trim();
+    const en = `${pt.firstNameEn ?? ''} ${pt.lastNameEn ?? ''}`.trim();
+    // nickname first, as on the profile page (25 Nov 2026, user request)
+    const nick = ptNick(pt);
+    return `${nick ? `(${nick}) ` : ''}${th || en}`;
+  };
+  const ptMeta = (pt: SavedParticipant) =>
+    [
+      pt.relationshipToOwner ? tx(pt.relationshipToOwner) : '',
+      pt.dateOfBirth ? txf('เกิด {0}', formatBasisDate(pt.dateOfBirth)) : '',
+      pt.phone ? displayPhone(pt.phone) : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+  const ptSearch = (pt: SavedParticipant) =>
+    [pt.firstName, pt.lastName, pt.nickname, pt.firstNameEn, pt.lastNameEn, pt.nicknameEn, pt.phone, pt.relationshipToOwner]
+      .filter(Boolean)
+      .join(' ');
+  // most recently registered first; never used ones keep their saved order at the end
+  const byLastUsed = (a: SavedParticipant, b: SavedParticipant) =>
+    (b.lastUsedAt ?? '').localeCompare(a.lastUsedAt ?? '');
+  const primaryFirst = (a: RunnerEmergencyContact, b: RunnerEmergencyContact) =>
+    Number(Boolean(b.isPrimary)) - Number(Boolean(a.isPrimary));
+  const defaultFirst = (a: RunnerSavedAddress, b: RunnerSavedAddress) =>
+    Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault));
+
+  /** filled tag for the primary contact / default address, on its own beside the name (26 Nov 2026) */
+  const primaryTag = (label: string) => (
+    <span className="reg-primary-tag">
+      <IconCheckCircle size={12} />
+      <span>{tx(label)}</span>
+    </span>
+  );
+
+  const editButton = (label: string, onClick: () => void) => (
+    <button
+      type="button"
+      className="btn-secondary reg-lab-book-edit"
+      aria-label={`${tx('แก้ไข')} ${label}`}
+      onClick={(e) => {
+        e.preventDefault();
+        setStep2Notice(null);
+        onClick();
+      }}
+    >
+      {tx('แก้ไข')}
+    </button>
+  );
 
   /* ---------- step 3-5 ---------- */
   const [shirtSize, setShirtSize] = shared.shirtSize;
@@ -300,6 +514,10 @@ export function RegistrationLabView({
   const [address, setAddress] = shared.address;
   // address book: starts from the profile; layout B keeps additions on this page only
   const [book, setBook] = useState<RunnerSavedAddress[]>(profile?.savedAddresses ?? []);
+  // follow the profile once it loads (it can arrive after this page opens)
+  useEffect(() => {
+    if (profile?.savedAddresses) setBook(profile.savedAddresses);
+  }, [profile?.savedAddresses]);
   const [addrMode, setAddrMode] = shared.addrMode;
   const [bookId, setBookId] = shared.bookId;
   const [addrNotice, setAddrNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
@@ -351,6 +569,37 @@ export function RegistrationLabView({
     });
   };
 
+  // edit a saved address in the same dialog as the profile's address book (25 Nov 2026, user request)
+  const [editAddrId, setEditAddrId] = useState<string | null>(null);
+  const saveEditedAddr = async (d: SavedAddressDraft) => {
+    const idx = book.findIndex((x) => x.id === editAddrId);
+    if (idx < 0) return;
+    const patch = {
+      addressName: d.label || txf('ที่อยู่ที่ {0}', idx + 1),
+      recipientName: d.recipientName,
+      phone: d.phone,
+      address: d.address,
+      province: d.province,
+      district: d.district,
+      subdistrict: d.subdistrict,
+      postalCode: d.postalCode,
+      country: d.country,
+    };
+    const profileList = profile?.savedAddresses ?? [];
+    // only addresses already in the profile go to the server; one kept for this registration stays local
+    if (live.saveAddresses && profileList.some((x) => x.id === editAddrId)) {
+      const res = await live.saveAddresses(profileList.map((x) => (x.id === editAddrId ? { ...x, ...patch } : x)));
+      if (!res.ok) {
+        setAddrNotice({ tone: 'err', text: res.error ?? tx('บันทึกที่อยู่ไม่สำเร็จ กรุณาลองอีกครั้ง') });
+        setEditAddrId(null);
+        return;
+      }
+    }
+    setBook((b) => b.map((x) => (x.id === editAddrId ? { ...x, ...patch } : x)));
+    setEditAddrId(null);
+    setAddrNotice({ tone: 'ok', text: tx('บันทึกที่อยู่จัดส่งเรียบร้อยแล้ว') });
+  };
+
   /* ---------- step 6 ---------- */
   const [channel, setChannel] = shared.channel;
   const [acceptRules, setAcceptRules] = shared.acceptRules;
@@ -369,7 +618,11 @@ export function RegistrationLabView({
   };
   /** forward: the live form's checks for this step first */
   const goNext = (next: LabStep) => {
-    const problem = live.check(step, bodyRef.current);
+    let problem = live.check(step, bodyRef.current);
+    if (!problem && step === 3 && !shirtSize) {
+      problem = 'กรุณาเลือกไซส์เสื้อตามสิทธิ์สมัคร';
+      document.querySelector('.reg-lab-body .pg-tabbed')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
     if (problem) {
       setStepError(problem);
       return;
@@ -383,21 +636,40 @@ export function RegistrationLabView({
   const afterShirt: LabStep = hasSouvenirs ? 4 : 5;
   const beforeAddress: LabStep = hasSouvenirs ? 4 : 3;
 
-  const shirtSpec = (size: ShirtSizeCode) =>
-    resolveShirtSpec(
+  /* shirt cut: ชาย / หญิง / เด็ก (26 Nov 2026, user request). Kept on this page only for now:
+     the registration stores the size; storing the cut and the finisher size is a backend task. */
+  const defaultCut = (): ShirtCut => {
+    const pref = forSelf ? profile?.preferredShirtType : undefined;
+    if (pref === 'Men' || pref === 'Women') return pref;
+    return gender === 'หญิง' ? 'Women' : 'Men';
+  };
+  const [shirtCutPick, setShirtCut] = useState<ShirtCut | null>(null);
+  const shirtCut = shirtCutPick ?? defaultCut();
+  // finisher shirt: on unless the organizer turns it off (the organizer switch is not built yet)
+  const hasFinisher = event.finisherShirtEnabled ?? true;
+  const [finisherSize, setFinisherSize] = useState('');
+  const [finisherCutPick, setFinisherCut] = useState<ShirtCut | null>(null);
+  const finisherCut = finisherCutPick ?? shirtCut;
+  const cutLabel = (c: ShirtCut) => SHIRT_CUTS.find((x) => x.id === c)?.label ?? c;
+
+  const shirtSpec = (size: ShirtSizeCode, cut: ShirtCut = shirtCut) => {
+    const spec = resolveShirtSpec(
       size,
-      profile?.preferredShirtType ?? 'Unisex',
+      cut === 'Kids' ? 'Unisex' : cut,
       platformProfileConfig?.shirtSizes,
       event.customSizeChart
     );
+    return cut === 'Kids' ? kidsSampleSpec(spec) : spec;
+  };
 
-  const galleryStyles: ShirtGalleryStyle[] = SHIRT_STYLES.map((style) => ({
+  const allStyles: ShirtGalleryStyle[] = SHIRT_STYLES.map((style) => ({
     id: style.id,
     name: style.nameTh,
     art: style.art,
+    photo: style.photo,
     demo: style.demoStock !== null,
     sizes: (style.demoStock ?? event.shirtStocks).map((st) => {
-      const spec = shirtSpec(st.size);
+      const spec = shirtSpec(st.size, shirtCut);
       return {
         size: st.size,
         chest: spec.chestInch,
@@ -406,6 +678,26 @@ export function RegistrationLabView({
       };
     }),
   }));
+  // a style sold out in every size is hidden like the sold-out sizes
+  const inStockStyles = allStyles.filter((st) => st.sizes.some((z) => z.left > 0));
+  const galleryStyles = inStockStyles.length > 0 ? inStockStyles : allStyles;
+  useEffect(() => {
+    if (!galleryStyles.some((st) => st.id === shirtStyle)) setShirtStyle(galleryStyles[0].id as ShirtStyleId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [galleryStyles.map((st) => st.id).join('|'), shirtStyle]);
+
+  // one style; every size of the event, no stock count shown (stock is not set up yet)
+  const finisherStyle: ShirtGalleryStyle = {
+    id: 'finisher',
+    name: 'เสื้อ Finisher',
+    art: 'tee',
+    photo: SHIRT_PHOTOS.finisher,
+    demo: false,
+    sizes: event.shirtStocks.map((st) => {
+      const spec = shirtSpec(st.size, finisherCut);
+      return { size: st.size, chest: spec.chestInch, length: spec.lengthInch, left: 1 };
+    }),
+  };
 
   const footer = (back: LabStep | null, next: LabStep | null, nextLabel = 'ถัดไป') => (
     <>
@@ -580,28 +872,90 @@ export function RegistrationLabView({
                   </label>
                 </div>
 
+                {forSelf === false && saved.length > 0 && (
+                  <>
+                    {modeTabs(
+                      'lab-part-mode',
+                      'วิธีระบุผู้เข้าแข่งขัน',
+                      partMode,
+                      ['เลือกจากรายชื่อที่บันทึกไว้', 'กรอกผู้สมัครใหม่'],
+                      (mode) => {
+                        if (mode === 'manual') {
+                          if (savedId !== 'new') lastSavedId.current = savedId;
+                          setSavedId('new');
+                          fillFrom(null);
+                        } else {
+                          const back = saved.find((x) => x.id === lastSavedId.current) ?? saved[0];
+                          pickParticipant(back.id);
+                        }
+                      }
+                    )}
+                    {step2NoticeEl}
+                    {partMode === 'saved' && (
+                      <SavedCardPicker
+                        items={saved}
+                        selectedId={savedId}
+                        getId={(pt) => pt.id}
+                        searchText={ptSearch}
+                        title={ptName}
+                        meta={ptMeta}
+                        compare={byLastUsed}
+                        orderLabel="ใช้ล่าสุด"
+                        onPick={pickParticipant}
+                        groupLabel="เลือกจากรายชื่อที่บันทึกไว้"
+                        searchPlaceholder="ค้นหาชื่อ ชื่อเล่น หรือเบอร์โทร"
+                        allTitle="ผู้สมัครที่บันทึกไว้ทั้งหมด"
+                        idPrefix="lab-saved"
+                        renderCard={(pt) => {
+                          const nameTh = `${pt.firstName} ${pt.lastName}`.trim();
+                          const nameEn = `${pt.firstNameEn ?? ''} ${pt.lastNameEn ?? ''}`.trim();
+                          const missingEn = !(pt.firstNameEn ?? '').trim() || !(pt.lastNameEn ?? '').trim();
+                          return (
+                            <label key={pt.id} className={`reg-category-radio-card ${savedId === pt.id ? 'selected' : ''}`}>
+                              <input
+                                type="radio"
+                                name="lab-saved"
+                                checked={savedId === pt.id}
+                                onChange={() => pickParticipant(pt.id)}
+                              />
+                              <span className="custom-radio-circle" aria-hidden="true" />
+                              <div className="reg-radio-card-copy">
+                                <strong>
+                                  {ptNick(pt) ? `(${ptNick(pt)}) ` : ''}
+                                  {nameTh || nameEn}
+                                </strong>
+                                {nameTh && nameEn && <span className="muted-inline">{nameEn}</span>}
+                                <span className="muted-inline">
+                                  {[
+                                    pt.relationshipToOwner ? tx(pt.relationshipToOwner) : '',
+                                    pt.dateOfBirth ? txf('เกิด {0}', formatBasisDate(pt.dateOfBirth)) : '',
+                                    pt.phone ? displayPhone(pt.phone) : '',
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                </span>
+                                {missingEn && (
+                                  <span className="reg-tag-row">
+                                    <NoteTag>{tx('ยังไม่มีชื่อภาษาอังกฤษ กด แก้ไข เพื่อเพิ่ม')}</NoteTag>
+                                  </span>
+                                )}
+                                {dobRequired && !pt.dateOfBirth && (
+                                  <span className="reg-tag-row">
+                                    <NoteTag>{tx('ระยะนี้ต้องใช้วันเกิด กด แก้ไข เพื่อเพิ่ม')}</NoteTag>
+                                  </span>
+                                )}
+                              </div>
+                              {editButton(nameTh || nameEn, () => setPartEditId(pt.id))}
+                            </label>
+                          );
+                        }}
+                      />
+                    )}
+                  </>
+                )}
+
                 {forSelf === false && (
                   <div className="reg-lab-fields">
-                    {saved.length > 0 && (
-                      <div className="form-row reg-lab-full">
-                        <label htmlFor="lab-saved">{tx('เลือกผู้สมัครที่เคยกรอกไว้')}</label>
-                        <SelectMenu
-                          id="lab-saved"
-                          value={savedId}
-                          onChange={(v) => {
-                            setSavedId(v);
-                            fillFrom(saved.find((x) => x.id === v) ?? null);
-                          }}
-                          options={[
-                            ...saved.map((pt) => ({
-                              value: pt.id,
-                              label: `${`${pt.firstName} ${pt.lastName}`.trim()}${pt.nickname ? ` · ${pt.nickname}` : ''}`,
-                            })),
-                            { value: 'new', label: tx('+ เพิ่มผู้สมัครใหม่') },
-                          ]}
-                        />
-                      </div>
-                    )}
                     <div className="form-row reg-lab-full">
                       <label htmlFor="lab-buyer">
                         <RequiredFieldText text={tx('ชื่อ-นามสกุลผู้ซื้อคำสั่งซื้อ (ผู้ชำระเงิน) *')} />
@@ -612,8 +966,12 @@ export function RegistrationLabView({
                 )}
               </section>
 
+              {forSelf === false && partMode === 'saved' && ageHint}
+
               {forSelf !== null && (
                 <>
+                  {!(forSelf === false && partMode === 'saved') && (
+                  <>
                   <section className="reg-lab-section" aria-labelledby="lab-names">
                     <h3 id="lab-names">{tx('ชื่อผู้เข้าแข่งขัน')}</h3>
                     <p className="reg-lab-hint">{tx('ชื่ออังกฤษใช้พิมพ์บนป้าย BIB')}</p>
@@ -649,8 +1007,18 @@ export function RegistrationLabView({
                     <h3 id="lab-personal">{tx('ข้อมูลส่วนตัวและเอกสารยืนยันตัวตน')}</h3>
                     <div className="reg-lab-fields">
                       <div className="form-row">
-                        <label htmlFor="lab-dob">{tx('วันเกิด')}</label>
-                        <DateOfBirthInput id="lab-dob" valueIso={dob} onChangeIso={setDob} ariaDescribedBy="lab-dob-age" />
+                        <label htmlFor="lab-dob">
+                          {dobRequired ? <RequiredFieldText text={tx('วันเกิด *')} /> : tx('วันเกิด')}
+                        </label>
+                        <DateOfBirthInput
+                          id="lab-dob"
+                          valueIso={dob}
+                          onChangeIso={setDob}
+                          required={dobRequired}
+                          // a full date that fails the age rule is marked at once
+                          invalid={Boolean(dob && ageCheck && !ageCheck.eligible)}
+                          ariaDescribedBy="lab-dob-age"
+                        />
                       </div>
                       <fieldset className="form-row runner-gender-field">
                         <legend>{tx('เพศ')}</legend>
@@ -670,30 +1038,7 @@ export function RegistrationLabView({
                           ))}
                         </div>
                       </fieldset>
-                      {ageCheck && category && (ageCheck.ageYears !== null || ageCheck.status === 'missing_dob' || ageCheck.status === 'invalid_dob') && (
-                        <p
-                          id="lab-dob-age"
-                          className={`reg-lab-full reg-age-hint ${ageCheck.eligible ? '' : 'is-error'}`}
-                          aria-live="polite"
-                        >
-                          {ageCheck.ageYears !== null ? (
-                            <>
-                              {txf('อายุ {0} ปี ณ {1}', ageCheck.ageYears, formatBasisDate(ageCheck.basisDate))}
-                              {ageCheck.group && ` · ${txf('รุ่น {0}', formatAgeGroupLabel(ageCheck.group))}`}
-                              {ageCheck.unassigned && ` · ${tx('ยังไม่เข้ารุ่นอายุ (ระบุเพศชายหรือหญิงเพื่อจัดรุ่น)')}`}
-                              {!ageCheck.eligible && ` · ${txf('ระยะนี้รับ{0}', formatAgeLimit(category) ?? '')}`}
-                            </>
-                          ) : ageCheck.status === 'missing_dob' ? (
-                            txf(
-                              'ระยะนี้กำหนด{0} · {1} กรุณาระบุวันเกิด',
-                              formatAgeLimit(category) ?? tx('รุ่นอายุ'),
-                              formatAgeBasis(ageCheck.basis)
-                            )
-                          ) : (
-                            tx('วันเกิดไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง')
-                          )}
-                        </p>
-                      )}
+                      {ageHint}
                       <div className="form-row reg-lab-full">
                         <label htmlFor="lab-phone">{tx('เบอร์โทรศัพท์ผู้เข้าแข่งขัน')}</label>
                         <PhoneInput id="lab-phone" value={phone} onChange={setPhone} />
@@ -726,33 +1071,71 @@ export function RegistrationLabView({
                     </div>
                   </section>
 
+                  </>
+                  )}
+
                   <section className="reg-lab-section" aria-labelledby="lab-emergency">
                     <h3 id="lab-emergency">{tx('ผู้ติดต่อฉุกเฉิน')}</h3>
                     <p className="reg-lab-hint">{tx('ผู้จัดจะโทรหาคนนี้หากเกิดเหตุระหว่างแข่งขัน')}</p>
+                    {forSelf === true && contacts.length > 0 && (
+                      <>
+                        {modeTabs(
+                          'lab-ec-mode',
+                          'วิธีระบุผู้ติดต่อฉุกเฉิน',
+                          ecMode,
+                          ['เลือกจากโปรไฟล์', 'กรอกผู้ติดต่อใหม่'],
+                          (mode) => {
+                            setEcMode(mode);
+                            if (mode === 'manual') setEmergency('', '', '');
+                          }
+                        )}
+                        {forSelf === true && step2NoticeEl}
+                      </>
+                    )}
+                    {ecFromProfile ? (
+                      <SavedCardPicker
+                        items={contacts}
+                        selectedId={pickedEc?.id}
+                        getId={(c) => c.id}
+                        searchText={(c) => [c.contactName, c.relationship, c.phone, c.email].filter(Boolean).join(' ')}
+                        title={(c) => tx(c.contactName)}
+                        badge={(c) => (c.isPrimary ? primaryTag('ผู้ติดต่อหลัก') : null)}
+                        meta={(c) => `${tx(c.relationship)} · ${displayPhone(c.phone)}`}
+                        compare={primaryFirst}
+                        orderLabel="ผู้ติดต่อหลักก่อน"
+                        onPick={(id) => {
+                          const c = contacts.find((x) => x.id === id);
+                          if (c) setEmergency(c.contactName, c.relationship, c.phone);
+                        }}
+                        groupLabel="เลือกจากโปรไฟล์"
+                        searchPlaceholder="ค้นหาชื่อ ความสัมพันธ์ หรือเบอร์โทร"
+                        allTitle="ผู้ติดต่อฉุกเฉินทั้งหมด"
+                        idPrefix="lab-ec"
+                        renderCard={(c) => (
+                          <label key={c.id} className={`reg-category-radio-card ${pickedEc?.id === c.id ? 'selected' : ''}`}>
+                            <input
+                              type="radio"
+                              name="lab-ec-pick"
+                              checked={pickedEc?.id === c.id}
+                              onChange={() => setEmergency(c.contactName, c.relationship, c.phone)}
+                            />
+                            <span className="custom-radio-circle" aria-hidden="true" />
+                            <div className="reg-radio-card-copy">
+                              <span className="reg-card-head">
+                                <strong>{tx(c.contactName)}</strong>
+                                {c.isPrimary && primaryTag('ผู้ติดต่อหลัก')}
+                              </span>
+                              <span className="muted-inline">{tx(c.relationship)}</span>
+                              <span className="muted-inline">
+                                {tx('เบอร์โทร')}: <span className="mono-num">{displayPhone(c.phone)}</span>
+                              </span>
+                            </div>
+                            {editButton(c.contactName, () => setEcEditId(c.id))}
+                          </label>
+                        )}
+                      />
+                    ) : (
                     <div className="reg-lab-fields">
-                      {forSelf && contacts.length > 0 && (
-                        <div className="form-row reg-lab-full">
-                          <label htmlFor="lab-ec-pick">{tx('เลือกจากโปรไฟล์')}</label>
-                          <SelectMenu
-                            id="lab-ec-pick"
-                            value=""
-                            placeholder={tx('เลือกจากโปรไฟล์…')}
-                            onChange={(v) => {
-                              const c = contacts.find((x) => x.id === v);
-                              if (c) setEmergency(c.contactName, c.relationship, c.phone);
-                            }}
-                            options={contacts.map((c) => ({
-                              value: c.id,
-                              label: `${c.contactName} (${tx(c.relationship)})${c.isPrimary ? ` · ${tx('หลัก')}` : ''}`,
-                            }))}
-                          />
-                          {live.openProfile && (
-                            <button type="button" className="inline-text-link" onClick={live.openProfile}>
-                              {tx('จัดการโปรไฟล์')}
-                            </button>
-                          )}
-                        </div>
-                      )}
                       <div className="form-row">
                         <label htmlFor="lab-emerg">
                           <RequiredFieldText text={tx('ชื่อผู้ติดต่อฉุกเฉิน *')} />
@@ -776,10 +1159,11 @@ export function RegistrationLabView({
                         <PhoneInput id="lab-emerg-phone" value={emergencyPhone} onChange={setEmergencyPhone} required />
                       </div>
                     </div>
+                    )}
                   </section>
 
                   {(event.customFields?.length ?? 0) > 0 && (
-                    // the field list brings its own heading ("ข้อมูลเพิ่มเติมที่ผู้จัดขอ (n ข้อ)")
+                    // the field list brings its own heading ("ข้อมูลเพิ่มเติม (n ข้อ)")
                     <section className="reg-lab-section reg-lab-custom">
                       <RunnerCustomFieldsInputs
                         fields={event.customFields}
@@ -799,6 +1183,28 @@ export function RegistrationLabView({
                     </section>
                   )}
                 </>
+              )}
+              {partEditId && (
+                <SavedParticipantModal
+                  key={partEditId}
+                  idPrefix="lab-sp-edit"
+                  participant={saved.find((x) => x.id === partEditId) ?? null}
+                  shirtSizes={(platformProfileConfig?.shirtSizes ?? [])
+                    .filter((sz) => sz.enabled)
+                    .sort((x, y) => x.sortOrder - y.sortOrder)
+                    .map((sz) => sz.code)}
+                  onCancel={() => setPartEditId(null)}
+                  onSave={saveEditedParticipant}
+                />
+              )}
+              {ecEditId && (
+                <EmergencyContactModal
+                  key={ecEditId}
+                  idPrefix="lab-ec-edit"
+                  contact={contacts.find((c) => c.id === ecEditId) ?? null}
+                  onCancel={() => setEcEditId(null)}
+                  onSave={saveEditedContact}
+                />
               )}
               {footer(1, forSelf === null ? null : afterInfo)}
             </>
@@ -849,11 +1255,14 @@ export function RegistrationLabView({
                   <span className="mono-num">{tx(event.editDeadlineDate)}</span>
                 </p>
               </div>
+              <h3 className="reg-lab-shirt-h" id="lab-race-shirt-h">
+                <RequiredFieldText text={tx('เสื้อแข่ง *')} />
+              </h3>
               {forSelf && profile?.preferredShirtSize && (
                 <p className="reg-lab-inline-note">
                   <IconShirt size={15} />
                   <span>
-                    {txf('เลือกไซส์ {0} ไว้ให้ตามโปรไฟล์ เปลี่ยนได้เฉพาะงานนี้', profile.preferredShirtSize)}
+                    {txf('ไซส์ในโปรไฟล์ของคุณ: {0}', profile.preferredShirtSize)}
                   </span>
                 </p>
               )}
@@ -862,16 +1271,42 @@ export function RegistrationLabView({
                 styleId={shirtStyle}
                 onStyleChange={(id) => {
                   setShirtStyle(id as ShirtStyleId);
-                  // keep the size when the new style still has it, else the first size left
-                  const next = galleryStyles.find((g) => g.id === id);
-                  if (!next?.sizes.some((z) => z.size === shirtSize && z.left > 0)) {
-                    const first = next?.sizes.find((z) => z.left > 0);
-                    if (first) setShirtSize(first.size as ShirtSizeCode);
-                  }
+                  // a new style starts with no size picked (26 Nov 2026, user request)
+                  setShirtSize('' as ShirtSizeCode);
                 }}
                 size={shirtSize}
                 onSizeChange={(z) => setShirtSize(z as ShirtSizeCode)}
+                cuts={SHIRT_CUTS}
+                cut={shirtCut}
+                onCutChange={(c) => setShirtCut(c as ShirtCut)}
+                cutNote={null}
               />
+              {hasFinisher && (
+                <section className="reg-lab-section reg-lab-finisher" id="lab-finisher" aria-labelledby="lab-finisher-h">
+                  <h3 id="lab-finisher-h">
+                    {tx('เสื้อ Finisher (ไม่บังคับ)')}
+                  </h3>
+                  <p className="reg-lab-hint">
+                    {tx('ได้รับเมื่อวิ่งเข้าเส้นชัยภายในเวลาที่กำหนด เลือกไซส์ไว้ล่วงหน้า')}
+                  </p>
+                  <ShirtGallery
+                    idPrefix="pg-fin"
+                    styles={[finisherStyle]}
+                    styleId="finisher"
+                    onStyleChange={() => undefined}
+                    size={finisherSize}
+                    onSizeChange={(z) => {
+                      setFinisherSize(z);
+                      setStepError(null);
+                    }}
+                    caption="ได้รับเมื่อวิ่งเข้าเส้นชัย"
+                    cuts={SHIRT_CUTS}
+                    cut={finisherCut}
+                    onCutChange={(c) => setFinisherCut(c as ShirtCut)}
+                    cutNote={null}
+                  />
+                </section>
+              )}
               {footer(beforeShirt, afterShirt)}
             </>
           )}
@@ -921,7 +1356,6 @@ export function RegistrationLabView({
                     <span className="reg-tag-row">
                       <PriceTag prefix="+" satang={kitFee.satang} />
                       <NoteTag>{tx('ค่าจัดส่งชุดแข่ง')}</NoteTag>
-                      {kitFee.isSample && <NoteTag>{tx('ค่าตัวอย่าง ผู้จัดยังไม่ได้กำหนด')}</NoteTag>}
                     </span>
                   </div>
                 </label>
@@ -969,8 +1403,24 @@ export function RegistrationLabView({
                   )}
 
                   {addrMode === 'saved' && book.length > 0 ? (
-                    <div className="reg-lab-choices reg-lab-book" role="radiogroup" aria-label={tx('เลือกจากสมุดที่อยู่')}>
-                      {book.map((addr) => (
+                    <SavedCardPicker
+                      items={book}
+                      selectedId={bookId}
+                      getId={(addr) => addr.id}
+                      searchText={(addr) =>
+                        [addr.addressName, addr.recipientName, addr.phone, addr.address, addr.subdistrict, addr.district, addr.province, addr.postalCode].join(' ')
+                      }
+                      title={(addr) => addr.addressName}
+                      badge={(addr) => (addr.isDefault ? primaryTag('ที่อยู่หลัก') : null)}
+                      meta={(addr) => `${addr.recipientName} · ${addr.district} ${addr.province} ${addr.postalCode}`}
+                      compare={defaultFirst}
+                      orderLabel="ที่อยู่หลักก่อน"
+                      onPick={setBookId}
+                      groupLabel="เลือกจากสมุดที่อยู่"
+                      searchPlaceholder="ค้นหาชื่อที่อยู่ ผู้รับ เบอร์โทร หรือจังหวัด"
+                      allTitle="สมุดที่อยู่ทั้งหมด"
+                      idPrefix="lab-book"
+                      renderCard={(addr) => (
                         <label
                           key={addr.id}
                           className={`reg-category-radio-card ${bookId === addr.id ? 'selected' : ''}`}
@@ -983,10 +1433,10 @@ export function RegistrationLabView({
                           />
                           <span className="custom-radio-circle" aria-hidden="true" />
                           <div className="reg-radio-card-copy">
-                            <strong>
-                              {addr.addressName}
-                              {addr.isDefault ? ` · ${tx('ค่าเริ่มต้น')}` : ''}
-                            </strong>
+                            <span className="reg-card-head">
+                              <strong>{addr.addressName}</strong>
+                              {addr.isDefault && primaryTag('ที่อยู่หลัก')}
+                            </span>
                             <span className="muted-inline">
                               {addr.recipientName} ({addr.phone})
                             </span>
@@ -995,9 +1445,21 @@ export function RegistrationLabView({
                               <span className="mono-num">{addr.postalCode}</span>
                             </span>
                           </div>
+                          <button
+                            type="button"
+                            className="btn-secondary reg-lab-book-edit"
+                            aria-label={`${tx('แก้ไข')} ${addr.addressName}`}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setAddrNotice(null);
+                              setEditAddrId(addr.id);
+                            }}
+                          >
+                            {tx('แก้ไข')}
+                          </button>
                         </label>
-                      ))}
-                    </div>
+                      )}
+                    />
                   ) : (
                     <>
                       <div className="reg-lab-fields">
@@ -1049,6 +1511,16 @@ export function RegistrationLabView({
                   )}
                 </section>
               )}
+              {editAddrId && (
+                <SavedAddressModal
+                  key={editAddrId}
+                  idPrefix="lab-book-edit"
+                  address={book.find((x) => x.id === editAddrId) ?? null}
+                  contactEmail={currentUser?.contactEmail ?? undefined}
+                  onCancel={() => setEditAddrId(null)}
+                  onSave={saveEditedAddr}
+                />
+              )}
               {footer(beforeAddress, 6)}
             </>
           )}
@@ -1084,9 +1556,18 @@ export function RegistrationLabView({
                   { label: tx('อัตราค่าสมัคร'), value: tx(tier.label) },
                   {
                     label: tx('เสื้อตามสิทธิ์'),
-                    value: `${tx(shirtStyleName(shirtStyle))} · ${shirtSize}`,
+                    value: `${tx(shirtStyleName(shirtStyle))} · ${tx(cutLabel(shirtCut))} · ${shirtSize}`,
                     editStep: 3,
                   },
+                  ...(hasFinisher
+                    ? [
+                        {
+                          label: tx('เสื้อ Finisher'),
+                          value: finisherSize ? `${tx(cutLabel(finisherCut))} · ${finisherSize}` : tx('ไม่ระบุ'),
+                          editStep: 3 as LabStep,
+                        },
+                      ]
+                    : []),
                 ],
               },
               {
@@ -1128,7 +1609,7 @@ export function RegistrationLabView({
                 lines: [
                   {
                     label: txf('ค่าสมัคร {0} ({1})', tx(category.name), tx(tier.label)),
-                    sub: txf('{0} · ไซส์ {1}', tx(shirtStyleName(shirtStyle)), shirtSize),
+                    sub: txf('{0} · ไซส์ {1}', `${tx(shirtStyleName(shirtStyle))} · ${tx(cutLabel(shirtCut))}`, shirtSize),
                     satang: quote.baseSatang,
                   },
                   {

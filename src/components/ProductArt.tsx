@@ -1,8 +1,16 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { souvenirPhoto } from '../data/productPhotos';
+
+const categoryPreviews = import.meta.glob<string>('../assets/souvenir-categories/*.webp', { eager: true, import: 'default' });
+const categoryFiles: Record<string, string> = {
+  'เสื้อที่ระลึก': 'shirts',
+  'เหรียญที่ระลึก': 'medals',
+  'อุปกรณ์เสริม': 'accessories',
+};
 
 /**
- * Line drawings used as the product preview until organizers upload real photos.
- * Always shown with a "ภาพตัวอย่าง" caption so nobody mistakes them for the real item.
+ * Product photo by name (data/productPhotos), else a preview by souvenir category; line
+ * drawings remain the fallback.
  */
 export type ProductArtKind = 'tee' | 'sleeveless' | 'tank' | 'medal' | 'cap' | 'bag';
 
@@ -25,7 +33,35 @@ const PATHS: Record<ProductArtKind, ReactNode> = {
   bag: <path d="M24 36 L76 36 L72 88 L28 88 Z M38 36 Q38 16 50 16 Q62 16 62 36" />,
 };
 
-export function ProductArt({ kind, className }: { kind: ProductArtKind; className?: string }) {
+export function ProductArt({
+  kind,
+  className,
+  categoryLabel,
+  name,
+}: {
+  kind: ProductArtKind;
+  className?: string;
+  categoryLabel?: string;
+  /** product name: picks a product photo when one matches (26 Nov 2026) */
+  name?: string;
+}) {
+  const file = categoryLabel ? categoryFiles[categoryLabel] : undefined;
+  const photo = categoryLabel && name ? souvenirPhoto(categoryLabel, name) : undefined;
+  const src = photo ?? (file ? categoryPreviews[`../assets/souvenir-categories/${file}.webp`] : undefined);
+  const [failedSrc, setFailedSrc] = useState<string>();
+  if (src && src !== failedSrc) {
+    return (
+      <img
+        src={src}
+        className={`${className ?? ''} product-preview-image`}
+        alt=""
+        aria-hidden="true"
+        loading="lazy"
+        decoding="async"
+        onError={() => setFailedSrc(src)}
+      />
+    );
+  }
   return (
     <svg
       viewBox="0 0 100 100"

@@ -29,7 +29,6 @@ export function RunnerCustomFieldsInputs({
   onAnswerChange,
   raceDistanceCode,
   shirtSize,
-  publishedFormVersion,
   steps,
   stepId,
   errors,
@@ -40,6 +39,7 @@ export function RunnerCustomFieldsInputs({
   onAnswerChange: (fieldId: string, value: string | boolean) => void;
   raceDistanceCode?: string;
   shirtSize?: string;
+  /** no longer shown to runners; kept so callers need not change */
   publishedFormVersion?: string;
   /** the organizer's steps; with them, only the questions of \`stepId\` are drawn */
   steps?: OrganizerFormStep[];
@@ -59,8 +59,8 @@ export function RunnerCustomFieldsInputs({
     <div className="runner-custom-fields">
       {heading !== null && (
         <div className="cta-inline-row" style={{ justifyContent: 'space-between', marginBottom: '0.55rem' }}>
-          <h3>{heading ? tx(heading) : txf('ข้อมูลเพิ่มเติมที่ผู้จัดขอ ({0} ข้อ)', questionCount)}</h3>
-          {publishedFormVersion && <span className="mono-code">Form Version: {tx(publishedFormVersion)}</span>}
+          {/* shorter title and no form version for runners (25 Nov 2026, user request) */}
+          <h3>{heading ? tx(heading) : txf('ข้อมูลเพิ่มเติม ({0} ข้อ)', questionCount)}</h3>
         </div>
       )}
 

@@ -1136,7 +1136,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     </p>
                     <div className="form-row">
                       <label htmlFor="collision-pass">
-                        {tx("รหัสผ่านบัญชีเดิม (ทดสอบใช้รหัส ")} <code>demo1234</code>)
+                        {tx("รหัสผ่านบัญชีเดิม")}
                       </label>
                       <input
                         id="collision-pass"

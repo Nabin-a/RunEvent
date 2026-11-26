@@ -43,7 +43,7 @@ export const FeeBearerPicker: React.FC<{
         </span>
         <span>
           <i className="fee-sw fee-sw-fee" />
-          {tx('ค่าบริการระบบ (อัตราสมมติ 5% + ฿15)')}
+          {tx('ค่าบริการระบบ (5% + ฿15)')}
         </span>
       </div>
       <div className="fee-picker-options" role="radiogroup" aria-labelledby={`${name}-h`}>

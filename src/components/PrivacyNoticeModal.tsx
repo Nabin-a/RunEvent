@@ -6,7 +6,7 @@ import {
   PRIVACY_NOTICE_SECTIONS,
   PRIVACY_NOTICE_VERSION,
 } from '../data/privacyNotice';
-import { IconAlert, IconShield } from './Icons';
+import { IconShield } from './Icons';
 
 interface PrivacyNoticeModalProps {
   open: boolean;
@@ -67,7 +67,6 @@ export const PrivacyNoticeModal: React.FC<PrivacyNoticeModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="privacy-modal-title"
-        aria-describedby="privacy-modal-draft"
       >
         <div className="runner-modal-header">
           <div className="privacy-modal-title">
@@ -95,14 +94,6 @@ export const PrivacyNoticeModal: React.FC<PrivacyNoticeModalProps> = ({
         </div>
 
         <div className="runner-modal-body privacy-modal-body">
-          <p id="privacy-modal-draft" className="privacy-draft-note">
-            <IconAlert size={15} />
-            <span>
-              {tx(
-                'ฉบับร่างสำหรับระบบต้นแบบ: ชื่อบริษัทและช่องทางติดต่อเป็นข้อมูลสมมติ และยังไม่ผ่านการตรวจทางกฎหมาย'
-              )}
-            </span>
-          </p>
           {mode === 'reconsent' && (
             <p className="privacy-reconsent-note">
               {tx(
