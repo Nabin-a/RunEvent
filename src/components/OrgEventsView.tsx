@@ -6,7 +6,7 @@
  * the next step for each event → create a draft / copy last year's event.
  * Detailed numbers live on each event's home page, not here.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import type { AuditLogEntry, RaceEvent, RegistrationRecord, EventStatus } from '../types';
 import type { OrgSection } from './OrganizerDashboardView';
 import { isTotalQuotaEnabled } from '../utils/eventConfig';
@@ -181,8 +181,26 @@ export const OrgEventsView: React.FC<Props> = ({
       const md = new Date(m);
       m = Date.UTC(md.getUTCFullYear(), md.getUTCMonth() + 1, 1);
     }
-    return { rows, start, end, months };
+    // one cell per day; dates 1, 8, 15, 22 and 29 are labelled (26 Nov 2026, user request)
+    const dayCount = Math.round((end - start) / DAY);
+    const dayLabels: number[] = [];
+    for (let t = start; t < end; t += DAY) {
+      if ([1, 8, 15, 22, 29].includes(new Date(t).getUTCDate())) dayLabels.push(t);
+    }
+    return { rows, start, end, months, dayCount, dayLabels };
   }, [events, today]);
+  // start the scrolled timeline with today in view
+  const calScrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = calScrollRef.current;
+    if (!el || !cal) return;
+    const inner = el.firstElementChild as HTMLElement | null;
+    if (!inner) return;
+    const nameCol = el.clientWidth < 600 ? 104 : 152;
+    const x = nameCol + ((inner.scrollWidth - nameCol) * pct(today)) / 100;
+    el.scrollLeft = Math.max(0, x - el.clientWidth / 2);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cal?.start, cal?.end]);
   const pct = (ms: number) => (cal ? ((ms - cal.start) / (cal.end - cal.start)) * 100 : 0);
 
   /* ---------- list ---------- */
@@ -338,17 +356,35 @@ export const OrgEventsView: React.FC<Props> = ({
             <h2 id="oe-cal-h">{tx('ปฏิทินงาน')}</h2>
             <span className="oe-sub">{tx('แถบ = ช่วงรับสมัคร · ธง = วันงาน')}</span>
           </div>
-          <div className="oe-cal" role="img" aria-label={cal.rows
+          <div className="oe-cal-scroll" ref={calScrollRef}>
+          <div
+            className="oe-cal"
+            style={{ ['--oe-days' as string]: cal.dayCount }}
+            role="img"
+            aria-label={cal.rows
             .map((r) =>
               r.open !== null && r.close !== null
                 ? txf('{0} รับสมัคร {1} ถึง {2} วันงาน {3}', r.ev.titleTh, fmtDate(r.open), fmtDate(r.close), fmtDate(r.race))
                 : txf('{0} ยังไม่ตั้งช่วงรับสมัคร วันงาน {1}', r.ev.titleTh, fmtDate(r.race))
             )
             .join('; ')}>
+            {/* covers the dates scrolled under the name column */}
+            <div className="oe-cal-corner" aria-hidden="true" />
             <div className="oe-cal-months" aria-hidden="true">
               {cal.months.map((m) => (
                 <span key={m} style={{ left: `${pct(m)}%` }}>
                   {fmtMonth(m)}
+                </span>
+              ))}
+            </div>
+            <div className="oe-cal-days" aria-hidden="true">
+              {cal.dayLabels.map((t) => (
+                <span
+                  key={t}
+                  className={t === today ? 'is-today' : undefined}
+                  style={{ left: `${pct(t)}%`, width: `${pct(cal.start + DAY)}%` }}
+                >
+                  {new Date(t).getUTCDate()}
                 </span>
               ))}
             </div>
@@ -385,6 +421,7 @@ export const OrgEventsView: React.FC<Props> = ({
                 );
               })}
             </div>
+          </div>
           </div>
           <p className="oe-sub">
             <i className="oe-sw" aria-hidden="true" /> {tx('เปิดรับอยู่')}{' '}
