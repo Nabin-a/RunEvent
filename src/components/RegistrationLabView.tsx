@@ -11,7 +11,7 @@ import type {
   ShirtSizeCode,
   UserAccount,
 } from '../types';
-import { getLang, tx, txf } from '../i18n';
+import { tx, txf } from '../i18n';
 import {
   calculateFeeQuote,
   feePolicyLabel,
@@ -35,6 +35,7 @@ import { RegistrationStepper } from './RegistrationStepper';
 import { ShirtGallery, type ShirtGalleryStyle } from './ProductGallery';
 import { SHIRT_STYLES, shirtStyleName, type ShirtStyleId } from '../data/mockShirtStyles';
 import { SHIRT_PHOTOS } from '../data/productPhotos';
+import { nameInitials } from '../utils/avatarFile';
 
 /** shirt cut picked on the shirt step */
 type ShirtCut = 'Men' | 'Women' | 'Kids';
@@ -448,14 +449,14 @@ export function RegistrationLabView({
 
   /* saved-item text for the card picker's search, its "ดูทั้งหมด" rows and its order */
   /** Thai nickname, or the English one when there is none (English first in EN), like the profile page */
-  const ptNick = (pt: SavedParticipant) =>
-    getLang() === 'en' ? pt.nicknameEn || pt.nickname || '' : pt.nickname || pt.nicknameEn || '';
+  // the English name (as on the BIB) leads, with the English nickname (26 Nov 2026, user request)
+  const ptNick = (pt: SavedParticipant) => pt.nicknameEn || pt.nickname || '';
   const ptName = (pt: SavedParticipant) => {
     const th = `${pt.firstName} ${pt.lastName}`.trim();
     const en = `${pt.firstNameEn ?? ''} ${pt.lastNameEn ?? ''}`.trim();
     // nickname first, as on the profile page (25 Nov 2026, user request)
     const nick = ptNick(pt);
-    return `${nick ? `(${nick}) ` : ''}${th || en}`;
+    return `${nick ? `(${nick}) ` : ''}${en || th}`;
   };
   const ptMeta = (pt: SavedParticipant) =>
     [
@@ -878,7 +879,7 @@ export function RegistrationLabView({
                       'lab-part-mode',
                       'วิธีระบุผู้เข้าแข่งขัน',
                       partMode,
-                      ['เลือกจากรายชื่อที่บันทึกไว้', 'กรอกผู้สมัครใหม่'],
+                      ['เลือกจากรายชื่อเพื่อนที่สมัครให้', 'กรอกผู้สมัครใหม่'],
                       (mode) => {
                         if (mode === 'manual') {
                           if (savedId !== 'new') lastSavedId.current = savedId;
@@ -902,9 +903,9 @@ export function RegistrationLabView({
                         compare={byLastUsed}
                         orderLabel="ใช้ล่าสุด"
                         onPick={pickParticipant}
-                        groupLabel="เลือกจากรายชื่อที่บันทึกไว้"
+                        groupLabel="เลือกจากรายชื่อเพื่อนที่สมัครให้"
                         searchPlaceholder="ค้นหาชื่อ ชื่อเล่น หรือเบอร์โทร"
-                        allTitle="ผู้สมัครที่บันทึกไว้ทั้งหมด"
+                        allTitle="รายชื่อเพื่อนที่สมัครให้ทั้งหมด"
                         idPrefix="lab-saved"
                         renderCard={(pt) => {
                           const nameTh = `${pt.firstName} ${pt.lastName}`.trim();
@@ -920,11 +921,20 @@ export function RegistrationLabView({
                               />
                               <span className="custom-radio-circle" aria-hidden="true" />
                               <div className="reg-radio-card-copy">
-                                <strong>
-                                  {ptNick(pt) ? `(${ptNick(pt)}) ` : ''}
-                                  {nameTh || nameEn}
-                                </strong>
-                                {nameTh && nameEn && <span className="muted-inline">{nameEn}</span>}
+                                <span className="reg-card-head">
+                                  <span className="runner-avatar-frame sm" aria-hidden="true">
+                                    {pt.avatarDataUrl ? (
+                                      <img src={pt.avatarDataUrl} alt="" className="runner-avatar-img" />
+                                    ) : (
+                                      <span className="runner-avatar-initials">{nameInitials(nameEn || nameTh)}</span>
+                                    )}
+                                  </span>
+                                  <strong>
+                                    {ptNick(pt) ? `(${ptNick(pt)}) ` : ''}
+                                    {nameEn || nameTh}
+                                  </strong>
+                                </span>
+                                {nameTh && nameEn && <span className="muted-inline">{nameTh}</span>}
                                 <span className="muted-inline">
                                   {[
                                     pt.relationshipToOwner ? tx(pt.relationshipToOwner) : '',

@@ -253,6 +253,8 @@ export interface SavedParticipant {
   emergencyContactRelation?: string;
   emergencyContactPhone?: string;
   relationshipToOwner?: string;
+  /** cropped profile picture (data URL, 320px JPEG) */
+  avatarDataUrl?: string;
   lastUsedAt?: string;
 }
 

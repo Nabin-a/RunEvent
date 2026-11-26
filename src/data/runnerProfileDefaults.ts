@@ -403,6 +403,11 @@ const hasText = (v: string | null | undefined): boolean => Boolean(v && v.trim()
  */
 export const MAX_EMERGENCY_CONTACTS = 10;
 
+/** largest photo file accepted for a profile picture, before cropping (26 Nov 2026, user pick 5 MB) */
+export const AVATAR_MAX_FILE_BYTES = 5 * 1024 * 1024;
+/** the cropped picture is a 320px JPEG (about 30 KB); the server refuses anything far larger */
+export const AVATAR_MAX_DATA_URL_CHARS = 500_000;
+
 export function evaluatePersonalInfoCompletion(
   user: UserAccount
 ): PersonalInfoCompletionSummary {

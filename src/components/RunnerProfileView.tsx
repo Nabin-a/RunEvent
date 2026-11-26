@@ -67,6 +67,7 @@ import {
 } from './StatusBadges';
 import { DateOfBirthInput } from './DateOfBirthInput';
 import { AvatarCropDialog } from './AvatarCropDialog';
+import { AVATAR_MAX_FILE_BYTES, nameInitials, readImageFile } from '../utils/avatarFile';
 import { NationalitySelect } from './NationalitySelect';
 import { SelectMenu } from './SelectMenu';
 import { ThaiPostalAddressSelector } from './ThaiPostalAddressSelector';
@@ -129,21 +130,11 @@ export type RunnerProfileTab =
   | 'security'
   | 'privacy';
 
-const AVATAR_MAX_FILE_BYTES = 15 * 1024 * 1024;
 
 /** the saved-runner dialog is open for a new person, not an existing one */
 const NEW_PARTICIPANT_ID = '__new__';
 
 /** Reads the picked image for the crop dialog (the dialog makes the final 320 px square). */
-function readImageFile(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('read_failed'));
-    reader.onload = () => resolve(String(reader.result));
-    reader.readAsDataURL(file);
-  });
-}
-
 function downloadFinisherCertificateSvg(params: {
   runnerName: string;
   eventTitle: string;
@@ -1142,7 +1133,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
       },
       {
         key: 'participants',
-        label: tx('ผู้สมัครที่บันทึกไว้'),
+        label: tx('รายชื่อเพื่อนที่สมัครให้'),
         icon: <IconUsers size={16} />,
       },
       {
@@ -1380,7 +1371,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                   tx('บัญชีเดียวใช้ได้ทั้งนักวิ่งและผู้จัดงาน กรอกรหัสคำเชิญจากทีมผู้จัด หรือยื่นขอเปิดองค์กรใหม่เพื่อรอ Platform Owner ตรวจสอบ'),
                 ],
                 participants: [
-                  tx('ผู้สมัครที่บันทึกไว้ (สมัครให้ผู้อื่น)'),
+                  tx('รายชื่อเพื่อนที่สมัครให้'),
                   tx('รายชื่อบุคคลที่คุณสมัครงานวิ่งให้ เพิ่มเองได้ที่นี่ หรือระบบบันทึกให้อัตโนมัติเมื่อสมัครให้ผู้อื่นสำเร็จ แก้ไขหรือลบรายการได้'),
                 ],
                 privacy: [
@@ -1443,7 +1434,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                 <div className="runner-avatar-controls">
                   <strong>{tx('รูปโปรไฟล์นักวิ่ง')}</strong>
                   <span className="muted-inline">
-                    {tx('JPG, PNG หรือ WebP ไม่เกิน 15 MB ครอปและซูมได้ก่อนบันทึก')}
+                    {tx('JPG, PNG หรือ WebP ไม่เกิน 5 MB ครอปและซูมได้ก่อนบันทึก')}
                   </span>
                   <div className="cta-inline-row">
                     <label className="btn-secondary file-pick-btn">
@@ -1461,7 +1452,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                           if (f.size > AVATAR_MAX_FILE_BYTES) {
                             setBanner({
                               tone: 'err',
-                              text: tx('ไฟล์รูปใหญ่เกิน 15 MB กรุณาเลือกไฟล์ที่เล็กลง'),
+                              text: tx('ไฟล์รูปใหญ่เกิน 5 MB กรุณาเลือกไฟล์ที่เล็กลง'),
                             });
                             return;
                           }
@@ -2581,7 +2572,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
           {activeTab === 'participants' && (
             <section className="clean-panel canvas-stack">
               <div className="kr-sec-head">
-                <h2>{tx('ผู้สมัครที่บันทึกไว้ (สมัครให้ผู้อื่น)')}</h2>
+                <h2>{tx('รายชื่อเพื่อนที่สมัครให้')}</h2>
                 <p className="muted-block">
                   {tx(
                     'รายชื่อบุคคลที่คุณสมัครงานวิ่งให้ เพิ่มเองได้ที่นี่ หรือระบบบันทึกให้อัตโนมัติเมื่อสมัครให้ผู้อื่นสำเร็จ แก้ไขหรือลบรายการได้'
@@ -2597,7 +2588,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
 
               {participantList.length === 0 ? (
                 <div className="empty-state-box">
-                  <strong>{tx('ยังไม่มีรายชื่อผู้สมัครที่บันทึกไว้')}</strong>
+                  <strong>{tx('ยังไม่มีรายชื่อเพื่อนที่สมัครให้')}</strong>
                   <p className="muted-inline">
                     {tx(
                       'กด "เพิ่มผู้สมัคร" เพื่อบันทึกไว้ล่วงหน้า หรือรายชื่อจะถูกบันทึกอัตโนมัติเมื่อเลือก "สมัครให้ผู้อื่น" ในหน้าสมัครงานวิ่ง'
@@ -2628,6 +2619,13 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                       <div key={pt.id} className="linked-provider-row">
                         <div>
                           <div className="cta-inline-row">
+                            <span className="runner-avatar-frame sm" aria-hidden="true">
+                              {pt.avatarDataUrl ? (
+                                <img src={pt.avatarDataUrl} alt="" className="runner-avatar-img" />
+                              ) : (
+                                <span className="runner-avatar-initials">{nameInitials(enFull || thFull)}</span>
+                              )}
+                            </span>
                             {/* nickname first (25 Nov 2026, user request) */}
                             <strong>
                               {nickDisplay ? `(${nickDisplay}) ` : ''}
@@ -2721,7 +2719,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                                 if (editingPartId === pt.id) {
                                   setEditingPartId(null);
                                 }
-                                const okMsg = tx('ลบผู้สมัครที่บันทึกไว้แล้ว');
+                                const okMsg = tx('ลบออกจากรายชื่อเพื่อนที่สมัครให้แล้ว');
                                 if (
                                   !(await saveProfileWithFeedback(
                                     buildMergedProfile({

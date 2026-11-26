@@ -37,7 +37,7 @@ import { PRIVACY_NOTICE_VERSION } from '../src/data/privacyNotice';
 import { normalizeDetailPage, normalizePageContent } from '../src/data/eventDetailLayout';
 import { missingRequiredData } from '../src/data/eventPageConvert';
 import { answeredIndex, normalizeForm, validateAnswers } from '../src/data/registrationForm';
-import { MAX_EMERGENCY_CONTACTS } from '../src/data/runnerProfileDefaults';
+import { AVATAR_MAX_DATA_URL_CHARS, MAX_EMERGENCY_CONTACTS } from '../src/data/runnerProfileDefaults';
 import { registerReviewCommentRoutes } from './reviewComments';
 import { cloneCustomFieldsSchema, isTotalQuotaEnabled, validateQuotaUpdate } from '../src/utils/eventConfig';
 import {
@@ -845,6 +845,11 @@ app.patch('/api/account/profile', (req, res) => {
   const { user } = resolveSessionUser(req);
   if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
   const incoming = (req.body?.profile ?? {}) as RunnerProfileData;
+  // profile pictures are cropped to a small JPEG in the browser; refuse anything far larger
+  const tooBig = (v?: string) => typeof v === 'string' && v.length > AVATAR_MAX_DATA_URL_CHARS;
+  if (tooBig(incoming.avatarDataUrl) || (incoming.savedParticipants ?? []).some((pt) => tooBig(pt.avatarDataUrl))) {
+    return res.status(400).json({ ok: false, error: 'รูปโปรไฟล์ใหญ่เกินกำหนด กรุณาเลือกรูปใหม่' });
+  }
   if ((incoming.emergencyContacts?.length ?? 0) > MAX_EMERGENCY_CONTACTS) {
     return res.status(400).json({
       ok: false,

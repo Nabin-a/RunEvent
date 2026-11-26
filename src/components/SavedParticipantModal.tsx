@@ -4,12 +4,14 @@ import type { SavedParticipant } from '../types';
 import { getLang, tx } from '../i18n';
 import { sanitizeEnglishNameInput, sanitizeThaiNameInput } from '../utils/dateFormat';
 import { DateOfBirthInput } from './DateOfBirthInput';
-import { IconAlert, IconCheckCircle } from './Icons';
+import { IconAlert, IconCamera, IconCheckCircle } from './Icons';
 import { IdNumberInput } from './IdNumberInput';
 import { PhoneInput } from './PhoneInput';
 import { RequiredFieldText } from './RequiredFieldText';
 import { SelectMenu } from './SelectMenu';
 import { confirmDiscardClose, useEscapeToClose } from './modalShared';
+import { AvatarCropDialog } from './AvatarCropDialog';
+import { AVATAR_MAX_FILE_BYTES, nameInitials, readImageFile } from '../utils/avatarFile';
 
 const emptyParticipant = (): SavedParticipant => ({
   id: '',
@@ -63,8 +65,12 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
   const [saving, setSaving] = useState(false);
   const editing = Boolean(participant);
 
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
   const requestClose = () => confirmDiscardClose(JSON.stringify(draft) !== baseline, onCancel);
-  useEscapeToClose(requestClose);
+  // Escape belongs to the crop dialog while it is open
+  useEscapeToClose(() => {
+    if (!cropSrc) requestClose();
+  });
 
   const fail = (msg: string) => {
     setError(msg);
@@ -103,6 +109,7 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
         emergencyContactName: (draft.emergencyContactName ?? '').trim() || undefined,
         emergencyContactRelation: (draft.emergencyContactRelation ?? '').trim() || undefined,
         emergencyContactPhone: (draft.emergencyContactPhone ?? '').trim() || undefined,
+        avatarDataUrl: draft.avatarDataUrl || undefined,
       });
     } finally {
       setSaving(false);
@@ -139,6 +146,51 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
                   <span>{error}</span>
                 </div>
               )}
+              {/* friend's profile picture, same rules as the runner's own (26 Nov 2026, user request) */}
+              <div className="runner-avatar-upload-bar">
+                <div className="runner-avatar-frame lg">
+                  {draft.avatarDataUrl ? (
+                    <img src={draft.avatarDataUrl} alt={tx('รูปโปรไฟล์')} className="runner-avatar-img" />
+                  ) : (
+                    <span className="runner-avatar-initials">{nameInitials(shownName)}</span>
+                  )}
+                </div>
+                <div className="runner-avatar-controls">
+                  <strong>{tx('รูปโปรไฟล์')}</strong>
+                  <span className="muted-inline">{tx('JPG, PNG หรือ WebP ไม่เกิน 5 MB ครอปและซูมได้ก่อนบันทึก')}</span>
+                  <div className="cta-inline-row">
+                    <label className="btn-secondary file-pick-btn">
+                      <IconCamera size={15} />
+                      <span>{draft.avatarDataUrl ? tx('เปลี่ยนรูปโปรไฟล์') : tx('เพิ่มรูปโปรไฟล์')}</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={async (e) => {
+                          const input = e.currentTarget;
+                          const f = input.files?.[0];
+                          input.value = '';
+                          if (!f) return;
+                          if (f.size > AVATAR_MAX_FILE_BYTES) {
+                            setError(tx('ไฟล์รูปใหญ่เกิน 5 MB กรุณาเลือกไฟล์ที่เล็กลง'));
+                            return;
+                          }
+                          try {
+                            setError(null);
+                            setCropSrc(await readImageFile(f));
+                          } catch {
+                            setError(tx('อ่านไฟล์รูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'));
+                          }
+                        }}
+                      />
+                    </label>
+                    {draft.avatarDataUrl && (
+                      <button type="button" className="btn-ghost-sm" onClick={() => setDraft({ ...draft, avatarDataUrl: '' })}>
+                        {tx('ลบรูปออก')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
               <div className="form-grid-2">
                 <div className="form-row">
                   <label htmlFor={`${idPrefix}-fne`}>
@@ -478,6 +530,14 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
           </div>
         </form>
       </div>
+      <AvatarCropDialog
+        src={cropSrc}
+        onCancel={() => setCropSrc(null)}
+        onConfirm={(dataUrl) => {
+          setDraft((d) => ({ ...d, avatarDataUrl: dataUrl }));
+          setCropSrc(null);
+        }}
+      />
     </div>,
     document.body
   );
