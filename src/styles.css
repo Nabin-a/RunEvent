@@ -3416,6 +3416,37 @@ textarea::placeholder {
   padding: 0 0.45rem;
 }
 
+/* account menu groups: runner account / organizer system / platform (26 Nov 2026) */
+.profile-menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  padding: 0.35rem 0 0.2rem;
+}
+
+.profile-menu-group + .profile-menu-group {
+  border-top: 1px solid var(--line-light);
+  margin-top: 0.2rem;
+  padding-top: 0.5rem;
+}
+
+.profile-menu-group-label {
+  padding: 0 0.55rem 0.1rem;
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.mobile-drawer-group-label {
+  display: block;
+  margin-top: 0.75rem;
+  padding: 0 0.25rem 0.25rem;
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
 .profile-menu-divider {
   height: 1px;
   background: var(--line-light);

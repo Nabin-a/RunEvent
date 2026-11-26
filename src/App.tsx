@@ -3487,93 +3487,80 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                       </div>
                     </div>
 
-                    {currentUserCompletion && (
-                      <button
-                        type="button"
-                        className={`profile-completion-status ${currentUserCompletion.isComplete
-                          ? 'is-complete'
-                          : 'is-warning'
-                          }`}
-                        onClick={() => navigateRunnerProfile('personal')}
-                      >
-                        <ProfileCompletionStatusText
-                          isComplete={currentUserCompletion.isComplete}
-                          pct={currentUserCompletion.pct}
-                        />
-                        <span className="profile-completion-status-meter" aria-hidden="true">
-                          <span
-                            style={{ width: `${currentUserCompletion.pct}%` }}
+                    {/* two groups: the runner's own account, then the organizer system
+                        (26 Nov 2026, user request: keep them apart) */}
+                    <div className="profile-menu-group" role="group" aria-labelledby="pm-runner-h">
+                      <span id="pm-runner-h" className="profile-menu-group-label">{tx("บัญชีนักวิ่ง")}</span>
+                      {currentUserCompletion && (
+                        <button
+                          type="button"
+                          className={`profile-completion-status ${currentUserCompletion.isComplete
+                            ? 'is-complete'
+                            : 'is-warning'
+                            }`}
+                          onClick={() => navigateRunnerProfile('personal')}
+                        >
+                          <ProfileCompletionStatusText
+                            isComplete={currentUserCompletion.isComplete}
+                            pct={currentUserCompletion.pct}
                           />
-                        </span>
-                      </button>
-                    )}
+                          <span className="profile-completion-status-meter" aria-hidden="true">
+                            <span
+                              style={{ width: `${currentUserCompletion.pct}%` }}
+                            />
+                          </span>
+                        </button>
+                      )}
 
-                    <button
-                      type="button"
-                      className="profile-menu-item"
-                      onClick={() => navigateRunnerProfile('personal')}
-                    >
-                      <IconUsers size={15} />
-                      <span>{tx("บัญชีของฉัน")}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      className="profile-menu-item"
-                      onClick={() => navigateCustomer('my_orders')}
-                    >
-                      <IconHistory size={15} />
-                      <span>{tx("ประวัติการสมัคร & การสั่งซื้อ")}</span>
-                    </button>
-
-                    {/* "ตั้งค่าบัญชี" was removed from this menu (25 Nov 2026, user request); the same page
-                      is in the profile as "ความเป็นส่วนตัวและข้อมูล" */}
-
-                    {/* organizer members (and the platform owner) reach the organizer system from here */}
-                    {hasOrganizerAccess && (
-                      <button
-                        type="button"
-                        className={`profile-menu-item ${surface === 'organizer' ? 'is-current' : ''}`}
-                        aria-current={surface === 'organizer' ? 'page' : undefined}
-                        onClick={() => navigateOrganizer()}
-                      >
-                        <IconBuilding size={15} />
-                        <span>{tx("ระบบผู้จัดงาน")}</span>
-                      </button>
-                    )}
-
-                    {isPlatformOwner && (
                       <button
                         type="button"
                         className="profile-menu-item"
-                        onClick={() => navigatePlatformAdmin()}
+                        onClick={() => navigateRunnerProfile('personal')}
                       >
-                        <IconShield size={15} />
-                        <span>{tx("ศูนย์ควบคุม Platform Owner")}</span>
+                        <IconUsers size={15} />
+                        <span>{tx("บัญชีของฉัน")}</span>
                       </button>
+
+                      <button
+                        type="button"
+                        className="profile-menu-item"
+                        onClick={() => navigateCustomer('my_orders')}
+                      >
+                        <IconHistory size={15} />
+                        <span>{tx("ประวัติการสมัคร & การสั่งซื้อ")}</span>
+                      </button>
+                    </div>
+
+                    {/* organizer members (and the platform owner) reach the organizer system from here */}
+                    {hasOrganizerAccess && (
+                      <div className="profile-menu-group" role="group" aria-labelledby="pm-org-h">
+                        <span id="pm-org-h" className="profile-menu-group-label">{tx("ระบบผู้จัดงาน")}</span>
+                        <button
+                          type="button"
+                          className={`profile-menu-item ${surface === 'organizer' ? 'is-current' : ''}`}
+                          aria-current={surface === 'organizer' ? 'page' : undefined}
+                          onClick={() => navigateOrganizer()}
+                        >
+                          <IconSwitch size={15} />
+                          <span>{tx("เข้าสู่ระบบผู้จัดงาน")}</span>
+                        </button>
+                        {/* the organization list was dropped (26 Nov 2026, user request); orgs are picked inside the organizer system */}
+                      </div>
                     )}
 
-                    {hasOrganizerAccess && currentUser.memberships.length > 0 ? (
-                      <div className="profile-org-section">
-                        <span className="muted-inline">{tx("องค์กรผู้จัดที่คุณสังกัด:")}</span>
-                        {currentUser.memberships.map((m) => {
-                          const org = sys.organizations.find(
-                            (o) => o.id === m.organizationId
-                          );
-                          return (
-                            <button
-                              key={m.organizationId}
-                              type="button"
-                              className="profile-menu-item"
-                              onClick={() => navigateOrganizer(m.organizationId)}
-                            >
-                              <IconBuilding size={15} />
-                              <span>{org?.nameTh ?? m.organizationId}</span>
-                            </button>
-                          );
-                        })}
+                    {isPlatformOwner && (
+                      <div className="profile-menu-group" role="group" aria-labelledby="pm-platform-h">
+                        <span id="pm-platform-h" className="profile-menu-group-label">{tx("แพลตฟอร์ม")}</span>
+                        <button
+                          type="button"
+                          className="profile-menu-item"
+                          onClick={() => navigatePlatformAdmin()}
+                        >
+                          <IconShield size={15} />
+                          <span>{tx("ศูนย์ควบคุม Platform Owner")}</span>
+                        </button>
                       </div>
-                    ) : null}
+                    )}
 
                     <div className="profile-menu-divider" />
 
@@ -3665,6 +3652,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
 
                   {currentUser && (
                     <>
+                      <span className="mobile-drawer-group-label">{tx("บัญชีนักวิ่ง")}</span>
                       <button
                         type="button"
                         className={`mobile-drawer-link ${surface === 'runner_profile' ? 'active' : ''
@@ -3673,9 +3661,23 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                       >
                         <span className="mobile-drawer-link-label">
                           <IconUsers size={16} />
-                          <span>{tx("โปรไฟล์นักวิ่ง")}</span>
+                          <span>{tx("บัญชีของฉัน")}</span>
                         </span>
                         {surface === 'runner_profile' && (
+                          <span className="mobile-drawer-dot" aria-hidden="true" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className={`mobile-drawer-link ${surface === 'customer' && customerSubView === 'my_orders' ? 'active' : ''
+                          }`}
+                        onClick={() => navigateCustomer('my_orders')}
+                      >
+                        <span className="mobile-drawer-link-label">
+                          <IconHistory size={16} />
+                          <span>{tx("ประวัติการสมัคร & การสั่งซื้อ")}</span>
+                        </span>
+                        {surface === 'customer' && customerSubView === 'my_orders' && (
                           <span className="mobile-drawer-dot" aria-hidden="true" />
                         )}
                       </button>
@@ -3685,6 +3687,8 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                   )}
 
                   {hasOrganizerAccess && (
+                    <>
+                    <span className="mobile-drawer-group-label">{tx("ระบบผู้จัดงาน")}</span>
                     <button
                       type="button"
                       className={`mobile-drawer-link ${surface === 'organizer' ? 'active' : ''
@@ -3692,16 +3696,19 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                       onClick={() => navigateOrganizer()}
                     >
                       <span className="mobile-drawer-link-label">
-                        <IconBuilding size={16} />
-                        <span>{tx("ระบบผู้จัดงาน")}</span>
+                        <IconSwitch size={16} />
+                        <span>{tx("เข้าสู่ระบบผู้จัดงาน")}</span>
                       </span>
                       {surface === 'organizer' && (
                         <span className="mobile-drawer-dot" aria-hidden="true" />
                       )}
                     </button>
+                    </>
                   )}
 
                   {isPlatformOwner && (
+                    <>
+                    <span className="mobile-drawer-group-label">{tx("แพลตฟอร์ม")}</span>
                     <button
                       type="button"
                       className={`mobile-drawer-link ${surface === 'platform_admin' ? 'active' : ''
@@ -3716,6 +3723,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                         <span className="mobile-drawer-dot" aria-hidden="true" />
                       )}
                     </button>
+                    </>
                   )}
                 </nav>
 
