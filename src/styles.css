@@ -11726,6 +11726,12 @@ body:has(.app-root.is-public) {
   color: #fff;
 }
 
+/* "บันทึกลงรายชื่อเพื่อนที่สมัครให้" under the friend's details (26 Nov 2026) */
+.reg-lab-friend-save {
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
 /* "เสื้อแข่ง *" above the race shirt gallery */
 .reg-lab-shirt-h {
   margin: 1rem 0 0.5rem;

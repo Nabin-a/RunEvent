@@ -2570,13 +2570,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     ) : (
                       <span>{tx("ยังไม่เปิดราคา")}</span>
                     )}
-                    {isTotalQuotaEnabled(ev) ? (
-                      <small className="mono-num">
-                        {txf("ว่าง {0}/{1} สิทธิ์", openSeats, ev.totalEventQuota)}
-                      </small>
-                    ) : openSeats <= 0 ? (
-                      <small>{tx("โควตาเต็มแล้ว")}</small>
-                    ) : null}
+                    {/* seats left are no longer shown on the list (26 Nov 2026, user request); a full event still says so */}
+                    {openSeats <= 0 && <small>{tx("โควตาเต็มแล้ว")}</small>}
                   </p>
                   <button
                     type="button"

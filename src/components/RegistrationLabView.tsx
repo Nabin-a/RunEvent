@@ -22,7 +22,7 @@ import {
 } from '../utils/pricing';
 import { evaluateCategoryAge, formatAgeBasis, formatAgeGroupLabel, formatAgeLimit, formatBasisDate } from '../utils/age';
 import { sanitizeEnglishNameInput, sanitizeThaiNameInput } from '../utils/dateFormat';
-import { resolveShirtSpec } from '../data/runnerProfileDefaults';
+import { MAX_EMERGENCY_CONTACTS, resolveShirtSpec } from '../data/runnerProfileDefaults';
 import type { PlatformProfileConfig } from '../types';
 import { DateOfBirthInput } from './DateOfBirthInput';
 import { IdNumberInput } from './IdNumberInput';
@@ -326,6 +326,25 @@ export function RegistrationLabView({
 
   /* participant: "เลือกจากรายชื่อที่บันทึกไว้" or "กรอกผู้สมัครใหม่" ('new') */
   const partMode: 'saved' | 'manual' = saved.length > 0 && savedId !== 'new' ? 'saved' : 'manual';
+
+  // The organizer's questions belong to the person being registered: changing who that is
+  // (yourself / a friend / another friend / a new one) clears the answers, so one person's
+  // blood group never lands on someone else's entry (26 Nov 2026, user request)
+  const answersOwner = forSelf === null ? '' : forSelf ? 'self' : savedId || 'new';
+  const lastAnswersOwner = useRef(answersOwner);
+  const keepAnswersOnce = useRef(false);
+  useEffect(() => {
+    if (lastAnswersOwner.current === answersOwner) return;
+    const was = lastAnswersOwner.current;
+    lastAnswersOwner.current = answersOwner;
+    // saving the friend being typed only gives that same person an id
+    if (keepAnswersOnce.current) {
+      keepAnswersOnce.current = false;
+      return;
+    }
+    if (was !== '') setAnswers({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answersOwner]);
   const lastSavedId = useRef<string>('');
   const [partEditId, setPartEditId] = useState<string | null>(null);
   const [step2Notice, setStep2Notice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
@@ -378,6 +397,103 @@ export function RegistrationLabView({
     if (wasPicked) setEmergency(d.contactName, d.relationship, d.phone);
     setEcEditId(null);
     setStep2Notice({ tone: 'ok', text: tx('บันทึกข้อมูลผู้ติดต่อฉุกเฉินเรียบร้อยแล้ว') });
+  };
+
+  /* "บันทึก" buttons in the manual tabs (26 Nov 2026, user request): save what was typed, then go
+     back to the "pick from saved" tab with the new entry picked */
+  const [savingNew, setSavingNew] = useState(false);
+  const saveNewContact = async () => {
+    const name = emergencyName.trim();
+    const rel = emergencyRelation.trim();
+    const ph = emergencyPhone.trim();
+    if (!name || !rel || ph.replace(/\D/g, '').length < 9) {
+      setStep2Notice({ tone: 'err', text: tx('กรอกชื่อ ความสัมพันธ์ และเบอร์โทร (9–10 หลัก) ให้ครบก่อนบันทึก') });
+      return;
+    }
+    const digits = (v: string) => v.replace(/\D/g, '');
+    const dup = contacts.find((c) => c.contactName.trim() === name && digits(c.phone) === digits(ph));
+    if (dup) {
+      setEcMode('saved');
+      setEmergency(dup.contactName, dup.relationship, dup.phone);
+      setStep2Notice({ tone: 'ok', text: tx('มีผู้ติดต่อนี้ในโปรไฟล์แล้ว เลือกให้แล้ว') });
+      return;
+    }
+    if (contacts.length >= MAX_EMERGENCY_CONTACTS) {
+      setStep2Notice({
+        tone: 'err',
+        text: txf('โปรไฟล์มีผู้ติดต่อฉุกเฉินครบ {0} คนแล้ว ใช้ผู้ติดต่อนี้กับการสมัครครั้งนี้ได้ แต่บันทึกเพิ่มไม่ได้', MAX_EMERGENCY_CONTACTS),
+      });
+      return;
+    }
+    const entry: RunnerEmergencyContact = {
+      id: `ec-${Date.now().toString(36)}`,
+      contactName: name,
+      relationship: rel,
+      phone: ph,
+      isPrimary: contacts.length === 0,
+    };
+    const next = [...contacts, entry];
+    if (live.saveEmergencyContacts) {
+      setSavingNew(true);
+      const res = await live.saveEmergencyContacts(next);
+      setSavingNew(false);
+      if (!res.ok) {
+        setStep2Notice({ tone: 'err', text: res.error ?? tx('บันทึกข้อมูลไม่สำเร็จ กรุณาลองอีกครั้ง') });
+        return;
+      }
+    }
+    setContacts(next);
+    setEcMode('saved');
+    setEmergency(entry.contactName, entry.relationship, entry.phone);
+    setStep2Notice({ tone: 'ok', text: tx('บันทึกผู้ติดต่อฉุกเฉินลงโปรไฟล์แล้ว') });
+  };
+
+  const saveNewFriend = async () => {
+    if (!firstEn.trim() || !lastEn.trim()) {
+      setStep2Notice({ tone: 'err', text: tx('กรอกชื่อและนามสกุลภาษาอังกฤษของเพื่อนก่อนบันทึก') });
+      return;
+    }
+    const idDigits = idNumber.replace(/\s/g, '');
+    const same = (a?: string, b?: string) => (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
+    const dup = saved.find(
+      (x) => (idDigits && x.idNumber === idDigits) || (same(x.firstNameEn, firstEn) && same(x.lastNameEn, lastEn))
+    );
+    if (dup) {
+      pickParticipant(dup.id);
+      setStep2Notice({ tone: 'ok', text: tx('มีเพื่อนคนนี้ในรายชื่อแล้ว เลือกให้แล้ว') });
+      return;
+    }
+    const item: SavedParticipant = {
+      id: `sp-${Date.now().toString(36)}`,
+      firstName: firstTh.trim(),
+      lastName: lastTh.trim(),
+      nickname: nickTh.trim() || undefined,
+      firstNameEn: firstEn.trim(),
+      lastNameEn: lastEn.trim(),
+      nicknameEn: nickEn.trim() || undefined,
+      dateOfBirth: dob || undefined,
+      gender,
+      idType: idDigits ? idType : 'none',
+      idNumber: idDigits || undefined,
+      phone: phone.trim() || undefined,
+      emergencyContactName: emergencyName.trim() || undefined,
+      emergencyContactRelation: emergencyRelation.trim() || undefined,
+      emergencyContactPhone: emergencyPhone.trim() || undefined,
+    };
+    const next = [...saved, item];
+    if (live.saveParticipants) {
+      setSavingNew(true);
+      const res = await live.saveParticipants(next);
+      setSavingNew(false);
+      if (!res.ok) {
+        setStep2Notice({ tone: 'err', text: res.error ?? tx('บันทึกข้อมูลไม่สำเร็จ กรุณาลองอีกครั้ง') });
+        return;
+      }
+    }
+    setSaved(next);
+    keepAnswersOnce.current = true;
+    setSavedId(item.id);
+    setStep2Notice({ tone: 'ok', text: tx('บันทึกลงรายชื่อเพื่อนแล้ว') });
   };
 
   const step2NoticeEl = step2Notice && (
@@ -620,6 +736,9 @@ export function RegistrationLabView({
   /** forward: the live form's checks for this step first */
   const goNext = (next: LabStep) => {
     let problem = live.check(step, bodyRef.current);
+    if (!problem && step === 2 && forSelf === false && partMode === 'saved' && (!emergencyName.trim() || !emergencyPhone.trim())) {
+      problem = 'เพื่อนคนนี้ยังไม่มีผู้ติดต่อฉุกเฉิน กด แก้ไข ที่การ์ดเพื่อเพิ่ม';
+    }
     if (!problem && step === 3 && !shirtSize) {
       problem = 'กรุณาเลือกไซส์เสื้อตามสิทธิ์สมัคร';
       document.querySelector('.reg-lab-body .pg-tabbed')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -949,6 +1068,11 @@ export function RegistrationLabView({
                                     <NoteTag>{tx('ยังไม่มีชื่อภาษาอังกฤษ กด แก้ไข เพื่อเพิ่ม')}</NoteTag>
                                   </span>
                                 )}
+                                {(!pt.emergencyContactName || !pt.emergencyContactPhone) && (
+                                  <span className="reg-tag-row">
+                                    <NoteTag>{tx('ยังไม่มีผู้ติดต่อฉุกเฉิน กด แก้ไข เพื่อเพิ่ม')}</NoteTag>
+                                  </span>
+                                )}
                                 {dobRequired && !pt.dateOfBirth && (
                                   <span className="reg-tag-row">
                                     <NoteTag>{tx('ระยะนี้ต้องใช้วันเกิด กด แก้ไข เพื่อเพิ่ม')}</NoteTag>
@@ -1084,9 +1208,38 @@ export function RegistrationLabView({
                   </>
                   )}
 
+                  {/* the organizer's questions come before the emergency contact (26 Nov 2026, user request) */}
+                  {(event.customFields?.length ?? 0) > 0 && (
+                    // the field list brings its own heading ("ข้อมูลเพิ่มเติม (n ข้อ)")
+                    <section className="reg-lab-section reg-lab-custom">
+                      <RunnerCustomFieldsInputs
+                        fields={event.customFields}
+                        answers={answers}
+                        onAnswerChange={(id, v) => {
+                          live.clearError(id);
+                          setStepError(null);
+                          setAnswers({ ...answers, [id]: v });
+                        }}
+                        raceDistanceCode={category.code}
+                        shirtSize={shirtSize}
+                        publishedFormVersion={event.publishedFormVersion}
+                        steps={event.formCustomSteps ?? []}
+                        stepId={CORE_STEP}
+                        errors={live.errors}
+                      />
+                    </section>
+                  )}
+
+                  {/* a saved friend's emergency contact comes from the friend's record and is edited in
+                      the friend's dialog, so the fields are not shown here (26 Nov 2026, user request) */}
+                  {!(forSelf === false && partMode === 'saved') && (
                   <section className="reg-lab-section" aria-labelledby="lab-emergency">
                     <h3 id="lab-emergency">{tx('ผู้ติดต่อฉุกเฉิน')}</h3>
-                    <p className="reg-lab-hint">{tx('ผู้จัดจะโทรหาคนนี้หากเกิดเหตุระหว่างแข่งขัน')}</p>
+                    <p className="reg-lab-hint">
+                      {forSelf === false
+                        ? tx('ผู้ติดต่อฉุกเฉินของเพื่อนที่สมัครให้ (ไม่ใช่ของคุณ) ผู้จัดจะโทรหาคนนี้หากเกิดเหตุระหว่างแข่งขัน')
+                        : tx('ผู้จัดจะโทรหาคนนี้หากเกิดเหตุระหว่างแข่งขัน')}
+                    </p>
                     {forSelf === true && contacts.length > 0 && (
                       <>
                         {modeTabs(
@@ -1158,9 +1311,16 @@ export function RegistrationLabView({
                           onChange={(e) => setEmergencyName(e.target.value)}
                           placeholder={tx('เช่น วีระ วัฒนากูล')}
                         />
-                        {emergencyRelation && (
-                          <span className="muted-inline">{txf('ความสัมพันธ์: {0}', tx(emergencyRelation))}</span>
-                        )}
+                      </div>
+                      <div className="form-row">
+                        <label htmlFor="lab-emerg-rel">{tx('ความสัมพันธ์')}</label>
+                        <input
+                          id="lab-emerg-rel"
+                          type="text"
+                          value={emergencyRelation}
+                          onChange={(e) => setEmergencyRelation(e.target.value)}
+                          placeholder={tx('เช่น บิดา / มารดา / คู่สมรส')}
+                        />
                       </div>
                       <div className="form-row">
                         <label htmlFor="lab-emerg-phone">
@@ -1168,29 +1328,25 @@ export function RegistrationLabView({
                         </label>
                         <PhoneInput id="lab-emerg-phone" value={emergencyPhone} onChange={setEmergencyPhone} required />
                       </div>
+                      {forSelf === true && contacts.length === 0 && <div className="reg-lab-full">{step2NoticeEl}</div>}
+                      {forSelf === true && live.saveEmergencyContacts && (
+                        <div className="ship-addr-save-row reg-lab-full">
+                          <button type="button" className="btn-secondary" disabled={savingNew} onClick={() => void saveNewContact()}>
+                            {savingNew ? tx('กำลังบันทึก…') : tx('บันทึกลงโปรไฟล์')}
+                          </button>
+                        </div>
+                      )}
                     </div>
                     )}
+                    {forSelf === false && partMode === 'manual' && saved.length === 0 && step2NoticeEl}
+                    {forSelf === false && partMode === 'manual' && live.saveParticipants && (
+                      <div className="ship-addr-save-row reg-lab-friend-save">
+                        <button type="button" className="btn-secondary" disabled={savingNew} onClick={() => void saveNewFriend()}>
+                          {savingNew ? tx('กำลังบันทึก…') : tx('บันทึกลงรายชื่อเพื่อน')}
+                        </button>
+                      </div>
+                    )}
                   </section>
-
-                  {(event.customFields?.length ?? 0) > 0 && (
-                    // the field list brings its own heading ("ข้อมูลเพิ่มเติม (n ข้อ)")
-                    <section className="reg-lab-section reg-lab-custom">
-                      <RunnerCustomFieldsInputs
-                        fields={event.customFields}
-                        answers={answers}
-                        onAnswerChange={(id, v) => {
-                          live.clearError(id);
-                          setStepError(null);
-                          setAnswers({ ...answers, [id]: v });
-                        }}
-                        raceDistanceCode={category.code}
-                        shirtSize={shirtSize}
-                        publishedFormVersion={event.publishedFormVersion}
-                        steps={event.formCustomSteps ?? []}
-                        stepId={CORE_STEP}
-                        errors={live.errors}
-                      />
-                    </section>
                   )}
                 </>
               )}
