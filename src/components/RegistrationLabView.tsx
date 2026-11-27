@@ -425,13 +425,28 @@ export function RegistrationLabView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [answersOwner]);
   const lastSavedId = useRef<string>('');
+  /* registering someone else: the emergency contact starts as the account owner (27 Nov 2026,
+     user request) unless the friend's saved data has one; the runner can change it */
+  const ownerEmergency = {
+    name:
+      `${profile?.firstName ?? ''} ${profile?.lastName ?? ''}`.trim() || currentUser?.fullNameTh || '',
+    relation: 'ผู้สมัครให้',
+    phone: profile?.phone ?? '',
+  };
+  const fillFriend = (p: SavedParticipant | null) => {
+    fillFrom(p);
+    if (!p?.emergencyContactName?.trim() && !p?.emergencyContactPhone?.trim()) {
+      setEmergency(ownerEmergency.name, ownerEmergency.relation, ownerEmergency.phone);
+    }
+  };
+
   const [partEditId, setPartEditId] = useState<string | null>(null);
   // the friend editor was opened by a failed step: it marks the missing fields on open
   const [partEditCheck, setPartEditCheck] = useState(false);
   const [step2Notice, setStep2Notice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
   const pickParticipant = (id: string) => {
     setSavedId(id);
-    fillFrom(saved.find((x) => x.id === id) ?? null);
+    fillFriend(saved.find((x) => x.id === id) ?? null);
   };
   const saveEditedParticipant = async (item: SavedParticipant) => {
     const next = saved.map((x) => (x.id === item.id ? item : x));
@@ -444,7 +459,7 @@ export function RegistrationLabView({
       }
     }
     setSaved(next);
-    if (savedId === item.id) fillFrom(item);
+    if (savedId === item.id) fillFriend(item);
     setPartEditId(null);
     setStep2Notice({ tone: 'ok', text: tx('อัปเดตข้อมูลผู้สมัครแทนเรียบร้อยแล้ว') });
   };
@@ -1173,7 +1188,7 @@ export function RegistrationLabView({
                         setForSelf(false);
                         // no friend is picked for the runner; with no saved friends the form opens
                         setSavedId(saved.length > 0 ? '' : 'new');
-                        fillFrom(null);
+                        fillFriend(null);
                       }}
                     />
                     <span className="custom-radio-circle" aria-hidden="true" />
@@ -1197,14 +1212,14 @@ export function RegistrationLabView({
                         if (mode === 'manual') {
                           if (savedId !== 'new') lastSavedId.current = savedId;
                           setSavedId('new');
-                          fillFrom(null);
+                          fillFriend(null);
                         } else {
                           // back to the list: the friend picked before, if any
                           const back = saved.find((x) => x.id === lastSavedId.current);
                           if (back) pickParticipant(back.id);
                           else {
                             setSavedId('');
-                            fillFrom(null);
+                            fillFriend(null);
                           }
                         }
                       }
@@ -1620,6 +1635,7 @@ export function RegistrationLabView({
                   idPrefix="lab-sp-edit"
                   participant={saved.find((x) => x.id === partEditId) ?? null}
                   entryRules={{ dob: dobRequired }}
+                  ownerEmergency={ownerEmergency}
                   checkOnOpen={partEditCheck}
                   shirtSizes={(platformProfileConfig?.shirtSizes ?? [])
                     .filter((sz) => sz.enabled)

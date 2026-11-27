@@ -3247,6 +3247,7 @@ export const EN_DICT: Record<string, string> = {
   "ใบสมัครวิ่ง": "Race entry",
   "ไปสัปดาห์ที่มีงานถัดไป": "Next week with races",
   "ไปเดือนที่มีงานถัดไป": "Next month with races",
+  "ผู้สมัครให้": "Registered by",
   "เสื้อแบบ Unisex ทรงเดียว ใส่ได้ทั้งชายและหญิง": "One unisex cut that fits everyone",
   "เหรียญ Finisher": "Finisher medal",
   "ได้รับเมื่อวิ่งเข้าเส้นชัยภายในเวลาที่กำหนด": "Given when you finish within the cut-off time",

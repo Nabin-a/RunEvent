@@ -56,6 +56,9 @@ interface SavedParticipantModalProps {
   /** opened because the entry found this friend's data incomplete: mark the empty required
    *  fields as soon as it opens (27 Nov 2026, user request) */
   checkOnOpen?: boolean;
+  /** from the registration form: a friend with no emergency contact starts with the account
+   *  owner as one (27 Nov 2026, user request) */
+  ownerEmergency?: { name: string; relation: string; phone: string };
 }
 
 /**
@@ -72,13 +75,27 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
   owner,
   entryRules,
   checkOnOpen = false,
+  ownerEmergency,
 }) => {
   const formRef = useRef<HTMLFormElement | null>(null);
   const needDob = Boolean(entryRules?.dob);
   const needEc = Boolean(entryRules);
   const isEn = getLang() === 'en';
-  const [baseline] = useState(() => JSON.stringify({ ...emptyParticipant(), ...(participant ?? {}) }));
-  const [draft, setDraft] = useState<SavedParticipant>(() => ({ ...emptyParticipant(), ...(participant ?? {}) }));
+  // the starting draft; with no emergency contact yet, the owner fills that part in
+  const [initial] = useState<SavedParticipant>(() => {
+    const base = { ...emptyParticipant(), ...(participant ?? {}) };
+    if (ownerEmergency && !base.emergencyContactName?.trim() && !base.emergencyContactPhone?.trim()) {
+      return {
+        ...base,
+        emergencyContactName: ownerEmergency.name,
+        emergencyContactRelation: ownerEmergency.relation,
+        emergencyContactPhone: ownerEmergency.phone,
+      };
+    }
+    return base;
+  });
+  const [baseline] = useState(() => JSON.stringify(initial));
+  const [draft, setDraft] = useState<SavedParticipant>(initial);
   const [error, setError] = useState<string | null>(null);
   const [contactCheck, setContactCheck] = useState(false);
   const contactProblems = friendContactProblems(draft, owner, { requireBoth: true });
