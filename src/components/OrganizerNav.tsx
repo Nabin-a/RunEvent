@@ -80,6 +80,7 @@ export const ORG_SECTION_LABEL: Record<OrgSection, string> = {
   evt_overview: 'หน้าหลักของงาน',
   evt_page_editor: 'เนื้อหาหน้างาน',
   evt_form_editor: 'ฟอร์มสมัคร',
+  evt_studio: 'หน้างานและฟอร์มสมัคร',
   evt_pricing_quota: 'ระยะ ราคา และการรับสมัคร',
   evt_kit: 'เสื้อและของที่ได้รับ',
   evt_participants: 'ผู้สมัคร',
@@ -119,17 +120,13 @@ function useEventGroups(p: OrgNavProps): { home: NavItem | null; groups: NavGrou
         label: 'เตรียมงาน',
         icon: 'screwdriver-wrench',
         items: [
+          // one menu for the event page and the registration form (27 Nov 2026, user request);
+          // it replaces "เนื้อหาหน้างาน" and "ฟอร์มสมัคร"
           {
-            section: 'evt_page_editor',
-            label: 'เนื้อหาหน้างาน',
-            desc: 'ข้อความที่นักวิ่งเห็นก่อนสมัคร',
-            icon: 'file-lines',
-          },
-          {
-            section: 'evt_form_editor',
-            label: 'ฟอร์มสมัคร',
-            desc: 'คำถามที่นักวิ่งต้องตอบตอนสมัคร',
-            icon: 'clipboard-list',
+            section: 'evt_studio',
+            label: 'หน้างานและฟอร์มสมัคร',
+            desc: 'หน้ารายละเอียด ขั้นตอนสมัคร และการเผยแพร่',
+            icon: 'pen-ruler',
           },
           {
             section: 'evt_pricing_quota',
@@ -487,12 +484,15 @@ const NavButton: React.FC<{
   active: boolean;
   onClick: () => void;
   compact?: boolean;
-}> = ({ item, active, onClick, compact }) => (
+  /** the rail is folded to icons: the name shows as a tooltip and stays the accessible name */
+  mini?: boolean;
+}> = ({ item, active, onClick, compact, mini }) => (
   <button
     type="button"
     className={`orgnav-item${active ? ' is-active' : ''}`}
     aria-current={active ? 'page' : undefined}
     onClick={onClick}
+    title={mini ? tx(item.label) : undefined}
   >
     <FaIcon name={item.icon} />
     <span className="orgnav-item-text">
@@ -509,6 +509,15 @@ const NavButton: React.FC<{
 );
 
 const COLLAPSE_KEY = 'kratai_orgnav_collapsed_groups';
+/** the whole rail folded to a strip of icons (27 Nov 2026, user request "ทำให้ sidebar สามารถซ่อนได้") */
+const MINI_KEY = 'kratai_orgnav_rail_mini';
+const readMini = () => {
+  try {
+    return window.localStorage.getItem(MINI_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
 
 function readCollapsed(groupIds: string[], openId: string | undefined): Record<string, boolean> {
   try {
@@ -549,13 +558,32 @@ export const OrganizerRail: React.FC<OrgNavProps> = (p) => {
   }, [collapsed]);
 
   const toggle = (id: string) => setCollapsed((c) => ({ ...c, [id]: !c[id] }));
+  const [mini, setMini] = useState(readMini);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(MINI_KEY, mini ? '1' : '0');
+    } catch {
+      // blocked storage: folding still works for this visit
+    }
+  }, [mini]);
 
   // organization pages have no left bar (layout A, chosen by the user 24 Nov 2026);
   // events are picked from the top bar or the all-events page
   if (!p.selectedEvent) return null;
 
   return (
-    <aside className="orgnav-rail" aria-label={tx('เมนูของงานที่เลือก')}>
+    <aside className={`orgnav-rail${mini ? ' is-mini' : ''}`} aria-label={tx('เมนูของงานที่เลือก')}>
+      <button
+        type="button"
+        className="orgnav-rail-fold"
+        aria-pressed={mini}
+        aria-label={tx(mini ? 'ขยายเมนูด้านซ้าย' : 'ย่อเมนูด้านซ้าย')}
+        title={tx(mini ? 'ขยายเมนูด้านซ้าย' : 'ย่อเมนูด้านซ้าย')}
+        onClick={() => setMini(!mini)}
+      >
+        <FaIcon name={mini ? 'angles-right' : 'angles-left'} />
+        {!mini && <span>{tx('ย่อเมนู')}</span>}
+      </button>
       {p.selectedEvent ? (
         <>
           <div className="orgnav-event-card">
@@ -575,10 +603,12 @@ export const OrganizerRail: React.FC<OrgNavProps> = (p) => {
                 item={home}
                 active={p.activeSection === home.section}
                 onClick={() => p.onNavigate(home.section)}
+                mini={mini}
               />
             )}
             {groups.map((g) => {
-              const open = !collapsed[g.id];
+              // folded to icons: every menu shows, without the group headings
+              const open = mini || !collapsed[g.id];
               const listId = `${pickId}-${g.id}-list`;
               const badges = g.items.filter((it) => it.badge).length;
               return (
@@ -613,6 +643,7 @@ export const OrganizerRail: React.FC<OrgNavProps> = (p) => {
                         item={it}
                         active={p.activeSection === it.section}
                         onClick={() => p.onNavigate(it.section)}
+                        mini={mini}
                       />
                     ))}
                   </div>

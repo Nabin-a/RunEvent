@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { tx } from '../i18n';
 import { formatThb } from '../utils/pricing';
-import { IconCheckCircle } from './Icons';
+import { IconAlert, IconCheckCircle, IconClock } from './Icons';
 import { QrCode } from './QrCode';
 
 /* Review step and success screen shared by registration forms A and B. */
@@ -149,6 +149,8 @@ export function RegistrationSummary({
   );
 }
 
+export type DoneTone = 'success' | 'pending' | 'stopped';
+
 /** Success screen: its own centred card, large check mark, key facts, then actions. */
 export function RegistrationDone({
   title,
@@ -156,40 +158,66 @@ export function RegistrationDone({
   items,
   note,
   qr,
+  details,
+  tone = 'success',
   children,
 }: {
   title: string;
+  /** extra on-screen content under the facts (the saved entry details); hidden when printing */
+  details?: ReactNode;
+  /** the mark at the top: paid, waiting for payment, or cancelled / expired (27 Nov 2026) */
+  tone?: DoneTone;
   /** a scannable QR (the check-in token) under the facts */
-  qr?: { value: string; caption: string };
+  qr?: { value: string; caption: string; used?: string };
   subtitle?: ReactNode;
   items: { label: string; value: ReactNode; mono?: boolean; accent?: boolean }[];
   note?: ReactNode;
   children?: ReactNode;
 }) {
   return (
-    <section className="reg-done" aria-labelledby="reg-done-title">
-      <div className="reg-done-mark" aria-hidden="true">
-        <IconCheckCircle size={72} />
+    <section className={`reg-done is-${tone}`} aria-labelledby="reg-done-title">
+      {/* head and body are plain wrappers on the page (display: contents); the history popup
+          lays them out as a header row and two columns so the card fits without scrolling */}
+      <div className="reg-done-head">
+        <div className="reg-done-mark" aria-hidden="true">
+          {tone === 'pending' ? (
+            <IconClock size={72} />
+          ) : tone === 'stopped' ? (
+            <IconAlert size={72} />
+          ) : (
+            <IconCheckCircle size={72} />
+          )}
+        </div>
+        <div className="reg-done-heading">
+          <h2 id="reg-done-title">{title}</h2>
+          {subtitle && <p className="reg-done-sub">{subtitle}</p>}
+        </div>
       </div>
-      <h2 id="reg-done-title">{title}</h2>
-      {subtitle && <p className="reg-done-sub">{subtitle}</p>}
-      <dl className="reg-done-facts">
-        {items.map((it) => (
-          <div key={it.label}>
-            <dt>{it.label}</dt>
-            <dd className={`${it.mono ? 'mono-code' : ''} ${it.accent ? 'is-accent' : ''}`.trim()}>{it.value}</dd>
-          </div>
-        ))}
-      </dl>
-      {qr && (
-        <figure className="reg-done-qr">
-          <QrCode value={qr.value} size={176} label={qr.caption} />
-          <figcaption>
-            <span>{qr.caption}</span>
-            <span className="mono-code">{qr.value}</span>
-          </figcaption>
-        </figure>
-      )}
+      <div className="reg-done-body">
+        <div className="reg-done-main">
+          <dl className="reg-done-facts">
+            {items.map((it) => (
+              <div key={it.label}>
+                <dt>{it.label}</dt>
+                <dd className={`${it.mono ? 'mono-code' : ''} ${it.accent ? 'is-accent' : ''}`.trim()}>
+                  {it.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          {details}
+        </div>
+        {qr && (
+          <figure className={`reg-done-qr${qr.used ? ' is-used' : ''}`}>
+            <QrCode value={qr.value} size={176} label={qr.caption} />
+            <figcaption>
+              <span>{qr.caption}</span>
+              <span className="mono-code">{qr.value}</span>
+              {qr.used && <strong className="reg-done-qr-used">{qr.used}</strong>}
+            </figcaption>
+          </figure>
+        )}
+      </div>
       {note && <p className="reg-done-note">{note}</p>}
       {children && <div className="reg-done-actions">{children}</div>}
     </section>

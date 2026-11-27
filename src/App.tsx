@@ -34,10 +34,6 @@ import {
   AuditLogEntry,
   AuthProviderType,
   ConditionalRule,
-  CustomRegistrationField,
-  OrganizerFormStep,
-  EventCoreText,
-  EventRegisterCardConfig,
   EventProduct,
   EventStatus,
   FeeBearerPolicy,
@@ -2025,23 +2021,20 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     });
   };
 
-  // Page editor: the server checks the role, validates the page and keeps the versions
-  /** the registration form: the organizer's questions and own steps; saving publishes a new version */
-  const handleSaveRegistrationForm = async (
+  /** the combined editor (27 Nov 2026): draft / publish / schedule / hide / restore of the page or the form */
+  const handleStudioCall = async (
     eventId: string,
-    form: { fields: CustomRegistrationField[]; steps: OrganizerFormStep[] }
+    part: 'page' | 'form',
+    action: string,
+    body?: Record<string, unknown>
   ) => {
-    const res = await syncApi('PATCH', `/api/events/${eventId}`, { form });
-    return { ok: Boolean(res.ok), error: res.ok ? undefined : String(res.error ?? '') || undefined };
-  };
-
-  /** the text of the one-template event page (about, race pack, schedule, register card) */
-  const handleSavePageContent = async (
-    eventId: string,
-    content: { coreText: Required<EventCoreText>; card: EventRegisterCardConfig }
-  ) => {
-    const res = await syncApi('PATCH', `/api/events/${eventId}`, { pageContent: content });
-    return { ok: Boolean(res.ok), error: res.ok ? undefined : String(res.error ?? '') || undefined };
+    const res = await syncApi('POST', `/api/events/${eventId}/${part}/${action}`, body ?? {});
+    return {
+      ok: Boolean(res.ok),
+      error: res.ok ? undefined : String(res.error ?? '') || undefined,
+      warnings: Array.isArray((res as { warnings?: unknown }).warnings) ? ((res as { warnings?: string[] }).warnings ?? []) : [],
+      event: res.state?.events?.find((e: RaceEvent) => e.id === eventId),
+    };
   };
 
   /* ---- Dynamic Registration Form Builder (Platform Owner & Organizer) ---- */
@@ -4012,8 +4005,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                 }}
                 onUpdateCategoryQuota={handleUpdateCategoryQuota}
                 onUpdateCategoryAgeRules={handleUpdateCategoryAgeRules}
-                onSavePageContent={handleSavePageContent}
-                onSaveRegistrationForm={handleSaveRegistrationForm}
+                onStudioCall={handleStudioCall}
                 onUpdateEventMedia={handleUpdateEventMedia}
                 platformProfileConfig={
                   sys.platformProfileConfig ?? DEFAULT_PLATFORM_PROFILE_CONFIG

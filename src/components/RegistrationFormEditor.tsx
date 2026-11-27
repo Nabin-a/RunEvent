@@ -54,7 +54,7 @@ type Form = { fields: CustomRegistrationField[]; steps: OrganizerFormStep[] };
 const newId = (p: string) => `${p}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-function blankField(type: CustomFieldType, stepKey: string): CustomRegistrationField {
+export function blankField(type: CustomFieldType, stepKey: string): CustomRegistrationField {
   const choice = type === 'radio' || type === 'multiselect' || type === 'select';
   return {
     id: newId('q'),
@@ -69,7 +69,7 @@ function blankField(type: CustomFieldType, stepKey: string): CustomRegistrationF
 }
 
 /** where a drop lands: the card under the pointer, else the step under it, else the nearest card */
-const dropTarget: CollisionDetection = (args) => {
+export const dropTarget: CollisionDetection = (args) => {
   const under = pointerWithin(args);
   const cards = under.filter((c) => String(c.id).startsWith('f:'));
   if (cards.length > 0) return cards;
@@ -77,7 +77,7 @@ const dropTarget: CollisionDetection = (args) => {
   return closestCenter(args);
 };
 
-const swalLook = {
+export const swalLook = {
   buttonsStyling: false,
   heightAuto: false,
   scrollbarPadding: false,
@@ -650,14 +650,14 @@ export function RegistrationFormEditor({
 }
 
 const PREVIEW_WIDTH = { desktop: 1280, phone: 390 } as const;
-type PreviewDevice = keyof typeof PREVIEW_WIDTH | 'off';
+export type PreviewDevice = keyof typeof PREVIEW_WIDTH | 'off';
 
 /**
  * The runner's real sign-up page in an iframe (`/events/<id>/register?preview=form`), fed the unsaved
  * form by postMessage. It follows the step open in the editor, and the editor follows when the
  * runner moves on inside it. The page blocks the final submit, so nothing is booked or paid.
  */
-function RunnerFormPreview({
+export function RunnerFormPreview({
   event,
   form,
   step,
@@ -728,9 +728,9 @@ function RunnerFormPreview({
   );
 }
 
-type WizardStep = { key: string; label: string; kind: 'locked' | 'core' | 'own'; hidden?: boolean };
+export type WizardStep = { key: string; label: string; kind: 'locked' | 'core' | 'own'; hidden?: boolean };
 
-function WizardNode({
+export function WizardNode({
   step,
   index,
   current,
@@ -772,7 +772,7 @@ function WizardNode({
 }
 
 /** the system's own fields of "runner details", as runners see them, locked */
-function SystemFields() {
+export function SystemFields() {
   const rows: [string, string][] = [
     ['ชื่อจริง (ภาษาไทย)', 'เช่น กานต์พิชชา'],
     ['นามสกุล (ภาษาไทย)', 'เช่น วัฒนากูล'],
@@ -802,7 +802,7 @@ function SystemFields() {
 }
 
 /** a core step after "runner details": what runners see there, drawn locked */
-function LockedBody({ stepKey, event }: { stepKey: string; event: RaceEvent }) {
+export function LockedBody({ stepKey, event }: { stepKey: string; event: RaceEvent }) {
   const head: Record<string, [string, string]> = {
     start: ['เลือกประเภทการสมัคร', 'นักวิ่งเลือกระยะและประเภทการสมัคร ราคาและที่นั่งมาจากเมนู "ระยะ ราคา และการรับสมัคร"'],
     shop: ['เลือกไซส์เสื้อและสิ่งที่ได้รับ', 'ไซส์เสื้อตามสต็อก จากเมนู "เสื้อและของที่ได้รับ"'],
@@ -839,7 +839,7 @@ function LockedBody({ stepKey, event }: { stepKey: string; event: RaceEvent }) {
   );
 }
 
-function PaletteItem({ type, label, icon, disabled, onAdd }: { type: CustomFieldType; label: string; icon: string; disabled: boolean; onAdd: () => void }) {
+export function PaletteItem({ type, label, icon, disabled, onAdd }: { type: CustomFieldType; label: string; icon: string; disabled: boolean; onAdd: () => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `pal:${type}`, disabled });
   return (
     <button
@@ -859,7 +859,7 @@ function PaletteItem({ type, label, icon, disabled, onAdd }: { type: CustomField
   );
 }
 
-function StepColumn({
+export function StepColumn({
   stepId,
   title,
   note,
@@ -965,7 +965,7 @@ function OwnStepHead({
   );
 }
 
-function CategoryPicker({
+export function CategoryPicker({
   label,
   cats,
   codes,
@@ -999,7 +999,7 @@ function CategoryPicker({
   );
 }
 
-function QuestionCard({
+export function QuestionCard({
   field: f,
   index,
   count,

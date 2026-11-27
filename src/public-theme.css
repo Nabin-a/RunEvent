@@ -2210,7 +2210,8 @@
 
 .app-root.is-public .kr-pass {
   display: grid;
-  grid-template-columns: clamp(8rem, 16vw, 11rem) minmax(0, 1fr) minmax(0, 220px);
+  /* the QR box moved into the confirmation popup (27 Nov 2026): picture + details only */
+  grid-template-columns: clamp(8rem, 16vw, 11rem) minmax(0, 1fr);
   gap: 1.25rem;
   align-items: start;
 }
@@ -2232,10 +2233,6 @@
 @media (max-width: 60rem) {
   .app-root.is-public .kr-pass {
     grid-template-columns: clamp(8rem, 22vw, 11rem) minmax(0, 1fr);
-  }
-
-  .app-root.is-public .kr-pass > :last-child {
-    grid-column: 1 / -1;
   }
 }
 

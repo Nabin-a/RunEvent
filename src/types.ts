@@ -553,6 +553,31 @@ export interface OrganizerFormStep {
   hidden?: boolean;
 }
 
+/**
+ * System parts of the registration form (27 Nov 2026): what the server needs to price the entry,
+ * hold the seat and shirt, make the BIB and insure the runner. Each sits in exactly one step; it
+ * can move to another step but never be removed.
+ */
+export type FormCoreBlock = 'category' | 'participant' | 'shirt' | 'souvenir' | 'delivery' | 'review';
+
+/**
+ * One registration step (27 Nov 2026, docs/registration-form-editor-plan.md section 9): the organizer
+ * may add, remove, rename and reorder steps; payment is not one of them and always comes last.
+ * Questions point at their step with `CustomRegistrationField.stepKey`.
+ */
+export interface FormStepDef {
+  id: string;
+  title: string;
+  description?: string;
+  /** system parts in this step, in order */
+  blocks?: FormCoreBlock[];
+  /** shown only to runners of these distances (category codes); empty = everyone */
+  categoryCodes?: string[];
+  /** retired: kept because it holds answered questions */
+  hidden?: boolean;
+  lock?: EditorLock;
+}
+
 export interface GlobalFormFieldDef extends CustomRegistrationField {
   fieldKey: string;
   policy: FormFieldPolicy;
@@ -583,6 +608,9 @@ export interface EventFormVersionRecord {
   fields: CustomRegistrationField[];
   /** the organizer's own steps at that version */
   customSteps?: OrganizerFormStep[];
+  /** every step in order at that version (27 Nov 2026) */
+  flow?: FormStepDef[];
+  publishedBy?: string;
 }
 
 export interface OrganizerFieldRequest {
@@ -721,7 +749,13 @@ export type EventDetailLayoutKey = EventDetailBlockId | `custom:${string}`;
 export interface EventDetailLayoutItem {
   block: EventDetailLayoutKey;
   visible: boolean;
+  /** the organizer's own guard in the editor, like Canva (27 Nov 2026): 'position' = can't move or
+   *  delete, text still editable; 'all' = can't move, edit or delete until unlocked. No effect on the page. */
+  lock?: EditorLock;
 }
+
+/** a lock the organizer sets on a page block or a form step so it is not changed by mistake (27 Nov 2026) */
+export type EditorLock = 'position' | 'all';
 
 /** Kinds of pieces an organizer can drop into a free block (set chosen 23 Nov 2026). */
 export type EventPageItemKind =
@@ -844,10 +878,40 @@ export interface EventDetailPage {
   customBlocks: EventCustomBlock[];
   /** the sticky register card's text and switches */
   card?: EventRegisterCardConfig;
-  /** 2 = built-in blocks already turned into free blocks (24 Nov 2026); older pages are converted on read */
-  v?: 2;
+  /** 2 = built-in blocks already turned into free blocks (24 Nov 2026); older pages are converted on read.
+   *  3 = freely arranged page (27 Nov 2026): built-in blocks may be hidden or removed like any other */
+  v?: 2 | 3;
   /** edited text of the built-in blocks; copied onto the event when published */
   coreText?: EventCoreText;
+}
+
+/** who took something down and when (27 Nov 2026) */
+export interface PublishHold {
+  at: string;
+  by: string;
+}
+
+/** something set to go live later: `at` is UTC (shown in the event's time zone) */
+export interface PublishSchedule<T> {
+  id: string;
+  at: string;
+  by: string;
+  createdAt: string;
+  snapshot: T;
+}
+
+export interface PublishFailure {
+  at: string;
+  scheduledFor: string;
+  error: string;
+}
+
+/** an unpublished edit of the registration form: questions and every step in order */
+export interface FormDraftRecord {
+  fields: CustomRegistrationField[];
+  flow: FormStepDef[];
+  updatedAt: string;
+  updatedBy: string;
 }
 
 export interface EventDetailPageVersion extends EventDetailPage {
@@ -889,6 +953,20 @@ export interface RaceEvent {
   editDeadlineDate: string;
   rulesVersion: string;
   kitPickupWindow: string;
+  /** kit pickup days (YYYY-MM-DD in the event's time zone); kitPickupWindow keeps the time and
+   *  place in words. Unset = the runner-facing state has no "kit pickup" phase (27 Nov 2026) */
+  kitPickupFrom?: string;
+  kitPickupTo?: string;
+  /** the organizer moved race day: eventDate already holds the new day (27 Nov 2026) */
+  postponement?: {
+    fromDate: string;
+    reason: string;
+    /** last day a runner may ask for a refund instead of running on the new day */
+    refundUntil?: string;
+    announcedAt: string;
+  };
+  /** when the organizer published the official results (27 Nov 2026) */
+  resultsAnnouncedAt?: string;
   /** Race kit postal shipping fee set by the organizer (satang). Unset = sandbox sample fee. */
   kitShippingFeeSatang?: number;
   registrationPeriodLabel?: string;
@@ -901,9 +979,21 @@ export interface RaceEvent {
   /** Published settings of the sticky register card. */
   detailRegisterCard?: EventRegisterCardConfig;
   /** 2 = the published page is already made of free blocks (see EventDetailPage.v) */
-  detailPageV?: 2;
+  detailPageV?: 2 | 3;
   /** Published versions, newest last (kept to the last 20). */
   detailPageVersions?: EventDetailPageVersion[];
+  /** the public page is taken down for now (27 Nov 2026); registrations already made are not touched */
+  detailPageHidden?: PublishHold;
+  /** a page waiting to go live at a set time; what goes live is the snapshot taken when it was set */
+  detailPageSchedule?: PublishSchedule<EventDetailPage>;
+  /** the last timed publish that could not go live, kept for the organizer to see */
+  detailPageScheduleFailed?: PublishFailure;
+  /** the organizer's unpublished edit of the registration form (27 Nov 2026) */
+  formDraft?: FormDraftRecord;
+  /** registering on the web is paused for now; event status and seats are not touched (27 Nov 2026) */
+  formHidden?: PublishHold;
+  formSchedule?: PublishSchedule<{ fields: CustomRegistrationField[]; flow: FormStepDef[] }>;
+  formScheduleFailed?: PublishFailure;
   overviewParagraphs?: string[];
   racePackItems?: RacePackItem[];
   /** when the text of a published free-block page was copied back to the fields above (24 Nov 2026) */
@@ -924,6 +1014,9 @@ export interface RaceEvent {
   formSteps?: RegistrationStepDef[];
   /** the organizer's own registration steps, in order (see OrganizerFormStep) */
   formCustomSteps?: OrganizerFormStep[];
+  /** every registration step in order, system parts included (27 Nov 2026, see FormStepDef);
+   *  absent = the order built from formCustomSteps (src/data/formFlow.ts) */
+  formFlow?: FormStepDef[];
   conditionalRules?: ConditionalRule[];
   formVersionHistory?: EventFormVersionRecord[];
   readinessChecks: ReadinessCheck[];

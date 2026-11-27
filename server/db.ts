@@ -1005,6 +1005,88 @@ export function seedDatabase(forceReset = false): void {
         upsertRegistrationRow({ ...reg07, raceResult: SEEDED_OLDMOAT_RACE_RESULT });
       }
     }
+    // test data (27 Nov 2026, user request): Old Moat gets its Fun Run 5 km (no age groups) and
+    // USR-901's friends' entries, one race result per tier on the history card; added once
+    const omRow = db
+      .prepare("SELECT detail_json FROM events WHERE id = 'evt-oldmoat-2026'")
+      .get() as { detail_json: string } | undefined;
+    if (omRow) {
+      const stored = JSON.parse(omRow.detail_json) as RaceEvent;
+      const funRun = INITIAL_EVENTS.find((e) => e.id === 'evt-oldmoat-2026')?.categories.find(
+        (c) => c.id === 'cat-om-5k'
+      );
+      if (funRun && !stored.categories.some((c) => c.id === 'cat-om-5k')) {
+        upsertEventRow({ ...stored, categories: [...stored.categories, funRun] });
+      }
+    }
+    for (const reg of INITIAL_REGISTRATIONS.filter((r) => r.id.startsWith('reg-om-fr-'))) {
+      if (!db.prepare('SELECT 1 FROM registrations WHERE id = ?').get(reg.id)) {
+        upsertRegistrationRow(reg, 500);
+      }
+    }
+    // test data (27 Nov 2026, user request "เพิ่มงาน/แก้ไขงานเดิม ให้มีสถานะครบตามตัวอย่าง"): one event
+    // per runner-facing state (src/data/eventStateTestData.ts, dates counted from the day this
+    // runs) and their entries; added once, only while missing
+    for (const ev of INITIAL_EVENTS.filter((e) => e.id.startsWith('evt-state-'))) {
+      if (db.prepare('SELECT 1 FROM events WHERE id = ?').get(ev.id)) continue;
+      upsertEventRow(
+        {
+          ...ev,
+          activeTemplateId: ev.activeTemplateId ?? 'tpl-halfmarathon',
+          publishedFormVersion: ev.publishedFormVersion ?? 'v1.2-published',
+        },
+        500
+      );
+    }
+    for (const reg of INITIAL_REGISTRATIONS.filter(
+      (r) => r.id.startsWith('reg-state-') || r.id.startsWith('reg-901-state-')
+    )) {
+      if (!db.prepare('SELECT 1 FROM registrations WHERE id = ?').get(reg.id)) {
+        upsertRegistrationRow(reg, 500);
+      }
+    }
+    // test data (27 Nov 2026, user request "แก้ test data ของเดิม ไม่เพิ่มใหม่"): the existing events
+    // get kit pickup days, Old Moat its results date, Promthep its postponement (new race day and
+    // kit text) and Sukhothai a full 10 km; applied once, only while a stored event lacks them
+    for (const seed of INITIAL_EVENTS) {
+      const row = db.prepare('SELECT detail_json FROM events WHERE id = ?').get(seed.id) as
+        | { detail_json: string }
+        | undefined;
+      if (!row) continue;
+      const stored = JSON.parse(row.detail_json) as RaceEvent;
+      let next = stored;
+      if (seed.kitPickupFrom && !stored.kitPickupFrom) {
+        next = { ...next, kitPickupFrom: seed.kitPickupFrom, kitPickupTo: seed.kitPickupTo };
+      }
+      // the state test events reuse an existing event's cover (27 Nov 2026, user request)
+      if (seed.id.startsWith('evt-state-') && seed.coverImageUrl && !stored.coverImageUrl) {
+        next = { ...next, coverImageUrl: seed.coverImageUrl, coverImageAlt: seed.coverImageAlt };
+      }
+      if (seed.resultsAnnouncedAt && !stored.resultsAnnouncedAt) {
+        next = { ...next, resultsAnnouncedAt: seed.resultsAnnouncedAt };
+      }
+      if (seed.postponement && !stored.postponement) {
+        next = {
+          ...next,
+          postponement: seed.postponement,
+          eventDate: seed.eventDate,
+          kitPickupWindow: seed.kitPickupWindow,
+        };
+      }
+      if (seed.id === 'evt-sukhothai-2027') {
+        const seedCat = seed.categories.find((c) => c.id === 'cat-sk-10k');
+        const storedCat = stored.categories.find((c) => c.id === 'cat-sk-10k');
+        if (seedCat && storedCat && storedCat.categoryQuota === 30 && seedCat.categoryQuota !== 30) {
+          next = {
+            ...next,
+            categories: next.categories.map((c) =>
+              c.id === 'cat-sk-10k' ? { ...c, categoryQuota: seedCat.categoryQuota } : c
+            ),
+          };
+        }
+      }
+      if (next !== stored) upsertEventRow(next);
+    }
     return;
   }
 

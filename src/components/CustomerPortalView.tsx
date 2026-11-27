@@ -45,9 +45,11 @@ import type { SouvenirLayout } from './SouvenirPicker';
 import {
   ConfirmationFileActions,
   ConfirmationModal,
+  confirmationIsPaid,
   confirmationItems,
   confirmationQr,
   confirmationTitle,
+  confirmationTone,
 } from './RegistrationConfirmation';
 import { displayPhone } from '../utils/phone';
 import { CategoryAgeGroups, categoryHasAgeGroups } from './EventAgeGroupsSection';
@@ -58,7 +60,7 @@ import { EventDataPieceView, type DataPieceCtx } from './EventDataPieceView';
 import { dataPieceHasContent, mergedCoreText } from '../data/eventDataPieces';
 import { usePagePreview } from './pagePreview';
 import { useFormPreview } from './formPreview';
-import type { EventDetailBlockId, EventDetailPage, EventPageItem } from '../types';
+import type { EventDetailBlockId, EventDetailPage, EventPageItem, FormStepDef } from '../types';
 import { FaIcon } from './FaIcon';
 import { RaceCalendarView } from './RaceCalendarView';
 import { MobileRegisterBar } from './MobileRegisterBar';
@@ -68,14 +70,17 @@ import { StickyCardCompact } from './StickyCardCompact';
 import { MascotAnim } from './MascotAnim';
 import { isTotalQuotaEnabled } from '../utils/eventConfig';
 import { DirectoryEmptyState, HeroRegionSelect, HeroSearchField, matchesSearchText, similarSearchTerms } from './DirectorySearch';
-import { RegistrationLabView, type LabLive, type LabShared } from './RegistrationLabView';
+import { DONE_STEP, PAY_STEP, RegistrationLabView, type LabLive, type LabShared } from './RegistrationLabView';
+import { flowStepOf, formFlowOf, runnerFlow } from '../data/formFlow';
 import { type ShirtStyleId } from '../data/mockShirtStyles';
 import { MascotSprite } from './MascotRunner';
 import { reportInvalidFieldsWithin } from '../utils/formValidation';
 import type { CascadingAddressValue } from './ThaiPostalAddressSelector';
 import { maskIdNumber } from '../utils/dateFormat';
 import { EventStatusBadge, PaymentStatusBadge } from './StatusBadges';
-import { CORE_STEP, stepsShown, validateAnswers } from '../data/registrationForm';
+import { EventPhaseBanner, EventPhasePill, phaseDetail } from './EventPhaseParts';
+import { runnerEventPhase, type PhaseSeats } from '../utils/eventPhase';
+import { validateAnswers } from '../data/registrationForm';
 
 import { getLang, tx, txf } from '../i18n';
 import { FEATURES } from '../config/features';
@@ -85,13 +90,11 @@ import {
   formatAgeBasis,
   formatAgeLimit,
 } from '../utils/age';
-import { QrCode } from './QrCode';
 import {
-  CertificatePreviewCard,
   RegHeadline,
   RegProgress,
-  RegResultActions,
-  RegSnapshotDetails,
+  RegEventStatus,
+  RegResult,
   regAgeShort,
   regIsPast,
   type HistoryFilter,
@@ -150,6 +153,8 @@ interface CustomerPortalViewProps {
     acceptedPaymentTermsVersion?: string;
     /** PDPA consent to send the entry's personal and health data to the organizer */
     acceptedPrivacyVersion?: string;
+    /** the form version the runner started on; the server checks the answers against it (27 Nov 2026) */
+    formVersion?: string;
     simulateImmediateWebhook: boolean;
     addonItems?: CartLine[];
     customAnswers?: Record<string, string | boolean>;
@@ -249,7 +254,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   // Every step change (next / back / clicking a done step) brings the form back to its top.
   // going back to edit starts a fresh checkout attempt (a new booking id)
   useEffect(() => {
-    if (regStep < 7) checkoutRequestId.current = null;
+    if (regStep < PAY_STEP) checkoutRequestId.current = null;
   }, [regStep]);
   const prevRegStep = useRef(regStep);
   useEffect(() => {
@@ -532,7 +537,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
       const matchesQuick =
         f.quick === 'all' ||
-        (f.quick === 'open' && ev.status === 'published') ||
+        // open = a runner can sign up today (27 Nov 2026); seat counts are worked out further
+        // down, so a full event still counts here, as it did before
+        (f.quick === 'open' && Boolean(runnerEventPhase(ev, todayIsoInTimeZone())?.canRegister)) ||
         (f.quick === 'has_shop' && ev.products.length > 0) ||
         (f.quick === 'completed' && ev.status === 'completed');
 
@@ -557,11 +564,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     region: regionFilter,
     distance: distanceFilter,
   };
-  const filteredEvents = publicVisibleEvents.filter((ev) =>
+  // a page the organizer took down for now is left out of the lists and the calendar (27 Nov 2026);
+  // its link still opens and says so
+  const listedEvents = useMemo(() => publicVisibleEvents.filter((e) => !e.detailPageHidden), [publicVisibleEvents]);
+  const filteredEvents = listedEvents.filter((ev) =>
     matchesDirectoryFilters(ev, activeDirectoryFilters)
   );
   const countWith = (override: Partial<DirectoryFilters>) =>
-    publicVisibleEvents.filter((ev) =>
+    listedEvents.filter((ev) =>
       matchesDirectoryFilters(ev, { ...activeDirectoryFilters, ...override })
     ).length;
 
@@ -571,7 +581,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       (formPreview.active ? events.find((e) => e.id === selectedEventId) : undefined) ??
       null;
     if (!ev || !formPreview.active || !formPreview.form) return ev;
-    return { ...ev, customFields: formPreview.form.fields, formCustomSteps: formPreview.form.steps };
+    // the editor's unsaved questions and steps: the combined editor sends the whole step order,
+    // the older one only its own steps (the order is then built from them)
+    return {
+      ...ev,
+      customFields: formPreview.form.fields,
+      formCustomSteps: formPreview.form.steps,
+      formFlow: formPreview.form.flow,
+    };
   }, [publicVisibleEvents, events, selectedEventId, formPreview.active, formPreview.form]);
 
   // Opening the sign-up page with an unpaid, still-held registration for this event goes
@@ -600,7 +617,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     if (heldRegId !== pending.id) heldFromForm.current = false;
     setHeldRegId(pending.id);
     setHeldError(null);
-    setRegStep(7);
+    setRegStep(PAY_STEP);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subView, selectedEvent?.id, currentUser?.id, registrations, formPreview.active]);
 
@@ -613,29 +630,44 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     );
   }, [selectedEvent, selectedCatId]);
 
-  // Form editor preview: the editor's step keys <-> this wizard's step numbers (own steps are 2.1-2.3)
-  const previewSteps = () =>
+  // the registration steps in the organizer's order (27 Nov 2026, src/data/formFlow.ts): every step
+  // of the form, and the ones this runner goes through (numbered 1..n; payment is PAY_STEP)
+  const regFlow = useMemo(() => (selectedEvent ? formFlowOf(selectedEvent) : []), [selectedEvent]);
+  const regFields = useMemo(
+    () => (selectedEvent?.customFields ?? []).map((f) => ({ ...f, stepKey: flowStepOf(f, regFlow) })),
+    [selectedEvent?.customFields, regFlow]
+  );
+  // the form version on screen when the runner began (a new version published meanwhile does not
+  // make them start again: the server checks their answers against this one, 27 Nov 2026)
+  const formVersionAtStart = useRef<{ eventId: string; version?: string } | null>(null);
+  useEffect(() => {
+    if (!selectedEvent) return;
+    if (regStep === 1 || formVersionAtStart.current?.eventId !== selectedEvent.id) {
+      formVersionAtStart.current = { eventId: selectedEvent.id, version: selectedEvent.publishedFormVersion };
+    }
+  }, [regStep, selectedEvent?.id, selectedEvent?.publishedFormVersion]);
+  const regPages = () =>
     selectedEvent
-      ? stepsShown(selectedEvent.formCustomSteps, selectedEvent.customFields, customAnswers, {
-          raceDistance: activeCategory?.code,
-          shirtSize,
+      ? runnerFlow(regFlow, regFields, customAnswers, { raceDistance: activeCategory?.code, shirtSize }, {
+          hasSouvenirs: selectedEvent.products.some((p) => p.stockOrCeiling - p.soldCount > 0),
         })
       : [];
-  const PREVIEW_STEP_NO: Record<string, RegStep> = { start: 1, core: 2, shop: 3, souvenir: 4, address: 5, review: 6, pay: 7 };
-  const previewKeyOf = (n: number) => {
-    const named = Object.entries(PREVIEW_STEP_NO).find(([, v]) => v === n)?.[0];
-    if (named) return named;
-    return previewSteps()[Math.round((n - 2) * 10) - 1]?.id ?? 'core';
+  /** the step holding the summary (going back to edit after a payment problem lands there) */
+  const reviewStepNo = () => {
+    const pages = regPages();
+    return pages.findIndex((p) => p.blocks?.includes('review')) + 1 || pages.length || 1;
   };
+  // Form editor preview: the editor's step keys (step ids) <-> this wizard's step numbers
+  const previewKeyOf = (n: number) => (n === PAY_STEP ? 'pay' : regPages()[n - 1]?.id ?? 'core');
   useEffect(() => {
     if (!formPreview.active || !formPreview.step) return;
     const key = formPreview.step.key;
-    let next: RegStep | undefined = PREVIEW_STEP_NO[key];
+    let next: RegStep | undefined = key === 'pay' ? PAY_STEP : undefined;
     if (next === undefined) {
-      const i = previewSteps().findIndex((st) => st.id === key);
+      const i = regPages().findIndex((st) => st.id === key);
       // a step this runner would not see (other distance, no question yet): stay where it is
       if (i < 0) return;
-      next = 2 + (i + 1) / 10;
+      next = i + 1;
     }
     setRegStep(next);
     // only when the editor names a step, not on every answer typed here
@@ -673,8 +705,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   // one place for every entry (27 Nov 2026, user request): the profile's old "ประวัติงานที่สมัคร"
   // filters, results, certificates and sign-up details now live on this page
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
-  const [expandedRegId, setExpandedRegId] = useState<string | null>(null);
-  const [certPreviewReg, setCertPreviewReg] = useState<RegistrationRecord | null>(null);
   const historyToday = todayIsoInTimeZone();
   const shownRegistrations = useMemo(
     () =>
@@ -716,6 +746,17 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     ).length;
     return Math.max(0, ev.totalEventQuota - used);
   };
+
+  // the runner-facing event state with this page's seat counts (27 Nov 2026, user request);
+  // the same function the history card uses, so the list, the event page and the card agree
+  const phaseSeats = (ev: RaceEvent): PhaseSeats => ({
+    eventOpen: getEventOpenSeats(ev),
+    eventCapacity: isTotalQuotaEnabled(ev)
+      ? ev.totalEventQuota
+      : ev.categories.reduce((sum, c) => sum + c.categoryQuota, 0),
+    categories: ev.categories.map((c) => ({ id: c.id, code: c.code, open: getCategoryOpenSeats(ev.id, c) })),
+  });
+  const eventPhaseFor = (ev: RaceEvent) => runnerEventPhase(ev, historyToday, { seats: phaseSeats(ev) });
 
   const openEventPage = (
     ev: RaceEvent,
@@ -900,6 +941,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       acceptedRules: true,
       acceptedPaymentTermsVersion: PAYMENT_TERMS_VERSION,
       acceptedPrivacyVersion: REGISTRATION_PRIVACY_VERSION,
+      formVersion:
+        formVersionAtStart.current?.eventId === selectedEvent.id
+          ? formVersionAtStart.current.version
+          : selectedEvent.publishedFormVersion,
       simulateImmediateWebhook: payImmediately,
       addonItems: addonItems.length > 0 ? addonItems : undefined,
       customAnswers:
@@ -967,11 +1012,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       setHeldRegId(outcome.reg.id);
       setHeldError(null);
       setResumeNotice(null);
-      setRegStep(7);
+      setRegStep(PAY_STEP);
       return;
     }
     setCreatedResult(res);
-    setRegStep(8);
+    setRegStep(DONE_STEP);
   };
 
   const payHeld = async () => {
@@ -990,7 +1035,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             ? tx('หมดเวลาชำระเงิน 15 นาที ที่นั่งถูกคืนแล้ว ตรวจข้อมูลแล้วกด "ไปชำระเงิน" อีกครั้ง')
             : tx('หมดเวลาชำระเงิน 15 นาที ที่นั่งถูกคืนแล้ว กรุณาสมัครใหม่')
         );
-        setRegStep(fromForm ? 6 : 1);
+        setRegStep(fromForm ? reviewStepNo() : 1);
       } else {
         setHeldError(out.error);
       }
@@ -1002,7 +1047,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     heldFromForm.current = false;
     setHeldRegId(null);
     setCreatedResult({ reg: out.reg, addonOrder: linked[0], addonOrders: linked });
-    setRegStep(8);
+    setRegStep(DONE_STEP);
   };
 
   const cancelHeld = async () => {
@@ -1019,7 +1064,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     heldFromForm.current = false;
     setHeldRegId(null);
     setResumeNotice(fromForm ? null : tx('ยกเลิกใบสมัครที่รอชำระแล้ว กรอกข้อมูลใหม่ได้เลย'));
-    setRegStep(fromForm ? 6 : 1);
+    setRegStep(fromForm ? reviewStepNo() : 1);
   };
 
   // "ชำระเงินต่อ" in the order history: open that registration's payment step
@@ -1030,7 +1075,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     setHeldError(null);
     setResumeNotice(null);
     setCreatedResult(null);
-    setRegStep(7);
+    setRegStep(PAY_STEP);
     onNavigate('event_register', reg.eventId, 'register');
   };
 
@@ -1187,6 +1232,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         <div className="pass-main-info">
                           {/* easy-to-read card (27 Nov 2026, user request): one headline status, a
                               three-step track, then the key facts in a small grid */}
+                          <RegEventStatus ev={ev} reg={reg} today={historyToday} place="top" />
                           <div className="reg-card-head">
                             <RegHeadline reg={reg} isPast={isPast} />
                             <span className="mono-code reg-card-code">{reg.regCode}</span>
@@ -1204,6 +1250,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               </span>
                             )}
                           </p>
+                          <RegEventStatus ev={ev} reg={reg} today={historyToday} place="line" />
                           <RegProgress reg={reg} />
                           <dl className="reg-card-facts">
                             <div>
@@ -1214,6 +1261,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               <dt>{tx('ระยะ')}</dt>
                               <dd>{tx(cat?.name ?? '-')}</dd>
                             </div>
+                            {/* the BIB moved here from the QR box, which now lives in the
+                                confirmation popup (27 Nov 2026, user request) */}
+                            {reg.registrationStatus === 'confirmed' && (
+                              <div>
+                                <dt>{tx('เลข BIB')}</dt>
+                                <dd className="mono-num">{reg.bibNumber ?? tx('รอกำหนด BIB')}</dd>
+                              </div>
+                            )}
                             {ageText && (
                               <div>
                                 <dt>{tx('อายุ / รุ่นอายุ')}</dt>
@@ -1233,19 +1288,16 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           </dl>
 
                           <div className="cta-inline-row" style={{ marginTop: '0.55rem' }}>
-                            {ev && ev.products.length > 0 && (
+                            {/* unpaid: pay first in the row (26 Nov 2026; moved out of the QR box 27 Nov) */}
+                            {reg.registrationStatus === 'pending_payment' && (
                               <button
                                 type="button"
-                                className="btn-secondary"
-                                onClick={() =>
-                                  openEventPage(ev, 'storefront', reg.regCode)
-                                }
+                                className="btn-primary reg-card-pay"
+                                onClick={() => openHeldPayment(reg)}
                               >
-                                <IconBag size={14} />
-                                <span>{tx("ซื้อของที่ระลึก")}</span>
+                                {tx('ชำระเงิน')}
                               </button>
                             )}
-
                             {ev?.verifiedPhotoAlbums &&
                               ev.verifiedPhotoAlbums.length > 0 && (
                                 <button
@@ -1260,7 +1312,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                                 </button>
                               )}
 
-                            {/* the confirmation card in a popup, with print and download (27 Nov 2026) */}
+                            {/* the confirmation card in a popup, with print and download; the entry
+                                details saved at sign-up live inside it too (27 Nov 2026, user request) */}
                             <button
                               type="button"
                               className="btn-ghost-sm"
@@ -1268,61 +1321,20 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               onClick={() => setConfirmRegId(reg.id)}
                             >
                               <IconQr size={14} />
-                              <span>{tx('ใบยืนยันการสมัคร')}</span>
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-ghost-sm"
-                              aria-expanded={expandedRegId === reg.id}
-                              onClick={() => setExpandedRegId(expandedRegId === reg.id ? null : reg.id)}
-                            >
-                              {expandedRegId === reg.id ? tx('ซ่อนรายละเอียด') : tx('ดูรายละเอียดใบสมัคร')}
+                              <span>
+                                {reg.registrationStatus === 'confirmed'
+                                  ? tx('ใบยืนยัน & QR')
+                                  : tx('ใบยืนยันการสมัคร')}
+                              </span>
                             </button>
                           </div>
-                          <RegResultActions reg={reg} ev={ev} cat={cat} onPreview={setCertPreviewReg} />
-                          {expandedRegId === reg.id && <RegSnapshotDetails reg={reg} />}
+                          <RegResult reg={reg} cat={cat} />
                         </div>
 
-                        <div className="pass-qr-card">
-                          <div className="pass-bib-num mono-num">
-                            {reg.bibNumber ?? tx("รอกำหนด BIB")}
-                          </div>
-                          {/* unpaid: pay right under the BIB (26 Nov 2026, user request) */}
-                          {reg.registrationStatus === 'pending_payment' && (
-                            <button
-                              type="button"
-                              className="btn-primary pass-pay-btn"
-                              onClick={() => openHeldPayment(reg)}
-                            >
-                              {tx('ชำระเงิน')}
-                            </button>
-                          )}
-                          <div className="qr-token-box">
-                            {reg.registrationStatus === 'confirmed' ? (
-                              <QrCode
-                                value={reg.qrCheckInToken}
-                                size={96}
-                                label={txf('QR รับอุปกรณ์ของ {0}', reg.regCode)}
-                                className="pass-qr-img"
-                              />
-                            ) : (
-                              <IconQr size={26} />
-                            )}
-                            <div>
-                              <div className="mono-code">
-                                {tx(reg.qrCheckInToken)}
-                              </div>
-                              <small>{txf("เสื้อไซส์ {0}", reg.shirtSize)}</small>
-                            </div>
-                          </div>
-                        </div>
                       </article>
                     );
                   })}
                 </div>
-              )}
-              {certPreviewReg && (
-                <CertificatePreviewCard reg={certPreviewReg} onClose={() => setCertPreviewReg(null)} />
               )}
               {(() => {
                 const reg = confirmRegId ? myRegistrations.find((r) => r.id === confirmRegId) : undefined;
@@ -1424,6 +1436,32 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   }
 
   /* ================= SUBVIEW 2A: DEDICATED EVENT REGISTRATION PAGE (/events/:code/register) ================= */
+  // the organizer took the page down, or paused web registration, for now (27 Nov 2026): the link
+  // still opens and says so; a runner paying for a held entry, or already filling in the form, goes on
+  const pausedNotice = (title: string, text: string) => (
+    <main className="customer-container">
+      <div className="empty-state-box" role="status">
+        <h2>{tx(title)}</h2>
+        <p>{tx(text)}</p>
+        <button type="button" className="btn-primary" onClick={() => onNavigate('directory', null)}>
+          <IconArrowLeft size={15} />
+          <span>{tx('ดูงานวิ่งทั้งหมด')}</span>
+        </button>
+      </div>
+    </main>
+  );
+  if (
+    selectedEvent?.detailPageHidden &&
+    !pagePreview.active &&
+    !formPreview.active &&
+    (subView === 'event_detail' || (subView === 'event_register' && !heldReg && regStep === 1))
+  ) {
+    return pausedNotice('หน้านี้ปิดไว้ชั่วคราว', 'ผู้จัดงานปิดหน้ารายละเอียดงานนี้ไว้ชั่วคราว ใบสมัครที่มีอยู่แล้วยังเปิดดูได้ที่หน้าประวัติการสมัคร');
+  }
+  if (selectedEvent?.formHidden && !formPreview.active && subView === 'event_register' && !heldReg && regStep === 1) {
+    return pausedNotice('ปิดรับสมัครทางเว็บชั่วคราว', 'ผู้จัดงานปิดการสมัครทางเว็บไว้ชั่วคราว ลองใหม่ภายหลัง หรือติดตามประกาศจากผู้จัดงาน');
+  }
+
   if (subView === 'event_register' && selectedEvent) {
     const org = organizations.find(
       (o) => o.id === selectedEvent.organizationId
@@ -1568,22 +1606,19 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     };
     // what layout B needs besides its state: the same checks, the organizer's steps, the booking
     const formCtx = { raceDistance: activeCategory?.code, shirtSize };
-    const ownSteps = stepsShown(selectedEvent.formCustomSteps, selectedEvent.customFields, customAnswers, formCtx);
-    const checkStep = (step: number, scope: HTMLElement | null): string | null => {
-      if (step === 1) {
-        if (!selectedCatId && selectedEvent.categories[0]) setSelectedCatId(selectedEvent.categories[0].id);
-        return null;
+    // a step is checked by what it holds (27 Nov 2026: the organizer may put parts in any step)
+    const checkStep = (page: FormStepDef, scope: HTMLElement | null): string | null => {
+      const blocks = page.blocks ?? [];
+      if (blocks.includes('category') && !selectedCatId && selectedEvent.categories[0]) {
+        setSelectedCatId(selectedEvent.categories[0].id);
       }
       if (!activeCategory) return null;
-      if (step === 2) {
+      // the organizer's questions in this step are checked together with the runner fields, so
+      // every missing answer is marked at once
+      const problems = validateAnswers(regFields, customAnswers, formCtx, { steps: regFlow, stepId: page.id });
+      setFormErrors(problems);
+      if (blocks.includes('participant')) {
         if (!regModeChosen) return 'กรุณาเลือกว่าจะสมัครให้ตนเองหรือสมัครให้ผู้อื่นก่อน';
-        // the organizer's questions are checked together with the runner fields, so every
-        // missing answer is marked at once (they used to wait until the runner fields were done)
-        const problems = validateAnswers(selectedEvent.customFields ?? [], customAnswers, formCtx, {
-          steps: selectedEvent.formCustomSteps ?? [],
-          stepId: CORE_STEP,
-        });
-        setFormErrors(problems);
         if (!reportInvalidFieldsWithin(scope)) return 'กรุณากรอกช่องที่มีเครื่องหมาย * ให้ครบ ช่องที่ยังไม่ครบถูกไฮไลต์ไว้';
         if (!regFirstNameEn.trim() || !regLastNameEn.trim() || !buyerName.trim()) {
           return 'กรุณากรอกชื่อ-นามสกุลภาษาอังกฤษของผู้เข้าแข่งขันให้ครบ';
@@ -1592,27 +1627,15 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           return 'เลขบัตรประจำตัวประชาชนต้องครบ 13 หลัก';
         }
         if (regAgeCheck && !regAgeCheck.eligible) return ageCheckMessage(regAgeCheck, activeCategory);
-        const first = Object.values(problems)[0];
-        if (first) return first;
-        return null;
       }
-      if (step === 5 && kitDeliveryOption === 'postal' && !reportInvalidFieldsWithin(scope)) {
+      if (blocks.includes('delivery') && kitDeliveryOption === 'postal' && !reportInvalidFieldsWithin(scope)) {
         return 'กรุณากรอกชื่อผู้รับ หมายเลขโทรศัพท์ และที่อยู่จัดส่งให้ครบถ้วน ช่องที่ยังไม่ครบถูกไฮไลต์ไว้';
       }
-      if (step > 2 && step < 3) {
-        const st = ownSteps[Math.round((step - 2) * 10) - 1];
-        if (!st) return null;
-        const problems = validateAnswers(selectedEvent.customFields ?? [], customAnswers, formCtx, {
-          steps: selectedEvent.formCustomSteps ?? [],
-          stepId: st.id,
-        });
-        setFormErrors(problems);
-        return Object.values(problems)[0] ?? null;
-      }
-      return null;
+      return Object.values(problems)[0] ?? null;
     };
     const labLive: LabLive = {
-      ownSteps,
+      pages: regPages(),
+      flow: regFlow,
       check: checkStep,
       errors: formErrors,
       clearError: (id) =>
@@ -1685,11 +1708,19 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             });
             const qr = confirmationQr(reg);
             return (
-              <RegistrationDone title={title} subtitle={tx('บันทึกใบสมัครเรียบร้อยแล้ว')} qr={qr} items={items}>
+              <RegistrationDone
+                title={title}
+                subtitle={tx('บันทึกใบสมัครเรียบร้อยแล้ว')}
+                qr={qr}
+                items={items}
+                tone={confirmationTone(reg)}
+              >
                 <button type="button" className="btn-primary" onClick={() => onNavigate('my_orders', null)}>
                   {tx('ไปหน้าประวัติการสมัคร & การสั่งซื้อ')}
                 </button>
-                <ConfirmationFileActions title={title} items={items} qr={qr} fileName={reg.regCode} />
+                {confirmationIsPaid(reg) && (
+                  <ConfirmationFileActions title={title} items={items} qr={qr} fileName={reg.regCode} />
+                )}
                 <button
                   type="button"
                   className="btn-secondary"
@@ -1818,6 +1849,15 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
     const isEditorialView =
       !showRegForm && detailTab !== 'storefront';
+    // web registration paused by the organizer (27 Nov 2026): the event stays open, the button says so
+    const webRegPaused = !!selectedEvent.formHidden && !pagePreview.active;
+    // the organizer's page preview ignores the web pause, as the button above does
+    const detailPhase = runnerEventPhase(
+      pagePreview.active ? { ...selectedEvent, formHidden: undefined } : selectedEvent,
+      historyToday,
+      { seats: phaseSeats(selectedEvent) }
+    );
+    const canRegisterNow = Boolean(detailPhase?.canRegister);
 
     // Event page sections as blocks: one view per block id, drawn in the order of
     // resolveDetailLayout (the organizer's published order, or the default one).
@@ -1825,7 +1865,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     // then the saved draft.
     // One template for every event (24 Nov 2026): the built-in sections in their fixed order,
     // filled from the event's own data and text. Pages organizers built before stay stored, unused.
-    const shownPage: EventDetailPage = {
+    // A page the organizer arranged freely (v 3, 27 Nov 2026) is drawn as published, or as the
+    // editor's unsaved page inside its preview.
+    const freePage: EventDetailPage | null =
+      pagePreview.page?.v === 3 ? pagePreview.page : selectedEvent.detailPageV === 3 ? pageOf(selectedEvent) : null;
+    const shownPage: EventDetailPage = freePage ?? {
       layout: [],
       customBlocks: [],
       // the "page content" menu's preview sends its unsaved register-card text
@@ -2191,7 +2235,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   className="detail-cover-svg"
                 />
                 <span className="kr-card-status">
-                  <EventStatusBadge status={selectedEvent.status} />
+                  {detailPhase ? (
+                    <EventPhasePill phase={detailPhase} />
+                  ) : (
+                    <EventStatusBadge status={selectedEvent.status} />
+                  )}
                 </span>
               </div>
 
@@ -2214,6 +2262,17 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     </span>
                   </span>
                 </p>
+                {detailPhase && (
+                  <div className="kr-detail-phase">
+                    <EventPhaseBanner phase={detailPhase} eventDate={selectedEvent.eventDate} />
+                    {!detailPhase.loud && phaseDetail(detailPhase) && (
+                      <p>
+                        <EventPhasePill phase={detailPhase} />
+                        <span>{phaseDetail(detailPhase)}</span>
+                      </p>
+                    )}
+                  </div>
+                )}
                 <p className="muted-block">{tx(selectedEvent.tagline)}</p>
 
               </div>
@@ -2329,7 +2388,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     openSeats: (cat) => getCategoryOpenSeats(selectedEvent.id, cat),
                     eventOpenSeats: isTotalQuotaEnabled(selectedEvent) ? getEventOpenSeats(selectedEvent) : null,
                     shirtSpec: getShirtSpec,
-                    registerOpen: selectedEvent.status === 'published',
+                    registerOpen: canRegisterNow,
                     onRegister: (catId) => {
                       if (!pagePreview.active) startRegistrationForCategory(catId);
                     },
@@ -2445,7 +2504,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               <div className="kr-sticky-top">
                 <div>
                   <div className="sticky-card-head">
-                    <EventStatusBadge status={selectedEvent.status} />
+                    {detailPhase ? (
+                      <EventPhasePill phase={detailPhase} />
+                    ) : (
+                      <EventStatusBadge status={selectedEvent.status} />
+                    )}
                   </div>
                   <h2>
                     <span
@@ -2482,7 +2545,28 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
               {/* PRIMARY STICKY CTA & MERCHANDISE BUTTONS */}
               <div className="sticky-cta-group">
-                {selectedEvent.status === 'published' ? (
+                {(selectedEvent.status === 'published' || selectedEvent.status === 'closed') &&
+                !canRegisterNow &&
+                detailPhase ? (
+                  <>
+                    <button type="button" className="btn-cta-accent btn-full" disabled>
+                      <IconBib size={16} />
+                      <span>
+                        {detailPhase.id === 'full'
+                          ? tx('โควตาเต็มแล้ว')
+                          : detailPhase.id === 'announced'
+                            ? tx('ยังไม่เปิดรับสมัคร')
+                            : detailPhase.id === 'paused'
+                              ? tx('ปิดรับสมัครทางเว็บชั่วคราว')
+                              : tx('ปิดรับสมัครแล้ว')}
+                      </span>
+                    </button>
+                    <p className="kr-sticky-why">
+                      <EventPhasePill phase={detailPhase} />
+                      {phaseDetail(detailPhase) && <span>{phaseDetail(detailPhase)}</span>}
+                    </p>
+                  </>
+                ) : selectedEvent.status === 'published' ? (
                   showRegForm && detailTab === 'register' ? (
                     <div className="sticky-active-wizard-note">
                       <div className="cta-inline-row">
@@ -2504,14 +2588,16 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     <button
                       type="button"
                       className="btn-cta-accent btn-full"
-                      disabled={openSeats <= 0}
+                      disabled={openSeats <= 0 || webRegPaused}
                       onClick={() => startRegistrationForCategory()}
                     >
                       <IconBib size={16} />
                       <span>
-                        {openSeats <= 0
-                          ? tx("โควตาเต็มแล้ว")
-                          : tx("สมัครเข้าร่วมงานวิ่ง")}
+                        {webRegPaused
+                          ? tx("ปิดรับสมัครทางเว็บชั่วคราว")
+                          : openSeats <= 0
+                            ? tx("โควตาเต็มแล้ว")
+                            : tx("สมัครเข้าร่วมงานวิ่ง")}
                       </span>
                     </button>
                   )
@@ -2574,6 +2660,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                         <li key={c.id} className={`sticky-dist is-tone-${i % 4}`}>
                           <strong className="sticky-dist-km">{tx(c.code)}</strong>
                           <span className="sticky-dist-name">{tx(c.name)}</span>
+                          {getCategoryOpenSeats(selectedEvent.id, c) <= 0 && (
+                            <span className="sticky-dist-full">{tx('เต็มแล้ว')}</span>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -2592,6 +2681,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
         {isEditorialView &&
           selectedEvent.status === 'published' &&
+          canRegisterNow &&
           priceFromSatang !== null && (
             <MobileRegisterBar
               watchSelector=".event-detail-page .sticky-cta-group"
@@ -2611,7 +2701,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     return (
       <main className="customer-container">
         <RaceCalendarView
-          events={publicVisibleEvents}
+          events={listedEvents}
           onOpenEvent={(ev) =>
             openEventPage(ev, ev.status === 'published' ? 'register' : 'info_results')
           }
@@ -2780,6 +2870,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         <section id="kr-results" className="modern-event-grid kr-event-grid" aria-label={tx("รายการงานวิ่ง")}>
           {filteredEvents.map((ev) => {
             const openSeats = getEventOpenSeats(ev);
+            const listPhase = eventPhaseFor(ev);
             const lowestCat = [...ev.categories].sort(
               (a, b) =>
                 getCurrentTier(a).priceSatang - getCurrentTier(b).priceSatang
@@ -2800,7 +2891,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 >
                   <EventCoverMedia event={ev} illustrated className="kr-card-img" />
                   <span className="kr-card-status">
-                    <EventStatusBadge status={ev.status} />
+                    {listPhase ? <EventPhasePill phase={listPhase} /> : <EventStatusBadge status={ev.status} />}
                   </span>
                 </button>
 
@@ -2814,6 +2905,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     <IconMapPin size={15} />
                     <span>{tx("จ.")}{tx(ev.province)}</span>
                   </p>
+                  {listPhase?.postponed ? (
+                    <p className="kr-card-phase is-warn">
+                      {txf('เลื่อนจาก {0}', formatBasisDate(listPhase.postponed.fromDate))}
+                    </p>
+                  ) : (
+                    listPhase &&
+                    phaseDetail(listPhase, true) && <p className="kr-card-phase">{phaseDetail(listPhase, true)}</p>
+                  )}
                   <div className="kr-card-chips">
                     {ev.categories.map((cat) => (
                       <span key={cat.id} className="kr-dist">

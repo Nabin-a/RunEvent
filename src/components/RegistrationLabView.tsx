@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   EventProduct,
-  OrganizerFormStep,
+  FormCoreBlock,
+  FormStepDef,
   RunnerSavedAddress,
   RunnerEmergencyContact,
   SavedParticipant,
@@ -75,6 +76,7 @@ import { RegistrationSummary, type ReviewLedgerGroup, type ReviewSection } from 
 import { EventCoverMedia } from './Icons';
 import { displayPhone } from '../utils/phone';
 import { CORE_STEP, answerText, fieldShown, isContentField } from '../data/registrationForm';
+import { flowStepOf } from '../data/formFlow';
 import { DefaultAvatarImg } from './DefaultAvatar';
 import { firstFriendContactProblem, friendContactProblems } from '../utils/friendContact';
 
@@ -84,19 +86,26 @@ import { firstFriendContactProblem, friendContactProblems } from '../utils/frien
  * per row only where they belong together, generous space between sections.
  *
  * The form's state, its checks and the booking live in CustomerPortalView (`shared` and `live`):
- * each "next" runs the same checks as before, the organizer's own steps sit between the runner
- * details and the shop (2.1–2.3), and step 7 books and pays through the server.
+ * each "next" runs the same checks as before, and the payment step books and pays through the server.
+ *
+ * The steps follow the order the organizer set (27 Nov 2026, src/data/formFlow.ts): each step holds
+ * system parts (distance, runner details, shirt, souvenirs, delivery, summary) and/or questions, and
+ * shows them in that order with one pair of back / next buttons. Payment always comes last.
  */
 
-/** 1 start · 2 details · 2.1–2.3 organizer's steps · 3 shirt · 4 souvenirs · 5 address · 6 review · 7 pay · 8 done */
+/** 1..n the runner's steps in the organizer's order · PAY_STEP payment · DONE_STEP booked */
 type LabStep = number;
+export const PAY_STEP = 20;
+export const DONE_STEP = 21;
 
 /** what the live form gives this layout besides its state */
 export interface LabLive {
-  /** the organizer's steps this runner is asked, in order */
-  ownSteps: OrganizerFormStep[];
+  /** the steps this runner goes through, in order (payment not included) */
+  pages: FormStepDef[];
+  /** every step of the form, for placing the questions (formFlow.ts) */
+  flow: FormStepDef[];
   /** checks a step before moving on: the first problem, or null (it also marks the questions) */
-  check: (step: number, scope: HTMLElement | null) => string | null;
+  check: (page: FormStepDef, scope: HTMLElement | null) => string | null;
   /** problems per question id, shown under each question */
   errors: Record<string, string>;
   clearError: (fieldId: string) => void;
@@ -217,19 +226,27 @@ export function RegistrationLabView({
   const profile = currentUser?.runnerProfile;
   // the souvenir step shows only when something is still on sale (sold-out items are hidden)
   const hasSouvenirs = event.products.some((p) => p.stockOrCeiling - p.soldCount > 0);
+  const pages = live.pages;
   const steps: { step: LabStep; label: string }[] = [
-    { step: 1, label: 'เริ่ม' },
-    { step: 2, label: 'ข้อมูล' },
-    ...live.ownSteps.map((st, i) => ({ step: 2 + (i + 1) / 10, label: st.title })),
-    { step: 3, label: 'เสื้อที่ระลึก' },
-    ...(hasSouvenirs ? [{ step: 4 as LabStep, label: 'ของที่ระลึก' }] : []),
-    { step: 5, label: 'ที่อยู่' },
-    { step: 6, label: 'สรุป' },
-    { step: 7, label: 'ชำระเงิน' },
+    ...pages.map((p, i) => ({ step: i + 1, label: p.title })),
+    { step: PAY_STEP, label: 'ชำระเงิน' },
   ];
+  // questions sit in their step; one whose step is gone goes with the runner details
+  const placedFields = useMemo(
+    () => (event.customFields ?? []).map((f) => ({ ...f, stepKey: flowStepOf(f, live.flow) })),
+    [event.customFields, live.flow]
+  );
 
   // the step is the live form's (the organizer's preview and the booking move it too)
   const step: LabStep = shared.step[0];
+  /** this step, while on one of the runner's steps (not payment / done) */
+  const page: FormStepDef | undefined = step >= 1 && step <= pages.length ? pages[step - 1] : undefined;
+  const has = (block: FormCoreBlock) => !!page?.blocks?.includes(block);
+  /** the step number of the step holding a system part (0 = not shown to this runner) */
+  const pageNoOf = (block: FormCoreBlock) => pages.findIndex((p) => p.blocks?.includes(block)) + 1;
+  const isLastPage = !!page && step === pages.length;
+  const prevPage: LabStep | null = page && step > 1 ? step - 1 : null;
+  const nextPage: LabStep | null = page && step < pages.length ? step + 1 : null;
   const [stepError, setStepError] = useState<string | null>(null);
   /* the custom area (not a plain input) that holds the step's problem; outlined while the
      step error shows (27 Nov 2026, user request: every step highlights and jumps to the gap) */
@@ -832,7 +849,7 @@ export function RegistrationLabView({
     setStepError(null);
     setInvalidZone(null);
     // leaving the payment step backwards gives the held seat back first (it returns to edit)
-    if (step === 7 && live.held && next < 7) {
+    if (step === PAY_STEP && live.held && next < PAY_STEP) {
       live.held.cancel();
       return;
     }
@@ -840,14 +857,21 @@ export function RegistrationLabView({
   };
   // payment step without a held registration (e.g. it was paid elsewhere): back to the summary
   useEffect(() => {
-    if (step === 7 && !live.held && !live.freeJump) shared.step[1](6);
+    if (step === PAY_STEP && !live.held && !live.freeJump) shared.step[1](pageNoOf('review') || pages.length);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, live.held]);
+  // the steps changed under the runner (another distance skips a step): stay on a real step
+  useEffect(() => {
+    if (step > pages.length && step < PAY_STEP) shared.step[1](Math.max(1, pages.length));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, pages.length]);
   const termsRef = useRef<HTMLDivElement | null>(null);
   /** summary: accept the terms, then the entry is booked and held while the runner pays */
   const bookAndPay = () => {
     if (live.submitting) return;
     if (!acceptRules || !acceptPayTerms || !acceptPdpa) {
+      // the agreements sit with the summary, which may be on an earlier step
+      if (!has('review') && pageNoOf('review')) shared.step[1](pageNoOf('review'));
       setStepError('กรุณาติ๊กยอมรับทุกข้อที่มี * ก่อนไปชำระเงิน');
       setInvalidZone('terms');
       jumpToProblem();
@@ -876,13 +900,15 @@ export function RegistrationLabView({
   }, [invalidZone, picked, forSelf, savedId, pickedEc, delivery, bookId]);
 
   const goNext = (next: LabStep) => {
+    if (!page) return go(next);
+    const onDetails = has('participant');
     // show the friend's email / phone problems next to the fields along with any other gaps
-    if (step === 2 && forSelf === false) setFriendContactCheck(true);
-    let problem = live.check(step, bodyRef.current);
-    if (!problem && step === 2 && forSelf === false && partMode === 'saved' && (!emergencyName.trim() || !emergencyPhone.trim())) {
+    if (onDetails && forSelf === false) setFriendContactCheck(true);
+    let problem = live.check(page, bodyRef.current);
+    if (!problem && onDetails && forSelf === false && partMode === 'saved' && (!emergencyName.trim() || !emergencyPhone.trim())) {
       problem = 'เพื่อนคนนี้ยังไม่มีผู้ติดต่อฉุกเฉิน กด แก้ไข ที่การ์ดเพื่อเพิ่ม';
     }
-    if (!problem && step === 2 && forSelf === false) {
+    if (!problem && onDetails && forSelf === false) {
       const contactProblem = firstFriendContactProblem(friendProblems);
       if (contactProblem) {
         setFriendContactCheck(true);
@@ -898,7 +924,7 @@ export function RegistrationLabView({
     }
     // a picked friend whose saved data does not cover this entry: open the friend's editor
     // with the missing fields marked, instead of only a message (27 Nov 2026, user request)
-    if (step === 2 && forSelf === false && partMode === 'saved' && savedId && savedId !== 'new') {
+    if (onDetails && forSelf === false && partMode === 'saved' && savedId && savedId !== 'new') {
       const friendGap =
         !firstEn.trim() ||
         !lastEn.trim() ||
@@ -917,24 +943,24 @@ export function RegistrationLabView({
       }
     }
     let zone: Zone | null = null;
-    if (step === 2 && forSelf === null) zone = 'who';
+    if (onDetails && forSelf === null) zone = 'who';
     // choices that start empty: say which one is missing and frame it
     const pickProblem: [string, Zone] | null =
-      step === 1 && !picked
+      has('category') && !picked
         ? ['กรุณาเลือกประเภทการสมัคร', 'cat']
-        : step === 2 && forSelf === false && partMode === 'saved' && !savedId
+        : onDetails && forSelf === false && partMode === 'saved' && !savedId
           ? ['กรุณาเลือกเพื่อนจากรายชื่อ หรือกด กรอกผู้สมัครใหม่', 'friend']
-          : step === 2 && ecFromProfile && !pickedEc
+          : onDetails && ecFromProfile && !pickedEc
             ? ['กรุณาเลือกผู้ติดต่อฉุกเฉิน', 'ec']
-            : step === 5 && !delivery
+            : has('delivery') && !delivery
               ? ['กรุณาเลือกวิธีรับอุปกรณ์', 'kit']
-              : step === 5 && delivery === 'postal' && addrMode === 'saved' && book.length > 0 && !bookId
+              : has('delivery') && delivery === 'postal' && addrMode === 'saved' && book.length > 0 && !bookId
                 ? ['กรุณาเลือกที่อยู่จัดส่ง', 'addr']
                 : null;
     if (pickProblem) [problem, zone] = pickProblem;
     // a saved friend missing data is fixed on the friend's card
-    if (problem && step === 2 && forSelf === false && partMode === 'saved' && /แก้ไข ที่การ์ด/.test(problem)) zone = 'friend';
-    if (!problem && step === 3 && !shirtSize) {
+    if (problem && onDetails && forSelf === false && partMode === 'saved' && /แก้ไข ที่การ์ด/.test(problem)) zone = 'friend';
+    if (!problem && has('shirt') && !shirtSize) {
       problem = 'กรุณาเลือกไซส์เสื้อตามสิทธิ์สมัคร';
       zone = 'shirt';
     }
@@ -944,14 +970,10 @@ export function RegistrationLabView({
       jumpToProblem();
       return;
     }
+    // the last step before payment books the place (the summary's own button does it on its step)
+    if (next === PAY_STEP) return bookAndPay();
     go(next);
   };
-  const ownPos = (i: number) => 2 + (i + 1) / 10;
-  const afterInfo: LabStep = live.ownSteps.length > 0 ? ownPos(0) : 3;
-  const beforeShirt: LabStep = live.ownSteps.length > 0 ? ownPos(live.ownSteps.length - 1) : 2;
-  const ownIndex = step > 2 && step < 3 ? Math.round((step - 2) * 10) - 1 : -1;
-  const afterShirt: LabStep = hasSouvenirs ? 4 : 5;
-  const beforeAddress: LabStep = hasSouvenirs ? 4 : 3;
 
   /* shirt cut: ชาย / หญิง / เด็ก (26 Nov 2026, user request). Kept on this page only for now:
      the registration stores the size; storing the cut and the finisher size is a backend task. */
@@ -1023,7 +1045,7 @@ export function RegistrationLabView({
     }),
   };
 
-  const footer = (back: LabStep | null, next: LabStep | null, nextLabel = 'ถัดไป') => (
+  const footer = (back: LabStep | null, next: LabStep | null, nextLabel = next === PAY_STEP ? (live.submitting ? 'กำลังกันที่นั่ง…' : 'ไปชำระเงิน') : 'ถัดไป') => (
     <>
     {stepError && (
       <div className="error-callout" role="alert">
@@ -1085,7 +1107,7 @@ export function RegistrationLabView({
 
       <section className="reg-lab-card" aria-label={tx('ขั้นตอนการสมัครเข้าร่วมงานวิ่ง')}>
         {/* event-reg-wizard-pane: picks up the live form's stepper rules, so A and B show the same progress */}
-        {step !== 8 && (
+        {step !== DONE_STEP && (
           <div className="reg-lab-stepper event-reg-wizard-pane">
             <RegistrationStepper
               steps={steps}
@@ -1098,15 +1120,23 @@ export function RegistrationLabView({
           </div>
         )}
 
-        <div ref={bodyRef} className={`reg-lab-body ${step === 6 ? 'is-review' : ''}`}>
-          {live.resumeNotice && step !== 8 && (
+        <div ref={bodyRef} className={`reg-lab-body ${has('review') ? 'is-review' : ''}`}>
+          {live.resumeNotice && step !== DONE_STEP && (
             <div className="reg-lab-resume-notice" role="status">
               <IconClock size={17} />
               <span>{tx(live.resumeNotice)}</span>
             </div>
           )}
-          {/* ---------- STEP 1 ---------- */}
-          {step === 1 && (
+          {/* a step of the organizer's own (no system part): its title and description */}
+          {page && !page.blocks?.length && (
+            <div className="reg-lab-title">
+              <h2>{tx(page.title)}</h2>
+              {page.description && <p>{tx(page.description)}</p>}
+            </div>
+          )}
+
+          {/* ---------- PART: distance ---------- */}
+          {has('category') && (
             <>
               <div className="reg-lab-title">
                 <h2>{tx('เลือกประเภทการสมัคร')}</h2>
@@ -1143,15 +1173,15 @@ export function RegistrationLabView({
                   );
                 })}
               </div>
-              {footer(null, 2)}
             </>
           )}
 
-          {/* ---------- STEP 2 ---------- */}
-          {step === 2 && category && (
+          {/* ---------- PART: runner details ---------- */}
+          {has('participant') && category && (
             <>
               <div className="reg-lab-title">
-                <h2>{txf('ข้อมูลผู้เข้าแข่งขัน · {0}', tx(category.name))}</h2>
+                {/* the distance is named only once picked (the organizer may ask the runner first, 27 Nov 2026) */}
+                <h2>{picked ? txf('ข้อมูลผู้เข้าแข่งขัน · {0}', tx(category.name)) : tx('ข้อมูลผู้เข้าแข่งขัน')}</h2>
                 <p>{tx('ช่องที่มี * จำเป็นต้องกรอก ข้อมูลอื่นช่วยให้ผู้จัดติดต่อและจัดรุ่นอายุได้ถูกต้อง')}</p>
               </div>
 
@@ -1486,7 +1516,7 @@ export function RegistrationLabView({
                     // the field list brings its own heading ("ข้อมูลเพิ่มเติม (n ข้อ)")
                     <section className="reg-lab-section reg-lab-custom">
                       <RunnerCustomFieldsInputs
-                        fields={event.customFields}
+                        fields={placedFields}
                         answers={answers}
                         onAnswerChange={(id, v) => {
                           live.clearError(id);
@@ -1496,8 +1526,8 @@ export function RegistrationLabView({
                         raceDistanceCode={category.code}
                         shirtSize={shirtSize}
                         publishedFormVersion={event.publishedFormVersion}
-                        steps={event.formCustomSteps ?? []}
-                        stepId={CORE_STEP}
+                        steps={live.flow}
+                        stepId={page?.id ?? CORE_STEP}
                         errors={live.errors}
                       />
                     </section>
@@ -1665,47 +1695,11 @@ export function RegistrationLabView({
                   onSave={saveEditedContact}
                 />
               )}
-              {footer(1, afterInfo)}
             </>
           )}
 
-          {/* ---------- STEPS 2.1–2.3: the organizer's own steps ---------- */}
-          {ownIndex >= 0 && category && (() => {
-            const st = live.ownSteps[ownIndex];
-            if (!st) {
-              // the answers changed and this step is no longer asked
-              return footer(2, 3);
-            }
-            return (
-              <>
-                <div className="reg-lab-title">
-                  <h2>{tx(st.title)}</h2>
-                  {st.description && <p>{tx(st.description)}</p>}
-                </div>
-                <section className="reg-lab-section reg-lab-custom">
-                  <RunnerCustomFieldsInputs
-                    fields={event.customFields}
-                    answers={answers}
-                    onAnswerChange={(id, v) => {
-                      live.clearError(id);
-                      setStepError(null);
-                      setAnswers({ ...answers, [id]: v });
-                    }}
-                    raceDistanceCode={category.code}
-                    shirtSize={shirtSize}
-                    steps={event.formCustomSteps ?? []}
-                    stepId={st.id}
-                    errors={live.errors}
-                    heading={null}
-                  />
-                </section>
-                {footer(ownIndex > 0 ? ownPos(ownIndex - 1) : 2, ownIndex + 1 < live.ownSteps.length ? ownPos(ownIndex + 1) : 3)}
-              </>
-            );
-          })()}
-
-          {/* ---------- STEP 3 ---------- */}
-          {step === 3 && (
+          {/* ---------- PART: shirt ---------- */}
+          {has('shirt') && (
             <>
               <div className="reg-lab-title">
                 <h2>{tx('เลือกไซส์เสื้อตามสิทธิ์สมัคร')}</h2>
@@ -1787,12 +1781,11 @@ export function RegistrationLabView({
                   />
                 </section>
               )}
-              {footer(beforeShirt, afterShirt)}
             </>
           )}
 
-          {/* ---------- STEP 4 ---------- */}
-          {step === 4 && hasSouvenirs && (
+          {/* ---------- PART: souvenirs ---------- */}
+          {has('souvenir') && hasSouvenirs && (
             <>
               <div className="reg-lab-title">
                 <h2>{tx('ของที่ระลึก (ไม่บังคับ)')}</h2>
@@ -1808,12 +1801,11 @@ export function RegistrationLabView({
                   layout={souvenirLayout}
                 />
               )}
-              {footer(3, 5)}
             </>
           )}
 
-          {/* ---------- STEP 5 ---------- */}
-          {step === 5 && (
+          {/* ---------- PART: delivery and address ---------- */}
+          {has('delivery') && (
             <>
               <div className="reg-lab-title">
                 <h2>{tx('วิธีรับอุปกรณ์ (Race Kit)')}</h2>
@@ -2012,12 +2004,11 @@ export function RegistrationLabView({
                   onSave={saveEditedAddr}
                 />
               )}
-              {footer(beforeAddress, 6)}
             </>
           )}
 
-          {/* ---------- STEP 6: review the whole form ---------- */}
-          {step === 6 && category && tier && quote && (() => {
+          {/* ---------- PART: summary (the agreements sit here) ---------- */}
+          {has('review') && category && tier && quote && (() => {
             const idDigits = idNumber.replace(/\s/g, '');
             const bookAddr = book.find((x) => x.id === bookId);
             const shipText =
@@ -2037,7 +2028,7 @@ export function RegistrationLabView({
               {
                 key: 'entry',
                 title: tx('การสมัคร'),
-                editStep: 1,
+                editStep: pageNoOf('category') || undefined,
                 rows: [
                   { label: tx('ประเภท'), value: picked ? tx(picked.label) : '' },
                   {
@@ -2048,7 +2039,7 @@ export function RegistrationLabView({
                   {
                     label: tx('เสื้อตามสิทธิ์'),
                     value: `${withCut(tx(shirtStyleName(shirtStyle)), shirtCut)} · ${shirtSize}`,
-                    editStep: 3,
+                    editStep: pageNoOf('shirt') || undefined,
                   },
                   ...(finisherMedal
                     ? [
@@ -2063,7 +2054,7 @@ export function RegistrationLabView({
                         {
                           label: tx('เสื้อ Finisher'),
                           value: finisherSize ? (unisex ? finisherSize : `${tx(cutLabel(finisherCut))} · ${finisherSize}`) : tx('ไม่ระบุ'),
-                          editStep: 3 as LabStep,
+                          editStep: pageNoOf('shirt') || undefined,
                         },
                       ]
                     : []),
@@ -2072,7 +2063,7 @@ export function RegistrationLabView({
               {
                 key: 'runner',
                 title: tx('ผู้เข้าแข่งขัน'),
-                editStep: 2,
+                editStep: pageNoOf('participant') || undefined,
                 rows: [
                   {
                     label: tx('ชื่อ-นามสกุล'),
@@ -2092,7 +2083,7 @@ export function RegistrationLabView({
               {
                 key: 'kit',
                 title: tx('การรับอุปกรณ์'),
-                editStep: 5,
+                editStep: pageNoOf('delivery') || undefined,
                 rows: [
                   {
                     label: tx('วิธีรับ'),
@@ -2120,7 +2111,7 @@ export function RegistrationLabView({
               {
                 key: 'souvenir',
                 title: txf('ของที่ระลึก {0} ชิ้น', addonLines.reduce((n, l) => n + l.qty, 0)),
-                editStep: 4,
+                editStep: pageNoOf('souvenir') || undefined,
                 lines: addonLines.map((l) => ({
                   label: `${tx(l.prd.nameTh)}${l.size !== '-' && l.prd.availableSizes.length > 1 ? ` · ${l.size}` : ''} ×${l.qty}`,
                   satang: l.prd.priceSatang * l.qty,
@@ -2154,10 +2145,16 @@ export function RegistrationLabView({
                   ledger={ledger}
                   totalSatang={totalSatang}
                   onEdit={(st) => go(st as LabStep)}
-                  action={{
-                    label: live.submitting ? 'กำลังกันที่นั่ง…' : 'ไปชำระเงิน',
-                    onClick: bookAndPay,
-                  }}
+                  // the summary books the place only when nothing comes after it; otherwise
+                  // the next steps follow and the last one goes to payment
+                  action={
+                    isLastPage
+                      ? {
+                          label: live.submitting ? 'กำลังกันที่นั่ง…' : 'ไปชำระเงิน',
+                          onClick: bookAndPay,
+                        }
+                      : undefined
+                  }
                   consent={
                     /* the entry is booked when leaving this step, so the agreements are ticked
                        here, right above the pay button */
@@ -2185,13 +2182,36 @@ export function RegistrationLabView({
                   }
                 />
                 {live.payError}
-                {footer(5, null)}
               </>
             );
           })()}
 
-          {/* ---------- STEP 7: payment of the held registration ---------- */}
-          {step === 7 && live.held && (() => {
+          {/* questions of a step that does not hold the runner details (those sit inside it) */}
+          {page && !has('participant') && category && (
+            <section className="reg-lab-section reg-lab-custom">
+              <RunnerCustomFieldsInputs
+                fields={placedFields}
+                answers={answers}
+                onAnswerChange={(id, v) => {
+                  live.clearError(id);
+                  setStepError(null);
+                  setAnswers({ ...answers, [id]: v });
+                }}
+                raceDistanceCode={category.code}
+                shirtSize={shirtSize}
+                steps={live.flow}
+                stepId={page.id}
+                errors={live.errors}
+                heading={page.blocks?.length ? undefined : null}
+              />
+            </section>
+          )}
+          {page && isLastPage && !has('review') && live.payError}
+          {/* one pair of buttons per step; the summary's own button books when it is the last step */}
+          {page && footer(prevPage, isLastPage ? (has('review') ? null : PAY_STEP) : nextPage)}
+
+          {/* ---------- payment of the held registration ---------- */}
+          {step === PAY_STEP && live.held && (() => {
             const held = live.held;
             const reg = held.reg;
             const regCat = event.categories.find((c) => c.id === reg.categoryId);
@@ -2300,8 +2320,8 @@ export function RegistrationLabView({
             );
           })()}
 
-          {/* ---------- STEP 8: booked, on its own centred screen ---------- */}
-          {step === 8 && live.done}
+          {/* ---------- booked, on its own centred screen ---------- */}
+          {step === DONE_STEP && live.done}
         </div>
       </section>
     </main>

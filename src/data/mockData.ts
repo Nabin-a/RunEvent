@@ -20,6 +20,13 @@ import {
 import { SEEDED_SAVED_BOOKS } from './seededSavedBooks';
 import { calculateFeeQuote } from '../utils/pricing';
 import { buildAgeSnapshot, buildStandardAgeGroups, evaluateCategoryAge } from '../utils/age';
+import {
+  STATE_TEST_EVENTS,
+  STATE_TEST_RUNNER_ENTRIES,
+  STATE_TEST_SEAT_FILLERS,
+  STATE_TEST_TODAY,
+  shiftDays,
+} from './eventStateTestData';
 
 export const DEMO_ORGANIZATIONS: Organization[] = [
   {
@@ -1408,6 +1415,9 @@ const BASE_EVENTS: RaceEvent[] = [
     rulesVersion: 'v2.1',
     kitPickupWindow:
       '12 ธ.ค. 2026 เวลา 10:00–19:00 น. ณ ลานกิจกรรมสนามกีฬาเทศบาลนครเชียงใหม่',
+    // test data (27 Nov 2026, user request): runner-facing event state
+    kitPickupFrom: '2026-12-12',
+    kitPickupTo: '2026-12-12',
     registrationPeriodLabel: '1 ก.ย. – 8 ธ.ค. 2026 (หรือจนกว่าโควตาจะเต็ม)',
     overviewParagraphs: [
       'งานวิ่งถนนขึ้นดอยสุเทพรับแสงเช้าประจำปีของจังหวัดเชียงใหม่ ออกตัวจากสนามกีฬาเทศบาลนครเชียงใหม่ มุ่งหน้าผ่านประตูช้างเผือก มหาวิทยาลัยเชียงใหม่ และอนุสาวรีย์ครูบาศรีวิชัย ขึ้นสู่จุดชมวิวดอยสุเทพภายใต้การปิดจราจรขาขึ้นอย่างปลอดภัย',
@@ -1653,7 +1663,7 @@ const BASE_EVENTS: RaceEvent[] = [
     province: 'ภูเก็ต',
     region: 'ใต้',
     venue: 'หาดในหาน — จุดชมวิวแหลมพรหมเทพ จ.ภูเก็ต',
-    eventDate: '2026-12-20',
+    eventDate: '2027-01-17',
     timezone: 'Asia/Bangkok',
     raceType: 'Road Race',
     status: 'published',
@@ -1661,7 +1671,16 @@ const BASE_EVENTS: RaceEvent[] = [
     feeBearerPolicy: 'organizer_absorbs',
     editDeadlineDate: '2026-12-05',
     rulesVersion: 'v1.2',
-    kitPickupWindow: '19 ธ.ค. 2026 เวลา 11:00–19:00 น. ณ ลานริมหาดในหาน',
+    kitPickupWindow: '16 ม.ค. 2027 เวลา 11:00–19:00 น. ณ ลานริมหาดในหาน',
+    // test data (27 Nov 2026, user request): runner-facing event state
+    kitPickupFrom: '2027-01-16',
+    kitPickupTo: '2027-01-16',
+    postponement: {
+      fromDate: '2026-12-20',
+      reason: 'ทางหลวงชนบทปิดซ่อมถนนเลียบหาดช่วงกลางเดือนธันวาคม',
+      refundUntil: '2026-12-31',
+      announcedAt: '2026-11-25T10:00:00+07:00',
+    },
     highlights: [
       'วิ่งรับลมทะเลช่วงเย็น ปล่อยตัว 15:30 น. และ 16:15 น.',
       'ผู้จัดรับภาระค่าบริการแพลตฟอร์มเต็มจำนวน — นักวิ่งจ่ายตรงตามราคาป้ายไม่มีบวกเพิ่ม',
@@ -1772,6 +1791,9 @@ const BASE_EVENTS: RaceEvent[] = [
     editDeadlineDate: '2027-01-10',
     rulesVersion: 'v1.0',
     kitPickupWindow: '22 ม.ค. 2027 เวลา 13:00–19:00 น. ณ ลานหน้าวัดมหาธาตุ',
+    // test data (27 Nov 2026, user request): runner-facing event state
+    kitPickupFrom: '2027-01-22',
+    kitPickupTo: '2027-01-22',
     highlights: ['ปล่อยตัว 18:30 น. วิ่งผ่านโบราณสถานที่เปิดไฟยามค่ำ'],
     categories: [
       {
@@ -1781,7 +1803,7 @@ const BASE_EVENTS: RaceEvent[] = [
         distanceKm: 10,
         startTimeLocal: '18:30',
         cutoffHours: 2,
-        categoryQuota: 30,
+        categoryQuota: 1, // test data (27 Nov 2026): this distance is full
         bibPrefix: 'S',
         colorTag: 'navy',
         priceTiers: [
@@ -1858,6 +1880,9 @@ const BASE_EVENTS: RaceEvent[] = [
     editDeadlineDate: '2027-01-24',
     rulesVersion: 'v1.0',
     kitPickupWindow: '6 ก.พ. 2027 เวลา 12:00–18:00 น. ณ ข่วงเมืองน่าน',
+    // test data (27 Nov 2026, user request): runner-facing event state
+    kitPickupFrom: '2027-02-06',
+    kitPickupTo: '2027-02-06',
     highlights: ['ปล่อยตัว 05:30 น. เส้นทางเลียบแม่น้ำน่าน', 'เสื้อแบบ Unisex ทรงเดียว ใส่ได้ทั้งชายและหญิง', 'เหรียญ Finisher สำหรับผู้เข้าเส้นชัยทุกระยะ'],
     categories: [
       {
@@ -1943,6 +1968,9 @@ const BASE_EVENTS: RaceEvent[] = [
     editDeadlineDate: '2027-02-20',
     rulesVersion: 'v1.0',
     kitPickupWindow: '5 มี.ค. 2027 เวลา 13:00–19:00 น. ณ ลานหน้าหาดอ่าวนาง',
+    // test data (27 Nov 2026, user request): runner-facing event state
+    kitPickupFrom: '2027-03-05',
+    kitPickupTo: '2027-03-05',
     highlights: ['ปล่อยตัว 06:00 น. ริมหาด', 'เสื้อแบบ Unisex ทรงเดียว ใส่ได้ทั้งชายและหญิง', 'เหรียญ Finisher สำหรับผู้เข้าเส้นชัยทุกระยะ'],
     categories: [
       {
@@ -2029,6 +2057,10 @@ const BASE_EVENTS: RaceEvent[] = [
     editDeadlineDate: '2026-10-10',
     rulesVersion: 'v1.4',
     kitPickupWindow: 'ส่งมอบอุปกรณ์เสร็จสิ้นแล้วเมื่อ 24 ต.ค. 2026',
+    resultsAnnouncedAt: '2026-10-25T10:30:00+07:00',
+    // test data (27 Nov 2026, user request): runner-facing event state
+    kitPickupFrom: '2026-10-24',
+    kitPickupTo: '2026-10-24',
     highlights: [
       'ประกาศลิงก์ผลการแข่งขันและอัลบั้มภาพที่ผู้จัดตรวจสอบแล้วครบ 2 จุดถ่ายภาพ',
       'เปิดจำหน่ายเสื้อที่ระลึกล็อตหลังจบงานสำหรับผู้ที่ต้องการเก็บสะสม',
@@ -2049,6 +2081,29 @@ const BASE_EVENTS: RaceEvent[] = [
             id: 'tier-om10',
             label: 'Regular',
             priceSatang: 65000,
+            startsAt: '2026-08-01',
+            endsAt: '2026-10-15',
+            isCurrent: true,
+          },
+        ],
+      },
+      // test data (27 Nov 2026): a fun run without age groups, so a result falls back to the
+      // overall rank on the history card
+      {
+        id: 'cat-om-5k',
+        code: '5 km',
+        name: 'Old Moat Fun Run 5 km',
+        distanceKm: 5,
+        startTimeLocal: '06:00',
+        cutoffHours: 1.5,
+        categoryQuota: 80,
+        bibPrefix: 'F',
+        colorTag: 'amber',
+        priceTiers: [
+          {
+            id: 'tier-om5',
+            label: 'Regular',
+            priceSatang: 45000,
             startsAt: '2026-08-01',
             endsAt: '2026-10-15',
             isCurrent: true,
@@ -2135,6 +2190,9 @@ const BASE_EVENTS: RaceEvent[] = [
     editDeadlineDate: '2027-02-01',
     rulesVersion: 'v0.9-draft',
     kitPickupWindow: '13 ก.พ. 2027 เวลา 11:00–20:00 น.',
+    // test data (27 Nov 2026, user request): runner-facing event state
+    kitPickupFrom: '2027-02-13',
+    kitPickupTo: '2027-02-13',
     highlights: ['วิ่งชมไฟสะพานริมแม่น้ำปิงยามค่ำ ปล่อยตัว 19:30 น.'],
     categories: [
       {
@@ -2300,6 +2358,9 @@ const BASE_EVENTS: RaceEvent[] = [
     editDeadlineDate: '2027-01-10',
     rulesVersion: 'v1.0',
     kitPickupWindow: '23 ม.ค. 2027 เวลา 12:00–18:30 น.',
+    // test data (27 Nov 2026, user request): runner-facing event state
+    kitPickupFrom: '2027-01-23',
+    kitPickupTo: '2027-01-23',
     highlights: ['แบ่งค่าบริการคนละครึ่ง 50/50 ระหว่างผู้จัดและนักวิ่ง'],
     categories: [
       {
@@ -2356,7 +2417,7 @@ const SEED_AGE_RULES: Record<string, Pick<RaceEvent['categories'][number], 'ageB
   'cat-om-10k': { ageBasis: 'race_day', minAge: 15, maxAge: null, ageGroups: buildStandardAgeGroups(15, null) },
 };
 
-export const INITIAL_EVENTS: RaceEvent[] = BASE_EVENTS.map((ev) => ({
+export const INITIAL_EVENTS: RaceEvent[] = [...BASE_EVENTS, ...STATE_TEST_EVENTS].map((ev) => ({
   ...ev,
   categories: ev.categories.map((cat) => ({ ...cat, ...(SEED_AGE_RULES[cat.id] ?? {}) })),
 }));
@@ -2401,6 +2462,8 @@ function buildReg(params: {
   marketingConsent?: boolean;
   customAnswers?: Record<string, string | boolean>;
   raceResult?: RegistrationRecord['raceResult'];
+  /** someone else's entry: the participant's own date of birth and gender */
+  participant?: { dateOfBirth: string; gender: 'ชาย' | 'หญิง' };
 }): RegistrationRecord {
   const quote = calculateFeeQuote(params.baseSatang, params.policy);
   return {
@@ -2443,6 +2506,7 @@ function buildReg(params: {
       (params.refundStatus === 'succeeded' ? quote.baseSatang : 0),
     customAnswers: params.customAnswers,
     raceResult: params.raceResult,
+    ...(params.participant ? { participantSnapshot: { ...params.participant } } : {}),
   };
 }
 
@@ -2675,6 +2739,246 @@ const BASE_REGISTRATIONS: RegistrationRecord[] = [
     fulfillmentUpdatedAt: '2026-10-24 14:22',
     raceResult: SEEDED_OLDMOAT_RACE_RESULT,
   }),
+  // test data (27 Nov 2026, user request): friends USR-901 entered for Old Moat, one result per
+  // tier on the history card. Fictional people and times.
+  // Top 10% of the age group: 5 / 96
+  buildReg({
+    id: 'reg-om-fr-1',
+    regCode: 'REG-2610-052',
+    orderCode: 'ORD-86103',
+    eventId: 'evt-oldmoat-2026',
+    organizationId: 'org-lanna',
+    categoryId: 'cat-om-10k',
+    runnerUserId: 'usr-runner',
+    buyerName: 'กานต์พิชชา วัฒนากูล',
+    participantNameTh: 'ธนกร ศรีสุข',
+    participantNameEn: 'Thanakorn Srisuk',
+    email: 'thanakorn.fr@demo.kratai.local',
+    phoneMasked: '084-•••-2231',
+    emergencyContact: 'กานต์พิชชา วัฒนากูล 081-•••-4412',
+    shirtSize: 'L',
+    bibNumber: 'M-0419',
+    qrCheckInToken: 'TKN-OM26-FR01',
+    baseSatang: 65000,
+    policy: 'runner_pays',
+    createdAt: '2026-09-20T13:15:00+07:00',
+    paidAt: '2026-09-20T13:16:10+07:00',
+    registrationStatus: 'confirmed',
+    paymentStatus: 'succeeded',
+    refundStatus: 'none',
+    fulfillmentStatus: 'kit_picked_up',
+    fulfillmentUpdatedBy: 'ณัฐพล ศรีวิชัย',
+    fulfillmentUpdatedAt: '2026-10-24 14:30',
+    participant: { dateOfBirth: '1992-03-08', gender: 'ชาย' },
+    raceResult: {
+      gunTime: '00:41:12',
+      chipTime: '00:41:05',
+      paceMinPerKm: '4:07 /km',
+      overallRank: '9 / 420',
+      categoryRank: '5 / 96 (ชาย 30–39)',
+      status: 'Finisher',
+      certificateCode: 'CERT-CMI2510-B0219',
+      verifiedAt: '2026-10-25 10:30',
+    },
+  }),
+  // Top 50% of the age group: 41 / 104
+  buildReg({
+    id: 'reg-om-fr-2',
+    regCode: 'REG-2610-053',
+    orderCode: 'ORD-86104',
+    eventId: 'evt-oldmoat-2026',
+    organizationId: 'org-lanna',
+    categoryId: 'cat-om-10k',
+    runnerUserId: 'usr-runner',
+    buyerName: 'กานต์พิชชา วัฒนากูล',
+    participantNameTh: 'วรรณา ใจดี',
+    participantNameEn: 'Wanna Jaidee',
+    email: 'wanna.fr@demo.kratai.local',
+    phoneMasked: '085-•••-7719',
+    emergencyContact: 'กานต์พิชชา วัฒนากูล 081-•••-4412',
+    shirtSize: 'M',
+    bibNumber: 'M-0420',
+    qrCheckInToken: 'TKN-OM26-FR02',
+    baseSatang: 65000,
+    policy: 'runner_pays',
+    createdAt: '2026-09-20T13:17:00+07:00',
+    paidAt: '2026-09-20T13:18:10+07:00',
+    registrationStatus: 'confirmed',
+    paymentStatus: 'succeeded',
+    refundStatus: 'none',
+    fulfillmentStatus: 'kit_picked_up',
+    fulfillmentUpdatedBy: 'ณัฐพล ศรีวิชัย',
+    fulfillmentUpdatedAt: '2026-10-24 14:31',
+    participant: { dateOfBirth: '1983-08-19', gender: 'หญิง' },
+    raceResult: {
+      gunTime: '01:02:15',
+      chipTime: '01:01:40',
+      paceMinPerKm: '6:10 /km',
+      overallRank: '196 / 420',
+      categoryRank: '41 / 104 (หญิง 40–49)',
+      status: 'Finisher',
+      certificateCode: 'CERT-CMI2510-B0220',
+      verifiedAt: '2026-10-25 10:30',
+    },
+  }),
+  // back half of the age group: 87 / 110
+  buildReg({
+    id: 'reg-om-fr-3',
+    regCode: 'REG-2610-054',
+    orderCode: 'ORD-86105',
+    eventId: 'evt-oldmoat-2026',
+    organizationId: 'org-lanna',
+    categoryId: 'cat-om-10k',
+    runnerUserId: 'usr-runner',
+    buyerName: 'กานต์พิชชา วัฒนากูล',
+    participantNameTh: 'สมชาย มั่นคง',
+    participantNameEn: 'Somchai Mankong',
+    email: 'somchai.fr@demo.kratai.local',
+    phoneMasked: '086-•••-4408',
+    emergencyContact: 'กานต์พิชชา วัฒนากูล 081-•••-4412',
+    shirtSize: 'XL',
+    bibNumber: 'M-0421',
+    qrCheckInToken: 'TKN-OM26-FR03',
+    baseSatang: 65000,
+    policy: 'runner_pays',
+    createdAt: '2026-09-20T13:19:00+07:00',
+    paidAt: '2026-09-20T13:20:10+07:00',
+    registrationStatus: 'confirmed',
+    paymentStatus: 'succeeded',
+    refundStatus: 'none',
+    fulfillmentStatus: 'kit_picked_up',
+    fulfillmentUpdatedBy: 'ณัฐพล ศรีวิชัย',
+    fulfillmentUpdatedAt: '2026-10-24 14:32',
+    participant: { dateOfBirth: '1971-01-15', gender: 'ชาย' },
+    raceResult: {
+      gunTime: '01:26:03',
+      chipTime: '01:24:52',
+      paceMinPerKm: '8:29 /km',
+      overallRank: '388 / 420',
+      categoryRank: '87 / 110 (ชาย 50–59)',
+      status: 'Finisher',
+      certificateCode: 'CERT-CMI2510-B0221',
+      verifiedAt: '2026-10-25 10:30',
+    },
+  }),
+  // did not finish (DNF)
+  buildReg({
+    id: 'reg-om-fr-4',
+    regCode: 'REG-2610-055',
+    orderCode: 'ORD-86106',
+    eventId: 'evt-oldmoat-2026',
+    organizationId: 'org-lanna',
+    categoryId: 'cat-om-10k',
+    runnerUserId: 'usr-runner',
+    buyerName: 'กานต์พิชชา วัฒนากูล',
+    participantNameTh: 'ปิยะนุช ทองดี',
+    participantNameEn: 'Piyanuch Thongdee',
+    email: 'piyanuch.fr@demo.kratai.local',
+    phoneMasked: '087-•••-1956',
+    emergencyContact: 'กานต์พิชชา วัฒนากูล 081-•••-4412',
+    shirtSize: 'S',
+    bibNumber: 'M-0422',
+    qrCheckInToken: 'TKN-OM26-FR04',
+    baseSatang: 65000,
+    policy: 'runner_pays',
+    createdAt: '2026-09-20T13:21:00+07:00',
+    paidAt: '2026-09-20T13:22:10+07:00',
+    registrationStatus: 'confirmed',
+    paymentStatus: 'succeeded',
+    refundStatus: 'none',
+    fulfillmentStatus: 'kit_picked_up',
+    fulfillmentUpdatedBy: 'ณัฐพล ศรีวิชัย',
+    fulfillmentUpdatedAt: '2026-10-24 14:33',
+    participant: { dateOfBirth: '1997-06-02', gender: 'หญิง' },
+    raceResult: {
+      gunTime: '-',
+      chipTime: '-',
+      paceMinPerKm: '-',
+      overallRank: '-',
+      categoryRank: '-',
+      status: 'DNF',
+      certificateCode: '',
+      verifiedAt: '2026-10-25 10:30',
+    },
+  }),
+  // no age groups, so the overall rank: 31 / 180
+  buildReg({
+    id: 'reg-om-fr-5',
+    regCode: 'REG-2610-056',
+    orderCode: 'ORD-86107',
+    eventId: 'evt-oldmoat-2026',
+    organizationId: 'org-lanna',
+    categoryId: 'cat-om-5k',
+    runnerUserId: 'usr-runner',
+    buyerName: 'กานต์พิชชา วัฒนากูล',
+    participantNameTh: 'ณัฐวุฒิ แก้วมณี',
+    participantNameEn: 'Nattawut Kaewmanee',
+    email: 'nattawut.fr@demo.kratai.local',
+    phoneMasked: '088-•••-6620',
+    emergencyContact: 'กานต์พิชชา วัฒนากูล 081-•••-4412',
+    shirtSize: 'M',
+    bibNumber: 'F-0031',
+    qrCheckInToken: 'TKN-OM26-FR05',
+    baseSatang: 45000,
+    policy: 'runner_pays',
+    createdAt: '2026-09-20T13:23:00+07:00',
+    paidAt: '2026-09-20T13:24:10+07:00',
+    registrationStatus: 'confirmed',
+    paymentStatus: 'succeeded',
+    refundStatus: 'none',
+    fulfillmentStatus: 'kit_picked_up',
+    fulfillmentUpdatedBy: 'ณัฐพล ศรีวิชัย',
+    fulfillmentUpdatedAt: '2026-10-24 14:34',
+    participant: { dateOfBirth: '1990-11-11', gender: 'ชาย' },
+    raceResult: {
+      gunTime: '00:29:02',
+      chipTime: '00:28:40',
+      paceMinPerKm: '5:44 /km',
+      overallRank: '31 / 180',
+      categoryRank: '-',
+      status: 'Finisher',
+      certificateCode: 'CERT-CMI2510-F0031',
+      verifiedAt: '2026-10-25 10:30',
+    },
+  }),
+  // did not start (DNS)
+  buildReg({
+    id: 'reg-om-fr-6',
+    regCode: 'REG-2610-057',
+    orderCode: 'ORD-86108',
+    eventId: 'evt-oldmoat-2026',
+    organizationId: 'org-lanna',
+    categoryId: 'cat-om-5k',
+    runnerUserId: 'usr-runner',
+    buyerName: 'กานต์พิชชา วัฒนากูล',
+    participantNameTh: 'ศิริพร บุญมา',
+    participantNameEn: 'Siriporn Boonma',
+    email: 'siriporn.fr@demo.kratai.local',
+    phoneMasked: '089-•••-3384',
+    emergencyContact: 'กานต์พิชชา วัฒนากูล 081-•••-4412',
+    shirtSize: 'S',
+    bibNumber: 'F-0032',
+    qrCheckInToken: 'TKN-OM26-FR06',
+    baseSatang: 45000,
+    policy: 'runner_pays',
+    createdAt: '2026-09-20T13:25:00+07:00',
+    paidAt: '2026-09-20T13:26:10+07:00',
+    registrationStatus: 'confirmed',
+    paymentStatus: 'succeeded',
+    refundStatus: 'none',
+    fulfillmentStatus: 'ready',
+    participant: { dateOfBirth: '2001-04-04', gender: 'หญิง' },
+    raceResult: {
+      gunTime: '-',
+      chipTime: '-',
+      paceMinPerKm: '-',
+      overallRank: '-',
+      categoryRank: '-',
+      status: 'DNS',
+      certificateCode: '',
+      verifiedAt: '2026-10-25 10:30',
+    },
+  }),
   buildReg({
     id: 'reg-08',
     regCode: 'REG-2611-201',
@@ -2758,20 +3062,103 @@ const SEED_DOBS = [
   '1985-09-17', '1972-04-25', '1996-12-02', '1990-06-11', '1965-03-28',
 ];
 
-export const INITIAL_REGISTRATIONS: RegistrationRecord[] = BASE_REGISTRATIONS.map((reg, idx) => {
+/* test data (27 Nov 2026, user request): entries for the event-state test events
+   (src/data/eventStateTestData.ts) — seats taken in the "almost full" and "full" events by
+   fictional runners, and USR-901's own entries so the history page shows each state */
+const STATE_TEST_FILLER_NAMES = [
+  ['สมพร ใจงาม', 'Somporn Jaingam'], ['ธีรวัฒน์ แสงทอง', 'Theerawat Saengthong'], ['กมลชนก ศรีวงศ์', 'Kamonchanok Sriwong'],
+  ['ปิยพงษ์ บุญเรือง', 'Piyapong Boonruang'], ['ณัฐธิดา คำแก้ว', 'Nattida Khamkaew'], ['อภิชาติ ทองคำ', 'Apichat Thongkham'],
+  ['วราภรณ์ มีสุข', 'Waraporn Meesuk'], ['ชยพล วงศ์ใหญ่', 'Chayapon Wongyai'], ['สุนิสา พรหมมา', 'Sunisa Prommma'],
+  ['กิตติพัฒน์ อินทร์แก้ว', 'Kittipat Inkaew'], ['รัชนี ชัยมงคล', 'Ratchanee Chaimongkol'], ['ภูมิพัฒน์ แก้วกาญจน์', 'Poomipat Kaewkan'],
+];
+const stateTestCreatedAt = (daysAgo: number) => `${shiftDays(STATE_TEST_TODAY, -daysAgo)}T10:00:00+07:00`;
+const STATE_TEST_REGISTRATIONS: RegistrationRecord[] = [
+  ...STATE_TEST_SEAT_FILLERS.flatMap(({ eventKey, cat, count }) =>
+    Array.from({ length: count }, (_, i) => {
+      const n = STATE_TEST_SEAT_FILLERS.slice(0, STATE_TEST_SEAT_FILLERS.findIndex((f) => f.eventKey === eventKey && f.cat === cat))
+        .reduce((sum, f) => sum + f.count, 0) + i;
+      const [th, en] = STATE_TEST_FILLER_NAMES[n % STATE_TEST_FILLER_NAMES.length];
+      const no = String(301 + n).padStart(3, '0');
+      return buildReg({
+        id: `reg-state-${eventKey}-${cat}-${i + 1}`,
+        regCode: `REG-2611-${no}`,
+        orderCode: `ORD-93${no}`,
+        eventId: `evt-state-${eventKey}`,
+        organizationId: 'org-andaman',
+        categoryId: `cat-${eventKey}-${cat}`,
+        buyerName: th,
+        participantNameTh: th,
+        participantNameEn: en,
+        email: `runner.st${no}@demo.kratai.local`,
+        phoneMasked: `08${n % 10}-•••-${String(4100 + n).slice(-4)}`,
+        emergencyContact: `ผู้ติดต่อของ${th.split(' ')[0]} 09${n % 10}-•••-2${String(100 + n).slice(-3)}`,
+        shirtSize: (['S', 'M', 'L', 'M'] as const)[n % 4],
+        bibNumber: `${cat === '10k' ? 'S' : 'F'}-0${String(200 + n)}`,
+        qrCheckInToken: `TKN-ST26-F${no}`,
+        baseSatang: cat === '10k' ? 59000 : 39000,
+        policy: 'runner_pays',
+        createdAt: stateTestCreatedAt(10 + n),
+        paidAt: stateTestCreatedAt(10 + n),
+        registrationStatus: 'confirmed',
+        paymentStatus: 'succeeded',
+        refundStatus: 'none',
+        fulfillmentStatus: 'not_ready',
+      });
+    })
+  ),
+  ...STATE_TEST_RUNNER_ENTRIES.map(({ eventId, catId, key }, i) => {
+    const no = String(351 + i).padStart(3, '0');
+    const cancelled = key === 'cancelled';
+    const ev = [...BASE_EVENTS, ...STATE_TEST_EVENTS].find((e) => e.id === eventId);
+    const cat = ev?.categories.find((c) => c.id === catId);
+    return buildReg({
+      id: `reg-901-state-${key}`,
+      regCode: `REG-2611-${no}`,
+      orderCode: `ORD-93${no}`,
+      eventId,
+      organizationId: ev?.organizationId ?? 'org-andaman',
+      categoryId: catId,
+      runnerUserId: 'usr-runner',
+      buyerName: 'กานต์พิชชา วัฒนากูล',
+      participantNameTh: 'กานต์พิชชา วัฒนากูล',
+      participantNameEn: 'Kanpitcha Wattanakul',
+      email: 'kanpitcha.runner@demo.kratai.local',
+      phoneMasked: '081-•••-4412',
+      emergencyContact: 'วีระ วัฒนากูล (บิดา) 089-•••-1102',
+      shirtSize: 'S',
+      bibNumber: cancelled || key === 'postponed' ? null : `${cat?.bibPrefix ?? 'S'}-0${String(101 + i)}`,
+      qrCheckInToken: `TKN-ST26-R${no}`,
+      baseSatang: cat?.priceTiers[0]?.priceSatang ?? 59000,
+      policy: 'runner_pays',
+      createdAt: stateTestCreatedAt(25 + i),
+      paidAt: stateTestCreatedAt(25 + i),
+      registrationStatus: 'confirmed',
+      paymentStatus: 'succeeded',
+      refundStatus: cancelled ? 'processing' : 'none',
+      ...(cancelled ? { refundReason: 'ผู้จัดยกเลิกงาน คืนค่าสมัครเต็มจำนวน' } : {}),
+      fulfillmentStatus: key === 'raceday' || key === 'pending' ? 'kit_picked_up' : key === 'kit' ? 'ready' : 'not_ready',
+    });
+  }),
+];
+
+export const INITIAL_REGISTRATIONS: RegistrationRecord[] = [...BASE_REGISTRATIONS, ...STATE_TEST_REGISTRATIONS].map((reg, idx) => {
   const ev = INITIAL_EVENTS.find((e) => e.id === reg.eventId);
   const cat = ev?.categories.find((c) => c.id === reg.categoryId);
+  const own = reg.participantSnapshot;
   const dateOfBirth =
-    reg.runnerUserId === 'usr-runner'
+    own?.dateOfBirth ??
+    (reg.runnerUserId === 'usr-runner'
       ? SEEDED_RUNNER_901_PROFILE.dateOfBirth ?? SEED_DOBS[0]
-      : SEED_DOBS[idx % SEED_DOBS.length];
+      : SEED_DOBS[idx % SEED_DOBS.length]);
   const profileGender = SEEDED_RUNNER_901_PROFILE.gender;
   const gender: 'ชาย' | 'หญิง' =
-    reg.runnerUserId === 'usr-runner' && (profileGender === 'ชาย' || profileGender === 'หญิง')
-      ? profileGender
-      : idx % 3 === 1
-        ? 'หญิง'
-        : 'ชาย';
+    own?.gender === 'ชาย' || own?.gender === 'หญิง'
+      ? own.gender
+      : reg.runnerUserId === 'usr-runner' && (profileGender === 'ชาย' || profileGender === 'หญิง')
+        ? profileGender
+        : idx % 3 === 1
+          ? 'หญิง'
+          : 'ชาย';
   if (!ev || !cat) return reg;
   const check = evaluateCategoryAge(ev, cat, dateOfBirth, gender);
   const ageSnapshot = buildAgeSnapshot(check, dateOfBirth, reg.createdAt);

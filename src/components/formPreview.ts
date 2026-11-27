@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CustomRegistrationField, OrganizerFormStep } from '../types';
+import type { CustomRegistrationField, FormStepDef, OrganizerFormStep } from '../types';
 
 /**
  * Live preview channel between the organizer's registration-form editor and the runner's real
@@ -10,14 +10,15 @@ import type { CustomRegistrationField, OrganizerFormStep } from '../types';
  * page -> editor : { type: 'kr-form-ready' }
  *                  { type: 'kr-form-step', step }   (the runner moved to another step inside the preview)
  *
- * Step keys are the editor's: 'start' | 'core' | <own step id> | 'shop' | 'souvenir' | 'address' | 'review' | 'pay'.
+ * Step keys are step ids ('start' | 'core' | <own step id> | 'shop' | 'souvenir' | 'address' | 'review' by default) or 'pay'.
  */
 export const FORM_PREVIEW_PARAM = 'form';
 
 export const isFormPreviewUrl = (): boolean =>
   typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('preview') === FORM_PREVIEW_PARAM;
 
-export type PreviewForm = { fields: CustomRegistrationField[]; steps: OrganizerFormStep[] };
+/** the unsaved form; `flow` (27 Nov 2026) is the whole step order from the combined editor */
+export type PreviewForm = { fields: CustomRegistrationField[]; steps: OrganizerFormStep[]; flow?: FormStepDef[] };
 
 export interface FormPreviewState {
   /** true inside the editor's iframe */

@@ -65,7 +65,7 @@ function blockFor(id: EventDetailBlockId, ev: ConvertEvent, page: EventDetailPag
 
 /** the page with every built-in block replaced by its free block (unchanged when already v 2) */
 export function convertToFreeBlocks(page: EventDetailPage, ev: ConvertEvent): EventDetailPage {
-  if (page.v === 2) return page;
+  if (page.v === 2 || page.v === 3) return page;
   const extra: EventCustomBlock[] = [];
   const have = new Set(page.customBlocks.map((b) => b.id));
   const take = (id: EventDetailBlockId): EventDetailLayoutKey => {
@@ -102,7 +102,7 @@ export function eventPage(
           layout: ev.detailLayout ?? [],
           customBlocks: ev.detailCustomBlocks ?? [],
           ...(ev.detailRegisterCard ? { card: ev.detailRegisterCard } : {}),
-          ...(ev.detailPageV === 2 ? { v: 2 as const } : {}),
+          ...(ev.detailPageV === 2 || ev.detailPageV === 3 ? { v: ev.detailPageV } : {}),
         };
   return convertToFreeBlocks(base, ev);
 }

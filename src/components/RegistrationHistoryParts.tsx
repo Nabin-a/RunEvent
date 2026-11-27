@@ -2,8 +2,8 @@ import type { RaceCategory, RaceEvent, RegistrationRecord } from '../types';
 import { getLang, tx, txf } from '../i18n';
 import { formatAgeGroupLabel, formatBasisDate } from '../utils/age';
 import { isoToDdMmYyyy } from '../utils/dateFormat';
-import { downloadFinisherCertificateSvg } from '../utils/finisherCertificate';
-import { IconAward, IconDownload } from './Icons';
+import { runnerEventPhase } from '../utils/eventPhase';
+import { EventPhaseBanner, EventPhasePill, phaseDetail } from './EventPhaseParts';
 
 /* Parts of the old profile tab "ประวัติงานที่สมัคร", now shown on the single
    "ประวัติการสมัคร & การสั่งซื้อ" page (27 Nov 2026, user request: one place). */
@@ -41,56 +41,119 @@ export function regAgeShort(reg: RegistrationRecord, cat: RaceCategory | undefin
   return group ? `${age} · ${group}` : age;
 }
 
-/** official result with the certificate buttons (only once a result is in) */
-export function RegResultActions({
-  reg,
-  ev,
-  cat,
-  onPreview,
-}: {
-  reg: RegistrationRecord;
-  ev: RaceEvent | undefined;
-  cat: RaceCategory | undefined;
-  onPreview: (reg: RegistrationRecord) => void;
-}) {
+/* ---- Race result, easy to read (27 Nov 2026, user request) ----
+   distance, finish time, pace and rank side by side, plus a coloured badge for how the runner
+   placed. The badge is measured against the runner's age group; an event without age groups
+   (or a result without a group rank) falls back to the overall rank of the distance. A result
+   without any rank, or a DNF / DNS, gets the neutral colour. */
+
+type ResultTier = 'top10' | 'top25' | 'top50' | 'finisher' | 'none';
+
+/** "12 / 118 (หญิง 30–39)" → { rank: 12, total: 118 } */
+function parseRank(text: string | undefined): { rank: number; total: number } | null {
+  const m = text?.match(/(\d+)\s*\/\s*(\d+)/);
+  if (!m) return null;
+  const rank = Number(m[1]);
+  const total = Number(m[2]);
+  return rank > 0 && total > 0 && rank <= total ? { rank, total } : null;
+}
+
+/** "00:54:18" → "54:18" under an hour, "1:05:30" from an hour up */
+function formatFinishTime(time: string): { value: string; unit: string } {
+  const parts = time.split(':').map((x) => Number(x));
+  if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
+    const [h, m, sec] = parts;
+    const ss = String(sec).padStart(2, '0');
+    if (h === 0) return { value: `${m}:${ss}`, unit: tx('นาที') };
+    return { value: `${h}:${String(m).padStart(2, '0')}:${ss}`, unit: tx('ชม.') };
+  }
+  return { value: time, unit: '' };
+}
+
+function resultTier(share: number): ResultTier {
+  if (share <= 0.1) return 'top10';
+  if (share <= 0.25) return 'top25';
+  if (share <= 0.5) return 'top50';
+  return 'finisher';
+}
+
+export function RegResult({ reg, cat }: { reg: RegistrationRecord; cat: RaceCategory | undefined }) {
   const res = reg.raceResult;
   if (!res) return null;
+
+  const finished = res.status === 'Finisher';
+  // age-group rank only when the distance has age groups and the runner was placed in one
+  const hasAgeGroup = Boolean(cat?.ageGroups?.length) && Boolean(reg.ageSnapshot?.groupId);
+  const groupRank = hasAgeGroup ? parseRank(res.categoryRank) : null;
+  const overallRank = parseRank(res.overallRank);
+  const basis = groupRank ? 'group' : overallRank ? 'overall' : null;
+  const rank = groupRank ?? overallRank;
+
+  let tier: ResultTier = 'none';
+  let badge: string;
+  if (!finished) {
+    badge = res.status === 'DNF' ? tx('ไม่ถึงเส้นชัย (DNF)') : tx('ไม่ได้ออกสตาร์ต (DNS)');
+  } else if (rank) {
+    const share = rank.rank / rank.total;
+    tier = resultTier(share);
+    const pct = Math.max(1, Math.ceil(share * 100));
+    badge =
+      tier === 'finisher'
+        ? tx('เข้าเส้นชัย')
+        : basis === 'group'
+          ? txf('Top {0}% ในรุ่น', pct)
+          : txf('Top {0}% รวม', pct);
+  } else {
+    badge = tx('เข้าเส้นชัย');
+  }
+
+  const time = formatFinishTime(res.chipTime);
+  const pace = res.paceMinPerKm.replace(/\s*\/\s*km$/i, '');
+  const distance = cat?.distanceKm;
+
   return (
-    <div className="reg-history-result">
-      <span className="muted-inline">
-        {tx('ผลการแข่งขัน')}{' '}
-        <strong className="mono-num text-forest">
-          {res.chipTime} ({res.paceMinPerKm})
-        </strong>
-      </span>
-      <div className="cta-inline-row">
-        <button type="button" className="btn-secondary" onClick={() => onPreview(reg)}>
-          <IconAward size={15} />
-          <span>{tx('ดูผลการแข่งขันและใบประกาศนียบัตร')}</span>
-        </button>
-        <button
-          type="button"
-          className="btn-ghost-sm"
-          onClick={() =>
-            downloadFinisherCertificateSvg({
-              runnerName: reg.participantNameTh,
-              eventTitle: ev?.titleTh ?? reg.eventId,
-              eventDate: ev?.eventDate ?? '-',
-              distanceLabel: `${cat?.distanceKm ?? 10} KM`,
-              bibNumber: reg.bibNumber ?? '-',
-              chipTime: res.chipTime,
-              gunTime: res.gunTime,
-              pace: res.paceMinPerKm,
-              rank: res.overallRank,
-              certCode: res.certificateCode,
-            })
-          }
-        >
-          <IconDownload size={15} />
-          <span>{tx('ดาวน์โหลดใบประกาศนียบัตร')}</span>
-        </button>
-      </div>
-    </div>
+    <section className={`reg-result is-${tier}`} aria-label={tx('ผลการแข่งขัน')}>
+      <header className="reg-result-head">
+        <strong>{tx('ผลการแข่งขัน')}</strong>
+        <span className="reg-result-badge">{badge}</span>
+      </header>
+      {finished && (
+        <dl className="reg-result-stats">
+          {distance ? (
+            <div>
+              <dt>{tx('ระยะ')}</dt>
+              <dd>
+                <span className="mono-num">{distance.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
+                <small>{tx('กม.')}</small>
+              </dd>
+            </div>
+          ) : null}
+          <div>
+            <dt>{tx('เวลาสุทธิ')}</dt>
+            <dd>
+              <span className="mono-num">{time.value}</span>
+              {time.unit && <small>{time.unit}</small>}
+            </dd>
+          </div>
+          <div>
+            <dt>{tx('เพซเฉลี่ย')}</dt>
+            <dd>
+              <span className="mono-num">{pace}</span>
+              <small>{tx('/กม.')}</small>
+            </dd>
+          </div>
+          {rank && (
+            <div>
+              <dt>{basis === 'group' ? tx('อันดับในรุ่น') : tx('อันดับรวม')}</dt>
+              <dd>
+                <span className="mono-num">{rank.rank}</span>
+                <small>/{rank.total}</small>
+              </dd>
+            </div>
+          )}
+        </dl>
+      )}
+    </section>
   );
 }
 
@@ -132,46 +195,36 @@ export function RegSnapshotDetails({ reg }: { reg: RegistrationRecord }) {
   );
 }
 
-/** the finisher certificate card, opened from a result */
-export function CertificatePreviewCard({ reg, onClose }: { reg: RegistrationRecord; onClose: () => void }) {
-  const res = reg.raceResult;
-  if (!res) return null;
+/* ---- The event's state on the card (27 Nov 2026, user request) ----
+   apart from the runner's own track below it: the same for everyone in the event. Cancelled,
+   suspended and postponed events get a banner above the card's headline instead. Words, icons
+   and colours are shared with the event list and the event page (EventPhaseParts). */
+
+/** `place="top"` draws only the banner (cancelled / suspended / postponed), above the card's
+    headline; `place="line"` draws only the quiet line, under the date and place */
+export function RegEventStatus({
+  ev,
+  reg,
+  today,
+  place,
+}: {
+  ev: RaceEvent | undefined;
+  reg: RegistrationRecord;
+  today: string;
+  place: 'top' | 'line';
+}) {
+  if (!ev) return null;
+  const phase = runnerEventPhase(ev, today, { hasResult: Boolean(reg.raceResult) });
+  if (!phase) return null;
+  if (place === 'top') return <EventPhaseBanner phase={phase} eventDate={ev.eventDate} />;
+  if (phase.loud) return null;
+  const detail = phaseDetail(phase);
   return (
-    <div className="custom-field-creator certificate-preview-card">
-      <div className="section-title-bar">
-        <div>
-          <strong>
-            OFFICIAL FINISHER E-CERTIFICATE · <span className="mono-code">{res.certificateCode}</span>
-          </strong>
-          <div className="muted-inline">
-            {tx('ยืนยันผลจากระบบจับเวลากลางเมื่อ')} <span className="mono-num">{res.verifiedAt}</span>
-          </div>
-        </div>
-        <button type="button" className="btn-ghost-sm" onClick={onClose}>
-          {tx('ปิดหน้าต่างใบเซอร์')}
-        </button>
-      </div>
-      <div className="receipt-summary-box">
-        <div>
-          <span className="muted-inline">{tx('นักวิ่ง')}</span>
-          <strong>{reg.participantNameTh}</strong>
-        </div>
-        <div>
-          <span className="muted-inline">Chip Time / Gun Time</span>
-          <strong className="mono-num text-forest">
-            {res.chipTime} / {res.gunTime}
-          </strong>
-        </div>
-        <div>
-          <span className="muted-inline">Overall Rank</span>
-          <strong className="mono-num">{res.overallRank}</strong>
-        </div>
-        <div>
-          <span className="muted-inline">Age Group Rank</span>
-          <strong className="mono-num">{res.categoryRank}</strong>
-        </div>
-      </div>
-    </div>
+    <p className="reg-event-status">
+      <span className="reg-event-status-label">{tx('สถานะงาน')}</span>
+      <EventPhasePill phase={phase} />
+      {detail && <span className="reg-event-status-detail">{detail}</span>}
+    </p>
   );
 }
 

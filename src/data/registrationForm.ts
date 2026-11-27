@@ -249,15 +249,21 @@ export type FormDraft = { fields: CustomRegistrationField[]; steps: OrganizerFor
 export function normalizeForm(
   raw: unknown,
   prev: FormDraft,
-  answered: AnsweredIndex
+  answered: AnsweredIndex,
+  /**
+   * The step order of 27 Nov 2026 (formFlow.ts), already checked by normalizeFormFlow: questions may
+   * sit in any of its steps, steps are not limited to 3 and may be empty (the runner skips them).
+   * The returned `steps` is then empty; the caller derives the organizer's steps from the flow.
+   */
+  flowMode?: { stepIds: string[]; defaultStep: string }
 ): { ok: true; value: FormDraft; summary: string } | { ok: false; error: string } {
   const r = (raw ?? {}) as { fields?: unknown; steps?: unknown };
-  if (!Array.isArray(r.fields) || !Array.isArray(r.steps)) return { ok: false, error: 'ข้อมูลฟอร์มไม่ถูกต้อง' };
+  if (!Array.isArray(r.fields) || (!flowMode && !Array.isArray(r.steps))) return { ok: false, error: 'ข้อมูลฟอร์มไม่ถูกต้อง' };
   if (r.fields.length > FORM_LIMITS.fields) return { ok: false, error: `ฟอร์มมีคำถามได้ไม่เกิน ${FORM_LIMITS.fields} ข้อ` };
 
   // steps
   const steps: OrganizerFormStep[] = [];
-  for (const s of r.steps as Record<string, unknown>[]) {
+  for (const s of (flowMode ? [] : r.steps) as Record<string, unknown>[]) {
     const id = String(s?.id ?? '');
     if (!ID_RE.test(id) || id === CORE_STEP) return { ok: false, error: 'รหัสขั้นตอนไม่ถูกต้อง' };
     if (steps.some((x) => x.id === id)) return { ok: false, error: 'มีขั้นตอนซ้ำกัน' };
@@ -273,7 +279,7 @@ export function normalizeForm(
       ...(s?.hidden === true ? { hidden: true } : {}),
     });
   }
-  if (steps.filter((s) => !s.hidden).length > FORM_LIMITS.steps) return { ok: false, error: `เพิ่มขั้นตอนของผู้จัดได้ไม่เกิน ${FORM_LIMITS.steps} ขั้น` };
+  if (!flowMode && steps.filter((s) => !s.hidden).length > FORM_LIMITS.steps) return { ok: false, error: `เพิ่มขั้นตอนของผู้จัดได้ไม่เกิน ${FORM_LIMITS.steps} ขั้น` };
 
   // fields
   const prevById = new Map(prev.fields.map((f) => [f.id, f]));
@@ -283,7 +289,13 @@ export function normalizeForm(
     if (!ID_RE.test(id)) return { ok: false, error: 'รหัสคำถามไม่ถูกต้อง' };
     if (fields.some((x) => x.id === id)) return { ok: false, error: 'มีคำถามซ้ำกัน' };
     const before = prevById.get(id);
-    const stepKey = typeof f?.stepKey === 'string' && steps.some((s) => s.id === f.stepKey) ? (f.stepKey as string) : CORE_STEP;
+    const stepKey = flowMode
+      ? typeof f?.stepKey === 'string' && flowMode.stepIds.includes(f.stepKey)
+        ? (f.stepKey as string)
+        : flowMode.defaultStep
+      : typeof f?.stepKey === 'string' && steps.some((s) => s.id === f.stepKey)
+        ? (f.stepKey as string)
+        : CORE_STEP;
 
     // fields the platform locked: kept exactly; configurable: only "required" may change
     if (before?.policy === 'LOCKED') {
@@ -405,14 +417,14 @@ export function normalizeForm(
       return { ok: false, error: `"${before.label}" เป็นช่องที่แพลตฟอร์มล็อกไว้ ลบไม่ได้` };
     }
   }
-  // steps that hold answered questions stay (they may be hidden)
-  for (const s of prev.steps) {
+  // steps that hold answered questions stay (they may be hidden); in flow mode normalizeFormFlow checks it
+  for (const s of flowMode ? [] : prev.steps) {
     if (steps.some((x) => x.id === s.id)) continue;
     const holds = prev.fields.some((f) => f.stepKey === s.id && answered.fieldIds.has(f.id));
     if (holds) return { ok: false, error: `ขั้น "${s.title}" มีคำถามที่คนตอบแล้ว ลบไม่ได้ ใช้ "ซ่อน" แทน` };
   }
-  // a step runners can reach needs a question
-  for (const s of steps) {
+  // a step runners can reach needs a question (an empty step is skipped in flow mode, 27 Nov 2026)
+  for (const s of flowMode ? [] : steps) {
     if (s.hidden) continue;
     const has = fields.some((f) => f.stepKey === s.id && !f.hidden && !isContentField(f));
     if (!has) return { ok: false, error: `ขั้น "${s.title}" ยังไม่มีคำถาม ใส่อย่างน้อย 1 ข้อหรือลบขั้นนี้` };
@@ -421,7 +433,7 @@ export function normalizeForm(
   const pending = fields.filter((f) => f.approval === 'pending').length;
   const summary = [
     `คำถาม ${fields.filter((f) => !isContentField(f) && !f.hidden).length} ข้อ`,
-    `ขั้นของผู้จัด ${steps.filter((s) => !s.hidden).length} ขั้น`,
+    ...(flowMode ? [] : [`ขั้นของผู้จัด ${steps.filter((s) => !s.hidden).length} ขั้น`]),
     ...(pending ? [`รอ Platform Owner อนุมัติ ${pending} ข้อ`] : []),
   ].join(' · ');
   return { ok: true, value: { fields, steps }, summary };

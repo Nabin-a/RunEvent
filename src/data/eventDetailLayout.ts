@@ -100,7 +100,7 @@ export function pageOf(ev: Pick<RaceEvent, 'detailLayout' | 'detailCustomBlocks'
     customBlocks: ev.detailCustomBlocks ?? [],
     ...(ev.detailRegisterCard ? { card: ev.detailRegisterCard } : {}),
     // without it, blocks the organizer deleted would come back (built-in blocks are re-added to old pages)
-    ...(ev.detailPageV === 2 ? { v: 2 as const } : {}),
+    ...(ev.detailPageV === 2 || ev.detailPageV === 3 ? { v: ev.detailPageV } : {}),
   };
 }
 
@@ -113,6 +113,8 @@ export function layoutEntries(page: EventDetailPage): { item: EventDetailLayoutI
   const customs = new Map(page.customBlocks.map((c) => [c.id, c]));
   // nested blocks are drawn inside their container, not in the layout
   const seen = new Set<string>(nestedPlaces(page).keys());
+  // a freely arranged page (v 3, 27 Nov 2026) may hide or remove built-in blocks like any other
+  const free = page.v === 3;
   const out: { item: EventDetailLayoutItem; resolved: ResolvedDetailBlock }[] = [];
   const push = (item: EventDetailLayoutItem) => {
     const key = item.block;
@@ -121,8 +123,8 @@ export function layoutEntries(page: EventDetailPage): { item: EventDetailLayoutI
       const def = coreBlockDef(key);
       seen.add(key);
       out.push({
-        // locked blocks are always shown, whatever was saved
-        item: { block: key, visible: def.locked ? true : item.visible },
+        // locked blocks are always shown, whatever was saved (not on a freely arranged page)
+        item: { block: key, visible: def.locked && !free ? true : item.visible, ...(item.lock ? { lock: item.lock } : {}) },
         resolved: {
           id: key,
           sectionId: def.sectionId,
@@ -140,7 +142,7 @@ export function layoutEntries(page: EventDetailPage): { item: EventDetailLayoutI
     seen.add(key);
     out.push({
       // a free block holding a locked built-in block is always shown too
-      item: { block: key, visible: holdsLocked(block) ? true : item.visible },
+      item: { block: key, visible: holdsLocked(block) && !free ? true : item.visible, ...(item.lock ? { lock: item.lock } : {}) },
       resolved: {
         id: key,
         sectionId: `sec-custom-${block.id}`,
@@ -154,7 +156,7 @@ export function layoutEntries(page: EventDetailPage): { item: EventDetailLayoutI
   page.layout.forEach(push);
   // older pages: built-in blocks they do not mention come back (they are converted to free blocks on
   // read, see eventPageConvert.ts); a converted page (v 2) only has what the organizer kept
-  if (page.v !== 2) for (const def of EVENT_DETAIL_BLOCKS) if (!seen.has(def.id)) push({ block: def.id, visible: true });
+  if (page.v !== 2 && !free) for (const def of EVENT_DETAIL_BLOCKS) if (!seen.has(def.id)) push({ block: def.id, visible: true });
   return out;
 }
 
@@ -468,14 +470,16 @@ export function normalizeDetailPage(input: unknown): PageCheck {
     if (!isCoreBlock(key) && !(cid && blocks.some((b) => b.id === cid))) continue;
     if (nested.has(key)) continue;
     if (layout.some((l) => l.block === key)) continue;
-    layout.push({ block: key as EventDetailLayoutKey, visible: it.visible !== false });
+    const lock = it.lock === 'position' || it.lock === 'all' ? it.lock : undefined;
+    layout.push({ block: key as EventDetailLayoutKey, visible: it.visible !== false, ...(lock ? { lock } : {}) });
   }
   // every free block must be placed; every built-in block present; locked ones visible
   for (const b of blocks) {
     const key = customKey(b.id);
     if (!nested.has(key) && !layout.some((l) => l.block === key)) layout.push({ block: key, visible: true });
   }
-  const version = (raw as { v?: unknown }).v === 2 ? (2 as const) : undefined;
+  const rawV = (raw as { v?: unknown }).v;
+  const version = rawV === 2 || rawV === 3 ? rawV : undefined;
   const fixed = layoutEntries({ layout, customBlocks: blocks, ...(version ? { v: version } : {}) }).map((e) => e.item);
   if (JSON.stringify(blocks).length > PAGE_LIMITS.pageChars) {
     return { ok: false, error: 'หน้านี้มีภาพและไฟล์รวมกันใหญ่เกินไป (ประมาณ 6 MB) ลดจำนวนภาพหรือไฟล์ลง' };

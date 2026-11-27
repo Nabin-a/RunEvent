@@ -37,6 +37,8 @@ import { PRIVACY_NOTICE_VERSION } from '../src/data/privacyNotice';
 import { normalizeDetailPage, normalizePageContent } from '../src/data/eventDetailLayout';
 import { missingRequiredData } from '../src/data/eventPageConvert';
 import { answeredIndex, normalizeForm, validateAnswers } from '../src/data/registrationForm';
+import { formGate } from '../src/data/publishState';
+import { registerPublishingRoutes, runDuePublishes, type PublishingDeps } from './publishing';
 import { AVATAR_MAX_DATA_URL_CHARS, MAX_EMERGENCY_CONTACTS } from '../src/data/runnerProfileDefaults';
 import { firstFriendContactProblem, friendContactProblems } from '../src/utils/friendContact';
 import { cloneCustomFieldsSchema, isTotalQuotaEnabled, validateQuotaUpdate } from '../src/utils/eventConfig';
@@ -1487,7 +1489,14 @@ app.post('/api/registrations', (req, res) => {
         else if (typeof v === 'boolean') answers[k] = v;
       }
     }
-    const answerProblems = validateAnswers(ev.customFields ?? [], answers, {
+    // the form version this runner filled in (27 Nov 2026): a runner who started before a new version
+    // went live, or before web registration was paused, finishes on what they saw (within a grace time)
+    const gate = formGate(ev, typeof payload.formVersion === 'string' ? payload.formVersion : undefined, Date.now());
+    if (!gate.ok) {
+      db.exec('ROLLBACK');
+      return res.status(409).json({ ok: false, error: gate.error });
+    }
+    const answerProblems = validateAnswers(gate.fields, answers, {
       raceDistance: cat.code,
       shirtSize: String(payload.shirtSize ?? ''),
     });
@@ -1599,7 +1608,7 @@ app.post('/api/registrations', (req, res) => {
         : undefined,
       participantSnapshot: payload.participantSnapshot,
       customAnswers: answers,
-      formVersionUsed: ev.publishedFormVersion,
+      formVersionUsed: gate.versionLabel,
       bibNumber: null,
       qrCheckInToken: `TKN-${cat.bibPrefix}${seq}-${tokenSuffix}`,
       acceptedRulesVersion: ev.rulesVersion,
@@ -2870,7 +2879,13 @@ app.patch('/api/events/:id', (req, res) => {
   // The registration form (24 Nov 2026): questions and the organizer's own steps, checked by the
   // shared rules (src/data/registrationForm.ts) against what runners already answered. Saving
   // publishes a new form version; registrations keep the version they were made with.
+  // Closed 27 Nov 2026: the form is saved as a draft and published through the combined editor
+  // (POST /api/events/:id/form/<action>, server/publishing.ts), which keeps the step order.
   if (patch.form !== undefined || Array.isArray(patch.customFields)) {
+    return res.status(410).json({ ok: false, error: 'แก้ฟอร์มสมัครได้ที่เมนู "หน้างานและฟอร์มสมัคร"' });
+  }
+  // (closed, kept for reference)
+  if (false as boolean) {
     if (!hasOrgRole(user, target.organizationId, ['owner', 'event_manager'], target.id)) {
       return res.status(403).json({ ok: false, error: 'เฉพาะเจ้าขององค์กรหรือผู้จัดการงานจึงแก้ฟอร์มสมัครได้' });
     }
@@ -2891,6 +2906,9 @@ app.patch('/api/events/:id', (req, res) => {
     const versionLabel = `v${history.length + 2}-organizer`;
     nextEv.customFields = checked.value.fields;
     nextEv.formCustomSteps = checked.value.steps;
+    // the older editor knows only the organizer's steps: the order goes back to the default one built
+    // from them (27 Nov 2026; this route goes away with the combined editor, phase 4)
+    delete nextEv.formFlow;
     nextEv.publishedFormVersion = versionLabel;
     nextEv.formVersionHistory = [
       ...history,
@@ -2937,12 +2955,17 @@ app.patch('/api/events/:id', (req, res) => {
   if (patch.detailPageDraft !== undefined || patch.detailPagePublish) {
     return res.status(410).json({
       ok: false,
-      error: 'หน้ารายละเอียดงานใช้แม่แบบเดียวทุกงานแล้ว แก้ข้อความได้ที่เมนู "เนื้อหาหน้างาน"',
+      error: 'แก้หน้ารายละเอียดงานได้ที่เมนู "หน้างานและฟอร์มสมัคร"',
     });
   }
 
   // Page content (organizer): about, highlights, race pack, schedule, register card text.
+  // Closed 27 Nov 2026: the page text is edited in the combined editor as a draft and published
+  // there (POST /api/events/:id/page/<action>), so nothing goes live without publishing.
   if (patch.pageContent !== undefined) {
+    return res.status(410).json({ ok: false, error: 'แก้หน้ารายละเอียดงานได้ที่เมนู "หน้างานและฟอร์มสมัคร"' });
+  }
+  if (false as boolean) {
     if (!hasOrgRole(user, target.organizationId, ['owner', 'event_manager'], target.id)) {
       return res.status(403).json({
         ok: false,
@@ -3169,6 +3192,30 @@ app.patch('/api/events/:id', (req, res) => {
   upsertEventRow(nextEv);
   return okSnapshot(res, user!.id);
 });
+
+/* ==================== PAGE AND FORM PUBLISHING (27 Nov 2026) ==================== */
+const publishingDeps: PublishingDeps = {
+  db,
+  sessionUser: (req) => resolveSessionUser(req).user,
+  canEdit: (user, ev) => hasOrgRole(user, ev.organizationId, ['owner', 'event_manager'], ev.id),
+  audit: (user, ev, summary, detail) => {
+    if (user) return recordAudit(user, ev.organizationId, summary, detail, ev.id);
+    // a timed publish: done by the system on the organizer's behalf
+    insertAuditLog({
+      id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      organizationId: ev.organizationId,
+      eventId: ev.id,
+      timestamp: nowThaiStamp(),
+      actorName: 'ระบบ (เผยแพร่ตามเวลาที่ตั้ง)',
+      actorRole: 'ระบบ',
+      actionSummary: summary,
+      detailChange: detail,
+    });
+  },
+  saveEvent: (ev) => upsertEventRow(ev),
+  reply: (res, userId, extra) => okSnapshot(res, userId, extra),
+};
+registerPublishingRoutes(app, publishingDeps);
 
 app.patch('/api/admin/profile-config', (req, res) => {
   const { user } = resolveSessionUser(req);
@@ -3891,6 +3938,10 @@ if (process.env.SERVE_STATIC === '1' || process.env.NODE_ENV === 'production') {
 
 const PORT = Number(process.env.API_PORT || 3001);
 const HOST = process.env.API_HOST || '127.0.0.1';
+// timed publishes: once at start (anything that fell due while the server was down), then every 30 s
+runDuePublishes(publishingDeps);
+setInterval(() => runDuePublishes(publishingDeps), 30 * 1000).unref();
+
 app.listen(PORT, HOST, () => {
   console.log(`[Kratai API] SQLite server listening on http://${HOST}:${PORT} (DB: ${DB_FILE_PATH})`);
   console.log(`[Kratai API] sandbox tools: ${SANDBOX_TOOLS ? 'ON (dev switcher, reset, simulated social sign-in)' : 'OFF'}`);

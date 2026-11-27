@@ -1,11 +1,13 @@
 import qrcode from 'qrcode-generator';
 import { createPortal } from 'react-dom';
 import type { MerchOrderRecord, RaceCategory, RaceEvent, RegistrationRecord } from '../types';
-import { getLang, tx } from '../i18n';
+import { getLang, tx, txf } from '../i18n';
+import { formatBasisDate } from '../utils/age';
 import { formatThb } from '../utils/pricing';
 import { FaIcon } from './FaIcon';
 import { IconClose } from './Icons';
-import { RegistrationDone } from './RegistrationReview';
+import { RegSnapshotDetails } from './RegistrationHistoryParts';
+import { RegistrationDone, type DoneTone } from './RegistrationReview';
 import { useEscapeToClose } from './modalShared';
 
 /**
@@ -39,6 +41,10 @@ export function confirmationItems(params: {
     // the event's name, so a printed or saved copy says which race it is
     ...(eventName ? [{ label: tx('งานวิ่ง'), value: tx(eventName) }] : []),
     { label: tx('รหัสใบสมัครวิ่ง'), value: reg.regCode, mono: true },
+    // the BIB, once the entry is paid (moved here from the history card's QR box, 27 Nov 2026)
+    ...(reg.registrationStatus === 'confirmed'
+      ? [{ label: tx('เลข BIB'), value: reg.bibNumber ?? tx('รอกำหนด BIB'), mono: Boolean(reg.bibNumber) }]
+      : []),
     { label: tx('ผู้เข้าแข่งขัน'), value: tx(reg.participantNameTh) },
     ...(category ? [{ label: tx('ระยะ'), value: tx(category.name) }] : []),
     { label: tx('เสื้อตามสิทธิ์สมัคร'), value: `${tx('ไซส์')} ${tx(reg.shirtSize)}` },
@@ -55,11 +61,31 @@ export function confirmationItems(params: {
   ];
 }
 
-/** the check-in QR, only once the entry is paid */
-export function confirmationQr(reg: RegistrationRecord) {
+/** the mark at the top: a check only once paid, a clock while waiting for payment */
+export function confirmationTone(reg: RegistrationRecord): DoneTone {
   return reg.registrationStatus === 'confirmed'
-    ? { value: reg.qrCheckInToken, caption: tx('QR รับอุปกรณ์ แสดงที่จุดเช็กอิน') }
-    : undefined;
+    ? 'success'
+    : reg.registrationStatus === 'pending_payment'
+      ? 'pending'
+      : 'stopped';
+}
+
+/** print and download are offered only for a paid entry (27 Nov 2026, user request) */
+export const confirmationIsPaid = (reg: RegistrationRecord) => reg.registrationStatus === 'confirmed';
+
+/** the check-in QR, only once the entry is paid; once the kit is picked up it says so under the
+    QR and the QR is drawn faded, so nobody tries to use it again (27 Nov 2026, user request) */
+export function confirmationQr(
+  reg: RegistrationRecord
+): { value: string; caption: string; used?: string } | undefined {
+  if (reg.registrationStatus !== 'confirmed') return undefined;
+  const picked = reg.fulfillmentStatus === 'kit_picked_up';
+  const when = reg.fulfillmentUpdatedAt ? formatBasisDate(reg.fulfillmentUpdatedAt.slice(0, 10)) : '';
+  return {
+    value: reg.qrCheckInToken,
+    caption: tx('QR รับอุปกรณ์ แสดงที่จุดเช็กอิน'),
+    used: picked ? (when ? txf('รับอุปกรณ์แล้ว {0}', when) : tx('รับอุปกรณ์แล้ว')) : undefined,
+  };
 }
 
 const esc = (s: string) =>
@@ -69,7 +95,7 @@ const esc = (s: string) =>
 export function downloadConfirmationImage(params: {
   title: string;
   items: ConfirmationItem[];
-  qr?: { value: string; caption: string };
+  qr?: { value: string; caption: string; used?: string };
   fileName: string;
 }) {
   const W = 900;
@@ -78,7 +104,7 @@ export function downloadConfirmationImage(params: {
   const top = 150;
   const qrSize = params.qr ? 260 : 0;
   const listH = params.items.length * rowH;
-  const H = top + listH + (params.qr ? qrSize + 110 : 40) + 40;
+  const H = top + listH + (params.qr ? qrSize + (params.qr.used ? 140 : 110) : 40) + 40;
 
   let qrSvg = '';
   if (params.qr) {
@@ -94,7 +120,12 @@ export function downloadConfirmationImage(params: {
     const y = top + listH + 30;
     qrSvg = `<svg x="${(W - qrSize) / 2}" y="${y}" width="${qrSize}" height="${qrSize}" viewBox="0 0 ${box} ${box}" shape-rendering="crispEdges"><rect width="${box}" height="${box}" fill="#ffffff"/><path d="${d}" fill="#000000"/></svg>
   <text x="${W / 2}" y="${y + qrSize + 34}" text-anchor="middle" fill="#475569" font-family="${font}" font-size="20">${esc(params.qr.caption)}</text>
-  <text x="${W / 2}" y="${y + qrSize + 64}" text-anchor="middle" fill="#34495f" font-family="monospace" font-size="18">${esc(params.qr.value)}</text>`;
+  <text x="${W / 2}" y="${y + qrSize + 64}" text-anchor="middle" fill="#34495f" font-family="monospace" font-size="18">${esc(params.qr.value)}</text>${
+    params.qr.used
+      ? `
+  <text x="${W / 2}" y="${y + qrSize + 94}" text-anchor="middle" fill="#157347" font-family="${font}" font-size="20" font-weight="700">${esc(params.qr.used)}</text>`
+      : ''
+  }`;
   }
 
   const rows = params.items
@@ -160,7 +191,7 @@ export function ConfirmationFileActions({
 }: {
   title: string;
   items: ConfirmationItem[];
-  qr?: { value: string; caption: string };
+  qr?: { value: string; caption: string; used?: string };
   fileName: string;
 }) {
   return (
@@ -210,8 +241,23 @@ export function ConfirmationModal({
         <button type="button" className="reg-confirm-close" aria-label={tx('ปิด')} onClick={onClose}>
           <IconClose size={18} />
         </button>
-        <RegistrationDone title={title} items={items} qr={qr}>
-          <ConfirmationFileActions title={title} items={items} qr={qr} fileName={reg.regCode} />
+        <RegistrationDone
+          title={title}
+          items={items}
+          qr={qr}
+          tone={confirmationTone(reg)}
+          details={
+            /* the entry details saved at sign-up, folded away; shown on screen only, never in
+               the printed or downloaded copy (27 Nov 2026, user request: one button) */
+            <details className="reg-done-more">
+              <summary>{tx('ดูรายละเอียดใบสมัคร')}</summary>
+              <RegSnapshotDetails reg={reg} />
+            </details>
+          }
+        >
+          {confirmationIsPaid(reg) && (
+            <ConfirmationFileActions title={title} items={items} qr={qr} fileName={reg.regCode} />
+          )}
           <button type="button" className="btn-primary" onClick={onClose}>
             {tx('ปิด')}
           </button>

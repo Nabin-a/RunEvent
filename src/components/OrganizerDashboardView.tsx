@@ -1,12 +1,7 @@
-import { EventPageContent } from './EventPageContent';
-import { RegistrationFormEditor } from './RegistrationFormEditor';
+import { EventStudio, type PublishCall } from './EventStudio';
 import React, { useMemo, useState } from 'react';
 import {
   AuditLogEntry,
-  CustomRegistrationField,
-  OrganizerFormStep,
-  EventCoreText,
-  EventRegisterCardConfig,
   FeeBearerPolicy,
   MerchOrderRecord,
   Organization,
@@ -74,7 +69,9 @@ export type OrgSection =
   /** shirts, kit shipping fee and production quote (split from evt_pricing_quota, 24 Nov 2026) */
   | 'evt_kit'
   /** registration form editor (mounted by the form editor work, 24 Nov 2026) */
-  | 'evt_form_editor';
+  | 'evt_form_editor'
+  /** the event page and the registration form in one editor, with publishing states (27 Nov 2026) */
+  | 'evt_studio';
 
 interface OrganizerDashboardViewProps {
   currentUser: UserAccount;
@@ -156,16 +153,9 @@ interface OrganizerDashboardViewProps {
     categoryId: string,
     config: AgeConfigValid
   ) => Promise<{ ok: boolean; error?: string }>;
-  /** page content (24 Nov 2026): the text of the one-template event page */
-  /** registration form editor (24 Nov 2026): publish the organizer's questions and steps */
-  onSaveRegistrationForm: (
-    eventId: string,
-    form: { fields: CustomRegistrationField[]; steps: OrganizerFormStep[] }
-  ) => Promise<{ ok: boolean; error?: string }>;
-  onSavePageContent: (
-    eventId: string,
-    content: { coreText: Required<EventCoreText>; card: EventRegisterCardConfig }
-  ) => Promise<{ ok: boolean; error?: string }>;
+  /** the combined page and form editor's publishing actions (27 Nov 2026; it replaced the page
+   *  content and form editor saves) */
+  onStudioCall?: (eventId: string, ...args: Parameters<PublishCall>) => ReturnType<PublishCall>;
   onUpdateEventMedia?: (eventId: string, patch: EventMediaPatch) => void;
   platformProfileConfig?: PlatformProfileConfig;
   onUpdateEventShirtConfig?: (
@@ -433,8 +423,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
   onUpdateEventKitShipping,
   onUpdateCategoryQuota,
   onUpdateCategoryAgeRules,
-  onSavePageContent,
-  onSaveRegistrationForm,
+  onStudioCall,
   onUpdateEventMedia,
   platformProfileConfig = DEFAULT_PLATFORM_PROFILE_CONFIG,
   onUpdateEventShirtConfig,
@@ -1020,14 +1009,15 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
               />
             )}
 
-            {/* ================= 7. EVENT PRICING, SHIRT SIZES & PRODUCTION QUOTE ================= */}
-            {/* the event page is one template (24 Nov 2026): this menu edits its text only */}
-            {/* the registration form editor (24 Nov 2026): questions and the organizer's own steps */}
-            {selectedEvent && activeSection === 'evt_form_editor' && (
-              <RegistrationFormEditor
+            {/* ================= 7. EVENT PAGE AND REGISTRATION FORM ================= */}
+            {/* one editor for both (27 Nov 2026, user request); the older menus "เนื้อหาหน้างาน" and
+                "ฟอร์มสมัคร" open it too (links and saved places from before) */}
+            {selectedEvent && (activeSection === 'evt_studio' || activeSection === 'evt_page_editor' || activeSection === 'evt_form_editor') && onStudioCall && (
+              <EventStudio
                 key={selectedEvent.id}
                 event={selectedEvent}
                 canEdit={canManageEventConfig}
+                startPart={activeSection === 'evt_form_editor' ? 'form' : 'page'}
                 answerCounts={(() => {
                   const counts: Record<string, number> = {};
                   for (const r of orgRegistrations) {
@@ -1038,25 +1028,16 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                   }
                   return counts;
                 })()}
-                onPublish={(form) => onSaveRegistrationForm(selectedEvent.id, form)}
-              />
-            )}
-
-            {selectedEvent && activeSection === 'evt_page_editor' && (
-              <EventPageContent
-                key={selectedEvent.id}
-                event={selectedEvent}
-                canEdit={canManageEventConfig}
-                onSave={(content) => onSavePageContent(selectedEvent.id, content)}
+                call={(part, action, body) => onStudioCall(selectedEvent.id, part, action, body)}
                 onOpenSection={(section) => onSelectSection(section as OrgSection)}
-              />
-            )}
-            {/* cover images moved here from the old event overview (approved mockup, 24 Nov 2026) */}
-            {selectedEvent && activeSection === 'evt_page_editor' && (
-              <EventMediaManager
-                event={selectedEvent}
-                canEdit={canManageEventConfig}
-                onSave={(patch) => onUpdateEventMedia?.(selectedEvent.id, patch)}
+                // cover images moved here from the page content menu (27 Nov 2026)
+                media={
+                  <EventMediaManager
+                    event={selectedEvent}
+                    canEdit={canManageEventConfig}
+                    onSave={(patch) => onUpdateEventMedia?.(selectedEvent.id, patch)}
+                  />
+                }
               />
             )}
 
@@ -1068,7 +1049,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                 registrations={orgRegistrations.filter((r) => r.eventId === selectedEvent.id)}
                 canEdit={canManageEventConfig}
                 onSaveCategoryQuota={(categoryId, next) => onUpdateCategoryQuota(selectedEvent.id, categoryId, next)}
-                onOpenFormEditor={() => onSelectSection('evt_form_editor')}
+                onOpenFormEditor={() => onSelectSection('evt_studio')}
                 totalQuotaControl={
                   <div className="total-quota-banner">
                     <TotalQuotaSwitch
@@ -1129,7 +1110,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
                     ...q,
                   })
                 }
-                onOpenPageContent={() => onSelectSection('evt_page_editor')}
+                onOpenPageContent={() => onSelectSection('evt_studio')}
                 onOpenAllRequests={() => onSelectEvent(null, 'org_merch_production')}
               />
             )}
