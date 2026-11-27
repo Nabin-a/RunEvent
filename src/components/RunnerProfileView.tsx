@@ -10,6 +10,7 @@ import { RequiredFieldText } from './RequiredFieldText';
 import { useThemeId } from '../theme';
 import { themedMascot } from './mascotArt';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useDismiss } from '../utils/useDismiss';
 import Swal from 'sweetalert2';
 import type {
   AuthProviderType,
@@ -210,6 +211,9 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     rawInitialTab === 'security' ? 'privacy' : rawInitialTab;
   const [activeTab, setActiveTab] = useState<RunnerProfileTab>(initialTab);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // the phone section menu closes on a press outside it (27 Nov 2026)
+  const profileNavRef = useRef<HTMLElement | null>(null);
+  useDismiss(mobileNavOpen, [profileNavRef], () => setMobileNavOpen(false));
   const [banner, setBanner] = useState<{
     tone: 'ok' | 'err';
     text: string;
@@ -844,6 +848,20 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
       showResultModalAlert(false, errMsg);
       return;
     }
+    // phone and email are required (27 Nov 2026, user request); the browser marks the empty
+    // field, this message says why the save stopped
+    if (phoneInput.replace(/\D/g, '').length < 9) {
+      const errMsg = tx('กรุณากรอกเบอร์โทรศัพท์ให้ครบ');
+      setBanner({ tone: 'err', text: errMsg });
+      showResultModalAlert(false, errMsg);
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.trim())) {
+      const errMsg = tx('กรุณากรอกที่อยู่อีเมลให้ถูกต้อง');
+      setBanner({ tone: 'err', text: errMsg });
+      showResultModalAlert(false, errMsg);
+      return;
+    }
     // Contact email is edited in this form and saved first (it has its own API).
     const nextEmail = emailInput.trim();
     const emailChanged = nextEmail !== (user.contactEmail ?? '');
@@ -1144,6 +1162,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
       {/* WORKSPACE LAYOUT: STICKY SUB-NAVIGATION + ACTIVE MODULE */}
       <div className="runner-profile-grid">
         <nav
+          ref={profileNavRef}
           className={`runner-profile-nav clean-panel ${mobileNavOpen ? 'is-mobile-open' : ''
             }`}
           aria-label={tx('หมวดจัดการโปรไฟล์นักวิ่ง')}
@@ -1314,7 +1333,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                 <div className="runner-avatar-controls">
                   <strong>{tx('รูปโปรไฟล์นักวิ่ง')}</strong>
                   <span className="muted-inline">
-                    {tx('JPG, PNG หรือ WebP ไม่เกิน 5 MB ครอปและซูมได้ก่อนบันทึก')}
+                    {tx('JPG, PNG หรือ WebP ไม่เกิน 10 MB ครอปและซูมได้ก่อนบันทึก')}
                   </span>
                   <div className="cta-inline-row">
                     <label className="btn-secondary file-pick-btn">
@@ -1332,7 +1351,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                           if (f.size > AVATAR_MAX_FILE_BYTES) {
                             setBanner({
                               tone: 'err',
-                              text: tx('ไฟล์รูปใหญ่เกิน 5 MB กรุณาเลือกไฟล์ที่เล็กลง'),
+                              text: tx('ไฟล์รูปใหญ่เกิน 10 MB กรุณาเลือกไฟล์ที่เล็กลง'),
                             });
                             return;
                           }
@@ -1502,17 +1521,23 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
               <h3>{tx('ข้อมูลติดต่อ')}</h3>
               <div className="form-grid-2">
                 <div className="form-row">
-                  <label htmlFor="rp-phone">{tx('เบอร์โทรศัพท์')}</label>
+                  {/* phone and email are required on the profile (27 Nov 2026, user request) */}
+                  <label htmlFor="rp-phone">
+                    <RequiredFieldText text={tx('เบอร์โทรศัพท์ *')} />
+                  </label>
                   <PhoneInput
                     id="rp-phone"
                     value={phoneInput}
                     onChange={(next) => setPhoneInput(next)}
+                    required
                   />
                 </div>
 
                 <div className="form-row">
                   <div className="email-readonly-head">
-                    <label htmlFor="rp-email">{tx('อีเมลติดต่อ')}</label>
+                    <label htmlFor="rp-email">
+                      <RequiredFieldText text={tx('อีเมลติดต่อ *')} />
+                    </label>
                     {!FEATURES.emailVerification ? null : user.emailVerified && user.contactEmail ? (
                       <span
                         className="status-pill badge-forest status-pill-verify-icon"
@@ -1537,6 +1562,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                     onChange={(e) => setEmailInput(e.target.value)}
                     placeholder="name@example.com"
                     autoComplete="email"
+                    required
                   />
                 </div>
               </div>
@@ -1658,7 +1684,7 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
                   <strong>{tx('ยังไม่มีรายชื่อผู้ติดต่อฉุกเฉิน')}</strong>
                   <p className="muted-inline">
                     {tx(
-                      'กรุณาเพิ่มผู้ติดต่อฉุกเฉินอย่างน้อย 1 คนเพื่อความรวดเร็วในการสมัครงานวิ่ง'
+                      'กรุณาเพิ่มผู้ติดต่อฉุกเฉินอย่างน้อย 1 คนเพื่อความปลอดภัยกรณีเกิดเหตุฉุกเฉิน'
                     )}
                   </p>
                 </div>

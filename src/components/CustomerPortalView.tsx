@@ -40,7 +40,15 @@ import {
 } from './Icons';
 import { RegistrationDone } from './RegistrationReview';
 import { StorefrontView, type CartLine, type MerchCheckoutPayload, type MerchCheckoutResult } from './StorefrontView';
-import { PAYMENT_TERMS_VERSION } from './RegistrationTerms';
+import { PAYMENT_TERMS_VERSION, REGISTRATION_PRIVACY_VERSION } from './RegistrationTerms';
+import type { SouvenirLayout } from './SouvenirPicker';
+import {
+  ConfirmationFileActions,
+  ConfirmationModal,
+  confirmationItems,
+  confirmationQr,
+  confirmationTitle,
+} from './RegistrationConfirmation';
 import { displayPhone } from '../utils/phone';
 import { CategoryAgeGroups, categoryHasAgeGroups } from './EventAgeGroupsSection';
 import { ProductArt, souvenirArt } from './ProductArt';
@@ -140,6 +148,8 @@ interface CustomerPortalViewProps {
     marketingConsent: boolean;
     acceptedRules: boolean;
     acceptedPaymentTermsVersion?: string;
+    /** PDPA consent to send the entry's personal and health data to the organizer */
+    acceptedPrivacyVersion?: string;
     simulateImmediateWebhook: boolean;
     addonItems?: CartLine[];
     customAnswers?: Record<string, string | boolean>;
@@ -159,6 +169,8 @@ interface CustomerPortalViewProps {
   /** 'b' renders the alternative registration layout (sandbox review only, cannot submit) */
   /** event-wide quota box on the event detail page (dev-dock mockup for now) */
   showQuotaBox?: boolean;
+  /** souvenir step layout picked in the Dev / Demo dock */
+  souvenirLayout?: SouvenirLayout;
 }
 
 export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
@@ -182,6 +194,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   onCancelHeldRegistration,
   onCheckoutMerchCart,
   showQuotaBox = true,
+  souvenirLayout = 'accordion',
 }) => {
   // Directory filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -211,6 +224,15 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     'all' | 'open' | 'has_shop' | 'completed'
   >('all');
   const [distanceFilter, setDistanceFilter] = useState<string>('all');
+  /** after a filter is clicked, bring the results into view (27 Nov 2026, user request) */
+  const jumpToResults = () => {
+    window.setTimeout(() => {
+      const target = document.getElementById('kr-results-top');
+      if (!target) return;
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      target.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+    }, 0);
+  };
   const [regionFilter, setRegionFilter] = useState<string>('all');
 
   // Event detail & step-by-step registration state (6-step dedicated page)
@@ -243,9 +265,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   const [selectedCatId, setSelectedCatId] = useState<string>('');
   const [selectedDivisionOption, setSelectedDivisionOption] =
     useState<string>('');
+  // radio choices start empty; the runner picks each one (27 Nov 2026, user request)
   const [kitDeliveryOption, setKitDeliveryOption] = useState<
-    'expo_pickup' | 'postal'
-  >('expo_pickup');
+    'expo_pickup' | 'postal' | ''
+  >('');
   const [runnerShippingAddress, setRunnerShippingAddress] = useState(
     '199/8 ถ.ห้วยแก้ว ต.สุเทพ อ.เมือง จ.เชียงใหม่ 50200'
   );
@@ -330,11 +353,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       ? 'saved'
       : 'manual'
   );
-  const [selectedSavedAddrId, setSelectedSavedAddrId] = useState<string>(
-    currentUser?.runnerProfile?.savedAddresses?.find((a) => a.isDefault)?.id ??
-      currentUser?.runnerProfile?.savedAddresses?.[0]?.id ??
-      ''
-  );
+  const [selectedSavedAddrId, setSelectedSavedAddrId] = useState<string>('');
   // name the runner gives a new address (e.g. home / office) when saving it to the book
   const [shipAddrName, setShipAddrName] = useState('');
   const [shipRecipient, setShipRecipient] = useState(
@@ -343,7 +362,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   const [shipPhone, setShipPhone] = useState(
     currentUser?.runnerProfile?.phone ?? ''
   );
-  const [shirtTouched, setShirtTouched] = useState(false);
   const [regCascadeAddr, setRegCascadeAddr] = useState<CascadingAddressValue>({
     country: 'Thailand',
     postalCode: currentUser?.runnerProfile?.postalCode ?? '50200',
@@ -356,15 +374,17 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   // no consent checkbox on the form yet: bookings go out without marketing consent
   const [marketingConsent] = useState(false);
   // payment terms on the payment step (required, like the event rules)
+  // history: the entry whose confirmation popup is open
+  const [confirmRegId, setConfirmRegId] = useState<string | null>(null);
   const [acceptedPayTerms, setAcceptedPayTerms] = useState(false);
+  // PDPA: sending the entry's personal and health data to the organizer (27 Nov 2026, user request)
+  const [acceptedPdpa, setAcceptedPdpa] = useState(false);
   const [customAnswers, setCustomAnswers] = useState<
     Record<string, string | boolean>
   >({});
   /** the check result of the organizer's questions, by question id (shown under each one) */
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [paymentChannel, setPaymentChannel] = useState<'promptpay' | 'card'>(
-    'promptpay'
-  );
+  const [paymentChannel, setPaymentChannel] = useState<'promptpay' | 'card' | ''>('');
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   // checkout: waiting for the server, and the id that makes a retry safe (see submitRegistrationOrder)
   const [submitting, setSubmitting] = useState(false);
@@ -400,16 +420,16 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
   React.useEffect(() => {
     setRegisterForSelf(true);
-    setRegModeChosen(Boolean(currentUser));
-    setShirtTouched(false);
+    // "who is running" starts unpicked too (27 Nov 2026, user request)
+    setRegModeChosen(false);
     setShirtSize('' as ShirtSizeCode);
+    setSelectedDivisionOption('');
+    setSelectedParticipantId('');
+    setKitDeliveryOption('');
+    setSelectedSavedAddrId('');
+    setPaymentChannel('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEventId]);
-
-  // The shirt size used to be picked from the profile here; the runner now picks it on the
-  // shirt step with nothing selected first (26 Nov 2026, user request). Kept as a no-op so the
-  // callers stay simple.
-  const applyPreferredShirt = (_preferred?: string) => undefined;
 
   const applySelfProfile = () => {
     if (!currentUser) return;
@@ -438,10 +458,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     setRegIdNumber(p?.idNumber ?? '');
     setRegPhone(p?.phone ?? '');
     const contacts = p?.emergencyContacts ?? [];
-    const primaryContact =
-      contacts.find((c) => c.isPrimary) ?? contacts[0] ?? null;
-    if (primaryContact) {
-      setEmergencyContact(primaryContact.contactName, primaryContact.relationship, primaryContact.phone);
+    if (contacts.length > 0) {
+      // saved contacts: the runner picks one on the form
+      setEmergencyContact('', '', '');
     } else if (p?.emergencyContactName && p?.emergencyContactPhone) {
       setEmergencyContact(p.emergencyContactName, p.emergencyContactRelation ?? '', p.emergencyContactPhone);
     }
@@ -455,11 +474,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         ? `${p.firstName} ${p.lastName}`.trim()
         : currentUser.fullNameTh;
     setBuyerName(fullTh);
-    if (registerForSelf) {
-      applySelfProfile();
-      setRegModeChosen(true);
-      if (!shirtTouched) applyPreferredShirt(p?.preferredShirtSize);
-    }
+    // "for myself" is not picked for the runner any more; picking it fills the profile in
+    if (registerForSelf) applySelfProfile();
 
     const addrs = p?.savedAddresses ?? [];
     const defAddr = addrs.find((a) => a.isDefault) ?? addrs[0] ?? null;
@@ -467,9 +483,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     setShipPhone((prev) => prev || p?.phone || '');
     if (defAddr) {
       setShipAddrMode('saved');
-      setSelectedSavedAddrId((prev) =>
-        addrs.some((a) => a.id === prev) ? prev : defAddr.id
-      );
+      setSelectedSavedAddrId((prev) => (addrs.some((a) => a.id === prev) ? prev : ''));
       setRunnerShippingAddress(
         `${defAddr.recipientName} (${defAddr.phone}) — ${defAddr.address}, ต.${defAddr.subdistrict} อ.${defAddr.district} จ.${defAddr.province} ${defAddr.postalCode}`
       );
@@ -714,6 +728,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     setRegStep(1);
     setAcceptedRules(false);
     setAcceptedPayTerms(false);
+    setAcceptedPdpa(false);
+    // every radio choice starts empty each time the form opens (27 Nov 2026, user request)
+    setSelectedDivisionOption('');
+    setSelectedParticipantId('');
+    setKitDeliveryOption('');
+    setSelectedSavedAddrId('');
+    setPaymentChannel('');
+    setEmergencyContact('', '', '');
     setCheckoutError(null);
     setCreatedResult(null);
     setLinkedRegForMerch(prelinkRegCode);
@@ -772,13 +794,15 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       return;
     }
     if (!acceptedRules) {
-      setCheckoutError(
-        txf("กรุณาติ๊กยอมรับกติกาการแข่งขัน ({0}) ก่อนยืนยัน", selectedEvent.rulesVersion)
-      );
+      setCheckoutError(tx("กรุณาติ๊กยอมรับกติกาการแข่งขันก่อนยืนยัน"));
       return;
     }
     if (!acceptedPayTerms) {
       setCheckoutError(tx("กรุณาติ๊กยอมรับข้อกำหนดการชำระเงินและการคืนเงินก่อนยืนยัน"));
+      return;
+    }
+    if (!acceptedPdpa) {
+      setCheckoutError(tx("กรุณาติ๊กยินยอมการส่งข้อมูลส่วนบุคคลให้ผู้จัดงานก่อนยืนยัน"));
       return;
     }
 
@@ -875,6 +899,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       marketingConsent,
       acceptedRules: true,
       acceptedPaymentTermsVersion: PAYMENT_TERMS_VERSION,
+      acceptedPrivacyVersion: REGISTRATION_PRIVACY_VERSION,
       simulateImmediateWebhook: payImmediately,
       addonItems: addonItems.length > 0 ? addonItems : undefined,
       customAnswers:
@@ -1018,6 +1043,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     setRegModeChosen(false);
     setAcceptedRules(false);
     setAcceptedPayTerms(false);
+    setAcceptedPdpa(false);
+    // every radio choice starts empty each time the form opens (27 Nov 2026, user request)
+    setSelectedDivisionOption('');
+    setSelectedParticipantId('');
+    setKitDeliveryOption('');
+    setSelectedSavedAddrId('');
+    setPaymentChannel('');
+    setEmergencyContact('', '', '');
     setCheckoutError(null);
     setRegStep(1);
   };
@@ -1033,7 +1066,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             {/* same words as the account menu item (27 Nov 2026, user request) */}
             <h1>{tx("ประวัติการสมัคร & การสั่งซื้อ")}</h1>
             <p className="muted-block">
-              {tx("แยกแสดงระหว่าง ")} <strong>{tx("สิทธิ์เข้าร่วมการแข่งขัน (รับ BIB)")}</strong> {tx(" และ")}{' '}
+              {tx("แยกแสดงระหว่าง ")} <strong>{tx("สิทธิ์เข้าร่วมการแข่งขัน (รับ Race Kit)")}</strong> {tx(" และ")}{' '}
               <strong>{tx("คำสั่งซื้อสินค้าที่ระลึก")}</strong> {tx(" อย่างชัดเจนเพื่อความสะดวกรวดเร็วในวันรับของ")}
             </p>
           </div>
@@ -1103,7 +1136,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     <span className="mono-num">{tx(myRegistrations.length)}</span>)
                   </h2>
                   <p className="muted-inline">
-                    {tx("แสดง QR Token นี้ที่จุดเช็กอินนักวิ่งเพื่อรับป้าย BIB และเสื้อตามสิทธิ์สมัคร")}
+                    {tx("แสดง QR Token นี้ที่จุดเช็กอินนักวิ่งเพื่อรับ Race Kit ตามสิทธิ์สมัคร")}
                   </p>
                 </div>
                 {myRegistrations.length > 0 && (
@@ -1227,6 +1260,16 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                                 </button>
                               )}
 
+                            {/* the confirmation card in a popup, with print and download (27 Nov 2026) */}
+                            <button
+                              type="button"
+                              className="btn-ghost-sm"
+                              aria-haspopup="dialog"
+                              onClick={() => setConfirmRegId(reg.id)}
+                            >
+                              <IconQr size={14} />
+                              <span>{tx('ใบยืนยันการสมัคร')}</span>
+                            </button>
                             <button
                               type="button"
                               className="btn-ghost-sm"
@@ -1281,6 +1324,20 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               {certPreviewReg && (
                 <CertificatePreviewCard reg={certPreviewReg} onClose={() => setCertPreviewReg(null)} />
               )}
+              {(() => {
+                const reg = confirmRegId ? myRegistrations.find((r) => r.id === confirmRegId) : undefined;
+                if (!reg) return null;
+                const ev = events.find((e) => e.id === reg.eventId);
+                return (
+                  <ConfirmationModal
+                    reg={reg}
+                    event={ev}
+                    category={ev?.categories.find((c) => c.id === reg.categoryId)}
+                    addonOrders={merchOrders.filter((m) => m.linkedRegistrationCode === reg.regCode)}
+                    onClose={() => setConfirmRegId(null)}
+                  />
+                );
+              })()}
             </section>
             )}
 
@@ -1464,13 +1521,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       emergencyRelation: [emergencyRelation, setEmergencyRelation],
       emergencyPhone: [emergencyPhone, setEmergencyPhone],
       answers: [customAnswers, setCustomAnswers],
-      shirtSize: [
-        shirtSize,
-        (v) => {
-          setShirtSize(v);
-          setShirtTouched(true);
-        },
-      ],
+      shirtSize: [shirtSize, setShirtSize],
       shirtStyle: [shirtStyle, setShirtStyle],
       addonItems: [addonItems, setAddonItems],
       delivery: [kitDeliveryOption, setKitDeliveryOption],
@@ -1513,6 +1564,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       channel: [paymentChannel, setPaymentChannel],
       acceptRules: [acceptedRules, setAcceptedRules],
       acceptPayTerms: [acceptedPayTerms, setAcceptedPayTerms],
+      acceptPdpa: [acceptedPdpa, setAcceptedPdpa],
     };
     // what layout B needs besides its state: the same checks, the organizer's steps, the booking
     const formCtx = { raceDistance: activeCategory?.code, shirtSize };
@@ -1542,14 +1594,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         if (regAgeCheck && !regAgeCheck.eligible) return ageCheckMessage(regAgeCheck, activeCategory);
         const first = Object.values(problems)[0];
         if (first) return first;
-        if (!shirtTouched) {
-          if (registerForSelf) {
-            applyPreferredShirt(currentUser?.runnerProfile?.preferredShirtSize);
-          } else {
-            const pt = (currentUser?.runnerProfile?.savedParticipants ?? []).find((x) => x.id === selectedParticipantId);
-            applyPreferredShirt(pt?.preferredShirtSize);
-          }
-        }
         return null;
       }
       if (step === 5 && kitDeliveryOption === 'postal' && !reportInvalidFieldsWithin(scope)) {
@@ -1629,55 +1673,36 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         </>
       ),
       done: createdResult ? (
-          <RegistrationDone
-            title={
-              createdResult.reg.registrationStatus === 'confirmed'
-                ? tx('สมัครวิ่งและชำระเงินสำเร็จ')
-                : tx('สร้างใบจองโควตาสำเร็จ (รอผลชำระเงินภายใน 15 นาที)')
-            }
-            subtitle={
-              <>
-                {tx('บันทึกใบสมัครด้วยฟอร์มเวอร์ชัน')}{' '}
-                <span className="mono-code">{selectedEvent.publishedFormVersion ?? 'v1.2-published'}</span>{' '}
-                {tx('เรียบร้อยแล้ว')}
-              </>
-            }
-            qr={
-              createdResult.reg.registrationStatus === 'confirmed'
-                ? { value: createdResult.reg.qrCheckInToken, caption: tx('QR รับอุปกรณ์ แสดงที่จุดเช็กอิน') }
-                : undefined
-            }
-            items={[
-              { label: tx('รหัสใบสมัครวิ่ง'), value: tx(createdResult.reg.regCode), mono: true },
-              { label: tx('ผู้เข้าแข่งขัน'), value: tx(createdResult.reg.participantNameTh) },
-              ...(activeCategory ? [{ label: tx('ระยะ'), value: tx(activeCategory.name) }] : []),
-              { label: tx('เสื้อตามสิทธิ์สมัคร'), value: `${tx('ไซส์')} ${tx(createdResult.reg.shirtSize)}` },
-              ...(createdResult.addonOrders ?? []).map((o) => ({
-                label: `${tx(o.productNameTh)}${o.variantSize !== '-' ? ` · ${o.variantSize}` : ''} × ${o.quantity}`,
-                value: o.merchOrderCode,
-                mono: true,
-              })),
-              {
-                label: tx('ยอดค่าสมัครสุทธิ'),
-                value: formatThb(createdResult.reg.snapshotTotalChargedSatang, true),
-                accent: true,
-              },
-            ]}
-          >
-            <button type="button" className="btn-primary" onClick={() => onNavigate('my_orders', null)}>
-              {tx('ไปหน้าประวัติการสมัคร & การสั่งซื้อ')}
-            </button>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => {
-                setCreatedResult(null);
-                setRegStep(1);
-              }}
-            >
-              {tx('สมัครเพิ่มอีกท่าน')}
-            </button>
-          </RegistrationDone>
+          (() => {
+            // shared with the history popup (27 Nov 2026): the same items, print and download
+            const reg = createdResult.reg;
+            const title = confirmationTitle(reg);
+            const items = confirmationItems({
+              reg,
+              event: selectedEvent,
+              category: activeCategory ?? undefined,
+              addonOrders: createdResult.addonOrders ?? [],
+            });
+            const qr = confirmationQr(reg);
+            return (
+              <RegistrationDone title={title} subtitle={tx('บันทึกใบสมัครเรียบร้อยแล้ว')} qr={qr} items={items}>
+                <button type="button" className="btn-primary" onClick={() => onNavigate('my_orders', null)}>
+                  {tx('ไปหน้าประวัติการสมัคร & การสั่งซื้อ')}
+                </button>
+                <ConfirmationFileActions title={title} items={items} qr={qr} fileName={reg.regCode} />
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setCreatedResult(null);
+                    setRegStep(1);
+                  }}
+                >
+                  {tx('สมัครเพิ่มอีกท่าน')}
+                </button>
+              </RegistrationDone>
+            );
+          })()
         ) : null,
       notice: formPreview.active ? (
         <p className="form-preview-banner" role="status">
@@ -1689,7 +1714,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         setRegisterForSelf(true);
         setRegModeChosen(true);
         applySelfProfile();
-        if (!shirtTouched) applyPreferredShirt(currentUser?.runnerProfile?.preferredShirtSize);
       },
       openProfile: onOpenRunnerProfile,
       saveAddresses:
@@ -1709,6 +1733,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       <RegistrationLabView
         live={labLive}
         shared={labShared}
+        souvenirLayout={souvenirLayout}
         key={selectedEvent.id}
         event={selectedEvent}
         organization={org}
@@ -2670,7 +2695,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               type="button"
               className={`kr-chip ${distanceFilter === v ? 'is-on' : ''}`}
               aria-pressed={distanceFilter === v}
-              onClick={() => setDistanceFilter(v)}
+              onClick={() => {
+                setDistanceFilter(v);
+                jumpToResults();
+              }}
             >
               {tx(lbl)}
             </button>
@@ -2703,7 +2731,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 type="button"
                 className={`kr-tab ${quickFilter === k ? 'is-on' : ''}`}
                 aria-pressed={quickFilter === k}
-                onClick={() => setQuickFilter(k)}
+                onClick={() => {
+                  setQuickFilter(k);
+                  jumpToResults();
+                }}
               >
                 {tx(lbl)} <span className="mono-num">{countWith({ quick: k })}</span>
               </button>
@@ -2715,6 +2746,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         </div>
       </section>
 
+      {/* where a filter click scrolls to: the top of the results (or the empty note) */}
+      <div id="kr-results-top" className="kr-results-top" aria-hidden="true" />
       {filteredEvents.length === 0 ? (
         <DirectoryEmptyState
           query={searchQuery}

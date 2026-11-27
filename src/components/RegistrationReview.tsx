@@ -47,6 +47,7 @@ export function RegistrationSummary({
   totalSatang,
   onEdit,
   action,
+  consent,
 }: {
   sections: ReviewSection[];
   ledger: ReviewLedgerGroup[];
@@ -54,6 +55,8 @@ export function RegistrationSummary({
   onEdit: (step: number) => void;
   /** the step's forward action (go to payment); without it the page keeps its own buttons */
   action?: { label: string; onClick: () => void };
+  /** the agreements to tick, shown right above the pay button (27 Nov 2026, user pick "ก") */
+  consent?: ReactNode;
 }) {
   const editLink = (step: number, what: string, text = tx('แก้ไข')) => (
     <button
@@ -122,6 +125,7 @@ export function RegistrationSummary({
             <span>{tx('ยอดชำระสุทธิ')}</span>
             <strong className="mono-num">{formatThb(totalSatang, true)}</strong>
           </div>
+          {consent && <div className="reg-review-consent">{consent}</div>}
           {action && (
             <button type="button" className="btn-primary reg-review-pay" onClick={action.onClick}>
               {tx(action.label)}

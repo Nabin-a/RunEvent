@@ -945,10 +945,41 @@ export function seedDatabase(forceReset = false): void {
         }
       }
     }
+    // test data (27 Nov 2026, user request): the LINE runner (USR-902) gets an email and a phone,
+    // once, only while the stored account still has no email
+    const lineRunner = getUserById('usr-line-noemail');
+    if (lineRunner && !lineRunner.contactEmail) {
+      upsertUserRow(
+        {
+          ...lineRunner,
+          contactEmail: 'paramin.line@demo.kratai.local',
+          emailVerified: true,
+          demoRoleSummary: 'ลูกค้าทั่วไปผ่าน LINE — สั่งซื้อเสื้อที่ระลึกได้โดยไม่สมัครวิ่ง และทดสอบการตั้งรหัสผ่านในหน้าความปลอดภัยได้',
+          runnerProfile: { ...(lineRunner.runnerProfile ?? {}), phone: lineRunner.runnerProfile?.phone || '086-517-3348' },
+        },
+        { preservePasswordHash: true }
+      );
+    }
     // test data (27 Nov 2026): souvenir-free event + USR-901's unpaid entry, added once
     if (!db.prepare("SELECT 1 FROM events WHERE id = 'evt-sukhothai-2027'").get()) {
       const ev = INITIAL_EVENTS.find((e) => e.id === 'evt-sukhothai-2027');
       // same defaults the first seed gives every event
+      if (ev) {
+        upsertEventRow(
+          {
+            ...ev,
+            activeTemplateId: ev.activeTemplateId ?? 'tpl-halfmarathon',
+            totalEventQuotaEnabled: ev.totalEventQuotaEnabled ?? true,
+            publishedFormVersion: ev.publishedFormVersion ?? 'v1.2-published',
+          },
+          500
+        );
+      }
+    }
+    // test data (27 Nov 2026): two events with unisex shirts (no ชาย / หญิง / เด็ก), added once
+    for (const id of ['evt-nan-riverside-2027', 'evt-krabi-ao-nang-2027']) {
+      if (db.prepare('SELECT 1 FROM events WHERE id = ?').get(id)) continue;
+      const ev = INITIAL_EVENTS.find((e) => e.id === id);
       if (ev) {
         upsertEventRow(
           {

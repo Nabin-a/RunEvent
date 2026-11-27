@@ -39,7 +39,6 @@ import { missingRequiredData } from '../src/data/eventPageConvert';
 import { answeredIndex, normalizeForm, validateAnswers } from '../src/data/registrationForm';
 import { AVATAR_MAX_DATA_URL_CHARS, MAX_EMERGENCY_CONTACTS } from '../src/data/runnerProfileDefaults';
 import { firstFriendContactProblem, friendContactProblems } from '../src/utils/friendContact';
-import { registerReviewCommentRoutes } from './reviewComments';
 import { cloneCustomFieldsSchema, isTotalQuotaEnabled, validateQuotaUpdate } from '../src/utils/eventConfig';
 import {
   ageCheckMessage,
@@ -1404,6 +1403,13 @@ app.post('/api/registrations', (req, res) => {
       error: 'กรุณายอมรับกติกาการแข่งขันและข้อกำหนดการชำระเงินก่อนยืนยัน',
     });
   }
+  // PDPA (27 Nov 2026): the entry's personal and health data go to the organizer only with consent
+  if (!payload.acceptedPrivacyVersion) {
+    return res.status(400).json({
+      ok: false,
+      error: 'กรุณายินยอมการส่งข้อมูลส่วนบุคคลให้ผู้จัดงานก่อนยืนยัน',
+    });
+  }
 
   db.exec('BEGIN IMMEDIATE');
   try {
@@ -1598,6 +1604,7 @@ app.post('/api/registrations', (req, res) => {
       qrCheckInToken: `TKN-${cat.bibPrefix}${seq}-${tokenSuffix}`,
       acceptedRulesVersion: ev.rulesVersion,
       acceptedPaymentTermsVersion: String(payload.acceptedPaymentTermsVersion),
+      acceptedPrivacyVersion: String(payload.acceptedPrivacyVersion),
       marketingConsent: Boolean(payload.marketingConsent),
       createdAt: createdIso,
       paidAt: immediate ? createdIso : null,
@@ -3856,13 +3863,6 @@ app.post('/api/form-builder/field-requests/:id/resolve', (req, res) => {
 });
 
 /* ==================== DEV RESET TO INITIAL TEST SEED ==================== */
-
-/* ==================== REVIEW COMMENTS (testers, sandbox only) ==================== */
-registerReviewCommentRoutes(app, {
-  guard: requireSandboxTools,
-  sessionUser: (req) => resolveSessionUser(req).user,
-  now: nowIsoBangkok,
-});
 
 app.post('/api/dev/reset', requireSandboxTools, (_req, res) => {
   seedDatabase(true);

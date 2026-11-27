@@ -1,4 +1,5 @@
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
+import { useDismiss } from '../utils/useDismiss';
 import { tx, txf } from '../i18n';
 import { IconCheckCircle, IconChevronDown } from './Icons';
 import { MascotSprite, type MascotPose, restingStepPose, useStepRun } from './MascotRunner';
@@ -28,6 +29,9 @@ export function MobileStepProgress<S extends number>({
 }) {
   const [open, setOpen] = useState(false);
   const listId = useId();
+  const navRef = useRef<HTMLElement | null>(null);
+  // the list of every step closes on a press outside it (27 Nov 2026)
+  useDismiss(open, [navRef], () => setOpen(false));
   const total = steps.length;
   const index = Math.max(0, steps.findIndex((s) => s.step === current));
   const now = steps[index];
@@ -38,7 +42,7 @@ export function MobileStepProgress<S extends number>({
   const pct = ((index + 0.5) / total) * 100;
 
   return (
-    <nav className="mstep" aria-label={tx('ความคืบหน้าขั้นตอนการสมัคร')}>
+    <nav ref={navRef} className="mstep" aria-label={tx('ความคืบหน้าขั้นตอนการสมัคร')}>
       <div className="mstep-head">
         <p className="mstep-title">
           <strong>{tx(now?.label ?? '')}</strong>

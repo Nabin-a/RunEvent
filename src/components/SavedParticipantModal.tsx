@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { SavedParticipant } from '../types';
 import { getLang, tx } from '../i18n';
@@ -14,6 +14,7 @@ import { AvatarCropDialog } from './AvatarCropDialog';
 import { AVATAR_MAX_FILE_BYTES, readImageFile } from '../utils/avatarFile';
 import { DefaultAvatarImg } from './DefaultAvatar';
 import { firstFriendContactProblem, friendContactProblems } from '../utils/friendContact';
+import { reportInvalidFieldsWithin } from '../utils/formValidation';
 
 const emptyParticipant = (): SavedParticipant => ({
   id: '',
@@ -49,6 +50,12 @@ interface SavedParticipantModalProps {
   onInvalid?: (message: string) => void;
   /** the account owner's email and phone: a friend must have their own (26 Nov 2026) */
   owner: { email?: string | null; phone?: string | null };
+  /** opened from a registration: what that entry needs on top of the usual fields (the
+   *  emergency contact always; the date of birth when the distance has an age rule) */
+  entryRules?: { dob: boolean };
+  /** opened because the entry found this friend's data incomplete: mark the empty required
+   *  fields as soon as it opens (27 Nov 2026, user request) */
+  checkOnOpen?: boolean;
 }
 
 /**
@@ -63,7 +70,12 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
   onSave,
   onInvalid,
   owner,
+  entryRules,
+  checkOnOpen = false,
 }) => {
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const needDob = Boolean(entryRules?.dob);
+  const needEc = Boolean(entryRules);
   const isEn = getLang() === 'en';
   const [baseline] = useState(() => JSON.stringify({ ...emptyParticipant(), ...(participant ?? {}) }));
   const [draft, setDraft] = useState<SavedParticipant>(() => ({ ...emptyParticipant(), ...(participant ?? {}) }));
@@ -73,6 +85,16 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
   const shownContactProblems = contactCheck ? contactProblems : {};
   const [saving, setSaving] = useState(false);
   const editing = Boolean(participant);
+
+  // opened by a failed registration step: show what is missing right away
+  useEffect(() => {
+    if (!checkOnOpen) return;
+    setContactCheck(true);
+    setError(tx('ข้อมูลผู้สมัครคนนี้ยังไม่ครบ กรอกช่องที่มี * ให้ครบแล้วกดบันทึก'));
+    const t = window.setTimeout(() => reportInvalidFieldsWithin(formRef.current), 60);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const requestClose = () => confirmDiscardClose(JSON.stringify(draft) !== baseline, onCancel);
@@ -144,7 +166,7 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
       }}
     >
       <div className="runner-modal-dialog" role="dialog" aria-modal="true" aria-labelledby={`${idPrefix}-modal-title`}>
-        <form className="runner-modal-form" onSubmit={submit}>
+        <form ref={formRef} className="runner-modal-form" onSubmit={submit}>
           <div className="runner-modal-header">
             <div>
               <h3 id={`${idPrefix}-modal-title`}>{editing ? tx('แก้ไขข้อมูลผู้สมัครแทน') : tx('เพิ่มผู้สมัคร')}</h3>
@@ -173,7 +195,7 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
                 </div>
                 <div className="runner-avatar-controls">
                   <strong>{tx('รูปโปรไฟล์')}</strong>
-                  <span className="muted-inline">{tx('JPG, PNG หรือ WebP ไม่เกิน 5 MB ครอปและซูมได้ก่อนบันทึก')}</span>
+                  <span className="muted-inline">{tx('JPG, PNG หรือ WebP ไม่เกิน 10 MB ครอปและซูมได้ก่อนบันทึก')}</span>
                   <div className="cta-inline-row">
                     <label className="btn-secondary file-pick-btn">
                       <IconCamera size={15} />
@@ -187,7 +209,7 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
                           input.value = '';
                           if (!f) return;
                           if (f.size > AVATAR_MAX_FILE_BYTES) {
-                            setError(tx('ไฟล์รูปใหญ่เกิน 5 MB กรุณาเลือกไฟล์ที่เล็กลง'));
+                            setError(tx('ไฟล์รูปใหญ่เกิน 10 MB กรุณาเลือกไฟล์ที่เล็กลง'));
                             return;
                           }
                           try {
@@ -331,9 +353,12 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
 
               <div className="form-grid-2">
                 <div className="form-row">
-                  <label htmlFor={`${idPrefix}-dob`}>{tx('วันเกิด')}</label>
+                  <label htmlFor={`${idPrefix}-dob`}>
+                    {needDob ? <RequiredFieldText text={tx('วันเกิด *')} /> : tx('วันเกิด')}
+                  </label>
                   <DateOfBirthInput
                     id={`${idPrefix}-dob`}
+                    required={needDob}
                     valueIso={draft.dateOfBirth ?? ''}
                     onChangeIso={(v) =>
                       setDraft({ ...draft, dateOfBirth: v })
@@ -521,11 +546,12 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
               <div className="form-grid-2">
                 <div className="form-row">
                   <label htmlFor={`${idPrefix}-em-name`}>
-                    {tx('ชื่อผู้ติดต่อฉุกเฉิน')}
+                    {needEc ? <RequiredFieldText text={tx('ชื่อผู้ติดต่อฉุกเฉิน *')} /> : tx('ชื่อผู้ติดต่อฉุกเฉิน')}
                   </label>
                   <input
                     id={`${idPrefix}-em-name`}
                     type="text"
+                    required={needEc}
                     placeholder={tx('ชื่อ-นามสกุลผู้ติดต่อฉุกเฉิน')}
                     value={draft.emergencyContactName ?? ''}
                     onChange={(e) =>
@@ -538,11 +564,16 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
                 </div>
                 <div className="form-row">
                   <label htmlFor={`${idPrefix}-em-rel`}>
-                    {tx('ความสัมพันธ์ผู้ติดต่อฉุกเฉิน')}
+                    {needEc ? (
+                      <RequiredFieldText text={tx('ความสัมพันธ์ผู้ติดต่อฉุกเฉิน *')} />
+                    ) : (
+                      tx('ความสัมพันธ์ผู้ติดต่อฉุกเฉิน')
+                    )}
                   </label>
                   <input
                     id={`${idPrefix}-em-rel`}
                     type="text"
+                    required={needEc}
                     placeholder={tx('เช่น บิดา / มารดา / คู่สมรส')}
                     value={draft.emergencyContactRelation ?? ''}
                     onChange={(e) =>
@@ -555,10 +586,11 @@ export const SavedParticipantModal: React.FC<SavedParticipantModalProps> = ({
                 </div>
                 <div className="form-row">
                   <label htmlFor={`${idPrefix}-em-phone`}>
-                    {tx('เบอร์โทรฉุกเฉิน')}
+                    {needEc ? <RequiredFieldText text={tx('เบอร์โทรฉุกเฉิน *')} /> : tx('เบอร์โทรฉุกเฉิน')}
                   </label>
                   <PhoneInput
                     id={`${idPrefix}-em-phone`}
+                    required={needEc}
                     value={draft.emergencyContactPhone ?? ''}
                     onChange={(next) =>
                       setDraft({

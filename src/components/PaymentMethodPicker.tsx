@@ -28,13 +28,14 @@ export function PaymentMethodPicker({
   disabled,
 }: {
   name: string;
-  value: PaymentChannel;
+  /** '' = nothing picked yet (the registration form starts empty, 27 Nov 2026) */
+  value: PaymentChannel | '';
   onChange: (next: PaymentChannel) => void;
   disabled?: boolean;
 }) {
-  // a draft that still says "card" falls back to the first method on show
+  // a draft that still says "card" falls back to the first method on show; empty stays empty
   useEffect(() => {
-    if (!SHOWN.some((m) => m.id === value) && SHOWN[0]) onChange(SHOWN[0].id);
+    if (value && !SHOWN.some((m) => m.id === value) && SHOWN[0]) onChange(SHOWN[0].id);
   }, [value, onChange]);
 
   return (

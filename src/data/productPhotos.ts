@@ -36,6 +36,9 @@ export const SHIRT_PHOTOS = {
   finisher: tee,
 } as const;
 
+/** the finisher medal shown on the shirt step of an event that gives a medal instead of a shirt */
+export const FINISHER_MEDAL_PHOTO = medalElephant;
+
 const seaside = /ทะเล|andaman|wave|breeze|beach|sunset|cape|promthep/i;
 const oldTown = /old|moat|town|thalang|gate|ประตู|เมืองเก่า|heritage|sino|riverside|ping|night/i;
 

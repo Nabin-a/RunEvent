@@ -682,6 +682,12 @@
   font-size: 0.875rem;
 }
 
+/* a filter click scrolls here; stop below the sticky site header */
+.kr-cal-body,
+.kr-results-top {
+  scroll-margin-top: calc(var(--topbar-height, 64px) + 0.75rem);
+}
+
 /* event cards */
 .app-root.is-public .kr-event-grid {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
@@ -3699,3 +3705,23 @@ body:has(.auth-page-shell.is-scene) .minimal-footer {
   }
 }
 
+/* phones and tablets: the account button shows only the avatar; it opens the one menu,
+   which carries the name and email (27 Nov 2026, user request) */
+@media (max-width: 67.5rem) {
+  .app-root .global-topbar .btn-account-pill {
+    gap: 0;
+    max-width: none;
+    padding: 0.2rem;
+    border-color: transparent;
+  }
+
+  .app-root .global-topbar .btn-account-pill-name,
+  .app-root .global-topbar .btn-account-pill-chevron {
+    display: none;
+  }
+
+  .app-root .global-topbar .btn-account-pill .runner-avatar-frame.xs {
+    width: 2rem;
+    height: 2rem;
+  }
+}

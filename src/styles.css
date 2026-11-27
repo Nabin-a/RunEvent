@@ -2759,6 +2759,22 @@ textarea::placeholder {
   border-color: var(--danger-border);
 }
 
+/* a warning box never touches what is above or below it (27 Nov 2026, user report). Low
+   specificity, so a layout that already spaces its children with gap can set the margin back
+   to 0; the first and last child of a box get no outer margin. */
+:where(.error-callout):not(:first-child) {
+  margin-top: 0.85rem;
+}
+
+:where(.error-callout):not(:last-child) {
+  margin-bottom: 0.85rem;
+}
+
+/* stacks that already space their children */
+:where(.canvas-stack, .terms-group, .sv, .reg-review-ledger) > .error-callout {
+  margin-block: 0;
+}
+
 .success-callout {
   background: var(--forest-soft);
   color: var(--forest-ink);
@@ -2769,6 +2785,16 @@ textarea::placeholder {
   background: var(--amber-soft);
   color: var(--amber-ink);
   border-color: var(--amber-border);
+}
+
+/* a callout with a button beside its text: the icon lines up with the text, not the top edge
+   (27 Nov 2026, user report "icon ไม่ตรงกับ text") */
+:is(.error-callout, .success-callout, .status-explanation-banner):has(> .callout-flex) {
+  align-items: center;
+}
+
+:is(.error-callout, .success-callout, .status-explanation-banner):has(> .callout-flex) > svg {
+  margin-top: 0;
 }
 
 .callout-flex {
@@ -3121,7 +3147,7 @@ textarea::placeholder {
   color: var(--danger);
   font-size: 0.8125rem;
   font-weight: 600;
-  margin: 0.15rem 0 0;
+  margin: 0.4rem 0 0;
 }
 
 .custom-fields-list {
@@ -3511,55 +3537,279 @@ textarea::placeholder {
   gap: 0.75rem;
 }
 
+/* Dev / Demo tools (redesign 27 Nov 2026, user request): plain wording, "using as" card on
+   top, four numbered parts, segmented switches, the reset kept apart in red */
 .dev-drawer-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.5rem;
-  padding-bottom: 0.55rem;
-  border-bottom: 1px solid var(--line-light);
+}
+
+.dev-drawer-title {
+  display: block;
+  font-size: 1rem;
+}
+
+.dev-drawer-sub {
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+}
+
+.dev-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--ink-secondary);
+  cursor: pointer;
+}
+
+.dev-icon-btn:hover {
+  color: var(--ink-primary);
+  border-color: var(--ink-secondary);
+}
+
+.dev-now {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--navy-ink);
+  border-radius: var(--radius-sm);
+  background: var(--bg-selected);
+  color: var(--ink-primary);
+}
+
+.dev-now > svg {
+  flex: none;
+}
+
+.dev-now-label {
+  display: block;
+  color: var(--ink-secondary);
+  font-size: 0.6875rem;
+}
+
+.dev-now strong {
+  font-size: 0.875rem;
 }
 
 .dev-drawer-section {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  padding-bottom: 0.65rem;
-  border-bottom: 1px solid var(--line-light);
+  gap: 0.4rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line-light);
 }
 
-.dev-section-label {
-  font-size: 0.75rem;
+.dev-sec-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  color: var(--ink-primary);
+  font-size: 0.875rem;
   font-weight: 700;
+}
+
+.dev-sec-help {
+  margin: -0.15rem 0 0.15rem;
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+/* one person to log in as */
+.dev-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.dev-row > svg {
+  flex: none;
   color: var(--ink-secondary);
 }
 
-.dev-persona-btn {
-  width: 100%;
+.dev-row:hover {
+  border-color: var(--ink-secondary);
+  background: var(--bg-subtle);
+}
+
+.dev-row.active {
+  border-color: var(--navy-ink);
+  background: var(--bg-selected);
+}
+
+.dev-row.active > svg {
+  color: var(--navy-ink);
+}
+
+.dev-row-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dev-row-copy strong {
+  font-size: 0.8125rem;
+}
+
+.dev-row-copy span {
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.dev-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.dev-field + .dev-field {
+  margin-top: 0.35rem;
+}
+
+.dev-field-label {
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* two or four choices side by side */
+.dev-seg {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.dev-seg.is-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dev-seg.is-four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.dev-seg button {
+  min-height: 2.25rem;
+  padding: 0.3rem 0.35rem;
+  border: 0;
+  border-left: 1px solid var(--line-light);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.dev-seg button:first-child {
+  border-left: 0;
+}
+
+.dev-seg button:hover {
+  background: var(--bg-subtle);
+}
+
+.dev-seg button.is-on {
+  background: var(--navy-ink);
+  color: var(--bg-surface);
+  font-weight: 700;
+}
+
+.dev-action {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  text-align: left;
-  background: var(--bg-canvas);
-  color: var(--ink-primary);
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.4rem 0.65rem;
   border: 1px solid var(--line-light);
   border-radius: var(--radius-sm);
-  padding: 0.45rem 0.65rem;
+  background: var(--bg-surface);
+  color: var(--ink-primary);
   font-family: var(--font-body);
   font-size: 0.8125rem;
+  text-align: left;
   cursor: pointer;
 }
 
-.dev-persona-btn:hover {
-  background: var(--bg-subtle);
+.dev-action:hover {
   border-color: var(--ink-secondary);
+  background: var(--bg-subtle);
 }
 
-.dev-persona-btn.active {
-  background: var(--bg-selected);
-  border-color: var(--navy-ink);
+.dev-action > svg {
+  flex: none;
+  color: var(--ink-secondary);
 }
+
+.dev-action-sub {
+  color: var(--ink-secondary);
+}
+
+.dev-count {
+  display: inline-block;
+  min-width: 1.25rem;
+  padding: 0 0.35rem;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  text-align: center;
+}
+
+.dev-drawer-section.is-danger .dev-sec-title {
+  color: var(--danger-ink);
+}
+
+.dev-reset-btn {
+  width: 100%;
+  min-height: 2.5rem;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dev-reset-btn:hover {
+  border-color: var(--danger);
+}
+
+.dev-row:focus-visible,
+.dev-action:focus-visible,
+.dev-seg button:focus-visible,
+.dev-reset-btn:focus-visible,
+.dev-icon-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+
+
+
 
 /* Authored Course-Trace & Surface Settle Motion */
 @keyframes route-trace-in {
@@ -4321,6 +4571,19 @@ textarea::placeholder {
 
 .circle-step-node.active .circle-step-ring {
   border-color: var(--vermilion);
+}
+
+/* step number inside the ring of a step not done yet */
+.circle-step-num {
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.circle-step-node.active .circle-step-num {
+  color: var(--ink-primary);
 }
 
 .circle-step-node.done .circle-step-ring {
@@ -8240,6 +8503,30 @@ button.race-calendar-day:focus-visible {
   color: var(--ink-secondary);
 }
 
+/* the buttons wrap their text and stay inside the box on phones (27 Nov 2026, user report:
+   "ไปสัปดาห์ที่มีงานถัดไป (…)" ran past the edge and "ดูทุกระยะ" was squeezed) */
+.race-calendar-empty > button {
+  flex-wrap: wrap;
+  justify-content: center;
+  column-gap: 0.3rem;
+  row-gap: 0;
+  max-width: 100%;
+  min-height: 2.75rem;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.4;
+}
+
+@media (max-width: 34rem) {
+  .race-calendar-empty > button {
+    flex: 1 1 100%;
+  }
+}
+
+.race-calendar-empty-date {
+  white-space: nowrap;
+}
+
 .race-calendar-group h3 {
   margin: 0 0 0.5rem;
   font-size: 0.9375rem;
@@ -8489,6 +8776,18 @@ input[type="radio"][aria-invalid="true"] {
   box-shadow: none;
 }
 
+/* a required choice question left empty: the question turns red and each option is ringed
+   like an invalid checkbox (27 Nov 2026; before, only the message under it showed) */
+fieldset[aria-invalid='true'] > legend {
+  color: var(--danger-ink);
+}
+
+fieldset[aria-invalid='true'] input[type='checkbox'],
+fieldset[aria-invalid='true'] input[type='radio'] {
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
+}
+
 [data-invalid-msg] > label,
 [data-invalid-msg] > legend {
   color: var(--danger-ink);
@@ -8497,10 +8796,15 @@ input[type="radio"][aria-invalid="true"] {
 [data-invalid-msg]::after {
   content: attr(data-invalid-msg);
   display: block;
-  margin-top: 0.05rem;
+  margin-top: 0.35rem; /* clear of the 3px red ring on the field above (27 Nov 2026, user report) */
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--danger-ink);
+}
+
+/* a field that already shows its own message (e.g. "กรอกอีเมลของเพื่อน") gets no second one */
+[data-invalid-msg]:has(> .field-error)::after {
+  content: none;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -9171,6 +9475,28 @@ input[type="radio"][aria-invalid="true"] {
   color: var(--danger-ink);
 }
 
+/* tags on a radio card: the picked / hovered card is tinted the same pale mint as the grey
+   tags, so they melted into it (27 Nov 2026, user report). On a card a tag sits on a solid
+   white chip with an outline; the coloured ones keep their tint and get an outline in their
+   own ink. */
+.reg-category-radio-card .reg-tag-neutral,
+.reg-category-radio-card .reg-tag-price {
+  background: var(--bg-surface);
+  box-shadow: inset 0 0 0 1px var(--line-medium);
+}
+
+.reg-category-radio-card .reg-tag-ok {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--forest-ink) 35%, transparent);
+}
+
+.reg-category-radio-card .reg-tag-low {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber-ink) 35%, transparent);
+}
+
+.reg-category-radio-card .reg-tag-full {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger-ink) 35%, transparent);
+}
+
 .reg-tag-on-dark {
   flex: none;
   background: color-mix(in srgb, var(--on-accent) 16%, transparent);
@@ -9793,7 +10119,7 @@ button.mstep-list-btn:hover {
 .dob-split {
   display: grid;
   grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.45fr) minmax(0, 1fr);
-  gap: 0.4rem;
+  gap: 0.5rem; /* two 3px invalid rings fit between the boxes without touching */
 }
 
 .dob-split .wheel-trigger-value {
@@ -9897,6 +10223,14 @@ button.mstep-list-btn:hover {
   outline: none;
   font: inherit;
   color: inherit;
+}
+
+/* the frame is the select-style box, not the bare input inside it: show the invalid red there
+   (27 Nov 2026, the day / month / year boxes stayed grey when empty) */
+.dob-part:has(.dob-part-input[aria-invalid='true']) {
+  border-color: var(--danger);
+  background-color: var(--danger-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 18%, transparent);
 }
 
 .dob-part .dob-part-input::placeholder {
@@ -10096,387 +10430,6 @@ button.mstep-list-btn:hover {
 }
 
 /* ===================================================================== */
-/* Review comments for testers (sandbox only)                            */
-/* everything is position: fixed + transform so it never moves the page  */
-/* ===================================================================== */
-.review-dock-actions {
-  display: inline-flex;
-  gap: 0.35rem;
-  margin-right: 0.35rem;
-}
-
-.review-dock-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-height: 2.25rem;
-  padding: 0.44rem 0.8rem;
-  border: 1px solid var(--line-medium);
-  border-radius: 999px;
-  background: var(--bg-surface);
-  color: var(--ink-primary);
-  font: inherit;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  box-shadow: var(--shadow-popover);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.review-dock-btn.is-on {
-  background: var(--mint);
-  border-color: var(--mint-strong);
-}
-
-.review-dock-btn:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-}
-
-body.review-placing,
-body.review-placing * {
-  cursor: crosshair !important;
-}
-
-body.review-placing [data-review-ui],
-body.review-placing [data-review-ui] * {
-  cursor: pointer !important;
-}
-
-.review-hover-box {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 88;
-  border: 2px dashed var(--brand);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--mint) 18%, transparent);
-  pointer-events: none;
-}
-
-.review-placing-hint {
-  position: fixed;
-  top: calc(var(--app-header-height, 3.5rem) + 0.6rem);
-  left: 50%;
-  z-index: 92;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.75rem;
-  max-width: calc(100vw - 1rem);
-  padding: 0.45rem 0.6rem 0.45rem 1rem;
-  border-radius: 999px;
-  background: var(--brand);
-  color: #ffffff;
-  font-size: 0.875rem;
-  font-weight: 600;
-  box-shadow: var(--shadow-popover);
-  transform: translateX(-50%);
-}
-
-.review-placing-hint .btn-ghost-sm {
-  color: #ffffff;
-}
-
-/* pin: a speech-bubble whose pointed corner (bottom-left) sits on the clicked point */
-.review-pin {
-  position: fixed;
-  top: -1.75rem;
-  left: 0;
-  z-index: 89;
-  display: inline-grid;
-  place-items: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  padding: 0;
-  border: 2px solid var(--bg-surface);
-  border-radius: 50% 50% 50% 0;
-  background: var(--brand);
-  color: #ffffff;
-  font: inherit;
-  font-size: 0.75rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  box-shadow: 0 2px 6px rgba(52, 73, 95, 0.35);
-  cursor: pointer;
-}
-
-.review-pin.is-active,
-.review-pin.is-draft {
-  background: var(--mint);
-  color: var(--brand);
-  border-color: var(--brand);
-}
-
-.review-pin.is-draft {
-  cursor: default;
-}
-
-.review-pin.is-resolved {
-  background: var(--ink-placeholder);
-}
-
-.review-pin:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-}
-
-.review-popover {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 91;
-  width: min(20rem, calc(100vw - 1rem));
-  max-height: min(28rem, calc(100vh - 1rem));
-  overflow-y: auto;
-  box-sizing: border-box;
-  padding: 0.85rem 0.9rem 0.8rem;
-  border: 1px solid var(--line-light);
-  border-radius: 10px;
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-popover);
-  font-size: 0.875rem;
-}
-
-.review-popover-close {
-  position: absolute;
-  top: 0.4rem;
-  right: 0.4rem;
-  display: inline-grid;
-  place-items: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--ink-secondary);
-  cursor: pointer;
-}
-
-.review-popover-close:hover {
-  background: var(--bg-subtle);
-}
-
-.review-anchor-text {
-  margin: 0 2rem 0.5rem 0;
-  color: var(--ink-secondary);
-  font-size: 0.8125rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.review-thread-head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0 2rem 0.5rem 0;
-}
-
-.review-thread-no {
-  flex: none;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--brand);
-}
-
-.review-resolve-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  color: var(--forest);
-}
-
-.review-messages {
-  list-style: none;
-  margin: 0 0 0.6rem;
-  padding: 0;
-  display: grid;
-  gap: 0.65rem;
-}
-
-.review-messages li + li {
-  padding-top: 0.6rem;
-  border-top: 1px solid var(--line-light);
-}
-
-.review-msg-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.25rem 0.5rem;
-  font-size: 0.8125rem;
-}
-
-.review-msg-meta span {
-  color: var(--ink-secondary);
-  font-size: 0.75rem;
-}
-
-.review-msg-body {
-  margin: 0.15rem 0 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.review-resolved-note {
-  margin: 0 0 0.5rem;
-  color: var(--forest);
-  font-size: 0.8125rem;
-}
-
-.review-composer textarea {
-  width: 100%;
-  box-sizing: border-box;
-  resize: vertical;
-  min-height: 4rem;
-  padding: 0.5rem 0.6rem;
-  border: 1px solid var(--line-medium);
-  border-radius: 6px;
-  font: inherit;
-  font-size: 0.875rem;
-}
-
-.review-composer textarea:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 1px;
-}
-
-.review-composer-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.4rem;
-  margin-top: 0.45rem;
-}
-
-.review-send-btn {
-  min-height: 2.25rem;
-  padding: 0.35rem 0.9rem;
-  font-size: 0.8125rem;
-}
-
-.review-error {
-  margin: 0.4rem 0 0;
-  color: var(--danger);
-  font-size: 0.8125rem;
-}
-
-.review-panel {
-  position: fixed;
-  top: calc(var(--app-header-height, 3.5rem) + 0.5rem);
-  right: 0.75rem;
-  bottom: 4.25rem;
-  z-index: 93;
-  display: flex;
-  flex-direction: column;
-  width: min(23rem, calc(100vw - 1.5rem));
-  border: 1px solid var(--line-light);
-  border-radius: 10px;
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-popover);
-  font-size: 0.875rem;
-}
-
-.review-panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.7rem 0.6rem 0.5rem 0.9rem;
-}
-
-.review-panel-tabs {
-  display: flex;
-  gap: 0.25rem;
-  padding: 0 0.6rem;
-  border-bottom: 1px solid var(--line-light);
-}
-
-.review-panel-tabs button {
-  min-height: 2.5rem;
-  padding: 0 0.6rem;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: none;
-  font: inherit;
-  font-size: 0.8125rem;
-  color: var(--ink-secondary);
-  cursor: pointer;
-}
-
-.review-panel-tabs button.is-active {
-  border-bottom-color: var(--brand);
-  color: var(--ink-primary);
-  font-weight: 700;
-}
-
-.review-empty {
-  margin: 0;
-  padding: 1rem 0.9rem;
-  color: var(--ink-secondary);
-}
-
-.review-list {
-  list-style: none;
-  margin: 0;
-  padding: 0.35rem;
-  overflow-y: auto;
-}
-
-.review-list-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-  width: 100%;
-  padding: 0.6rem;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.review-list-item:hover,
-.review-list-item:focus-visible {
-  background: var(--mint-soft);
-}
-
-.review-list-copy {
-  display: grid;
-  gap: 0.15rem;
-  min-width: 0;
-}
-
-.review-list-body {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  color: var(--ink-primary);
-}
-
-.review-list-meta {
-  font-size: 0.75rem;
-  color: var(--ink-secondary);
-  overflow-wrap: anywhere;
-}
-
-/* phones: dock buttons show icons only; the panel takes the lower part of the screen */
-@media (max-width: 40rem) {
-  .review-dock-btn span:not(.mono-num) {
-    display: none;
-  }
-
-  .review-panel {
-    top: auto;
-    left: 0.5rem;
-    right: 0.5rem;
-    bottom: 6.75rem; /* clear the dock pill and the two comment buttons above it */
-    width: auto;
-    max-height: 70vh;
-  }
-}
-
-/* ===================================================================== */
 /* Event detail: register bar pinned to the bottom on phones / tablets   */
 /* (below 60rem the summary card no longer follows the page)             */
 /* ===================================================================== */
@@ -10563,12 +10516,6 @@ body.review-placing [data-review-ui] * {
 
   body:has(.mreg-bar.is-shown) .dev-demo-dock {
     bottom: calc(4.6rem + env(safe-area-inset-bottom));
-  }
-}
-
-@media (max-width: 40rem) {
-  body:has(.mreg-bar.is-shown) .review-panel {
-    bottom: calc(10.5rem + env(safe-area-inset-bottom));
   }
 }
 
@@ -10703,6 +10650,43 @@ body.review-placing [data-review-ui] * {
 }
 
 /* sections: generous space between, tight inside */
+/* finisher medal (an event that gives a medal instead of a finisher shirt): shown, nothing to pick */
+.reg-lab-medal {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+
+.reg-lab-medal img {
+  flex: none;
+  width: 5.5rem;
+  height: 5.5rem;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+}
+
+.reg-lab-medal figcaption {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  font-size: 0.875rem;
+}
+
+.reg-lab-medal figcaption strong {
+  color: var(--ink-primary);
+  font-size: 1.125rem;
+  line-height: 1.4;
+}
+
+.reg-lab-medal figcaption span {
+  color: var(--ink-secondary);
+}
+
 .reg-lab-section {
   margin-top: 1.85rem;
   padding-top: 1.85rem;
@@ -10878,20 +10862,36 @@ body.review-placing [data-review-ui] * {
 
 /* the area that holds a step's problem (not a plain input): red outline until fixed */
 .reg-lab-body [data-step-invalid] {
+  position: relative;
+}
+
+/* the frame is drawn 8px outside the area. A section's frame starts below its divider and top
+   padding, so it hugs the content (27 Nov 2026, user report: it framed an empty band on top
+   and ran over the warning box under it). */
+.reg-lab-body [data-step-invalid]::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border: 2px solid var(--danger);
   border-radius: var(--radius-md, 0.75rem);
-  outline: 2px solid var(--danger);
-  outline-offset: 6px;
+  pointer-events: none;
+}
+
+.reg-lab-body .reg-lab-section[data-step-invalid]::after {
+  top: calc(1.85rem - 8px);
+}
+
+.reg-lab-body .reg-lab-title + .reg-lab-section[data-step-invalid]::after {
+  top: -8px;
+}
+
+/* whatever follows a framed area (the warning box, the next fields) starts clear of the frame */
+.reg-lab-body [data-step-invalid] + :not(.reg-lab-section) {
+  margin-top: 1.1rem;
 }
 
 /* order history: "ชำระเงิน" under the BIB of an unpaid entry */
 /* Dev / Demo list: what an organizer team role does (27 Nov 2026) */
-.dev-persona-duties {
-  margin: 0.3rem 0 0;
-  padding-left: 1rem;
-  color: var(--ink-secondary);
-  font-size: 0.75rem;
-  line-height: 1.45;
-}
 
 /* registration card (27 Nov 2026): headline status, entry / payment / kit track, key facts */
 .reg-card-head {
@@ -11361,6 +11361,113 @@ body.review-placing [data-review-ui] * {
   color: var(--ink-secondary);
 }
 
+/* phones: a compact copy of the preview floats under the top bar while the size chart
+   scrolls (27 Nov 2026, user request). Its anchor is sticky and zero-height, so it never
+   changes the page height (no jumping at the bottom of the page). */
+.pg {
+  position: relative;
+}
+
+.pg-follow-anchor {
+  position: sticky;
+  z-index: 3;
+  height: 0;
+  /* takes no room: cancels the gallery's row gap */
+  margin-bottom: -1.35rem;
+}
+
+.pg-follow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-popover);
+  color: var(--ink-primary);
+  font-size: 1rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s var(--ease-clean);
+}
+
+.pg-follow.is-on {
+  opacity: 1;
+}
+
+.pg-follow-photo {
+  flex: none;
+  width: auto;
+  height: 4.5rem;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+}
+
+.pg-follow-art {
+  flex: none;
+  width: auto;
+  height: 3.75rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pg-follow {
+    transition: none;
+  }
+}
+
+@media (min-width: 48rem) {
+  .pg {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    column-gap: 1.25rem;
+    row-gap: 0;
+    align-items: start;
+  }
+
+  .pg-follow-anchor {
+    display: none;
+  }
+
+  .pg-hero {
+    position: sticky;
+    z-index: 2;
+    grid-column: 1;
+    grid-row: 1;
+    align-self: start;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.75rem;
+    min-height: 0;
+    padding: 1rem;
+    text-align: center;
+  }
+
+  .pg-hero .pg-hero-photo {
+    width: 100%;
+    height: auto;
+    max-width: 100%;
+    max-height: 16rem;
+  }
+
+  .pg-hero .pg-hero-art {
+    height: 10rem;
+  }
+
+  .pg-hero figcaption {
+    justify-items: center;
+  }
+
+  .pg-tabbed {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+  }
+}
+
 .pg-hero-art {
   width: auto;
   height: 8.5rem;
@@ -11444,85 +11551,27 @@ body.review-placing [data-review-ui] * {
   background: var(--bg-surface);
 }
 
-/* tabs stay on top; after they scroll away the picked style is a sticky side tab joined to
-   the chart's left edge, text running down (26 Nov 2026, user request) */
-.pg-side-anchor {
-  position: sticky;
-  z-index: 3;
-  height: 0;
-}
-
-.pg-side-tab {
-  position: absolute;
-  top: 0;
-  right: calc(100% - 1.5px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.35rem;
-  width: 2rem;
-  height: 7.25rem;
-  overflow: hidden;
-  padding: 0.55rem 0 0.7rem;
-  border: 1.5px solid var(--navy-ink);
-  border-right: 0;
-  border-radius: var(--radius-md) 0 0 var(--radius-md);
-  background: var(--bg-surface);
-  color: var(--ink-primary);
-  font: inherit;
-  font-size: 0.8125rem;
-  font-weight: 700;
-  cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.18s var(--ease-clean);
-}
-
-.pg-side-tab.is-on {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.pg-side-tab:hover {
-  background: var(--bg-subtle);
-}
-
-.pg-side-tab:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-}
-
-.pg-side-tab-art {
-  flex: none;
-  width: 1.25rem;
-  height: 1.25rem;
-}
-
-.pg-side-tab-text {
-  writing-mode: vertical-rl;
-  white-space: nowrap;
-  line-height: 1.2;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pg-side-tab {
-    transition: none;
-  }
-}
-
 /* ชาย / หญิง / เด็ก */
-.pg-cuts {
-  margin-bottom: 0.85rem;
+/* ชาย / หญิง / เด็ก: a second, lighter tab row inside the style panel, on top of the size chart
+   (27 Nov 2026, user request). The navy outline belongs to the style tabs; the cut tabs use the
+   medium grey line so the two levels read apart. */
+.pg-cut-panel {
+  padding: 0.75rem;
+  border-color: var(--line-medium);
 }
 
-.pg-cut-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+.pg-cut-tab {
+  min-height: 2.5rem;
+  padding: 0.35rem 1.1rem;
+}
+
+.pg-cut-tab.is-selected {
+  padding-bottom: calc(0.35rem + 1.5px);
+  border-color: var(--line-medium);
 }
 
 /* one style only (finisher shirt): no tabs, a plain panel */
-.pg-tabbed.is-single .pg-stab-panel {
+.pg-tabbed.is-single > .pg-stab-panel {
   border-color: var(--line);
 }
 
@@ -11839,8 +11888,22 @@ body.review-placing [data-review-ui] * {
     height: 9rem;
   }
 
-  /* phones: the three tabs share the width, icon above the name, so none is cut off */
+  .pg-stab-panel {
+    padding: 0.75rem 0.5rem;
+  }
+
+  .pg-chart thead th,
+  .pg-chart tbody th,
+  .pg-chart td {
+    padding-inline: 0.5rem;
+  }
+}
+
+/* phones, and the narrow right column of the two-column layout (27 Nov 2026, user report:
+   the last tab was cut off): the tabs share the width, icon above the name */
+@media (max-width: 40rem), (min-width: 48rem) {
   .pg-stab-strip {
+    overflow-x: visible;
     gap: 0.2rem;
     padding-inline: 0.35rem;
   }
@@ -11864,16 +11927,6 @@ body.review-placing [data-review-ui] * {
   .pg-stab-art {
     width: 1.35rem;
     height: 1.35rem;
-  }
-
-  .pg-stab-panel {
-    padding: 0.75rem 0.5rem;
-  }
-
-  .pg-chart thead th,
-  .pg-chart tbody th,
-  .pg-chart td {
-    padding-inline: 0.5rem;
   }
 }
 
@@ -12370,6 +12423,21 @@ body:has(.app-root.is-public) {
 .reg-review-pay {
   width: 100%;
   justify-content: center;
+}
+
+/* the agreements sit between the total and the pay button (27 Nov 2026, user pick "ก") */
+.reg-review-consent {
+  border-top: 1px solid var(--line-light);
+  padding: 0.85rem 0 0.5rem;
+}
+
+.reg-review-consent .reg-lab-terms {
+  margin-top: 0;
+}
+
+.reg-review-consent .checkbox-row {
+  font-size: 0.8125rem;
+  line-height: 1.5;
 }
 
 /* narrow column: total and pay button stay at the bottom edge */
@@ -13248,6 +13316,8 @@ body:has(.app-root.is-public) {
 /* =====================================================================
    Registration souvenir step (forms A and B): several items, sizes and quantities
    ===================================================================== */
+/* souvenir step (27 Nov 2026, user pick "ก"): a shelf per category, cards with a large
+   picture, no filter chips and no pages */
 .sv {
   display: flex;
   flex-direction: column;
@@ -13255,86 +13325,217 @@ body:has(.app-root.is-public) {
   container-type: inline-size;
 }
 
-.sv-chip-count {
-  margin-left: 0.15rem;
-  opacity: 0.75;
+/* the earlier open-shelves layout (Dev / Demo choice) */
+.sv-shelf-plain-head {
+  margin: 0.5rem 0 0.75rem;
+  font-size: 1.0625rem;
 }
 
-.sv-note {
-  margin: -0.25rem 0 0;
+/* a category folds (27 Nov 2026, user request): the header shows small pictures of its
+   products and what was picked in it (no item count); a tap opens the products underneath */
+.sv-shelf {
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.sv-shelf.is-open {
+  border-color: var(--line-medium);
+}
+
+.sv-shelf-title {
+  margin: 0;
+  font-size: inherit;
+}
+
+.sv-shelf-head {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  min-height: 4.5rem;
+  padding: 0.6rem 0.85rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sv-shelf-head:hover {
+  background: var(--bg-subtle);
+}
+
+.sv-shelf-head:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* three small pictures, slightly overlapped */
+.sv-shelf-thumbs {
+  display: flex;
+  flex: none;
+}
+
+.sv-shelf-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  margin-left: -0.6rem;
+  border: 2px solid var(--bg-surface);
+  border-radius: var(--radius-sm);
+  background: var(--mint-soft);
+  overflow: hidden;
+}
+
+.sv-shelf-thumb:first-child {
+  margin-left: 0;
+}
+
+.sv-shelf-thumb .sf-art-svg {
+  width: 86%;
+  height: 86%;
+  object-fit: contain;
+}
+
+.sv-shelf-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.sv-shelf-copy strong {
+  font-size: 1rem;
+}
+
+.sv-shelf-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.6rem;
   color: var(--ink-secondary);
   font-size: 0.8125rem;
 }
 
-/* one product per row so the name and price are never squeezed */
-.sv-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  /* leaves the top page buttons (and a sticky top bar) visible after paging from below */
-  scroll-margin-top: calc(var(--topbar-height) + 4rem);
+.sv-shelf-picked {
+  color: var(--forest-ink);
+  font-weight: 700;
+  white-space: nowrap;
 }
 
-/* a wide form (A) gets two rows side by side; each row still has room for name and price */
-@container (min-width: 56rem) {
-  .sv-list {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: start;
+.sv-shelf-chevron {
+  display: flex;
+  flex: none;
+  color: var(--ink-secondary);
+  transition: transform 0.18s var(--ease-clean);
+}
+
+.sv-shelf.is-open .sv-shelf-chevron {
+  transform: rotate(180deg);
+}
+
+.sv-shelf > .sv-grid {
+  padding: 0.25rem 0.85rem 0.85rem;
+}
+
+@media (max-width: 34rem) {
+  .sv-shelf-thumb {
+    width: 2.5rem;
+    height: 2.5rem;
+    margin-left: -0.75rem;
+  }
+
+  .sv-shelf-picked {
+    font-size: 0.75rem;
+  }
+
+  .sv-shelf-head {
+    gap: 0.65rem;
+    padding: 0.55rem 0.7rem;
+  }
+
+  .sv-shelf > .sv-grid {
+    padding: 0.25rem 0.6rem 0.7rem;
   }
 }
 
-.sv-item {
+@media (prefers-reduced-motion: reduce) {
+  .sv-shelf-chevron {
+    transition: none;
+  }
+}
+
+.sv-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@container (min-width: 36rem) {
+  .sv-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.sv-card {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
+  gap: 0.6rem;
+  min-width: 0;
   border: 1px solid var(--line-light);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
-  padding: 0.75rem 0.9rem;
+  padding: 0.6rem;
   transition: border-color 0.16s var(--ease-clean);
 }
 
-.sv-item.is-picked {
+.sv-card.is-picked {
   border-color: var(--brand);
   box-shadow: inset 0 0 0 1px var(--brand);
 }
 
-.sv-item.is-out {
-  opacity: 0.6;
-}
-
-.sv-main {
-  display: grid;
-  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.9rem;
-}
-
-.sv-main.has-qty {
-  grid-template-columns: 4.5rem minmax(0, 1fr) auto auto;
-}
-
-.sv-art {
+.sv-card-art {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 4.5rem;
   aspect-ratio: 1;
-  border-radius: var(--radius-md);
+  border-radius: calc(var(--radius-md) - 2px);
   background: var(--mint-soft);
   color: var(--brand);
+  overflow: hidden;
 }
 
-.sv-art .sf-art-svg {
-  width: 72%;
-  height: 72%;
+.sv-card-art .sf-art-svg {
+  width: 78%;
+  height: 78%;
+  object-fit: contain;
 }
 
-.sv-copy {
+/* how many of this product are picked, on the picture */
+.sv-card-count {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  min-width: 1.75rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-pill);
+  background: var(--brand);
+  color: var(--on-accent, #fff);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.sv-card-copy {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 0.2rem;
   min-width: 0;
 }
 
@@ -13342,17 +13543,20 @@ body:has(.app-root.is-public) {
   display: -webkit-box;
   overflow: hidden;
   color: var(--ink-primary);
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.45;
+  overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
-.sv-meta {
-  color: var(--ink-secondary);
-  font-size: 0.8125rem;
-  line-height: 1.4;
+.sv-card-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.15rem 0.5rem;
 }
 
 .sv-price {
@@ -13362,82 +13566,58 @@ body:has(.app-root.is-public) {
   white-space: nowrap;
 }
 
-/* sizes and quantity under the name, lined up with the text column */
-.sv-opts {
+.sv-meta {
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+}
+
+/* the action sits at the bottom of every card so the row lines up */
+.sv-add {
+  width: 100%;
+  margin-top: auto;
+  justify-content: center;
+}
+
+.sv-card-opts {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 0.75rem;
-  padding-left: calc(4.5rem + 0.9rem);
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: auto;
 }
 
 .sv-sizes {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: 0.3rem;
+  min-width: 0;
   margin: 0;
   border: 0;
   padding: 0;
-  min-width: 0;
+}
+
+.sv-sizes-label {
+  width: 100%;
+  margin-bottom: 0.2rem;
+  padding: 0;
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.sv-sizes .pg-chip {
+  min-height: 2.5rem;
+  padding: 0 0.6rem;
 }
 
 .sv-qty {
-  flex: none;
-}
-
-.sv-pager {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  align-self: stretch;
   justify-content: space-between;
-  gap: 0.5rem 1rem;
-}
-
-.sv-pager-range {
-  color: var(--ink-secondary);
-  font-size: 0.8125rem;
-}
-
-.sv-pager-buttons {
-  display: flex;
-  gap: 0.35rem;
-}
-
-.sv-pager-btn {
-  min-width: 2.5rem;
-  height: 2.5rem;
-  padding: 0 0.6rem;
-  border: 1px solid var(--line-medium);
-  border-radius: var(--radius-pill);
-  background: var(--bg-surface);
-  color: var(--ink-primary);
-  font-family: var(--font-mono);
-  font-size: 0.9375rem;
-  cursor: pointer;
-}
-
-.sv-pager-btn:hover:not(:disabled) {
-  border-color: var(--ink-secondary);
-}
-
-.sv-pager-btn.is-current {
-  border-color: var(--brand);
-  background: var(--mint-soft);
-  font-weight: 700;
-}
-
-.sv-pager-btn:disabled {
-  color: var(--ink-placeholder);
-  cursor: not-allowed;
-}
-
-.sv-pager-btn:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
 }
 
 .sv-bar {
+  position: sticky;
+  bottom: 0.75rem;
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -13445,7 +13625,8 @@ body:has(.app-root.is-public) {
   min-height: 3rem;
   border: 1px solid var(--line-light);
   border-radius: var(--radius-md);
-  background: var(--bg-subtle);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-card);
   padding: 0.6rem 0.9rem;
   color: var(--ink-primary);
   font-size: 0.875rem;
@@ -13461,30 +13642,510 @@ body:has(.app-root.is-public) {
   font-size: 0.9375rem;
 }
 
+/* the bar opens the souvenir cart right above it (27 Nov 2026, user request); the bar and the
+   cart stick to the bottom together */
+.sv-bar-wrap {
+  position: sticky;
+  bottom: 0.75rem;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sv-bar-wrap .sv-bar {
+  position: static;
+  padding: 0.35rem 0.4rem 0.35rem 0.35rem;
+}
+
+.sv-bar-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0 0.6rem;
+  border: 0;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: var(--ink-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sv-bar-open:hover {
+  background: var(--bg-subtle);
+}
+
+.sv-bar-open:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.sv-bar-chevron {
+  display: flex;
+  color: var(--ink-secondary);
+  transform: rotate(180deg);
+  transition: transform 0.18s var(--ease-clean);
+}
+
+.sv-bar-wrap.is-open .sv-bar-chevron {
+  transform: none;
+}
+
+.sv-cart {
+  max-height: min(55dvh, 26rem);
+  overflow-y: auto;
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-popover);
+  padding: 0.75rem 0.85rem;
+}
+
+.sv-cart-head,
+.sv-cart-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.sv-cart-head span {
+  margin-right: auto;
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+}
+
+.sv-cart-clear {
+  min-height: 2.25rem;
+  padding: 0 0.6rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--danger-ink);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.sv-cart-clear:hover {
+  background: var(--danger-soft);
+}
+
+.sv-cart-clear:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.sv-cart-lines {
+  display: flex;
+  flex-direction: column;
+  margin: 0.5rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sv-cart-line {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--line-light);
+}
+
+.sv-cart-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--radius-sm);
+  background: var(--mint-soft);
+  overflow: hidden;
+}
+
+.sv-cart-art .sf-art-svg {
+  width: 86%;
+  height: 86%;
+  object-fit: contain;
+}
+
+.sv-cart-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 0.8125rem;
+}
+
+.sv-cart-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sv-cart-copy span {
+  color: var(--ink-secondary);
+}
+
+.sv-cart-sum {
+  min-width: 4.5rem;
+  font-size: 0.875rem;
+  text-align: right;
+}
+
+.sv-cart-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-secondary);
+  cursor: pointer;
+}
+
+.sv-cart-remove:hover {
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
+
+.sv-cart-remove:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.sv-cart-foot {
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--line-medium);
+}
+
+.sv-cart-foot strong {
+  color: var(--vermilion);
+  font-size: 1rem;
+}
+
+/* phones: quantity and the line total go under the name */
 @media (max-width: 34rem) {
-  .sv-main,
-  .sv-main.has-qty {
+  .sv-cart-line {
+    grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+    grid-template-areas:
+      "art copy remove"
+      "art qty sum";
+    row-gap: 0.35rem;
+  }
+
+  .sv-cart-art {
+    grid-area: art;
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .sv-cart-copy { grid-area: copy; }
+  .sv-cart-line .sv-qty { grid-area: qty; justify-self: start; }
+  .sv-cart-sum { grid-area: sum; }
+  .sv-cart-remove { grid-area: remove; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sv-bar-chevron {
+    transition: none;
+  }
+}
+
+/* clear every pick: a round X button, 40px to tap (27 Nov 2026, user request) */
+.sv-bar-clear {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--line-medium);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--ink-secondary);
+  cursor: pointer;
+}
+
+.sv-bar-clear:hover {
+  border-color: var(--danger-border);
+  color: var(--danger-ink);
+}
+
+.sv-bar-clear:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sv-card {
+    transition: none;
+  }
+}
+
+/* the first souvenir step, kept as a Dev / Demo choice (27 Nov 2026): its original rules,
+   scoped under .sv-classic so they do not touch the current layout */
+.sv.sv-classic {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  container-type: inline-size;
+}
+
+.sv-classic .sv-chip-count {
+  margin-left: 0.15rem;
+  opacity: 0.75;
+}
+
+.sv-classic .sv-note {
+  margin: -0.25rem 0 0;
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+}
+
+.sv-classic .sv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+    scroll-margin-top: calc(var(--topbar-height) + 4rem);
+}
+
+@container (min-width: 56rem) {
+  .sv-classic .sv-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+.sv-classic .sv-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  padding: 0.75rem 0.9rem;
+  transition: border-color 0.16s var(--ease-clean);
+}
+
+.sv-classic .sv-item.is-picked {
+  border-color: var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+
+.sv-classic .sv-item.is-out {
+  opacity: 0.6;
+}
+
+.sv-classic .sv-main {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.sv-classic .sv-main.has-qty {
+  grid-template-columns: 4.5rem minmax(0, 1fr) auto auto;
+}
+
+.sv-classic .sv-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.5rem;
+  aspect-ratio: 1;
+  border-radius: var(--radius-md);
+  background: var(--mint-soft);
+  color: var(--brand);
+}
+
+.sv-classic .sv-art .sf-art-svg {
+  width: 72%;
+  height: 72%;
+}
+
+.sv-classic .sv-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.sv-classic .sv-name {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink-primary);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.sv-classic .sv-meta {
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.sv-classic .sv-price {
+  color: var(--vermilion);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sv-classic .sv-opts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  padding-left: calc(4.5rem + 0.9rem);
+}
+
+.sv-classic .sv-sizes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.sv-classic .sv-qty {
+  flex: none;
+}
+
+.sv-classic .sv-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.sv-classic .sv-pager-range {
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+}
+
+.sv-classic .sv-pager-buttons {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.sv-classic .sv-pager-btn {
+  min-width: 2.5rem;
+  height: 2.5rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.sv-classic .sv-pager-btn:hover:not(:disabled) {
+  border-color: var(--ink-secondary);
+}
+
+.sv-classic .sv-pager-btn.is-current {
+  border-color: var(--brand);
+  background: var(--mint-soft);
+  font-weight: 700;
+}
+
+.sv-classic .sv-pager-btn:disabled {
+  color: var(--ink-placeholder);
+  cursor: not-allowed;
+}
+
+.sv-classic .sv-pager-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.sv-classic .sv-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  min-height: 3rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  padding: 0.6rem 0.9rem;
+  color: var(--ink-primary);
+  font-size: 0.875rem;
+}
+
+.sv-classic .sv-bar-empty {
+  color: var(--ink-secondary);
+}
+
+.sv-classic .sv-bar-total {
+  margin-left: auto;
+  color: var(--vermilion);
+  font-size: 0.9375rem;
+}
+
+@media (max-width: 34rem) {
+  .sv-classic .sv-main,
+.sv-classic .sv-main.has-qty {
     grid-template-columns: 3.5rem minmax(0, 1fr) auto;
   }
 
-  .sv-art {
+  .sv-classic .sv-art {
     width: 3.5rem;
   }
 
-  .sv-main.has-qty .sv-qty {
+  .sv-classic .sv-main.has-qty .sv-qty {
     grid-column: 2 / -1;
     justify-self: end;
   }
 
-  .sv-opts {
+  .sv-classic .sv-opts {
     padding-left: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sv-item {
+  .sv-classic .sv-item {
     transition: none;
   }
+}
+
+/* the newer souvenir rules share class names; undo what they add on the classic step */
+.sv-classic .sv-qty {
+  align-self: auto;
+  justify-content: normal;
+}
+
+.sv-classic .sv-sizes .pg-chip {
+  min-height: 2.75rem;
+  padding: 0 0.85rem;
+}
+
+.sv-classic .sv-bar {
+  position: static;
+  z-index: auto;
+  box-shadow: none;
+}
+
+.sv-classic .sv-bar-wrap {
+  position: static;
 }
 
 /* =====================================================================
@@ -13494,6 +14155,12 @@ body:has(.app-root.is-public) {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+}
+
+.terms-all {
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--line-light);
+  font-weight: 700;
 }
 
 .terms-row {
@@ -16193,3 +16860,96 @@ body:has(.app-root.is-public) {
   }
 }
 
+/* the menu drawer's account head (phones and tablets use this one menu, 27 Nov 2026) */
+.mobile-drawer-account {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.25rem 0.25rem 0.75rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--line-light);
+}
+
+/* phones: the account menu is pinned to the screen edges under the header instead of the
+   account button, so it never runs off the left edge (27 Nov 2026, user request) */
+@media (max-width: 40rem) {
+  .profile-dropdown {
+    position: fixed;
+    top: calc(var(--topbar-height, 3.6rem) + 0.35rem);
+    left: 0.75rem;
+    right: 0.75rem;
+    width: auto;
+    max-height: calc(100dvh - var(--topbar-height, 3.6rem) - 1rem);
+    overflow-y: auto;
+  }
+}
+
+
+
+/* the registration confirmation in a popup, from the history page (27 Nov 2026) */
+.reg-confirm-dialog {
+  position: relative;
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-popover);
+}
+
+.reg-confirm-dialog .reg-done {
+  margin: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+.reg-confirm-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 1;
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--line-light);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--ink-secondary);
+  cursor: pointer;
+}
+
+.reg-confirm-close:hover {
+  color: var(--ink-primary);
+  border-color: var(--ink-secondary);
+}
+
+.reg-confirm-close:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* printing the registration confirmation (27 Nov 2026, user request): only the card, without
+   its buttons, the site bars or the dev tools */
+@media print {
+  body:has(.reg-done) * {
+    visibility: hidden;
+  }
+
+  body:has(.reg-done) .reg-done,
+  body:has(.reg-done) .reg-done * {
+    visibility: visible;
+  }
+
+  body:has(.reg-done) .reg-done {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    box-shadow: none;
+    border: 0;
+  }
+
+  body:has(.reg-done) .reg-done-actions {
+    display: none;
+  }
+}

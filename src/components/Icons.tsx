@@ -70,6 +70,16 @@ export const IconUsers: React.FC<IconProps> = ({ size, className }) => (
   </svg>
 );
 
+/** a runner mid-stride (Dev / Demo role list, 27 Nov 2026) */
+export const IconRunner: React.FC<IconProps> = ({ size, className }) => (
+  <svg {...baseProps(size, className)}>
+    <circle cx="14.5" cy="4.5" r="2" />
+    <path d="M9 21l2.5-5.5 3 2.5V22" />
+    <path d="M11.5 15.5l1-5.5-3.5 1.5-2 3" />
+    <path d="M12.5 10l3 3 3.5-1" />
+  </svg>
+);
+
 export const IconLedger: React.FC<IconProps> = ({ size, className }) => (
   <svg {...baseProps(size, className)}>
     <rect x="3" y="4" width="18" height="16" rx="2" />

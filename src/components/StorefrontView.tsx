@@ -568,7 +568,6 @@ export function StorefrontView({
       <header className="sf-head">
         <div>
           <h2>{tx('ร้านค้าของที่ระลึก')}</h2>
-          <p className="muted-block">{tx('ภาพตัวอย่างประจำหมวดสินค้า กรุณาดูรายละเอียดของแต่ละรายการ')}</p>
           <p className="muted-block">
             {tx('ซื้อได้โดยไม่ต้องสมัครวิ่ง แต่ละรายการระบุผู้ขาย ผู้รับเงิน และผู้ส่งมอบ')}
             {linkedRegistrationCode && (

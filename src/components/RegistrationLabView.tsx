@@ -36,10 +36,10 @@ import { NoteTag, PriceTag } from './RegTags';
 import { RegistrationStepper } from './RegistrationStepper';
 import { ShirtGallery, type ShirtGalleryStyle } from './ProductGallery';
 import { SHIRT_STYLES, shirtStyleName, type ShirtStyleId } from '../data/mockShirtStyles';
-import { SHIRT_PHOTOS } from '../data/productPhotos';
+import { FINISHER_MEDAL_PHOTO, SHIRT_PHOTOS } from '../data/productPhotos';
 
 /** shirt cut picked on the shirt step */
-type ShirtCut = 'Men' | 'Women' | 'Kids';
+type ShirtCut = 'Men' | 'Women' | 'Kids' | 'Unisex';
 const SHIRT_CUTS: { id: ShirtCut; label: string }[] = [
   { id: 'Men', label: 'ชาย' },
   { id: 'Women', label: 'หญิง' },
@@ -67,7 +67,8 @@ import {
   IconShirt,
 } from './Icons';
 import { PaymentMethodPicker } from './PaymentMethodPicker';
-import { SouvenirPicker } from './SouvenirPicker';
+import { SouvenirPicker, type SouvenirLayout } from './SouvenirPicker';
+import { SouvenirPickerClassic } from './SouvenirPickerClassic';
 import { RegistrationTerms } from './RegistrationTerms';
 import type { CartLine } from './StorefrontView';
 import { RegistrationSummary, type ReviewLedgerGroup, type ReviewSection } from './RegistrationReview';
@@ -172,18 +173,22 @@ export interface LabShared {
   shirtSize: Pair<ShirtSizeCode>;
   shirtStyle: Pair<ShirtStyleId>;
   addonItems: Pair<CartLine[]>;
-  delivery: Pair<'expo_pickup' | 'postal'>;
+  /** '' = not picked yet (every radio choice starts empty, 27 Nov 2026) */
+  delivery: Pair<'expo_pickup' | 'postal' | ''>;
   addrName: Pair<string>;
   recipient: Pair<string>;
   shipPhone: Pair<string>;
   address: Pair<CascadingAddressValue>;
   addrMode: Pair<'saved' | 'manual'>;
   bookId: Pair<string>;
-  channel: Pair<'promptpay' | 'card'>;
+  channel: Pair<'promptpay' | 'card' | ''>;
   acceptRules: Pair<boolean>;
   acceptPayTerms: Pair<boolean>;
+  acceptPdpa: Pair<boolean>;
 }
 type Gender = 'ไม่ระบุ' | 'ชาย' | 'หญิง';
+/** areas of a step that get the red frame when their choice is missing */
+type Zone = 'cat' | 'who' | 'friend' | 'ec' | 'shirt' | 'kit' | 'addr' | 'terms' | 'pay';
 type IdType = 'thai_id' | 'passport';
 
 export function RegistrationLabView({
@@ -195,6 +200,7 @@ export function RegistrationLabView({
   onBack,
   shared,
   live,
+  souvenirLayout = 'accordion',
 }: {
   event: RaceEvent;
   organization?: Organization;
@@ -205,6 +211,8 @@ export function RegistrationLabView({
   /** form state owned by the live form (see LabShared) */
   shared: LabShared;
   live: LabLive;
+  /** souvenir step layout; the Dev / Demo dock can switch it (27 Nov 2026) */
+  souvenirLayout?: SouvenirLayout;
 }) {
   const profile = currentUser?.runnerProfile;
   // the souvenir step shows only when something is still on sale (sold-out items are hidden)
@@ -225,8 +233,8 @@ export function RegistrationLabView({
   const [stepError, setStepError] = useState<string | null>(null);
   /* the custom area (not a plain input) that holds the step's problem; outlined while the
      step error shows (27 Nov 2026, user request: every step highlights and jumps to the gap) */
-  const [invalidZone, setInvalidZone] = useState<'who' | 'friend' | 'shirt' | 'terms' | null>(null);
-  const zoneMark = (zone: 'who' | 'friend' | 'shirt' | 'terms') =>
+  const [invalidZone, setInvalidZone] = useState<Zone | null>(null);
+  const zoneMark = (zone: Zone) =>
     stepError && invalidZone === zone ? { 'data-step-invalid': '' } : {};
   /** after a failed step: scroll to and focus the first marked problem on the page */
   const jumpToProblem = () => {
@@ -300,13 +308,10 @@ export function RegistrationLabView({
     ],
     [event]
   );
-  const optionId =
-    shared.optionId[0] ||
-    options.find((o) => o.catId === shared.catId)?.optionId ||
-    options[0]?.optionId ||
-    '';
+  // every radio choice starts empty, the entry type too (27 Nov 2026, user request)
+  const optionId = shared.optionId[0] || '';
   const setOptionId = shared.optionId[1];
-  const picked = options.find((o) => o.optionId === optionId) ?? options[0];
+  const picked = options.find((o) => o.optionId === optionId);
   const category =
     event.categories.find((c) => c.id === picked?.catId) ?? event.categories[0];
   const tier = category ? getCurrentTier(category) : null;
@@ -421,6 +426,8 @@ export function RegistrationLabView({
   }, [answersOwner]);
   const lastSavedId = useRef<string>('');
   const [partEditId, setPartEditId] = useState<string | null>(null);
+  // the friend editor was opened by a failed step: it marks the missing fields on open
+  const [partEditCheck, setPartEditCheck] = useState(false);
   const [step2Notice, setStep2Notice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
   const pickParticipant = (id: string) => {
     setSavedId(id);
@@ -449,13 +456,7 @@ export function RegistrationLabView({
     (c) => c.contactName === emergencyName && c.phone === emergencyPhone
   );
   const ecFromProfile = forSelf === true && contacts.length > 0 && ecMode === 'saved';
-  // in "from the profile" mode one contact is always picked, so the hidden fields are never empty
-  useEffect(() => {
-    if (!ecFromProfile || pickedEc) return;
-    const primary = contacts.find((c) => c.isPrimary) ?? contacts[0];
-    if (primary) setEmergency(primary.contactName, primary.relationship, primary.phone);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ecFromProfile, pickedEc, contacts]);
+  // "from the profile": the runner picks a contact (none is picked for them, 27 Nov 2026)
   const saveEditedContact = async (d: EmergencyContactDraft) => {
     const wasPicked = pickedEc?.id === ecEditId;
     const next = contacts.map((c) => (c.id === ecEditId ? { ...c, ...d } : c));
@@ -802,6 +803,7 @@ export function RegistrationLabView({
   const [channel, setChannel] = shared.channel;
   const [acceptRules, setAcceptRules] = shared.acceptRules;
   const [acceptPayTerms, setAcceptPayTerms] = shared.acceptPayTerms;
+  const [acceptPdpa, setAcceptPdpa] = shared.acceptPdpa;
 
   const addonSatang = addonLines.reduce((n, l) => n + l.prd.priceSatang * l.qty, 0);
   const shipQuote = quoteRegistrationShipping(event, delivery === 'postal' ? 'postal_shipping' : 'pickup_at_expo', addonLines);
@@ -825,12 +827,12 @@ export function RegistrationLabView({
     if (step === 7 && !live.held && !live.freeJump) shared.step[1](6);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, live.held]);
-  const termsRef = useRef<HTMLElement | null>(null);
+  const termsRef = useRef<HTMLDivElement | null>(null);
   /** summary: accept the terms, then the entry is booked and held while the runner pays */
   const bookAndPay = () => {
     if (live.submitting) return;
-    if (!acceptRules || !acceptPayTerms) {
-      setStepError('กรุณายอมรับกติกาการแข่งขันและเงื่อนไขการชำระเงินก่อนไปชำระเงิน');
+    if (!acceptRules || !acceptPayTerms || !acceptPdpa) {
+      setStepError('กรุณาติ๊กยอมรับทุกข้อที่มี * ก่อนไปชำระเงิน');
       setInvalidZone('terms');
       jumpToProblem();
       return;
@@ -839,6 +841,24 @@ export function RegistrationLabView({
     (live.book ?? live.submit)();
   };
   /** forward: the live form's checks for this step first */
+  // a missing choice made: its frame and message go away at once
+  useEffect(() => {
+    if (!invalidZone) return;
+    const fixed =
+      (invalidZone === 'cat' && Boolean(picked)) ||
+      (invalidZone === 'who' && forSelf !== null) ||
+      // only the "pick a friend" message; a picked friend with missing data stays marked
+      (invalidZone === 'friend' && Boolean(stepError?.startsWith('กรุณาเลือกเพื่อน')) && Boolean(savedId)) ||
+      (invalidZone === 'ec' && Boolean(pickedEc)) ||
+      (invalidZone === 'kit' && Boolean(delivery)) ||
+      (invalidZone === 'addr' && Boolean(bookId));
+    if (fixed) {
+      setStepError(null);
+      setInvalidZone(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invalidZone, picked, forSelf, savedId, pickedEc, delivery, bookId]);
+
   const goNext = (next: LabStep) => {
     // show the friend's email / phone problems next to the fields along with any other gaps
     if (step === 2 && forSelf === false) setFriendContactCheck(true);
@@ -860,8 +880,42 @@ export function RegistrationLabView({
             : contactProblem;
       }
     }
-    let zone: 'who' | 'friend' | 'shirt' | null = null;
+    // a picked friend whose saved data does not cover this entry: open the friend's editor
+    // with the missing fields marked, instead of only a message (27 Nov 2026, user request)
+    if (step === 2 && forSelf === false && partMode === 'saved' && savedId && savedId !== 'new') {
+      const friendGap =
+        !firstEn.trim() ||
+        !lastEn.trim() ||
+        (dobRequired && !dob) ||
+        !emergencyName.trim() ||
+        !emergencyRelation.trim() ||
+        !emergencyPhone.trim() ||
+        Boolean(firstFriendContactProblem(friendProblems));
+      if (friendGap) {
+        setFriendContactCheck(true);
+        setStepError('ข้อมูลเพื่อนคนนี้ยังไม่ครบ กรอกช่องที่มี * ในหน้าต่างแก้ไขแล้วกดบันทึก');
+        setInvalidZone('friend');
+        setPartEditCheck(true);
+        setPartEditId(savedId);
+        return;
+      }
+    }
+    let zone: Zone | null = null;
     if (step === 2 && forSelf === null) zone = 'who';
+    // choices that start empty: say which one is missing and frame it
+    const pickProblem: [string, Zone] | null =
+      step === 1 && !picked
+        ? ['กรุณาเลือกประเภทการสมัคร', 'cat']
+        : step === 2 && forSelf === false && partMode === 'saved' && !savedId
+          ? ['กรุณาเลือกเพื่อนจากรายชื่อ หรือกด กรอกผู้สมัครใหม่', 'friend']
+          : step === 2 && ecFromProfile && !pickedEc
+            ? ['กรุณาเลือกผู้ติดต่อฉุกเฉิน', 'ec']
+            : step === 5 && !delivery
+              ? ['กรุณาเลือกวิธีรับอุปกรณ์', 'kit']
+              : step === 5 && delivery === 'postal' && addrMode === 'saved' && book.length > 0 && !bookId
+                ? ['กรุณาเลือกที่อยู่จัดส่ง', 'addr']
+                : null;
+    if (pickProblem) [problem, zone] = pickProblem;
     // a saved friend missing data is fixed on the friend's card
     if (problem && step === 2 && forSelf === false && partMode === 'saved' && /แก้ไข ที่การ์ด/.test(problem)) zone = 'friend';
     if (!problem && step === 3 && !shirtSize) {
@@ -885,19 +939,26 @@ export function RegistrationLabView({
 
   /* shirt cut: ชาย / หญิง / เด็ก (26 Nov 2026, user request). Kept on this page only for now:
      the registration stores the size; storing the cut and the finisher size is a backend task. */
+  // an event with unisex shirts asks no cut (27 Nov 2026, user request)
+  const unisex = event.shirtUnisex === true;
   const defaultCut = (): ShirtCut => {
+    if (unisex) return 'Unisex';
     const pref = forSelf ? profile?.preferredShirtType : undefined;
     if (pref === 'Men' || pref === 'Women') return pref;
     return gender === 'หญิง' ? 'Women' : 'Men';
   };
   const [shirtCutPick, setShirtCut] = useState<ShirtCut | null>(null);
-  const shirtCut = shirtCutPick ?? defaultCut();
+  const shirtCut = unisex ? 'Unisex' : shirtCutPick ?? defaultCut();
   // finisher shirt: on unless the organizer turns it off (the organizer switch is not built yet)
-  const hasFinisher = event.finisherShirtEnabled ?? true;
+  // an event may give finishers a medal instead (27 Nov 2026, user request): no size to pick
+  const finisherMedal = event.finisherReward === 'medal';
+  const hasFinisher = !finisherMedal && (event.finisherShirtEnabled ?? true);
   const [finisherSize, setFinisherSize] = useState('');
   const [finisherCutPick, setFinisherCut] = useState<ShirtCut | null>(null);
-  const finisherCut = finisherCutPick ?? shirtCut;
+  const finisherCut = unisex ? 'Unisex' : finisherCutPick ?? shirtCut;
   const cutLabel = (c: ShirtCut) => SHIRT_CUTS.find((x) => x.id === c)?.label ?? c;
+  // "ทรง · แบบ" for the summary; a unisex shirt has no cut to name
+  const withCut = (text: string, c: ShirtCut) => (c === 'Unisex' ? text : `${text} · ${tx(cutLabel(c))}`);
 
   const shirtSpec = (size: ShirtSizeCode, cut: ShirtCut = shirtCut) => {
     const spec = resolveShirtSpec(
@@ -998,7 +1059,7 @@ export function RegistrationLabView({
             </span>
           </p>
         </div>
-        {category && quote && (
+        {picked && category && quote && (
           <div className="reg-lab-head-price">
             <span className="muted-inline">{tx(category.name)}</span>
             <strong className="mono-num">{formatThb(quote.runnerNetPaySatang, true)}</strong>
@@ -1035,7 +1096,7 @@ export function RegistrationLabView({
                 <h2>{tx('เลือกประเภทการสมัคร')}</h2>
                 <p>{tx('เลือกระยะและประเภทผู้สมัคร ราคาและจำนวนที่ว่างแสดงในแต่ละตัวเลือก')}</p>
               </div>
-              <div className="reg-lab-choices" role="radiogroup" aria-label={tx('เลือกประเภทการสมัคร')}>
+              <div className="reg-lab-choices" role="radiogroup" aria-label={tx('เลือกประเภทการสมัคร')} {...zoneMark('cat')}>
                 {options.map((opt) => {
                   const cat = event.categories.find((c) => c.id === opt.catId) ?? event.categories[0];
                   const t = cat ? getCurrentTier(cat) : null;
@@ -1110,9 +1171,9 @@ export function RegistrationLabView({
                       checked={forSelf === false}
                       onChange={() => {
                         setForSelf(false);
-                        const first = saved[0];
-                        setSavedId(first ? first.id : 'new');
-                        fillFrom(first ?? null);
+                        // no friend is picked for the runner; with no saved friends the form opens
+                        setSavedId(saved.length > 0 ? '' : 'new');
+                        fillFrom(null);
                       }}
                     />
                     <span className="custom-radio-circle" aria-hidden="true" />
@@ -1138,8 +1199,13 @@ export function RegistrationLabView({
                           setSavedId('new');
                           fillFrom(null);
                         } else {
-                          const back = saved.find((x) => x.id === lastSavedId.current) ?? saved[0];
-                          pickParticipant(back.id);
+                          // back to the list: the friend picked before, if any
+                          const back = saved.find((x) => x.id === lastSavedId.current);
+                          if (back) pickParticipant(back.id);
+                          else {
+                            setSavedId('');
+                            fillFrom(null);
+                          }
                         }
                       }
                     )}
@@ -1447,47 +1513,49 @@ export function RegistrationLabView({
                       </>
                     )}
                     {ecFromProfile ? (
-                      <SavedCardPicker
-                        items={contacts}
-                        selectedId={pickedEc?.id}
-                        getId={(c) => c.id}
-                        searchText={(c) => [c.contactName, c.relationship, c.phone, c.email].filter(Boolean).join(' ')}
-                        title={(c) => tx(c.contactName)}
-                        badge={(c) => (c.isPrimary ? primaryTag('ผู้ติดต่อหลัก') : null)}
-                        meta={(c) => `${tx(c.relationship)} · ${displayPhone(c.phone)}`}
-                        compare={primaryFirst}
-                        orderLabel="ผู้ติดต่อหลักก่อน"
-                        onPick={(id) => {
-                          const c = contacts.find((x) => x.id === id);
-                          if (c) setEmergency(c.contactName, c.relationship, c.phone);
-                        }}
-                        groupLabel="เลือกจากโปรไฟล์"
-                        searchPlaceholder="ค้นหาชื่อ ความสัมพันธ์ หรือเบอร์โทร"
-                        allTitle="ผู้ติดต่อฉุกเฉินทั้งหมด"
-                        idPrefix="lab-ec"
-                        renderCard={(c) => (
-                          <label key={c.id} className={`reg-category-radio-card ${pickedEc?.id === c.id ? 'selected' : ''}`}>
-                            <input
-                              type="radio"
-                              name="lab-ec-pick"
-                              checked={pickedEc?.id === c.id}
-                              onChange={() => setEmergency(c.contactName, c.relationship, c.phone)}
-                            />
-                            <span className="custom-radio-circle" aria-hidden="true" />
-                            <div className="reg-radio-card-copy">
-                              <span className="reg-card-head">
-                                <strong>{tx(c.contactName)}</strong>
-                                {c.isPrimary && primaryTag('ผู้ติดต่อหลัก')}
-                              </span>
-                              <span className="muted-inline">{tx(c.relationship)}</span>
-                              <span className="muted-inline">
-                                {tx('เบอร์โทร')}: <span className="mono-num">{displayPhone(c.phone)}</span>
-                              </span>
-                            </div>
-                            {editButton(c.contactName, () => setEcEditId(c.id))}
-                          </label>
-                        )}
-                      />
+                      <div className="reg-lab-zone" {...zoneMark('ec')}>
+                        <SavedCardPicker
+                          items={contacts}
+                          selectedId={pickedEc?.id}
+                          getId={(c) => c.id}
+                          searchText={(c) => [c.contactName, c.relationship, c.phone, c.email].filter(Boolean).join(' ')}
+                          title={(c) => tx(c.contactName)}
+                          badge={(c) => (c.isPrimary ? primaryTag('ผู้ติดต่อหลัก') : null)}
+                          meta={(c) => `${tx(c.relationship)} · ${displayPhone(c.phone)}`}
+                          compare={primaryFirst}
+                          orderLabel="ผู้ติดต่อหลักก่อน"
+                          onPick={(id) => {
+                            const c = contacts.find((x) => x.id === id);
+                            if (c) setEmergency(c.contactName, c.relationship, c.phone);
+                          }}
+                          groupLabel="เลือกจากโปรไฟล์"
+                          searchPlaceholder="ค้นหาชื่อ ความสัมพันธ์ หรือเบอร์โทร"
+                          allTitle="ผู้ติดต่อฉุกเฉินทั้งหมด"
+                          idPrefix="lab-ec"
+                          renderCard={(c) => (
+                            <label key={c.id} className={`reg-category-radio-card ${pickedEc?.id === c.id ? 'selected' : ''}`}>
+                              <input
+                                type="radio"
+                                name="lab-ec-pick"
+                                checked={pickedEc?.id === c.id}
+                                onChange={() => setEmergency(c.contactName, c.relationship, c.phone)}
+                              />
+                              <span className="custom-radio-circle" aria-hidden="true" />
+                              <div className="reg-radio-card-copy">
+                                <span className="reg-card-head">
+                                  <strong>{tx(c.contactName)}</strong>
+                                  {c.isPrimary && primaryTag('ผู้ติดต่อหลัก')}
+                                </span>
+                                <span className="muted-inline">{tx(c.relationship)}</span>
+                                <span className="muted-inline">
+                                  {tx('เบอร์โทร')}: <span className="mono-num">{displayPhone(c.phone)}</span>
+                                </span>
+                              </div>
+                              {editButton(c.contactName, () => setEcEditId(c.id))}
+                            </label>
+                          )}
+                        />
+                      </div>
                     ) : (
                     <div className="reg-lab-fields">
                       <div className="form-row">
@@ -1504,10 +1572,14 @@ export function RegistrationLabView({
                         />
                       </div>
                       <div className="form-row">
-                        <label htmlFor="lab-emerg-rel">{tx('ความสัมพันธ์')}</label>
+                        {/* required on the entry form (27 Nov 2026, user request) */}
+                        <label htmlFor="lab-emerg-rel">
+                          <RequiredFieldText text={tx('ความสัมพันธ์ *')} />
+                        </label>
                         <input
                           id="lab-emerg-rel"
                           type="text"
+                          required
                           value={emergencyRelation}
                           onChange={(e) => setEmergencyRelation(e.target.value)}
                           placeholder={tx('เช่น บิดา / มารดา / คู่สมรส')}
@@ -1547,12 +1619,24 @@ export function RegistrationLabView({
                   owner={{ email: currentUser?.contactEmail, phone: currentUser?.runnerProfile?.phone }}
                   idPrefix="lab-sp-edit"
                   participant={saved.find((x) => x.id === partEditId) ?? null}
+                  entryRules={{ dob: dobRequired }}
+                  checkOnOpen={partEditCheck}
                   shirtSizes={(platformProfileConfig?.shirtSizes ?? [])
                     .filter((sz) => sz.enabled)
                     .sort((x, y) => x.sortOrder - y.sortOrder)
                     .map((sz) => sz.code)}
-                  onCancel={() => setPartEditId(null)}
-                  onSave={saveEditedParticipant}
+                  onCancel={() => {
+                    setPartEditId(null);
+                    setPartEditCheck(false);
+                  }}
+                  onSave={async (item) => {
+                    await saveEditedParticipant(item);
+                    setPartEditCheck(false);
+                    if (invalidZone === 'friend') {
+                      setStepError(null);
+                      setInvalidZone(null);
+                    }
+                  }}
                 />
               )}
               {ecEditId && (
@@ -1564,7 +1648,7 @@ export function RegistrationLabView({
                   onSave={saveEditedContact}
                 />
               )}
-              {footer(1, forSelf === null ? null : afterInfo)}
+              {footer(1, afterInfo)}
             </>
           )}
 
@@ -1635,12 +1719,28 @@ export function RegistrationLabView({
                 }}
                 size={shirtSize}
                 onSizeChange={(z) => setShirtSize(z as ShirtSizeCode)}
-                cuts={SHIRT_CUTS}
+                cuts={unisex ? undefined : SHIRT_CUTS}
                 cut={shirtCut}
-                onCutChange={(c) => setShirtCut(c as ShirtCut)}
-                cutNote={null}
+                onCutChange={(c) => {
+                  setShirtCut(c as ShirtCut);
+                  // a new cut starts with no size picked, like a new style (27 Nov 2026, user request)
+                  if (c !== shirtCut) setShirtSize('' as ShirtSizeCode);
+                }}
+                cutNote={unisex ? 'เสื้อแบบ Unisex ทรงเดียว ใส่ได้ทั้งชายและหญิง' : null}
               />
               </div>
+              {finisherMedal && (
+                <section className="reg-lab-section reg-lab-finisher" id="lab-finisher" aria-labelledby="lab-finisher-h">
+                  <h3 id="lab-finisher-h">{tx('เหรียญ Finisher')}</h3>
+                  <figure className="reg-lab-medal">
+                    <img src={FINISHER_MEDAL_PHOTO} alt={tx('เหรียญ Finisher')} />
+                    <figcaption>
+                      <strong>{tx('ได้รับเมื่อวิ่งเข้าเส้นชัยภายในเวลาที่กำหนด')}</strong>
+                      <span>{tx('รวมในค่าสมัครแล้ว')}</span>
+                    </figcaption>
+                  </figure>
+                </section>
+              )}
               {hasFinisher && (
                 <section className="reg-lab-section reg-lab-finisher" id="lab-finisher" aria-labelledby="lab-finisher-h">
                   <h3 id="lab-finisher-h">
@@ -1660,10 +1760,13 @@ export function RegistrationLabView({
                       setStepError(null);
                     }}
                     caption="ได้รับเมื่อวิ่งเข้าเส้นชัย"
-                    cuts={SHIRT_CUTS}
+                    cuts={unisex ? undefined : SHIRT_CUTS}
                     cut={finisherCut}
-                    onCutChange={(c) => setFinisherCut(c as ShirtCut)}
-                    cutNote={null}
+                    onCutChange={(c) => {
+                      if (c !== finisherCut) setFinisherSize('');
+                      setFinisherCut(c as ShirtCut);
+                    }}
+                    cutNote={unisex ? 'เสื้อแบบ Unisex ทรงเดียว ใส่ได้ทั้งชายและหญิง' : null}
                   />
                 </section>
               )}
@@ -1678,7 +1781,16 @@ export function RegistrationLabView({
                 <h2>{tx('ของที่ระลึก (ไม่บังคับ)')}</h2>
                 <p>{tx('สั่งเสื้อหรือเหรียญที่ระลึกเพิ่มพร้อมใบสมัคร ชำระรวมกับค่าสมัคร')}</p>
               </div>
-              <SouvenirPicker products={event.products} value={addonItems} onChange={setAddonItems} />
+              {souvenirLayout === 'classic' ? (
+                <SouvenirPickerClassic products={event.products} value={addonItems} onChange={setAddonItems} />
+              ) : (
+                <SouvenirPicker
+                  products={event.products}
+                  value={addonItems}
+                  onChange={setAddonItems}
+                  layout={souvenirLayout}
+                />
+              )}
               {footer(3, 5)}
             </>
           )}
@@ -1690,12 +1802,12 @@ export function RegistrationLabView({
                 <h2>{tx('วิธีรับอุปกรณ์ (Race Kit)')}</h2>
                 <p>{tx('รับเองที่หน้างานไม่มีค่าใช้จ่าย หรือให้จัดส่งตามเงื่อนไขของผู้จัด')}</p>
               </div>
-              <div className="reg-lab-choices" role="radiogroup" aria-label={tx('วิธีรับอุปกรณ์ (Race Kit)')}>
+              <div className="reg-lab-choices" role="radiogroup" aria-label={tx('วิธีรับอุปกรณ์ (Race Kit)')} {...zoneMark('kit')}>
                 <label className={`reg-category-radio-card ${delivery === 'expo_pickup' ? 'selected' : ''}`}>
                   <input type="radio" name="lab-kit" checked={delivery === 'expo_pickup'} onChange={() => setDelivery('expo_pickup')} />
                   <span className="custom-radio-circle" aria-hidden="true" />
                   <div className="reg-radio-card-copy">
-                    <strong>{tx('รับเสื้อและป้าย BIB ด้วยตนเองที่หน้างาน (QR Check-in)')}</strong>
+                    <strong>{tx('รับ Race Kit ด้วยตนเองที่หน้างาน (QR Check-in)')}</strong>
                     <span className="muted-inline">
                       {tx('กำหนดการรับอุปกรณ์: ')}
                       {tx(event.kitPickupWindow)} {tx(' ณ')} {tx(event.venue)}
@@ -1763,63 +1875,65 @@ export function RegistrationLabView({
                   )}
 
                   {addrMode === 'saved' && book.length > 0 ? (
-                    <SavedCardPicker
-                      items={book}
-                      selectedId={bookId}
-                      getId={(addr) => addr.id}
-                      searchText={(addr) =>
-                        [addr.addressName, addr.recipientName, addr.phone, addr.address, addr.subdistrict, addr.district, addr.province, addr.postalCode].join(' ')
-                      }
-                      title={(addr) => addr.addressName}
-                      badge={(addr) => (addr.isDefault ? primaryTag('ที่อยู่หลัก') : null)}
-                      meta={(addr) => `${addr.recipientName} · ${addr.district} ${addr.province} ${addr.postalCode}`}
-                      compare={defaultFirst}
-                      orderLabel="ที่อยู่หลักก่อน"
-                      onPick={setBookId}
-                      groupLabel="เลือกจากสมุดที่อยู่"
-                      searchPlaceholder="ค้นหาชื่อที่อยู่ ผู้รับ เบอร์โทร หรือจังหวัด"
-                      allTitle="สมุดที่อยู่ทั้งหมด"
-                      idPrefix="lab-book"
-                      renderCard={(addr) => (
-                        <label
-                          key={addr.id}
-                          className={`reg-category-radio-card ${bookId === addr.id ? 'selected' : ''}`}
-                        >
-                          <input
-                            type="radio"
-                            name="lab-book"
-                            checked={bookId === addr.id}
-                            onChange={() => setBookId(addr.id)}
-                          />
-                          <span className="custom-radio-circle" aria-hidden="true" />
-                          <div className="reg-radio-card-copy">
-                            <span className="reg-card-head">
-                              <strong>{addr.addressName}</strong>
-                              {addr.isDefault && primaryTag('ที่อยู่หลัก')}
-                            </span>
-                            <span className="muted-inline">
-                              {addr.recipientName} ({addr.phone})
-                            </span>
-                            <span className="muted-inline">
-                              {addr.address}, ต.{addr.subdistrict} อ.{addr.district} จ.{addr.province}{' '}
-                              <span className="mono-num">{addr.postalCode}</span>
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            className="btn-secondary reg-lab-book-edit"
-                            aria-label={`${tx('แก้ไข')} ${addr.addressName}`}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              setAddrNotice(null);
-                              setEditAddrId(addr.id);
-                            }}
+                    <div className="reg-lab-zone" {...zoneMark('addr')}>
+                      <SavedCardPicker
+                        items={book}
+                        selectedId={bookId}
+                        getId={(addr) => addr.id}
+                        searchText={(addr) =>
+                          [addr.addressName, addr.recipientName, addr.phone, addr.address, addr.subdistrict, addr.district, addr.province, addr.postalCode].join(' ')
+                        }
+                        title={(addr) => addr.addressName}
+                        badge={(addr) => (addr.isDefault ? primaryTag('ที่อยู่หลัก') : null)}
+                        meta={(addr) => `${addr.recipientName} · ${addr.district} ${addr.province} ${addr.postalCode}`}
+                        compare={defaultFirst}
+                        orderLabel="ที่อยู่หลักก่อน"
+                        onPick={setBookId}
+                        groupLabel="เลือกจากสมุดที่อยู่"
+                        searchPlaceholder="ค้นหาชื่อที่อยู่ ผู้รับ เบอร์โทร หรือจังหวัด"
+                        allTitle="สมุดที่อยู่ทั้งหมด"
+                        idPrefix="lab-book"
+                        renderCard={(addr) => (
+                          <label
+                            key={addr.id}
+                            className={`reg-category-radio-card ${bookId === addr.id ? 'selected' : ''}`}
                           >
-                            {tx('แก้ไข')}
-                          </button>
-                        </label>
-                      )}
-                    />
+                            <input
+                              type="radio"
+                              name="lab-book"
+                              checked={bookId === addr.id}
+                              onChange={() => setBookId(addr.id)}
+                            />
+                            <span className="custom-radio-circle" aria-hidden="true" />
+                            <div className="reg-radio-card-copy">
+                              <span className="reg-card-head">
+                                <strong>{addr.addressName}</strong>
+                                {addr.isDefault && primaryTag('ที่อยู่หลัก')}
+                              </span>
+                              <span className="muted-inline">
+                                {addr.recipientName} ({addr.phone})
+                              </span>
+                              <span className="muted-inline">
+                                {addr.address}, ต.{addr.subdistrict} อ.{addr.district} จ.{addr.province}{' '}
+                                <span className="mono-num">{addr.postalCode}</span>
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn-secondary reg-lab-book-edit"
+                              aria-label={`${tx('แก้ไข')} ${addr.addressName}`}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setAddrNotice(null);
+                                setEditAddrId(addr.id);
+                              }}
+                            >
+                              {tx('แก้ไข')}
+                            </button>
+                          </label>
+                        )}
+                      />
+                    </div>
                   ) : (
                     <>
                       <div className="reg-lab-fields">
@@ -1916,14 +2030,22 @@ export function RegistrationLabView({
                   { label: tx('อัตราค่าสมัคร'), value: tx(tier.label) },
                   {
                     label: tx('เสื้อตามสิทธิ์'),
-                    value: `${tx(shirtStyleName(shirtStyle))} · ${tx(cutLabel(shirtCut))} · ${shirtSize}`,
+                    value: `${withCut(tx(shirtStyleName(shirtStyle)), shirtCut)} · ${shirtSize}`,
                     editStep: 3,
                   },
+                  ...(finisherMedal
+                    ? [
+                        {
+                          label: tx('เหรียญ Finisher'),
+                          value: tx('ได้รับเมื่อวิ่งเข้าเส้นชัยภายในเวลาที่กำหนด'),
+                        },
+                      ]
+                    : []),
                   ...(hasFinisher
                     ? [
                         {
                           label: tx('เสื้อ Finisher'),
-                          value: finisherSize ? `${tx(cutLabel(finisherCut))} · ${finisherSize}` : tx('ไม่ระบุ'),
+                          value: finisherSize ? (unisex ? finisherSize : `${tx(cutLabel(finisherCut))} · ${finisherSize}`) : tx('ไม่ระบุ'),
                           editStep: 3 as LabStep,
                         },
                       ]
@@ -1969,7 +2091,7 @@ export function RegistrationLabView({
                 lines: [
                   {
                     label: txf('ค่าสมัคร {0} ({1})', tx(category.name), tx(tier.label)),
-                    sub: txf('{0} · ไซส์ {1}', `${tx(shirtStyleName(shirtStyle))} · ${tx(cutLabel(shirtCut))}`, shirtSize),
+                    sub: txf('{0} · ไซส์ {1}', withCut(tx(shirtStyleName(shirtStyle)), shirtCut), shirtSize),
                     satang: quote.baseSatang,
                   },
                   {
@@ -2019,24 +2141,32 @@ export function RegistrationLabView({
                     label: live.submitting ? 'กำลังกันที่นั่ง…' : 'ไปชำระเงิน',
                     onClick: bookAndPay,
                   }}
+                  consent={
+                    /* the entry is booked when leaving this step, so the agreements are ticked
+                       here, right above the pay button */
+                    <div className="reg-lab-terms" ref={termsRef} {...zoneMark('terms')}>
+                      <RegistrationTerms
+                        event={event}
+                        organization={organization}
+                        acceptRules={acceptRules}
+                        onAcceptRules={(v) => {
+                          setAcceptRules(v);
+                          setStepError(null);
+                        }}
+                        acceptPayment={acceptPayTerms}
+                        onAcceptPayment={(v) => {
+                          setAcceptPayTerms(v);
+                          setStepError(null);
+                        }}
+                        acceptPrivacy={acceptPdpa}
+                        onAcceptPrivacy={(v) => {
+                          setAcceptPdpa(v);
+                          setStepError(null);
+                        }}
+                      />
+                    </div>
+                  }
                 />
-                {/* the entry is booked when leaving this step, so the terms are accepted here */}
-                <section className="reg-lab-section reg-lab-terms" ref={termsRef} {...zoneMark('terms')}>
-                  <RegistrationTerms
-                    event={event}
-                    organization={organization}
-                    acceptRules={acceptRules}
-                    onAcceptRules={(v) => {
-                      setAcceptRules(v);
-                      setStepError(null);
-                    }}
-                    acceptPayment={acceptPayTerms}
-                    onAcceptPayment={(v) => {
-                      setAcceptPayTerms(v);
-                      setStepError(null);
-                    }}
-                  />
-                </section>
                 {live.payError}
                 {footer(5, null)}
               </>
@@ -2095,9 +2225,25 @@ export function RegistrationLabView({
                   </p>
                 </section>
 
-                <section className="reg-lab-section">
-                  <PaymentMethodPicker name="lab-pay" value={channel} onChange={setChannel} />
+                <section className="reg-lab-section" {...zoneMark('pay')}>
+                  <PaymentMethodPicker
+                    name="lab-pay"
+                    value={channel}
+                    onChange={(c) => {
+                      setChannel(c);
+                      if (invalidZone === 'pay') {
+                        setStepError(null);
+                        setInvalidZone(null);
+                      }
+                    }}
+                  />
                 </section>
+                {invalidZone === 'pay' && stepError && (
+                  <div className="error-callout" role="alert">
+                    <IconAlert size={17} />
+                    <span>{tx(stepError)}</span>
+                  </div>
+                )}
 
                 {held.error && (
                   <div className="error-callout" role="alert">
@@ -2114,7 +2260,21 @@ export function RegistrationLabView({
                     <button type="button" className="btn-ghost-sm" disabled={held.busy} onClick={held.another}>
                       {tx('สมัครให้คนอื่น')}
                     </button>
-                    <button type="button" className="btn-primary" disabled={held.busy} onClick={held.pay}>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={held.busy}
+                      onClick={() => {
+                        // the payment method starts unpicked too (27 Nov 2026)
+                        if (!channel) {
+                          setStepError('กรุณาเลือกช่องทางชำระเงิน');
+                          setInvalidZone('pay');
+                          jumpToProblem();
+                          return;
+                        }
+                        held.pay();
+                      }}
+                    >
                       {held.busy ? tx('กำลังดำเนินการ…') : txf('ชำระเงิน {0}', formatThb(total, true))}
                     </button>
                   </div>

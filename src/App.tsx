@@ -71,7 +71,6 @@ import { installInvalidFieldHighlight } from './utils/formValidation';
 import { MascotLoader } from './components/MascotRunner';
 import { isPagePreviewUrl } from './components/pagePreview';
 import { isFormPreviewUrl } from './components/formPreview';
-import { ReviewComments } from './components/ReviewComments';
 import { cloneCustomFieldsSchema } from './utils/eventConfig';
 import { AuthScreen } from './components/AuthViews';
 import {
@@ -83,6 +82,8 @@ import {
   CustomerPortalView,
   CustomerSubView,
 } from './components/CustomerPortalView';
+import type { SouvenirLayout } from './components/SouvenirPicker';
+import { useDismiss } from './utils/useDismiss';
 import {
   IconAlert,
   IconArrowRight,
@@ -91,7 +92,12 @@ import {
   IconCheckCircle,
   IconChevronDown,
   IconClose,
+  IconEye,
   IconFlag,
+  IconLedger,
+  IconLineMark,
+  IconQr,
+  IconRunner,
   IconLock,
   IconMenu,
   IconShield,
@@ -362,7 +368,7 @@ function publicSiteOrigin(): string {
   const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
   return env?.VITE_PUBLIC_SITE_URL || `${window.location.protocol}//${window.location.hostname}:5173`;
 }
-const MOCK_QUOTA_BOX_KEY = 'kratai.mock.showQuotaBox';
+const DEV_SOUVENIR_LAYOUT_KEY = 'kratai.dev.souvenirLayout';
 
 function findEventBySlug(events: RaceEvent[], slug: string | null): RaceEvent | null {
   if (!slug) return null;
@@ -470,9 +476,11 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showDemoTools, setShowDemoTools] = useState(false);
   // testers' review comments (sandbox only): drop-a-pin mode, list panel, open count
-  const [reviewPlacing, setReviewPlacing] = useState(false);
-  const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
-  const [reviewOpenCount, setReviewOpenCount] = useState(0);
+  // floating menus close on a press outside them or Escape (27 Nov 2026, user request)
+  const profileMenuRef = useRef<HTMLDivElement | null>(null);
+  const devDockRef = useRef<HTMLElement | null>(null);
+  useDismiss(showProfileMenu, [profileMenuRef], () => setShowProfileMenu(false));
+  useDismiss(showDemoTools, [devDockRef], () => setShowDemoTools(false));
   const personalDirtyRef = useRef(false);
   const [personalDiscardSeq, setPersonalDiscardSeq] = useState(0);
   const handlePersonalDirtyChange = useCallback((dirty: boolean) => {
@@ -517,25 +525,62 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     }
     proceed();
   };
-  const [externalSocialScenario, setExternalSocialScenario] = useState<{
-    seq: number;
-    provider: 'google' | 'line' | 'facebook';
-    scenario: 'new_no_email' | 'collision' | 'cancelled';
-  } | null>(null);
-
-  // Mockup only (dev dock): show / hide the event-wide quota box on event detail pages.
-  // The real switch will be an organizer setting per event; this browser-local flag stands in for it.
-  const [mockShowQuotaBox, setMockShowQuotaBox] = useState(() => {
+  // Dev / Demo: which souvenir step layout the registration form shows (27 Nov 2026, user
+  // request "สร้าง template แบบเดิม แยกในเมนู dev / demo"); kept in this browser only
+  const [devSouvenirLayout, setDevSouvenirLayout] = useState<SouvenirLayout>(() => {
     try {
-      return window.localStorage.getItem(MOCK_QUOTA_BOX_KEY) !== '0';
+      const v = window.localStorage.getItem(DEV_SOUVENIR_LAYOUT_KEY);
+      return v === 'shelves' || v === 'classic' ? v : 'accordion';
     } catch {
-      return true;
+      return 'accordion';
     }
   });
-  const toggleMockQuotaBox = (show: boolean) => {
-    setMockShowQuotaBox(show);
+  // Dev / Demo: what each demo account is, by role (27 Nov 2026, user request)
+  const devRoleOf = (u: UserAccount) => {
+    if (u.isPlatformAdmin) {
+      return { order: 4, Icon: IconShield, title: 'ผู้ดูแลระบบ', sub: tx('อนุมัติผู้จัด งาน และรอบโอน') };
+    }
+    if (u.memberships.some((m) => m.role === 'owner')) {
+      return {
+        order: 2,
+        Icon: IconBuilding,
+        title: 'ผู้จัด',
+        sub: txf('เจ้าขององค์กร · {0} องค์กร', u.memberships.length),
+      };
+    }
+    const team = u.memberships[0];
+    if (team) {
+      const assigned = team.assignedEventIds?.length ?? 0;
+      return {
+        order: 3,
+        // the icon follows the duty: event setup, money, kit check-in
+        Icon: team.role === 'finance' ? IconLedger : team.role === 'staff' ? IconQr : IconCalendar,
+        title: `ทีมงานผู้จัด · ${ROLE_LABEL[team.role]}`,
+        sub: [
+          // the duty the role is known for, so the line matches its icon and stays short
+          ...[(() => {
+            const all = roleDuties(team.role);
+            const key = team.role === 'event_manager' ? all[0] : all[all.length - 1];
+            return tx((key ?? '').replace(/\s*\(.*\)$/, ''));
+          })()],
+          ...(assigned > 0 ? [txf('เฉพาะ {0} งานที่ได้รับมอบหมาย', assigned)] : []),
+        ].join(' · '),
+      };
+    }
+    const viaLine = u.identities.some((i) => i.provider === 'line');
+    return {
+      order: 1,
+      // a runner; the one who signed in with LINE shows the LINE mark
+      Icon: viaLine ? IconLineMark : IconRunner,
+      title: 'นักวิ่ง',
+      sub: viaLine ? tx('ลูกค้าทั่วไปผ่าน LINE ซื้อของได้โดยไม่สมัครวิ่ง') : tx('สมาชิก มีโปรไฟล์ เพื่อน และประวัติสมัคร'),
+    };
+  };
+
+  const pickDevSouvenirLayout = (l: SouvenirLayout) => {
+    setDevSouvenirLayout(l);
     try {
-      window.localStorage.setItem(MOCK_QUOTA_BOX_KEY, show ? '1' : '0');
+      window.localStorage.setItem(DEV_SOUVENIR_LAYOUT_KEY, l);
     } catch {
       /* storage blocked: the choice lasts until reload */
     }
@@ -2748,33 +2793,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     };
   };
 
-  const handleSimulateWebhookConfirm = (regId: string) => {
-    const target = sys.registrations.find((r) => r.id === regId);
-    if (!target) return;
-    setSys((prev) => ({
-      ...prev,
-      registrations: prev.registrations.map((r) =>
-        r.id === regId
-          ? {
-            ...r,
-            registrationStatus: 'confirmed',
-            paymentStatus: 'succeeded',
-            fulfillmentStatus: 'ready',
-            paidAt: '2026-11-17T09:50:00+07:00',
-            reservationExpiresAt: null,
-          }
-          : r
-      ),
-    }));
-    appendAudit(
-      target.organizationId,
-      `ยืนยันผล Webhook รับเงินสำเร็จ (${target.orderCode})`,
-      `${target.regCode}: confirmed`,
-      target.eventId
-    );
-    void syncApi('POST', `/api/registrations/${regId}/confirm-payment`);
-  };
-
   const handleResolveRefundRequest = (
     regId: string,
     decision: 'approve_succeed' | 'reject',
@@ -3267,9 +3285,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountNeedsPrivacyAck, currentUser?.id]);
-  const pendingWebhookRegs = sys.registrations.filter(
-    (r) => r.registrationStatus === 'pending_payment'
-  );
 
   return (
     <div
@@ -3427,7 +3442,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                 <span>{tx("เข้าสู่ระบบ")}</span>
               </button>
             ) : (
-              <div className="profile-menu-wrap">
+              <div className="profile-menu-wrap" ref={profileMenuRef}>
                 <button
                   type="button"
                   className={`btn-account-pill ${showProfileMenu || surface === 'account_security' || surface === 'runner_profile'
@@ -3435,7 +3450,17 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                     : ''
                     }`}
                   aria-expanded={showProfileMenu}
+                  aria-label={txf('บัญชีของ {0}', currentUserDisplayName)}
                   onClick={() => {
+                    // phones and tablets (where the menu button shows and this button is just
+                    // the avatar): it opens the profile page; the menu button holds the rest
+                    // (27 Nov 2026, user request)
+                    if (window.matchMedia('(max-width: 67.5rem)').matches) {
+                      setShowProfileMenu(false);
+                      setShowMobileMenu(false);
+                      navigateRunnerProfile('personal');
+                      return;
+                    }
                     setShowMobileMenu(false);
                     setShowProfileMenu((v) => !v);
                   }}
@@ -3608,6 +3633,42 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                 role="dialog"
                 aria-label={tx("เมนูหลักของแพลตฟอร์ม")}
               >
+                {/* who is signed in, with the profile meter (the account menu's head, which
+                    phones no longer open separately) */}
+                {currentUser && (
+                  <div className="mobile-drawer-account">
+                    <div className="profile-dropdown-head">
+                      <div className="runner-avatar-frame sm" aria-hidden="true">
+                        {currentUserAvatarUrl ? (
+                          <img src={currentUserAvatarUrl} alt="" className="runner-avatar-img" />
+                        ) : (
+                          <DefaultAvatarImg />
+                        )}
+                      </div>
+                      <div className="profile-dropdown-identity">
+                        <strong>{currentUserNameEn}</strong>
+                        <div className="muted-inline profile-dropdown-email">
+                          {currentUser.contactEmail ?? tx("เข้าใช้งานผ่าน LINE (ยังไม่ได้ผูกอีเมล)")}
+                        </div>
+                      </div>
+                    </div>
+                    {currentUserCompletion && (
+                      <button
+                        type="button"
+                        className={`profile-completion-status ${currentUserCompletion.isComplete ? 'is-complete' : 'is-warning'}`}
+                        onClick={() => navigateRunnerProfile('personal')}
+                      >
+                        <ProfileCompletionStatusText
+                          isComplete={currentUserCompletion.isComplete}
+                          pct={currentUserCompletion.pct}
+                        />
+                        <span className="profile-completion-status-meter" aria-hidden="true">
+                          <span style={{ width: `${currentUserCompletion.pct}%` }} />
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                )}
                 <nav className="mobile-drawer-links" aria-label={tx("เมนูหลักของแพลตฟอร์ม")}>
                   <button
                     type="button"
@@ -3771,7 +3832,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
           {/* ACTIVE SURFACE */}
           {surface === 'customer' && (
             <CustomerPortalView
-              showQuotaBox={sandboxTools ? mockShowQuotaBox : true}
+              souvenirLayout={sandboxTools ? devSouvenirLayout : 'accordion'}
               subView={customerSubView}
               selectedEventId={selectedPublicEventId}
               initialEventTab={initialEventTab}
@@ -3808,7 +3869,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
               users={sys.users}
               returnIntent={returnIntent}
               initialTab={authInitialTab}
-              externalSocialScenario={externalSocialScenario}
               onAuthenticated={handleAuthenticated}
               sandboxAuthEnabled={sandboxTools}
               onPasswordLogin={handlePasswordLogin}
@@ -4099,257 +4159,146 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
       {/* Hidden when the server runs without sandbox tools (production) and in the console */}
       {sandboxTools && !isAdminApp && (
         <aside
+          ref={devDockRef}
           className="dev-demo-dock"
           aria-label={tx("แถบเครื่องมือสำหรับผู้พัฒนาและสลับบัญชีสาธิต")}
-          data-review-ui=""
         >
           {showDemoTools && (
-            <div className="dev-demo-drawer">
+            /* Dev / Demo tools redesign (27 Nov 2026, user request): plain wording, who you are
+               now on top, then four numbered parts: switch user, this page's layout, try a
+               situation, reset data */
+            <div className="dev-demo-drawer" role="dialog" aria-labelledby="dev-tools-title">
               <div className="dev-drawer-head">
                 <div>
-                  <strong>Dev / Demo Tools</strong>
-                  <div className="muted-inline">
-                    {tx("แยกออกจากเมนูเว็บจริงเพื่อทดสอบทุกบทบาทได้ทันที")}
-                  </div>
+                  <strong id="dev-tools-title" className="dev-drawer-title">Dev / Demo</strong>
+                  <div className="dev-drawer-sub">{tx("ใช้ตอนพัฒนาเท่านั้น เว็บจริงไม่มีแถบนี้")}</div>
                 </div>
                 <button
                   type="button"
-                  className="btn-ghost-sm"
+                  className="dev-icon-btn"
+                  aria-label={tx("ปิด Dev / Demo")}
                   onClick={() => setShowDemoTools(false)}
                 >
-                  {tx("พับเก็บ")}
+                  <IconClose size={16} />
                 </button>
               </div>
 
-              <div className="dev-drawer-section">
-                <div className="dev-section-label">
-                  {tx("สลับสถานะผู้ใช้ทดสอบ (ตรวจการแสดง/ซ่อนเมนูผู้จัดงาน)")}
-                </div>
+              {(() => {
+                const now = currentUser ? devRoleOf(currentUser) : null;
+                return (
+                  <div className="dev-now">
+                    {now ? <now.Icon size={20} /> : <IconEye size={20} />}
+                    <div>
+                      <span className="dev-now-label">{tx("ตอนนี้ใช้งานเป็น")}</span>
+                      <strong>
+                        {now ? `${tx(now.title)} · ${tx(currentUser!.fullNameTh.split(' ')[0])}` : tx("ผู้เยี่ยมชม (ยังไม่เข้าสู่ระบบ)")}
+                      </strong>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <section className="dev-drawer-section" aria-labelledby="dev-sec-user">
+                <h3 id="dev-sec-user" className="dev-sec-title">
+                  <IconUsers size={15} /> {tx("เปลี่ยนคนที่ใช้งาน")}
+                </h3>
+                <p className="dev-sec-help">{tx("กดแล้วเข้าระบบเป็นคนนั้นทันที ไม่ต้องใส่รหัส")}</p>
                 <button
                   type="button"
-                  className={`dev-persona-btn ${!currentUser ? 'active' : ''}`}
+                  className={`dev-row ${!currentUser ? 'active' : ''}`}
+                  aria-current={!currentUser ? 'true' : undefined}
                   onClick={() => {
                     handleLogout();
                     setShowDemoTools(false);
                   }}
                 >
-                  <span>{tx("ผู้เยี่ยมชมทั่วไป (Guest · ยังไม่ Login)")}</span>
-                  <span className="mono-code">Guest</span>
+                  <IconEye size={18} />
+                  <span className="dev-row-copy">
+                    <strong>{tx("ผู้เยี่ยมชม")}</strong>
+                    <span>{tx("ยังไม่เข้าสู่ระบบ")}</span>
+                  </span>
+                  {!currentUser && <IconCheckCircle size={16} />}
                 </button>
-
                 {sys.users
                   .filter((u) => u.isDemoPreset)
-                  .map((u) => {
+                  .map((u) => ({ u, r: devRoleOf(u) }))
+                  .sort((x, y) => x.r.order - y.r.order)
+                  .map(({ u, r }) => {
                     const isCur = currentUser?.id === u.id;
-                    const isOrg = u.memberships.length > 0;
-                    // four roles only (27 Nov 2026, user request): ผู้ดูแลระบบ / ผู้จัด / ทีมงานผู้จัด / นักวิ่ง;
-                    // the line below keeps the account's own duty so same-role accounts stay apart
-                    const roleTitle = u.isPlatformAdmin
-                      ? 'ผู้ดูแลระบบ (Platform Owner)'
-                      : u.memberships.some((m) => m.role === 'owner')
-                        ? 'ผู้จัด'
-                        : isOrg
-                          ? 'ทีมงานผู้จัด'
-                          : 'นักวิ่ง';
-                    const duty = u.demoRoleSummary.split(' — ')[0].trim();
-                    // organizer team: which role, and what that role does (27 Nov 2026, user request)
-                    const teamRole = roleTitle === 'ทีมงานผู้จัด' ? u.memberships[0] : undefined;
                     return (
                       <button
                         key={u.id}
                         type="button"
-                        className={`dev-persona-btn ${isCur ? 'active' : ''}`}
+                        className={`dev-row ${isCur ? 'active' : ''}`}
+                        aria-current={isCur ? 'true' : undefined}
                         onClick={() => {
-                          handleAuthenticated(
-                            u,
-                            u.memberships[0]?.organizationId
-                          );
+                          handleAuthenticated(u, u.memberships[0]?.organizationId);
                           setShowDemoTools(false);
                         }}
                       >
-                        <div>
-                          {/* the role, not the person's name (27 Nov 2026, user request) */}
-                          <strong>{tx(roleTitle)}</strong>
-                          <div className="muted-inline">
-                            {u.isPlatformAdmin
-                              ? tx("อนุมัติผู้จัด/งานวิ่ง/รอบโอนทั้งระบบ")
-                              : teamRole
-                                ? txf("{0} · {1} องค์กร", tx(ROLE_LABEL[teamRole.role]), u.memberships.length)
-                                : isOrg
-                                  ? txf("{0} · {1} องค์กร", tx(duty.replace(/\s*\(\d+ องค์กร\)$/, '')), u.memberships.length)
-                                  : tx(duty)}
-                          </div>
-                          {teamRole && (
-                            <ul className="dev-persona-duties">
-                              {roleDuties(teamRole.role).map((d) => (
-                                <li key={d}>{tx(d)}</li>
-                              ))}
-                              {(teamRole.assignedEventIds?.length ?? 0) > 0 && (
-                                <li>{txf('เฉพาะงานที่ได้รับมอบหมาย ({0} งาน)', teamRole.assignedEventIds!.length)}</li>
-                              )}
-                            </ul>
-                          )}
-                        </div>
-                        <IconArrowRight size={14} />
+                        <r.Icon size={18} />
+                        <span className="dev-row-copy">
+                          <strong>{tx(r.title)}</strong>
+                          <span>{r.sub}</span>
+                        </span>
+                        {isCur ? <IconCheckCircle size={16} /> : <IconArrowRight size={14} />}
                       </button>
                     );
                   })}
-              </div>
+              </section>
 
-              {customerSubView === 'event_detail' && (
-                <div className="dev-drawer-section">
-                  <div className="dev-section-label">
-                    {tx("แสดงโควตารวมบนหน้ารายละเอียดงาน (ของจริงจะเป็นการตั้งค่าของผู้จัด)")}
-                  </div>
-                  <div className="cta-inline-row">
-                    {([true, false] as const).map((show) => (
+              {/* Dev / Demo keeps three parts only (27 Nov 2026, user request): test users, the
+                  entry form's template, reset */}
+              <section className="dev-drawer-section" aria-labelledby="dev-sec-page">
+                <h3 id="dev-sec-page" className="dev-sec-title">
+                  <IconSliders size={15} /> {tx("หน้าตาฟอร์มสมัคร")}
+                </h3>
+                <p className="dev-sec-help">{tx("สลับแล้วหน้าเดิมยังอยู่ ข้อมูลที่กรอกไม่หาย")}</p>
+                {/* switching keeps the form on its step with everything picked (27 Nov 2026) */}
+                <div className="dev-field">
+                  <span id="dev-sv-layout" className="dev-field-label">{tx("ขั้นของที่ระลึก")}</span>
+                  <div className="dev-seg is-three" role="radiogroup" aria-labelledby="dev-sv-layout">
+                    {(
+                      [
+                        ['accordion', 'พับตามหมวด'],
+                        ['shelves', 'เปิดทุกหมวด'],
+                        ['classic', 'แบบแรก'],
+                      ] as const
+                    ).map(([l, label]) => (
                       <button
-                        key={String(show)}
+                        key={l}
                         type="button"
-                        className={`btn-ghost-sm ${mockShowQuotaBox === show ? 'active' : ''}`}
-                        aria-pressed={mockShowQuotaBox === show}
-                        onClick={() => toggleMockQuotaBox(show)}
+                        role="radio"
+                        aria-checked={devSouvenirLayout === l}
+                        className={devSouvenirLayout === l ? 'is-on' : ''}
+                        onClick={() => pickDevSouvenirLayout(l)}
                       >
-                        {show ? tx("แสดง") : tx("ซ่อน")}
+                        {tx(label)}
                       </button>
                     ))}
                   </div>
                 </div>
-              )}
+              </section>
 
-              <div className="dev-drawer-section">
-                <div className="dev-section-label">
-                  {tx("จำลองเคสพิเศษหน้า Login (ตามแผนข้อ 16)")}
-                </div>
-                <div className="cta-inline-row">
-                  <button
-                    type="button"
-                    className="btn-ghost-sm"
-                    onClick={() => {
-                      navigateLogin('signin');
-                      setExternalSocialScenario((prev) => ({
-                        seq: (prev?.seq ?? 0) + 1,
-                        provider: 'line',
-                        scenario: 'new_no_email',
-                      }));
-                      setShowDemoTools(false);
-                    }}
-                  >
-                    {tx("LINE ไม่มีอีเมล")}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-ghost-sm"
-                    onClick={() => {
-                      navigateLogin('signin');
-                      setExternalSocialScenario((prev) => ({
-                        seq: (prev?.seq ?? 0) + 1,
-                        provider: 'google',
-                        scenario: 'collision',
-                      }));
-                      setShowDemoTools(false);
-                    }}
-                  >
-                    {tx("อีเมลชนบัญชีเดิม")}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-ghost-sm"
-                    onClick={() => {
-                      navigateLogin('signin');
-                      setExternalSocialScenario((prev) => ({
-                        seq: (prev?.seq ?? 0) + 1,
-                        provider: 'line',
-                        scenario: 'cancelled',
-                      }));
-                      setShowDemoTools(false);
-                    }}
-                  >
-                    {tx("ยกเลิกที่ Provider")}
-                  </button>
-                </div>
-              </div>
-
-              {pendingWebhookRegs.length > 0 && (
-                <div className="dev-drawer-section">
-                  <div className="dev-section-label">
-                    {tx("จำลองสัญญาณ Webhook ชำระเงิน (")}{tx(pendingWebhookRegs.length)})
-                  </div>
-                  {pendingWebhookRegs.map((r) => (
-                    <button
-                      key={r.id}
-                      type="button"
-                      className="dev-persona-btn"
-                      onClick={() => handleSimulateWebhookConfirm(r.id)}
-                    >
-                      <span>
-                        {tx("ยืนยันรับเงิน ")} {tx(r.regCode)} ({tx(r.participantNameTh)})
-                      </span>
-                      <IconCheckCircle size={14} />
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <div className="dev-drawer-section">
-                <label htmlFor="dev-sim-ui" className="dev-section-label">
-                  {tx("จำลองสถานะหน้าจอ Organizer UX:")}
-                </label>
-                <select
-                  id="dev-sim-ui"
-                  value={simulatedState}
-                  onChange={(e) => {
-                    setSimulatedState(e.target.value as SimulatedUiState);
-                    if (hasOrganizerAccess) {
-                      navigateOrganizer();
+              <section className="dev-drawer-section is-danger" aria-labelledby="dev-sec-reset">
+                <h3 id="dev-sec-reset" className="dev-sec-title">
+                  <IconAlert size={15} /> {tx("ล้างข้อมูล")}
+                </h3>
+                <p className="dev-sec-help">{tx("ล้างข้อมูลทดสอบของทุกคนกลับเป็นค่าเริ่มต้น ย้อนกลับไม่ได้")}</p>
+                <button
+                  type="button"
+                  className="dev-reset-btn"
+                  onClick={() => {
+                    if (window.confirm(tx("ล้างข้อมูลทดสอบของทุกคนกลับเป็นค่าเริ่มต้น? ย้อนกลับไม่ได้"))) {
+                      handleResetAllDemoData();
                     }
                   }}
                 >
-                  <option value="normal">{tx("ปกติ (Normal)")}</option>
-                  <option value="loading">{tx("กำลังโหลด (Skeleton)")}</option>
-                  <option value="partial_error">{tx("โหลดผิดพลาดบางส่วน")}</option>
-                  <option value="permission_denied">{tx("ไม่มีสิทธิ์เข้าถึง")}</option>
-                </select>
-              </div>
-
-              <button
-                type="button"
-                className="btn-secondary btn-full"
-                onClick={handleResetAllDemoData}
-              >
-                <IconSwitch size={14} />
-                <span>{tx("รีเซ็ตข้อมูลเริ่มต้นทั้งหมด")}</span>
-              </button>
+                  {tx("รีเซ็ตข้อมูลทั้งหมด…")}
+                </button>
+              </section>
             </div>
           )}
-
-          <div className="review-dock-actions">
-            <button
-              type="button"
-              className={`review-dock-btn ${reviewPlacing ? 'is-on' : ''}`}
-              aria-pressed={reviewPlacing}
-              onClick={() => {
-                setReviewPanelOpen(false);
-                setReviewPlacing((v) => !v);
-              }}
-            >
-              <i className="fa-regular fa-comment" aria-hidden="true" />
-              <span>{reviewPlacing ? tx("กำลังปักหมุด…") : tx("ปักหมุด comment")}</span>
-            </button>
-            <button
-              type="button"
-              className={`review-dock-btn ${reviewPanelOpen ? 'is-on' : ''}`}
-              aria-pressed={reviewPanelOpen}
-              aria-label={txf("รายการความคิดเห็น ยังเปิดอยู่ {0} รายการ", reviewOpenCount)}
-              onClick={() => {
-                setReviewPlacing(false);
-                setReviewPanelOpen((v) => !v);
-              }}
-            >
-              <i className="fa-regular fa-rectangle-list" aria-hidden="true" />
-              <span className="mono-num">{reviewOpenCount}</span>
-            </button>
-          </div>
           <button
             type="button"
             className="dev-dock-pill"
@@ -4357,29 +4306,10 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
             onClick={() => setShowDemoTools((v) => !v)}
           >
             <IconSliders size={15} />
-            <span>
-              Dev / Demo ·{' '}
-              {currentUser
-                ? currentUser.fullNameTh.split(' ')[0]
-                : 'Guest'}
-            </span>
+            {/* just the name (27 Nov 2026, user request: "Dev / Demo"); who you are is inside */}
+            <span>Dev / Demo</span>
           </button>
         </aside>
-      )}
-      {sandboxTools && (
-        <ReviewComments
-          path={window.location.pathname}
-          lang={lang}
-          placing={reviewPlacing}
-          onPlacingChange={setReviewPlacing}
-          panelOpen={reviewPanelOpen}
-          onPanelOpenChange={setReviewPanelOpen}
-          onOpenCountChange={setReviewOpenCount}
-          onNavigatePath={(p) => {
-            pushUrl(p);
-            applyRouteStateFromUrl(p, '');
-          }}
-        />
       )}
     </div>
   );

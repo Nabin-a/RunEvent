@@ -188,6 +188,14 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
   }, [sorted, bucket, today, monthKey]);
   // keep the picked month in view inside the strip (it scrolls sideways on phones)
   const stripRef = useRef<HTMLElement | null>(null);
+  /** after a view or distance filter is clicked, bring the results into view (27 Nov 2026) */
+  const resultsRef = useRef<HTMLDivElement | null>(null);
+  const jumpToResults = () => {
+    window.setTimeout(() => {
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      resultsRef.current?.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+    }, 0);
+  };
   useEffect(() => {
     const strip = stripRef.current;
     const on = strip?.querySelector<HTMLElement>('[aria-current="true"]');
@@ -274,7 +282,10 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
               type="button"
               aria-pressed={view === v}
               className={`detail-tab-btn ${view === v ? 'active' : ''}`}
-              onClick={() => switchView(v)}
+              onClick={() => {
+                switchView(v);
+                jumpToResults();
+              }}
             >
               {tx(lbl)}
             </button>
@@ -293,6 +304,7 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
             onClick={() => {
               setBucket(b);
               setSelectedDay(null);
+              jumpToResults();
             }}
           >
             {/* no counts on the filters (27 Nov 2026, user request) */}
@@ -301,7 +313,7 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
         ))}
       </div>
 
-      <div className={`kr-cal-body ${isDated ? 'is-dated' : ''}`}>
+      <div ref={resultsRef} className={`kr-cal-body ${isDated ? 'is-dated' : ''}`}>
       {view === 'month' && (
         <section className="race-calendar-month" aria-label={formatMonth(monthKey)}>
           <div className="race-calendar-monthbar">
@@ -506,12 +518,15 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
             </p>
             {view === 'week' && nextWeekWithEvents && (
               <button type="button" className="btn-secondary" onClick={() => goWeek(nextWeekWithEvents)}>
-                {txf('ไปสัปดาห์ที่มีงานถัดไป ({0})', formatWeekRange(nextWeekWithEvents))}
+                {/* the date stays on one line; it moves under the words when space runs out */}
+                {tx('ไปสัปดาห์ที่มีงานถัดไป')}{' '}
+                <span className="race-calendar-empty-date">({formatWeekRange(nextWeekWithEvents)})</span>
               </button>
             )}
             {view === 'month' && nextMonthWithEvents && (
               <button type="button" className="btn-secondary" onClick={() => goMonth(nextMonthWithEvents)}>
-                {txf('ไปเดือนที่มีงานถัดไป ({0})', formatMonth(nextMonthWithEvents, 'short'))}
+                {tx('ไปเดือนที่มีงานถัดไป')}{' '}
+                <span className="race-calendar-empty-date">({formatMonth(nextMonthWithEvents, 'short')})</span>
               </button>
             )}
             {bucket !== 'all' && (

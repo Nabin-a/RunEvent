@@ -59,33 +59,36 @@ export function ShirtGallery({
   const current = styles.find((s) => s.id === styleId) ?? styles[0];
   const tabbed = styles.length > 1;
   const stripRef = useRef<HTMLFieldSetElement | null>(null);
-  const [stuck, setStuck] = useState(false);
+  const [follow, setFollow] = useState(false);
   const [barH, setBarH] = useState(0);
+  const galleryRef = useRef<HTMLDivElement | null>(null);
+  const heroRef = useRef<HTMLElement | null>(null);
+  const followRef = useRef<HTMLDivElement | null>(null);
 
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  const sideRef = useRef<HTMLButtonElement | null>(null);
-
-  // the tabs stay on top; once they scroll under the top bar, the picked style shows as a
-  // side tab on the chart's left edge, and leaves with the chart's bottom edge instead of
-  // hanging below it (26 Nov 2026, user request)
+  /* The shirt preview follows the size chart (27 Nov 2026, user request).
+     Wide screens: two columns and the preview is sticky in its own column (CSS only).
+     Phones: once the preview scrolls under the top bar a compact copy floats under the bar.
+     The copy lives in a zero-height sticky anchor, so showing it never changes the page
+     height; changing the real preview's size made the page jump and flicker at the bottom. */
   useEffect(() => {
-    if (!tabbed) return;
     let frame = 0;
     const update = () => {
       frame = 0;
-      const strip = stripRef.current;
-      const panel = panelRef.current;
-      const tab = sideRef.current;
-      if (!strip || !panel || !tab) return;
-      const bar = document.querySelector('.global-topbar')?.getBoundingClientRect().height ?? 0;
-      const top = bar + 12;
-      setBarH(Math.round(bar));
-      const panelBox = panel.getBoundingClientRect();
-      const on = strip.getBoundingClientRect().bottom < bar && panelBox.bottom > top + 24;
-      setStuck(on);
-      // past the chart's end the tab is pushed up together with it
-      const shift = Math.min(0, panelBox.bottom - (top + tab.offsetHeight));
-      tab.style.transform = on ? `translateY(${shift}px)` : '';
+      const hero = heroRef.current;
+      const gallery = galleryRef.current;
+      const bar = followRef.current;
+      if (!hero || !gallery) return;
+      const topBar = document.querySelector('.global-topbar')?.getBoundingClientRect().height ?? 0;
+      setBarH(Math.round(topBar));
+      const top = topBar + 8;
+      const galleryBottom = gallery.getBoundingClientRect().bottom;
+      const on = hero.getBoundingClientRect().bottom < top && galleryBottom > top + 32;
+      setFollow(on);
+      // near the gallery's end the copy is pushed up with it instead of hanging below
+      if (bar) {
+        const shift = Math.min(0, galleryBottom - (top + bar.offsetHeight));
+        bar.style.transform = on ? `translateY(${shift}px)` : '';
+      }
     };
     const onScroll = () => {
       if (!frame) frame = window.requestAnimationFrame(update);
@@ -98,23 +101,88 @@ export function ShirtGallery({
       window.removeEventListener('resize', onScroll);
       if (frame) window.cancelAnimationFrame(frame);
     };
-  }, [tabbed]);
+  }, []);
 
   if (!current) return null;
 
+  const art = (cls: string, alt = '') =>
+    current.photo ? (
+      <img src={current.photo} alt={alt} className={`${cls}-photo`} />
+    ) : (
+      <ProductArt kind={current.art} className={`${cls}-art`} />
+    );
+
+  const hasCuts = !!cuts && cuts.length > 0;
+  const sizeBlock = (
+    <>
+      <fieldset className="pg-group">
+        <legend>{tx('ไซส์และขนาดตัวเสื้อ')}</legend>
+        <table className="pg-chart">
+          <thead>
+            <tr>
+              <th scope="col">{tx('ไซส์')}</th>
+              <th scope="col">{tx('รอบอก')}</th>
+              <th scope="col">{tx('ความยาว')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {/* sold-out sizes are hidden (26 Nov 2026, user request) */}
+            {current.sizes.filter((s) => s.left > 0).map((s) => {
+              const out = s.left <= 0;
+              const isSel = s.size === size;
+              const id = `${idPrefix}-size-${current.id}-${s.size}`;
+              return (
+                <tr
+                  key={s.size}
+                  className={`${isSel ? 'is-selected' : ''} ${out ? 'is-out' : ''}`}
+                  onClick={() => !out && onSizeChange(s.size)}
+                >
+                  <th scope="row">
+                    <span className="pg-size-cell">
+                      <input
+                        id={id}
+                        type="radio"
+                        name={`${idPrefix}-size`}
+                        checked={isSel}
+                        disabled={out}
+                        onChange={() => onSizeChange(s.size)}
+                      />
+                      <label htmlFor={id}>{s.size}</label>
+                      {out && <span className="pg-out-tag">{tx('หมดแล้ว')}</span>}
+                    </span>
+                  </th>
+                  <td className="mono-num">{tx(s.chest)}</td>
+                  <td className="mono-num">{tx(s.length)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </fieldset>
+      {!current.sizes.some((s) => s.left > 0) && (
+        <p className="pg-note">{tx('ทรงนี้หมดทุกไซส์แล้ว')}</p>
+      )}
+      {cutNote && <p className="pg-note">{tx(cutNote)}</p>}
+    </>
+  );
+
   return (
-    <div className="pg">
-      <figure className="pg-hero">
-        {current.photo ? (
-          <img src={current.photo} alt={tx(current.name)} className="pg-hero-photo" />
-        ) : (
-          <ProductArt kind={current.art} className="pg-hero-art" />
-        )}
+    <div className="pg" ref={galleryRef}>
+      <figure className="pg-hero" ref={heroRef} style={{ top: barH + 12 }}>
+        {art('pg-hero', tx(current.name))}
         <figcaption>
           <strong>{tx(current.name)}</strong>
           <span>{tx(caption)}</span>
         </figcaption>
       </figure>
+
+      {/* phones: the compact copy that floats under the top bar while the chart scrolls */}
+      <div className="pg-follow-anchor" style={{ top: barH + 8 }} aria-hidden="true">
+        <div ref={followRef} className={`pg-follow ${follow ? 'is-on' : ''}`}>
+          {art('pg-follow')}
+          <strong>{tx(current.name)}</strong>
+        </div>
+      </div>
 
       {/* the styles are tabs on top of the size chart, like browser tabs; the chosen tab joins the panel */}
       <div className={`pg-tabbed ${tabbed ? '' : 'is-single'}`}>
@@ -142,104 +210,32 @@ export function ShirtGallery({
           </fieldset>
         )}
 
-        {tabbed && (
-          <div className="pg-side-anchor" style={{ top: barH + 12 }}>
-            <button
-              ref={sideRef}
-              type="button"
-              className={`pg-side-tab ${stuck ? 'is-on' : ''}`}
-              aria-hidden={!stuck}
-              tabIndex={stuck ? 0 : -1}
-              title={tx('เปลี่ยนทรงเสื้อ')}
-              aria-label={`${tx(current.name)} · ${tx('เปลี่ยนทรงเสื้อ')}`}
-              onClick={() => {
-                // back to the style tabs, just under the top bar
-                const el = stripRef.current;
-                if (!el) return;
-                const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-                window.scrollTo({
-                  top: el.getBoundingClientRect().top + window.scrollY - barH - 12,
-                  behavior: reduce ? 'auto' : 'smooth',
-                });
-              }}
-            >
-              {current.photo ? (
-                <img src={current.photo} alt="" className="pg-side-tab-art pg-stab-photo" />
-              ) : (
-                <ProductArt kind={current.art} className="pg-side-tab-art" />
-              )}
-              <span className="pg-side-tab-text">{tx(current.name)}</span>
-            </button>
-          </div>
-        )}
-
-        <div className="pg-stab-panel" ref={panelRef}>
-          {cuts && cuts.length > 0 && (
-            <fieldset className="pg-group pg-cuts">
-              <legend>{tx('แบบเสื้อ')}</legend>
-              <div className="pg-cut-chips">
-                {cuts.map((c) => (
-                  <label key={c.id} className={`pg-chip ${c.id === cut ? 'is-selected' : ''}`}>
-                    <input
-                      type="radio"
-                      name={`${idPrefix}-cut`}
-                      checked={c.id === cut}
-                      onChange={() => onCutChange?.(c.id)}
-                    />
-                    <span>{tx(c.label)}</span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
+        <div className="pg-stab-panel">
+          {hasCuts ? (
+            /* ชาย / หญิง / เด็ก are tabs on top of the size chart too, inside the style panel
+               (27 Nov 2026, user request "ตอนเลือก gender ให้ทำเป็น tab panel เหมือนกัน") */
+            <div className="pg-tabbed pg-cut-tabbed">
+              <fieldset className="pg-stabs pg-cuts">
+                <legend className="sr-only">{tx('แบบเสื้อ')}</legend>
+                <div className="pg-stab-strip">
+                  {cuts.map((c) => (
+                    <label key={c.id} className={`pg-stab pg-cut-tab ${c.id === cut ? 'is-selected' : ''}`}>
+                      <input
+                        type="radio"
+                        name={`${idPrefix}-cut`}
+                        checked={c.id === cut}
+                        onChange={() => onCutChange?.(c.id)}
+                      />
+                      <span>{tx(c.label)}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <div className="pg-stab-panel pg-cut-panel">{sizeBlock}</div>
+            </div>
+          ) : (
+            sizeBlock
           )}
-          <fieldset className="pg-group">
-            <legend>{tx('ไซส์และขนาดตัวเสื้อ')}</legend>
-            <table className="pg-chart">
-              <thead>
-                <tr>
-                  <th scope="col">{tx('ไซส์')}</th>
-                  <th scope="col">{tx('รอบอก')}</th>
-                  <th scope="col">{tx('ความยาว')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* sold-out sizes are hidden (26 Nov 2026, user request) */}
-                {current.sizes.filter((s) => s.left > 0).map((s) => {
-                  const out = s.left <= 0;
-                  const isSel = s.size === size;
-                  const id = `${idPrefix}-size-${current.id}-${s.size}`;
-                  return (
-                    <tr
-                      key={s.size}
-                      className={`${isSel ? 'is-selected' : ''} ${out ? 'is-out' : ''}`}
-                      onClick={() => !out && onSizeChange(s.size)}
-                    >
-                      <th scope="row">
-                        <span className="pg-size-cell">
-                          <input
-                            id={id}
-                            type="radio"
-                            name={`${idPrefix}-size`}
-                            checked={isSel}
-                            disabled={out}
-                            onChange={() => onSizeChange(s.size)}
-                          />
-                          <label htmlFor={id}>{s.size}</label>
-                          {out && <span className="pg-out-tag">{tx('หมดแล้ว')}</span>}
-                        </span>
-                      </th>
-                      <td className="mono-num">{tx(s.chest)}</td>
-                      <td className="mono-num">{tx(s.length)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </fieldset>
-          {!current.sizes.some((s) => s.left > 0) && (
-            <p className="pg-note">{tx('ทรงนี้หมดทุกไซส์แล้ว')}</p>
-          )}
-          {cutNote && <p className="pg-note">{tx(cutNote)}</p>}
         </div>
       </div>
 

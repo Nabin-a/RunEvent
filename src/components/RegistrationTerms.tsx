@@ -7,8 +7,10 @@ import { IconClose } from './Icons';
 
 /** Version of the payment terms text below; stored on the registration when accepted. */
 export const PAYMENT_TERMS_VERSION = 'pay-terms-v1';
+/** Version of the PDPA consent text below (sending the entry's data to the organizer). */
+export const REGISTRATION_PRIVACY_VERSION = 'reg-privacy-v1';
 
-type TermsKind = 'rules' | 'payment';
+type TermsKind = 'rules' | 'payment' | 'privacy';
 
 /**
  * The two required agreements on the payment step (forms A and B): the event rules and the
@@ -22,6 +24,8 @@ export function RegistrationTerms({
   onAcceptRules,
   acceptPayment,
   onAcceptPayment,
+  acceptPrivacy,
+  onAcceptPrivacy,
 }: {
   event: RaceEvent;
   organization?: Organization;
@@ -29,6 +33,9 @@ export function RegistrationTerms({
   onAcceptRules: (v: boolean) => void;
   acceptPayment: boolean;
   onAcceptPayment: (v: boolean) => void;
+  /** PDPA consent row (27 Nov 2026); shown when the caller passes it */
+  acceptPrivacy?: boolean;
+  onAcceptPrivacy?: (v: boolean) => void;
 }) {
   const [open, setOpen] = useState<TermsKind | null>(null);
 
@@ -37,43 +44,83 @@ export function RegistrationTerms({
       kind: 'rules',
       checked: acceptRules,
       set: onAcceptRules,
-      text: txf('ข้าพเจ้ายอมรับกติกาการแข่งขันและเงื่อนไขความปลอดภัยของงาน ({0})', event.rulesVersion),
+      // the version is recorded on the registration, not shown in the text (27 Nov 2026, user request)
+      text: tx('ยอมรับกติกาการแข่งขัน'),
     },
     {
       kind: 'payment',
       checked: acceptPayment,
       set: onAcceptPayment,
-      text: txf('ข้าพเจ้ายอมรับข้อกำหนดการชำระเงินและการคืนเงิน ({0})', PAYMENT_TERMS_VERSION),
+      text: tx('ยอมรับเงื่อนไขชำระเงินและคืนเงิน'),
     },
+    ...(onAcceptPrivacy
+      ? [
+          {
+            kind: 'privacy' as const,
+            checked: acceptPrivacy === true,
+            set: onAcceptPrivacy,
+            text: tx('ยินยอมส่งข้อมูลส่วนตัวและสุขภาพให้ผู้จัด (PDPA)'),
+          },
+        ]
+      : []),
   ];
+
+  const allOn = rows.every((r) => r.checked);
+  const someOn = rows.some((r) => r.checked);
 
   return (
     <div className="terms-group">
+      {/* one tick for every agreement (27 Nov 2026, user request "มีให้ check ทั้งหมด");
+          each one below can still be ticked and read on its own */}
+      <label className="checkbox-row terms-all">
+        <input
+          type="checkbox"
+          checked={allOn}
+          ref={(el) => {
+            if (el) el.indeterminate = someOn && !allOn;
+          }}
+          onChange={(e) => rows.forEach((r) => r.set(e.target.checked))}
+        />
+        <span>{tx('ยอมรับทั้งหมด')}</span>
+      </label>
       {rows.map((r) => (
         <div key={r.kind} className="terms-row">
           <label className="checkbox-row">
             <input type="checkbox" checked={r.checked} onChange={(e) => r.set(e.target.checked)} aria-required="true" />
+            {/* a required star like the form fields, not the word [จำเป็น] (27 Nov 2026, user request) */}
             <span>
-              <strong>{tx('[จำเป็น]')}</strong> {r.text}
+              <span className="required-field-marker" aria-hidden="true">*</span> {r.text}
+              <span className="sr-only"> {tx('(จำเป็น)')}</span>
             </span>
           </label>
           <button type="button" className="terms-link" onClick={() => setOpen(r.kind)} aria-haspopup="dialog">
-            {tx('อ่านรายละเอียดข้อกำหนดเพิ่มเติม')}
+            {tx('อ่านรายละเอียด')}
           </button>
         </div>
       ))}
 
       {open && (
         <TermsModal
-          title={open === 'rules' ? tx('กติกาการแข่งขันและเงื่อนไขความปลอดภัย') : tx('ข้อกำหนดการชำระเงินและการคืนเงิน')}
-          version={open === 'rules' ? event.rulesVersion : PAYMENT_TERMS_VERSION}
+          title={
+            open === 'rules'
+              ? tx('กติกาการแข่งขันและเงื่อนไขความปลอดภัย')
+              : open === 'payment'
+                ? tx('ข้อกำหนดการชำระเงินและการคืนเงิน')
+                : tx('การส่งข้อมูลส่วนบุคคลให้ผู้จัดงาน (PDPA)')
+          }
           onClose={() => setOpen(null)}
           onAccept={() => {
-            (open === 'rules' ? onAcceptRules : onAcceptPayment)(true);
+            (open === 'rules' ? onAcceptRules : open === 'payment' ? onAcceptPayment : onAcceptPrivacy ?? (() => undefined))(true);
             setOpen(null);
           }}
         >
-          {open === 'rules' ? <RulesText event={event} organization={organization} /> : <PaymentText event={event} />}
+          {open === 'rules' ? (
+            <RulesText event={event} organization={organization} />
+          ) : open === 'payment' ? (
+            <PaymentText event={event} />
+          ) : (
+            <PrivacyText organization={organization} />
+          )}
         </TermsModal>
       )}
     </div>
@@ -95,7 +142,7 @@ function RulesText({ event, organization }: { event: RaceEvent; organization?: O
         ))}
       </ul>
       <h4>{tx('การรับอุปกรณ์')}</h4>
-      <p>{txf('รับเสื้อและ BIB ตามช่วงเวลา: {0} แสดง QR Token ของใบสมัครเพื่อรับอุปกรณ์', tx(event.kitPickupWindow))}</p>
+      <p>{txf('รับ Race Kit ตามช่วงเวลา: {0} แสดง QR Token ของใบสมัครเพื่อรับ', tx(event.kitPickupWindow))}</p>
       <h4>{tx('ความปลอดภัย')}</h4>
       <ul>
         <li>{tx('ผู้สมัครรับรองว่ามีสุขภาพพร้อมสำหรับระยะที่สมัคร และให้ข้อมูลผู้ติดต่อฉุกเฉินที่ติดต่อได้จริง')}</li>
@@ -134,15 +181,38 @@ function PaymentText({ event }: { event: RaceEvent }) {
   );
 }
 
+function PrivacyText({ organization }: { organization?: Organization }) {
+  return (
+    <>
+      <h4>{tx('ข้อมูลที่ส่งให้ผู้จัดงาน')}</h4>
+      <ul>
+        <li>{tx('ชื่อ-นามสกุล วันเกิด เพศ และเอกสารยืนยันตัวตนของผู้เข้าแข่งขัน')}</li>
+        <li>{tx('เบอร์โทร อีเมล และผู้ติดต่อฉุกเฉิน')}</li>
+        <li>{tx('ข้อมูลสุขภาพที่กรอกในใบสมัคร เช่น กรุ๊ปเลือด โรคประจำตัว และประวัติแพ้ยา')}</li>
+        <li>{tx('ไซส์เสื้อ ที่อยู่จัดส่ง และคำตอบในฟอร์มสมัคร')}</li>
+      </ul>
+      <h4>{tx('ใช้เพื่อ')}</h4>
+      <ul>
+        <li>{tx('จัดการแข่งขัน กำหนดเลข BIB รุ่นอายุ และส่งมอบอุปกรณ์')}</li>
+        <li>{tx('ดูแลความปลอดภัยและการปฐมพยาบาลระหว่างแข่งขัน')}</li>
+        <li>{tx('ติดต่อผู้เข้าแข่งขันเรื่องงานนี้')}</li>
+      </ul>
+      <h4>{tx('ผู้รับข้อมูล')}</h4>
+      <p>{tx(organization?.nameTh ?? 'ผู้จัดงาน')}</p>
+      <p className="terms-note">
+        {tx('ข้อมูลสุขภาพเป็นข้อมูลอ่อนไหว ใช้เฉพาะงานนี้และไม่ใช้เพื่อการตลาด ขอดูหรือขอลบข้อมูลได้ตามประกาศความเป็นส่วนตัวของแพลตฟอร์ม')}
+      </p>
+    </>
+  );
+}
+
 function TermsModal({
   title,
-  version,
   children,
   onClose,
   onAccept,
 }: {
   title: string;
-  version: string;
   children: ReactNode;
   onClose: () => void;
   onAccept: () => void;
@@ -168,7 +238,6 @@ function TermsModal({
         <header className="terms-head">
           <div>
             <h3 id="terms-title">{title}</h3>
-            <span className="muted-inline mono-code">{version}</span>
           </div>
           <button ref={closeRef} type="button" className="sf-dialog-close" onClick={onClose} aria-label={tx('ปิด')}>
             <IconClose size={18} />

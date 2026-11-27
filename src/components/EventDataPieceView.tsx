@@ -242,7 +242,7 @@ export function EventDataPieceView({ item, ctx, preview }: { item: EventPageItem
         <dl className="data-piece data-facts">
           <div>
             <dt>
-              <FaIcon name="box-open" /> {tx('รับเสื้อและป้าย BIB')}
+              <FaIcon name="box-open" /> {tx('รับ Race Kit')}
             </dt>
             <dd>{tx(ev.kitPickupWindow)}</dd>
           </div>

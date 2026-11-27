@@ -859,6 +859,10 @@ export interface EventDetailPageVersion extends EventDetailPage {
 export interface RaceEvent {
   /** finisher shirt size asked at registration; undefined = asked (organizer switch not built yet, 26 Nov 2026) */
   finisherShirtEnabled?: boolean;
+  /** one unisex cut for every shirt: the form asks no ชาย / หญิง / เด็ก (27 Nov 2026; organizer switch not built yet) */
+  shirtUnisex?: boolean;
+  /** what a finisher gets: 'shirt' (default, size asked at registration) or 'medal' (nothing to pick) (27 Nov 2026) */
+  finisherReward?: 'shirt' | 'medal';
   id: string;
   code: string;
   organizationId: string;
@@ -977,6 +981,9 @@ export interface RegistrationRecord {
   acceptedRulesVersion: string;
   /** payment and refund terms accepted at checkout (registrations made from Nov 2026) */
   acceptedPaymentTermsVersion?: string;
+  /** PDPA consent to send this entry's personal and health data to the organizer
+   *  (registrations made from 27 Nov 2026) */
+  acceptedPrivacyVersion?: string;
   marketingConsent: boolean;
   createdAt: string;
   paidAt: string | null;

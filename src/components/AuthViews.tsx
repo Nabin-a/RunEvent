@@ -111,7 +111,7 @@ interface AuthScreenProps {
   externalSocialScenario?: {
     seq: number;
     provider: 'google' | 'line' | 'facebook';
-    scenario: 'new_no_email' | 'collision' | 'cancelled';
+    scenario: 'new_no_email' | 'collision' | 'cancelled' | 'existing';
   } | null;
   onAuthenticated: (user: UserAccount, preferredOrgId?: string) => void;
   onPasswordLogin?: (

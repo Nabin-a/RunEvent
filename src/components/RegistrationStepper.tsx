@@ -49,7 +49,8 @@ export function RegistrationStepper<S extends number>({
               >
                 <span className="circle-step-label">{tx(item.label)}</span>
                 <span className="circle-step-ring" aria-hidden="true">
-                  {isDone && <IconCheckCircle size={14} />}
+                  {/* the step's number until it is done, then a tick (27 Nov 2026, user request) */}
+                  {isDone ? <IconCheckCircle size={14} /> : <span className="circle-step-num">{idx + 1}</span>}
                 </span>
               </button>
               {idx < steps.length - 1 && (

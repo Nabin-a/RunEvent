@@ -70,6 +70,11 @@ export const EmergencyContactModal: React.FC<EmergencyContactModalProps> = ({
       fail(tx('กรุณาระบุความสัมพันธ์กับผู้ติดต่อฉุกเฉิน'));
       return;
     }
+    // the email is required like the phone (27 Nov 2026, user request)
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      fail(tx('กรุณากรอกอีเมลผู้ติดต่อฉุกเฉินให้ถูกต้อง'));
+      return;
+    }
     setError(null);
     setSaving(true);
     try {
@@ -77,7 +82,7 @@ export const EmergencyContactModal: React.FC<EmergencyContactModalProps> = ({
         contactName: name.trim(),
         relationship: rel.trim(),
         phone: phone.trim(),
-        email: email.trim() || undefined,
+        email: email.trim(),
       });
     } finally {
       setSaving(false);
@@ -145,10 +150,15 @@ export const EmergencyContactModal: React.FC<EmergencyContactModalProps> = ({
                 <PhoneInput id={`${idPrefix}-phone`} value={phone} onChange={setPhone} required />
               </div>
               <div className="form-row">
-                <label htmlFor={`${idPrefix}-email`}>{tx('อีเมล (ไม่บังคับ)')}</label>
+                <label htmlFor={`${idPrefix}-email`}>
+                  <RequiredFieldText text={tx('อีเมล *')} />
+                </label>
                 <input
                   id={`${idPrefix}-email`}
                   type="email"
+                  required
+                  inputMode="email"
+                  autoComplete="off"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder={tx('กรอกอีเมลผู้ติดต่อ')}
