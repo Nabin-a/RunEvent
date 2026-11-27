@@ -426,11 +426,12 @@ export function RegistrationLabView({
   }, [answersOwner]);
   const lastSavedId = useRef<string>('');
   /* registering someone else: the emergency contact starts as the account owner (27 Nov 2026,
-     user request) unless the friend's saved data has one; the runner can change it */
+     user request) unless the friend's saved data has one; the runner can change it. The
+     relationship stays empty for the runner to fill in (27 Nov 2026, user request) */
   const ownerEmergency = {
     name:
       `${profile?.firstName ?? ''} ${profile?.lastName ?? ''}`.trim() || currentUser?.fullNameTh || '',
-    relation: 'ผู้สมัครให้',
+    relation: '',
     phone: profile?.phone ?? '',
   };
   const fillFriend = (p: SavedParticipant | null) => {
