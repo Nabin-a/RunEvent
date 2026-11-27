@@ -295,8 +295,8 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
               setSelectedDay(null);
             }}
           >
-            {tx(lbl)}{' '}
-            <span className="filter-count mono-num">{scoped.filter((ev) => inBucket(ev, b)).length}</span>
+            {/* no counts on the filters (27 Nov 2026, user request) */}
+            {tx(lbl)}
           </button>
         ))}
       </div>
@@ -325,7 +325,7 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
           </div>
 
           <nav className="race-calendar-strip" ref={stripRef} aria-label={tx('เดือนที่มีงานวิ่ง')}>
-            {monthStrip.map(([k, n]) => (
+            {monthStrip.map(([k]) => (
               <button
                 key={k}
                 type="button"
@@ -333,7 +333,7 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
                 aria-current={k === monthKey ? 'true' : undefined}
                 onClick={() => goMonth(k)}
               >
-                {formatMonth(k, 'short')} <span className="filter-count mono-num">{n}</span>
+                {formatMonth(k, 'short')}
               </button>
             ))}
           </nav>
@@ -524,7 +524,7 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
           groups.map(([key, list]) => (
             <div key={key} className="race-calendar-group">
               <h3>
-                {groupHeading(key)} <span className="filter-count mono-num">{list.length}</span>
+                {groupHeading(key)}
               </h3>
               <ul>
                 {list.map((ev) => (
