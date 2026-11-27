@@ -414,6 +414,8 @@ app.get('/api/health', (_req, res) => {
 
 app.get('/api/bootstrap', (req, res) => {
   const { user } = resolveSessionUser(req);
+  // unpaid holds past their 15 minutes give their seats back before anyone looks
+  expireStaleHolds();
   return okSnapshot(res, user?.id ?? null);
 });
 
@@ -1405,6 +1407,8 @@ app.post('/api/registrations', (req, res) => {
 
   db.exec('BEGIN IMMEDIATE');
   try {
+    // seats held by unpaid entries whose time is up are free again before counting
+    expireStaleHolds();
     if (clientRegId) {
       const prior = db
         .prepare('SELECT runner_user_id FROM registrations WHERE id = ?')
@@ -1809,35 +1813,167 @@ app.patch('/api/registrations/:id/shirt-size', (req, res) => {
   }
 });
 
+/* ---- Held registrations (26 Nov 2026, user request) ----
+   The form books the entry as "pending_payment" when the runner leaves the summary step, so
+   the price, seat, shirt and souvenirs are held while they pay. A hold ends when it is paid,
+   when the runner goes back to edit (cancelled), or 15 minutes after booking (expired). An
+   ended hold gives its seat, shirt and souvenirs back; its rows stay, they are never deleted. */
+
+function readRegistration(regId: string): RegistrationRecord | null {
+  const row = db.prepare('SELECT detail_json FROM registrations WHERE id = ?').get(regId) as
+    | { detail_json: string }
+    | undefined;
+  return row ? (JSON.parse(row.detail_json) as RegistrationRecord) : null;
+}
+
+function linkedPendingAddonOrders(reg: RegistrationRecord): MerchOrderRecord[] {
+  const rows = db
+    .prepare(
+      `SELECT detail_json FROM merch_orders
+       WHERE linked_registration_code = ? AND event_id = ? AND payment_status = 'pending'`
+    )
+    .all(reg.regCode, reg.eventId) as { detail_json: string }[];
+  return rows.map((r) => JSON.parse(r.detail_json) as MerchOrderRecord);
+}
+
+/** ends one hold and gives its seat, shirt and souvenirs back; call inside a transaction */
+function releaseHeldRegistration(reg: RegistrationRecord, how: 'expired' | 'cancelled'): void {
+  if (reg.registrationStatus !== 'pending_payment') return;
+  const addons = linkedPendingAddonOrders(reg);
+  const evRow = db.prepare('SELECT detail_json FROM events WHERE id = ?').get(reg.eventId) as
+    | { detail_json: string }
+    | undefined;
+  if (evRow) {
+    const ev = JSON.parse(evRow.detail_json) as RaceEvent;
+    const backByProduct = new Map<string, number>();
+    for (const o of addons) backByProduct.set(o.productId, (backByProduct.get(o.productId) ?? 0) + o.quantity);
+    upsertEventRow({
+      ...ev,
+      shirtStocks: ev.shirtStocks.map((st) =>
+        st.size === reg.shirtSize ? { ...st, reservedOrConfirmed: Math.max(0, st.reservedOrConfirmed - 1) } : st
+      ),
+      products: ev.products.map((p) =>
+        backByProduct.has(p.id) ? { ...p, soldCount: Math.max(0, p.soldCount - (backByProduct.get(p.id) ?? 0)) } : p
+      ),
+    });
+  }
+  upsertRegistrationRow({ ...reg, registrationStatus: how, paymentStatus: 'expired' });
+  addons.forEach((o) => upsertMerchOrderRow({ ...o, paymentStatus: 'expired' }));
+}
+
+function holdIsOver(reg: RegistrationRecord, now = Date.now()): boolean {
+  return (
+    reg.registrationStatus === 'pending_payment' &&
+    Boolean(reg.reservationExpiresAt) &&
+    Date.parse(String(reg.reservationExpiresAt)) <= now
+  );
+}
+
+/** expires every hold whose 15 minutes are up; safe to call inside or outside a transaction */
+function expireStaleHolds(): number {
+  const rows = db
+    .prepare(`SELECT detail_json FROM registrations WHERE registration_status = 'pending_payment'`)
+    .all() as { detail_json: string }[];
+  const now = Date.now();
+  const stale = rows.map((r) => JSON.parse(r.detail_json) as RegistrationRecord).filter((r) => holdIsOver(r, now));
+  if (stale.length === 0) return 0;
+  const own = !db.isTransaction;
+  if (own) db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const reg of stale) {
+      // read again inside the transaction: it may have been paid a moment ago
+      const fresh = readRegistration(reg.id);
+      if (fresh && holdIsOver(fresh, now)) {
+        releaseHeldRegistration(fresh, 'expired');
+        recordAudit(null, fresh.organizationId, `หมดเวลาชำระเงิน คืนที่นั่ง (${fresh.regCode})`, `${fresh.orderCode}: expired`, fresh.eventId);
+      }
+    }
+    if (own) db.exec('COMMIT');
+  } catch (err) {
+    if (own) db.exec('ROLLBACK');
+    throw err;
+  }
+  return stale.length;
+}
+
 app.post('/api/registrations/:id/confirm-payment', (req, res) => {
   const { user } = resolveSessionUser(req);
   const regId = req.params.id;
-  const rRow = db
-    .prepare('SELECT detail_json FROM registrations WHERE id = ?')
-    .get(regId) as { detail_json: string } | undefined;
-  if (!rRow) return res.status(404).json({ ok: false, error: 'ไม่พบใบสมัคร' });
-  const reg = JSON.parse(rRow.detail_json) as RegistrationRecord;
-  if (reg.paymentStatus === 'succeeded') {
-    // Idempotent webhook behavior
-    return okSnapshot(res, user?.id ?? null);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const reg = readRegistration(regId);
+    if (!reg) {
+      db.exec('ROLLBACK');
+      return res.status(404).json({ ok: false, error: 'ไม่พบใบสมัคร' });
+    }
+    if (reg.paymentStatus === 'succeeded') {
+      // Idempotent webhook behavior
+      db.exec('ROLLBACK');
+      return okSnapshot(res, user?.id ?? null, { reg });
+    }
+    // a hold that ran out (or was cancelled) has already given its seat back
+    if (holdIsOver(reg)) {
+      releaseHeldRegistration(reg, 'expired');
+      recordAudit(null, reg.organizationId, `หมดเวลาชำระเงิน คืนที่นั่ง (${reg.regCode})`, `${reg.orderCode}: expired`, reg.eventId);
+      db.exec('COMMIT');
+      return res.status(409).json({ ok: false, error: 'หมดเวลาชำระเงินแล้ว ที่นั่งถูกคืนเข้าระบบ กรุณายืนยันการสมัครใหม่', expired: true });
+    }
+    if (reg.registrationStatus !== 'pending_payment') {
+      db.exec('ROLLBACK');
+      return res.status(409).json({ ok: false, error: 'ใบสมัครนี้ไม่ได้รอชำระเงินแล้ว กรุณายืนยันการสมัครใหม่', expired: true });
+    }
+    const paidAt = nowIsoBangkok();
+    const updated: RegistrationRecord = {
+      ...reg,
+      registrationStatus: 'confirmed',
+      paymentStatus: 'succeeded',
+      fulfillmentStatus: 'ready',
+      paidAt,
+      reservationExpiresAt: null,
+    };
+    upsertRegistrationRow(updated);
+    // souvenirs booked with the entry are paid in the same payment
+    linkedPendingAddonOrders(reg).forEach((o) => upsertMerchOrderRow({ ...o, paymentStatus: 'succeeded' }));
+    recordAudit(
+      user,
+      reg.organizationId,
+      `ยืนยันผล Webhook รับเงินสำเร็จ (${reg.orderCode})`,
+      `${reg.regCode}: confirmed`,
+      reg.eventId
+    );
+    db.exec('COMMIT');
+    return okSnapshot(res, user?.id ?? null, { reg: updated });
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
   }
-  const updated: RegistrationRecord = {
-    ...reg,
-    registrationStatus: 'confirmed',
-    paymentStatus: 'succeeded',
-    fulfillmentStatus: 'ready',
-    paidAt: nowIsoBangkok(),
-    reservationExpiresAt: null,
-  };
-  upsertRegistrationRow(updated);
-  recordAudit(
-    user,
-    reg.organizationId,
-    `ยืนยันผล Webhook รับเงินสำเร็จ (${reg.orderCode})`,
-    `${reg.regCode}: confirmed`,
-    reg.eventId
-  );
-  return okSnapshot(res, user?.id ?? null);
+});
+
+// The runner goes back from the payment step to edit: their own unpaid hold is cancelled and
+// its seat, shirt and souvenirs are given back. The form keeps what they typed.
+app.post('/api/registrations/:id/cancel-hold', (req, res) => {
+  const { user } = resolveSessionUser(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const reg = readRegistration(req.params.id);
+    if (!reg || reg.runnerUserId !== user.id) {
+      db.exec('ROLLBACK');
+      return res.status(404).json({ ok: false, error: 'ไม่พบใบสมัคร' });
+    }
+    if (reg.registrationStatus !== 'pending_payment') {
+      // already paid, expired or cancelled: nothing to give back
+      db.exec('ROLLBACK');
+      return okSnapshot(res, user.id, { reg });
+    }
+    releaseHeldRegistration(reg, 'cancelled');
+    recordAudit(user, reg.organizationId, `ยกเลิกใบสมัครที่รอชำระเพื่อแก้ไขข้อมูล (${reg.regCode})`, `${reg.orderCode}: cancelled`, reg.eventId);
+    db.exec('COMMIT');
+    return okSnapshot(res, user.id, { reg: readRegistration(reg.id) });
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
 });
 
 app.post('/api/registrations/:id/bib', (req, res) => {

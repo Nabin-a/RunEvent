@@ -115,6 +115,7 @@ import { tx, txf, useI18n } from './i18n';
 import { apiRequest } from './api/client';
 import { LangSwitch } from './components/LangSwitch';
 import { DefaultAvatarImg } from './components/DefaultAvatar';
+import { ROLE_LABEL, roleDuties } from './data/orgRoles';
 
 type RootSurface =
   | 'customer'
@@ -776,7 +777,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
       } else if (surface === 'customer' && customerSubView === 'my_orders') {
         setReturnIntent({
           surface: 'my_orders',
-          label: 'ดูบัตรวิ่งและคำสั่งซื้อของฉัน',
+          label: 'ดูประวัติการสมัคร & การสั่งซื้อ',
         });
         setAuthInitialTab('signin');
         setSurface('auth');
@@ -824,7 +825,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
       if (view === 'my_orders' && !currentUser) {
         setReturnIntent({
           surface: 'my_orders',
-          label: 'ดูบัตรวิ่งและคำสั่งซื้อของฉัน',
+          label: 'ดูประวัติการสมัคร & การสั่งซื้อ',
         });
         setAuthInitialTab('signin');
         setSurface('auth');
@@ -1852,6 +1853,24 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
       };
     }
     return { ok: true, reg: res.reg, addonOrders: res.addonOrders ?? (res.addonOrder ? [res.addonOrder] : []) };
+  };
+
+  // A registration held at the summary step (pending_payment): pay it, or give it back so the
+  // runner can edit (26 Nov 2026). The server re-checks the 15-minute hold on both.
+  const handlePayHeldRegistration = async (
+    regId: string
+  ): Promise<{ ok: true; reg: RegistrationRecord } | { ok: false; error: string; expired: boolean }> => {
+    const res = await syncApi('POST', `/api/registrations/${regId}/confirm-payment`);
+    if (!res.ok || !res.reg) {
+      // the hold may have run out: fetch the state that shows it released
+      if (res.expired) await syncApi('GET', '/api/bootstrap');
+      return { ok: false, error: res.error ?? tx('ชำระเงินไม่สำเร็จ กรุณาลองอีกครั้ง'), expired: Boolean(res.expired) };
+    }
+    return { ok: true, reg: res.reg };
+  };
+  const handleCancelHeldRegistration = async (regId: string): Promise<{ ok: boolean; error?: string }> => {
+    const res = await syncApi('POST', `/api/registrations/${regId}/cancel-hold`);
+    return { ok: res.ok, error: res.error };
   };
 
   // Storefront cart: the server prices every line, checks stock for the whole cart in one
@@ -3779,7 +3798,8 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                 handleCreateRegistrationAndAddon
               }
               onCheckoutMerchCart={handleCheckoutMerchCart}
-              onCompletePendingPayment={handleSimulateWebhookConfirm}
+              onPayHeldRegistration={handlePayHeldRegistration}
+              onCancelHeldRegistration={handleCancelHeldRegistration}
             />
           )}
 
@@ -4122,6 +4142,18 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                   .map((u) => {
                     const isCur = currentUser?.id === u.id;
                     const isOrg = u.memberships.length > 0;
+                    // four roles only (27 Nov 2026, user request): ผู้ดูแลระบบ / ผู้จัด / ทีมงานผู้จัด / นักวิ่ง;
+                    // the line below keeps the account's own duty so same-role accounts stay apart
+                    const roleTitle = u.isPlatformAdmin
+                      ? 'ผู้ดูแลระบบ (Platform Owner)'
+                      : u.memberships.some((m) => m.role === 'owner')
+                        ? 'ผู้จัด'
+                        : isOrg
+                          ? 'ทีมงานผู้จัด'
+                          : 'นักวิ่ง';
+                    const duty = u.demoRoleSummary.split(' — ')[0].trim();
+                    // organizer team: which role, and what that role does (27 Nov 2026, user request)
+                    const teamRole = roleTitle === 'ทีมงานผู้จัด' ? u.memberships[0] : undefined;
                     return (
                       <button
                         key={u.id}
@@ -4136,14 +4168,27 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                         }}
                       >
                         <div>
-                          <strong>{tx(u.fullNameTh)}</strong>
+                          {/* the role, not the person's name (27 Nov 2026, user request) */}
+                          <strong>{tx(roleTitle)}</strong>
                           <div className="muted-inline">
                             {u.isPlatformAdmin
-                              ? tx("Platform Owner · อนุมัติผู้จัด/งานวิ่ง/รอบโอนทั้งระบบ")
-                              : isOrg
-                                ? txf("ทีมผู้จัด ({0} องค์กร) · เห็นเมนูผู้จัด", u.memberships.length)
-                                : tx("ลูกค้า/นักวิ่งทั่วไป · ไม่เห็นเมนูผู้จัด")}
+                              ? tx("อนุมัติผู้จัด/งานวิ่ง/รอบโอนทั้งระบบ")
+                              : teamRole
+                                ? txf("{0} · {1} องค์กร", tx(ROLE_LABEL[teamRole.role]), u.memberships.length)
+                                : isOrg
+                                  ? txf("{0} · {1} องค์กร", tx(duty.replace(/\s*\(\d+ องค์กร\)$/, '')), u.memberships.length)
+                                  : tx(duty)}
                           </div>
+                          {teamRole && (
+                            <ul className="dev-persona-duties">
+                              {roleDuties(teamRole.role).map((d) => (
+                                <li key={d}>{tx(d)}</li>
+                              ))}
+                              {(teamRole.assignedEventIds?.length ?? 0) > 0 && (
+                                <li>{txf('เฉพาะงานที่ได้รับมอบหมาย ({0} งาน)', teamRole.assignedEventIds!.length)}</li>
+                              )}
+                            </ul>
+                          )}
                         </div>
                         <IconArrowRight size={14} />
                       </button>

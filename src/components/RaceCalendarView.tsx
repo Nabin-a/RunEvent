@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { RaceEvent } from '../types';
 import { getLang, tx, txf } from '../i18n';
 import { todayIsoInTimeZone } from '../utils/age';
@@ -182,8 +182,19 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
       counts.set(k, (counts.get(k) ?? 0) + 1);
     }
     if (!counts.has(monthKeyOf(today))) counts.set(monthKeyOf(today), 0);
+    // the month on screen is always in the strip, even without races (27 Nov 2026)
+    if (!counts.has(monthKey)) counts.set(monthKey, 0);
     return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [sorted, bucket, today]);
+  }, [sorted, bucket, today, monthKey]);
+  // keep the picked month in view inside the strip (it scrolls sideways on phones)
+  const stripRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const strip = stripRef.current;
+    const on = strip?.querySelector<HTMLElement>('[aria-current="true"]');
+    if (!strip || !on) return;
+    const left = on.offsetLeft - (strip.clientWidth - on.offsetWidth) / 2;
+    strip.scrollTo({ left: Math.max(0, left), behavior: 'auto' });
+  }, [monthKey, monthStrip.length]);
 
   const countsByDay = useMemo(() => {
     const map = new Map<string, number>();
@@ -313,7 +324,7 @@ export const RaceCalendarView: React.FC<Props> = ({ events, onOpenEvent }) => {
             </button>
           </div>
 
-          <nav className="race-calendar-strip" aria-label={tx('เดือนที่มีงานวิ่ง')}>
+          <nav className="race-calendar-strip" ref={stripRef} aria-label={tx('เดือนที่มีงานวิ่ง')}>
             {monthStrip.map(([k, n]) => (
               <button
                 key={k}

@@ -945,6 +945,26 @@ export function seedDatabase(forceReset = false): void {
         }
       }
     }
+    // test data (27 Nov 2026): souvenir-free event + USR-901's unpaid entry, added once
+    if (!db.prepare("SELECT 1 FROM events WHERE id = 'evt-sukhothai-2027'").get()) {
+      const ev = INITIAL_EVENTS.find((e) => e.id === 'evt-sukhothai-2027');
+      // same defaults the first seed gives every event
+      if (ev) {
+        upsertEventRow(
+          {
+            ...ev,
+            activeTemplateId: ev.activeTemplateId ?? 'tpl-halfmarathon',
+            totalEventQuotaEnabled: ev.totalEventQuotaEnabled ?? true,
+            publishedFormVersion: ev.publishedFormVersion ?? 'v1.2-published',
+          },
+          500
+        );
+      }
+    }
+    if (!db.prepare("SELECT 1 FROM registrations WHERE id = 'reg-901-sk-pending'").get()) {
+      const reg = INITIAL_REGISTRATIONS.find((r) => r.id === 'reg-901-sk-pending');
+      if (reg) upsertRegistrationRow(reg, 500);
+    }
     const reg07Row = db
       .prepare("SELECT detail_json FROM registrations WHERE id = 'reg-07'")
       .get() as { detail_json: string } | undefined;

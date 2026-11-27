@@ -45,6 +45,8 @@ export interface ApiSnapshotResponse {
   organization?: Organization;
   event?: RaceEvent;
   reg?: RegistrationRecord;
+  /** a held (unpaid) registration whose 15 minutes ran out, or that was cancelled */
+  expired?: boolean;
   addonOrder?: MerchOrderRecord;
   addonOrders?: MerchOrderRecord[];
   order?: MerchOrderRecord;

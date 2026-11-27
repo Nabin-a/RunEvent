@@ -436,6 +436,19 @@ button.eh-strip:focus-visible,
   height: 11rem;
   margin-top: 0.5rem;
   overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.eh-cols::-webkit-scrollbar {
+  display: none;
+}
+
+/* phones: every size fits the card (27 Nov 2026, user request) */
+@media (max-width: 40rem) {
+  .eh-cols {
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 0.3rem;
+  }
 }
 
 .eh-colbox {

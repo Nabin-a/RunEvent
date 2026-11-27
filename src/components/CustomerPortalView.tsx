@@ -66,15 +66,10 @@ import { MascotSprite } from './MascotRunner';
 import { reportInvalidFieldsWithin } from '../utils/formValidation';
 import type { CascadingAddressValue } from './ThaiPostalAddressSelector';
 import { maskIdNumber } from '../utils/dateFormat';
-import {
-  EventStatusBadge,
-  FulfillmentStatusBadge,
-  PaymentStatusBadge,
-  RegStatusBadge,
-} from './StatusBadges';
+import { EventStatusBadge, PaymentStatusBadge } from './StatusBadges';
 import { CORE_STEP, stepsShown, validateAnswers } from '../data/registrationForm';
 
-import { tx, txf } from '../i18n';
+import { getLang, tx, txf } from '../i18n';
 import { FEATURES } from '../config/features';
 import {
   ageCheckMessage,
@@ -82,6 +77,18 @@ import {
   formatAgeBasis,
   formatAgeLimit,
 } from '../utils/age';
+import { QrCode } from './QrCode';
+import {
+  CertificatePreviewCard,
+  RegHeadline,
+  RegProgress,
+  RegResultActions,
+  RegSnapshotDetails,
+  regAgeShort,
+  regIsPast,
+  type HistoryFilter,
+} from './RegistrationHistoryParts';
+import { formatBasisDate, todayIsoInTimeZone } from '../utils/age';
 /** Registration wizard steps: 1 start, 2 participant, 3 race-kit shirt, 4 souvenirs,
  *  5 address, 6 payment, 7 done. Step 4 is skipped when the event sells nothing. */
 /** 1-8 as before; the organizer's own steps (24 Nov 2026) sit between 2 and 3 as 2.1, 2.2, 2.3 */
@@ -141,7 +148,12 @@ interface CustomerPortalViewProps {
     | { ok: true; reg: RegistrationRecord; addonOrders?: MerchOrderRecord[] }
     | { ok: false; error: string }
   >;
-  onCompletePendingPayment: (regId: string) => void;
+  /** pays a registration held at the summary step; `expired` when its 15 minutes ran out */
+  onPayHeldRegistration: (
+    regId: string
+  ) => Promise<{ ok: true; reg: RegistrationRecord } | { ok: false; error: string; expired: boolean }>;
+  /** gives a held registration back (runner goes back to edit) */
+  onCancelHeldRegistration: (regId: string) => Promise<{ ok: boolean; error?: string }>;
   /** storefront cart checkout (server checks stock for the whole cart in one go) */
   onCheckoutMerchCart: (payload: MerchCheckoutPayload) => Promise<MerchCheckoutResult>;
   /** 'b' renders the alternative registration layout (sandbox review only, cannot submit) */
@@ -166,7 +178,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   onSaveProfilePatch,
   onOpenOrganizerDashboard,
   onCreateRegistrationAndOptionalAddon,
-  onCompletePendingPayment,
+  onPayHeldRegistration,
+  onCancelHeldRegistration,
   onCheckoutMerchCart,
   showQuotaBox = true,
 }) => {
@@ -356,6 +369,17 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   // checkout: waiting for the server, and the id that makes a retry safe (see submitRegistrationOrder)
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  /* A registration held at the summary step (pending_payment), waiting to be paid (26 Nov 2026,
+     user request): leaving without paying and coming back opens its payment step again. */
+  const [heldRegId, setHeldRegId] = useState<string | null>(null);
+  // true when this form booked the hold, so "back to edit" still has everything typed
+  const heldFromForm = useRef(false);
+  const [heldBusy, setHeldBusy] = useState(false);
+  const [heldError, setHeldError] = useState<string | null>(null);
+  const [resumeNotice, setResumeNotice] = useState<string | null>(null);
+  // holds the runner set aside with "สมัครให้คนอื่น" in this visit are not reopened
+  const skipResume = useRef<Set<string>>(new Set());
+  const heldReg = heldRegId ? registrations.find((r) => r.id === heldRegId) ?? null : null;
   const checkoutRequestId = useRef<string | null>(null);
   const [createdResult, setCreatedResult] = useState<{
     reg: RegistrationRecord;
@@ -536,6 +560,36 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     return { ...ev, customFields: formPreview.form.fields, formCustomSteps: formPreview.form.steps };
   }, [publicVisibleEvents, events, selectedEventId, formPreview.active, formPreview.form]);
 
+  // Opening the sign-up page with an unpaid, still-held registration for this event goes
+  // straight to its payment step (checked once per visit to the page).
+  const resumeCheckedFor = useRef('');
+  useEffect(() => {
+    if (subView !== 'event_register' || !selectedEvent || !currentUser || formPreview.active) {
+      resumeCheckedFor.current = '';
+      return;
+    }
+    const key = `${selectedEvent.id}:${currentUser.id}`;
+    if (resumeCheckedFor.current === key || registrations.length === 0) return;
+    resumeCheckedFor.current = key;
+    const now = Date.now();
+    const pending = registrations
+      .filter(
+        (r) =>
+          r.eventId === selectedEvent.id &&
+          r.runnerUserId === currentUser.id &&
+          r.registrationStatus === 'pending_payment' &&
+          (!r.reservationExpiresAt || Date.parse(r.reservationExpiresAt) > now) &&
+          !skipResume.current.has(r.id)
+      )
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+    if (!pending) return;
+    if (heldRegId !== pending.id) heldFromForm.current = false;
+    setHeldRegId(pending.id);
+    setHeldError(null);
+    setRegStep(7);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subView, selectedEvent?.id, currentUser?.id, registrations, formPreview.active]);
+
   const activeCategory: RaceCategory | null = useMemo(() => {
     if (!selectedEvent) return null;
     return (
@@ -601,6 +655,22 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           r.email.toLowerCase() === currentUser.contactEmail.toLowerCase())
     );
   }, [registrations, currentUser]);
+
+  // one place for every entry (27 Nov 2026, user request): the profile's old "ประวัติงานที่สมัคร"
+  // filters, results, certificates and sign-up details now live on this page
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
+  const [expandedRegId, setExpandedRegId] = useState<string | null>(null);
+  const [certPreviewReg, setCertPreviewReg] = useState<RegistrationRecord | null>(null);
+  const historyToday = todayIsoInTimeZone();
+  const shownRegistrations = useMemo(
+    () =>
+      myRegistrations.filter((r) => {
+        if (historyFilter === 'all') return true;
+        const past = regIsPast(events.find((e) => e.id === r.eventId), historyToday);
+        return historyFilter === 'past' ? past : !past;
+      }),
+    [myRegistrations, historyFilter, events, historyToday]
+  );
 
   const myMerchOrders = useMemo(() => {
     if (!currentUser) return [];
@@ -866,8 +936,90 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     if (Object.keys(profilePatch).length > 0) {
       onSaveProfilePatch?.(profilePatch);
     }
+    if (!payImmediately) {
+      // booked and held: the payment step pays this registration
+      heldFromForm.current = true;
+      setHeldRegId(outcome.reg.id);
+      setHeldError(null);
+      setResumeNotice(null);
+      setRegStep(7);
+      return;
+    }
     setCreatedResult(res);
     setRegStep(8);
+  };
+
+  const payHeld = async () => {
+    if (!heldReg || heldBusy) return;
+    setHeldBusy(true);
+    setHeldError(null);
+    const out = await onPayHeldRegistration(heldReg.id);
+    setHeldBusy(false);
+    if (!out.ok) {
+      if (out.expired) {
+        const fromForm = heldFromForm.current;
+        heldFromForm.current = false;
+        setHeldRegId(null);
+        setResumeNotice(
+          fromForm
+            ? tx('หมดเวลาชำระเงิน 15 นาที ที่นั่งถูกคืนแล้ว ตรวจข้อมูลแล้วกด "ไปชำระเงิน" อีกครั้ง')
+            : tx('หมดเวลาชำระเงิน 15 นาที ที่นั่งถูกคืนแล้ว กรุณาสมัครใหม่')
+        );
+        setRegStep(fromForm ? 6 : 1);
+      } else {
+        setHeldError(out.error);
+      }
+      return;
+    }
+    const linked = merchOrders.filter(
+      (m) => m.linkedRegistrationCode === out.reg.regCode && m.eventId === out.reg.eventId
+    );
+    heldFromForm.current = false;
+    setHeldRegId(null);
+    setCreatedResult({ reg: out.reg, addonOrder: linked[0], addonOrders: linked });
+    setRegStep(8);
+  };
+
+  const cancelHeld = async () => {
+    if (!heldReg || heldBusy) return;
+    setHeldBusy(true);
+    setHeldError(null);
+    const out = await onCancelHeldRegistration(heldReg.id);
+    setHeldBusy(false);
+    if (!out.ok) {
+      setHeldError(out.error ?? tx('ยกเลิกไม่สำเร็จ กรุณาลองอีกครั้ง'));
+      return;
+    }
+    const fromForm = heldFromForm.current;
+    heldFromForm.current = false;
+    setHeldRegId(null);
+    setResumeNotice(fromForm ? null : tx('ยกเลิกใบสมัครที่รอชำระแล้ว กรอกข้อมูลใหม่ได้เลย'));
+    setRegStep(fromForm ? 6 : 1);
+  };
+
+  // "ชำระเงินต่อ" in the order history: open that registration's payment step
+  const openHeldPayment = (reg: RegistrationRecord) => {
+    if (currentUser) resumeCheckedFor.current = `${reg.eventId}:${currentUser.id}`;
+    heldFromForm.current = false;
+    setHeldRegId(reg.id);
+    setHeldError(null);
+    setResumeNotice(null);
+    setCreatedResult(null);
+    setRegStep(7);
+    onNavigate('event_register', reg.eventId, 'register');
+  };
+
+  const registerAnother = () => {
+    if (heldReg) skipResume.current.add(heldReg.id);
+    heldFromForm.current = false;
+    setHeldRegId(null);
+    setHeldError(null);
+    setResumeNotice(null);
+    setRegModeChosen(false);
+    setAcceptedRules(false);
+    setAcceptedPayTerms(false);
+    setCheckoutError(null);
+    setRegStep(1);
   };
 
 
@@ -878,7 +1030,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         <div className="hub-header-bar kr-orders-head">
           <IconBib size={44} className="kr-orders-icon" />
           <div>
-            <h1>{tx("บัตรวิ่งและคำสั่งซื้อของฉัน")}</h1>
+            {/* same words as the account menu item (27 Nov 2026, user request) */}
+            <h1>{tx("ประวัติการสมัคร & การสั่งซื้อ")}</h1>
             <p className="muted-block">
               {tx("แยกแสดงระหว่าง ")} <strong>{tx("สิทธิ์เข้าร่วมการแข่งขัน (รับ BIB)")}</strong> {tx(" และ")}{' '}
               <strong>{tx("คำสั่งซื้อสินค้าที่ระลึก")}</strong> {tx(" อย่างชัดเจนเพื่อความสะดวกรวดเร็วในวันรับของ")}
@@ -907,7 +1060,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
               onClick={() =>
                 onRequireLoginWithIntent({
                   surface: 'my_orders',
-                  label: 'เปิดดูบัตรวิ่งและคำสั่งซื้อของฉัน',
+                  label: 'เปิดดูประวัติการสมัคร & การสั่งซื้อ',
                 })
               }
             >
@@ -953,19 +1106,44 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     {tx("แสดง QR Token นี้ที่จุดเช็กอินนักวิ่งเพื่อรับป้าย BIB และเสื้อตามสิทธิ์สมัคร")}
                   </p>
                 </div>
+                {myRegistrations.length > 0 && (
+                  <div className="cta-inline-row" role="group" aria-label={tx('กรองใบสมัคร')}>
+                    {(
+                      [
+                        ['all', 'ทั้งหมด'],
+                        ['upcoming', 'กำลังจะมาถึง'],
+                        ['past', 'ผ่านมาแล้ว'],
+                      ] as const
+                    ).map(([key, lbl]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        className={`filter-pill ${historyFilter === key ? 'active' : ''}`}
+                        aria-pressed={historyFilter === key}
+                        onClick={() => setHistoryFilter(key)}
+                      >
+                        {tx(lbl)}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {myRegistrations.length === 0 ? (
                 <div className="subtle-empty-note">
                   {tx("บัญชีนี้ยังไม่มีใบสมัครวิ่ง (ลูกค้าทั่วไปสามารถดูคำสั่งซื้อสินค้าที่ระลึกได้ในส่วนถัดไปด้านล่าง)")}
                 </div>
+              ) : shownRegistrations.length === 0 ? (
+                <div className="subtle-empty-note">{tx('ไม่มีรายการงานวิ่งในหมวดนี้')}</div>
               ) : (
                 <div className="pass-list">
-                  {myRegistrations.map((reg) => {
+                  {shownRegistrations.map((reg) => {
                     const ev = events.find((e) => e.id === reg.eventId);
                     const cat = ev?.categories.find(
                       (c) => c.id === reg.categoryId
                     );
+                    const isPast = regIsPast(ev, historyToday);
+                    const ageText = regAgeShort(reg, cat);
                     return (
                       <article key={reg.id} className="runner-pass-item kr-pass">
                         {ev && (
@@ -974,47 +1152,54 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                           </div>
                         )}
                         <div className="pass-main-info">
-                          <div className="pass-badges-row">
-                            <span className="mono-code">{tx(reg.regCode)}</span>
-                            <RegStatusBadge status={reg.registrationStatus} />
-                            <PaymentStatusBadge status={reg.paymentStatus} />
-                            <FulfillmentStatusBadge
-                              status={reg.fulfillmentStatus}
-                            />
+                          {/* easy-to-read card (27 Nov 2026, user request): one headline status, a
+                              three-step track, then the key facts in a small grid */}
+                          <div className="reg-card-head">
+                            <RegHeadline reg={reg} isPast={isPast} />
+                            <span className="mono-code reg-card-code">{reg.regCode}</span>
                           </div>
-                          <h3>{ev?.titleTh ?? reg.eventId}</h3>
-                          <p className="muted-block">
-                            {tx("ระยะทาง: ")} <strong>{tx(cat?.name)}</strong> {tx(" · วันงาน:")}{' '}
-                            <span className="mono-num">{tx(ev?.eventDate)}</span> {tx(" · ผู้เข้าแข่งขัน: ")} <strong>{tx(reg.participantNameTh)}</strong>{' '}
-                            {tx("(ผู้สั่งซื้อ: ")} {tx(reg.buyerName)})
+                          <h3>{getLang() === 'en' ? ev?.titleEn || ev?.titleTh || reg.eventId : ev?.titleTh ?? reg.eventId}</h3>
+                          <p className="reg-card-meta">
+                            {ev?.eventDate && (
+                              <span>
+                                <IconCalendar size={14} /> {formatBasisDate(ev.eventDate)}
+                              </span>
+                            )}
+                            {ev?.province && (
+                              <span>
+                                <IconMapPin size={14} /> {tx(ev.province)}
+                              </span>
+                            )}
                           </p>
-                          <p className="muted-inline">
-                            {tx("ชำระสุทธิ:")}{' '}
-                            <strong className="mono-num">
-                              {formatThb(reg.snapshotTotalChargedSatang, true)}
-                            </strong>{' '}
-                            {tx("(ไม่แก้ยอดใบสมัครย้อนหลังหากมีการสั่งซื้อของที่ระลึกเพิ่มภายหลัง)")}
-                          </p>
+                          <RegProgress reg={reg} />
+                          <dl className="reg-card-facts">
+                            <div>
+                              <dt>{tx('ผู้เข้าแข่งขัน')}</dt>
+                              <dd>{getLang() === 'en' ? reg.participantNameEn || reg.participantNameTh : reg.participantNameTh}</dd>
+                            </div>
+                            <div>
+                              <dt>{tx('ระยะ')}</dt>
+                              <dd>{tx(cat?.name ?? '-')}</dd>
+                            </div>
+                            {ageText && (
+                              <div>
+                                <dt>{tx('อายุ / รุ่นอายุ')}</dt>
+                                <dd>{ageText}</dd>
+                              </div>
+                            )}
+                            <div>
+                              <dt>{reg.registrationStatus === 'pending_payment' ? tx('ยอดที่ต้องชำระ') : tx('ยอดชำระ')}</dt>
+                              <dd className="mono-num">{formatThb(reg.snapshotTotalChargedSatang, true)}</dd>
+                            </div>
+                            {reg.buyerName && reg.buyerName.trim() !== reg.participantNameTh.trim() && (
+                              <div>
+                                <dt>{tx('ผู้ชำระเงิน')}</dt>
+                                <dd>{reg.buyerName}</dd>
+                              </div>
+                            )}
+                          </dl>
 
                           <div className="cta-inline-row" style={{ marginTop: '0.55rem' }}>
-                            {reg.registrationStatus === 'pending_payment' && (
-                              <button
-                                type="button"
-                                className="btn-primary"
-                                onClick={() => onCompletePendingPayment(reg.id)}
-                              >
-                                <IconCheckCircle size={15} />
-                                <span>
-                                  {tx("ชำระเงินต่อให้เสร็จสิ้น (")}
-                                  {formatThb(
-                                    reg.snapshotTotalChargedSatang,
-                                    true
-                                  )}
-                                  )
-                                </span>
-                              </button>
-                            )}
-
                             {ev && ev.products.length > 0 && (
                               <button
                                 type="button"
@@ -1024,7 +1209,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                                 }
                               >
                                 <IconBag size={14} />
-                                <span>{tx("ซื้อเสื้อ/เหรียญที่ระลึกเพิ่ม (สร้างออเดอร์ใหม่)")}</span>
+                                <span>{tx("ซื้อของที่ระลึก")}</span>
                               </button>
                             )}
 
@@ -1041,20 +1226,50 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                                   <span>{tx("ดูผลและรูปภาพหลังงาน")}</span>
                                 </button>
                               )}
+
+                            <button
+                              type="button"
+                              className="btn-ghost-sm"
+                              aria-expanded={expandedRegId === reg.id}
+                              onClick={() => setExpandedRegId(expandedRegId === reg.id ? null : reg.id)}
+                            >
+                              {expandedRegId === reg.id ? tx('ซ่อนรายละเอียด') : tx('ดูรายละเอียดใบสมัคร')}
+                            </button>
                           </div>
+                          <RegResultActions reg={reg} ev={ev} cat={cat} onPreview={setCertPreviewReg} />
+                          {expandedRegId === reg.id && <RegSnapshotDetails reg={reg} />}
                         </div>
 
                         <div className="pass-qr-card">
                           <div className="pass-bib-num mono-num">
                             {reg.bibNumber ?? tx("รอกำหนด BIB")}
                           </div>
+                          {/* unpaid: pay right under the BIB (26 Nov 2026, user request) */}
+                          {reg.registrationStatus === 'pending_payment' && (
+                            <button
+                              type="button"
+                              className="btn-primary pass-pay-btn"
+                              onClick={() => openHeldPayment(reg)}
+                            >
+                              {tx('ชำระเงิน')}
+                            </button>
+                          )}
                           <div className="qr-token-box">
-                            <IconQr size={26} />
+                            {reg.registrationStatus === 'confirmed' ? (
+                              <QrCode
+                                value={reg.qrCheckInToken}
+                                size={96}
+                                label={txf('QR รับอุปกรณ์ของ {0}', reg.regCode)}
+                                className="pass-qr-img"
+                              />
+                            ) : (
+                              <IconQr size={26} />
+                            )}
                             <div>
                               <div className="mono-code">
                                 {tx(reg.qrCheckInToken)}
                               </div>
-                              <small>{tx("เสื้อตามสิทธิ์: ไซส์")} {tx(reg.shirtSize)}</small>
+                              <small>{txf("เสื้อไซส์ {0}", reg.shirtSize)}</small>
                             </div>
                           </div>
                         </div>
@@ -1062,6 +1277,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     );
                   })}
                 </div>
+              )}
+              {certPreviewReg && (
+                <CertificatePreviewCard reg={certPreviewReg} onClose={() => setCertPreviewReg(null)} />
               )}
             </section>
             )}
@@ -1361,6 +1579,22 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           return next;
         }),
       submit: () => void submitRegistrationOrder(true),
+      book: () => void submitRegistrationOrder(false),
+      held: heldReg
+        ? {
+            reg: heldReg,
+            addonOrders: merchOrders.filter(
+              (m) => m.linkedRegistrationCode === heldReg.regCode && m.eventId === heldReg.eventId
+            ),
+            fromForm: heldFromForm.current,
+            busy: heldBusy,
+            error: heldError,
+            pay: () => void payHeld(),
+            cancel: () => void cancelHeld(),
+            another: registerAnother,
+          }
+        : null,
+      resumeNotice,
       submitting,
       payError: (
         <>
@@ -1408,12 +1642,16 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                 {tx('เรียบร้อยแล้ว')}
               </>
             }
+            qr={
+              createdResult.reg.registrationStatus === 'confirmed'
+                ? { value: createdResult.reg.qrCheckInToken, caption: tx('QR รับอุปกรณ์ แสดงที่จุดเช็กอิน') }
+                : undefined
+            }
             items={[
               { label: tx('รหัสใบสมัครวิ่ง'), value: tx(createdResult.reg.regCode), mono: true },
               { label: tx('ผู้เข้าแข่งขัน'), value: tx(createdResult.reg.participantNameTh) },
               ...(activeCategory ? [{ label: tx('ระยะ'), value: tx(activeCategory.name) }] : []),
               { label: tx('เสื้อตามสิทธิ์สมัคร'), value: `${tx('ไซส์')} ${tx(createdResult.reg.shirtSize)}` },
-              { label: tx('QR Token รับอุปกรณ์'), value: tx(createdResult.reg.qrCheckInToken), mono: true },
               ...(createdResult.addonOrders ?? []).map((o) => ({
                 label: `${tx(o.productNameTh)}${o.variantSize !== '-' ? ` · ${o.variantSize}` : ''} × ${o.quantity}`,
                 value: o.merchOrderCode,
@@ -1427,7 +1665,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             ]}
           >
             <button type="button" className="btn-primary" onClick={() => onNavigate('my_orders', null)}>
-              {tx('ไปหน้าบัตรวิ่งและคำสั่งซื้อของฉัน')}
+              {tx('ไปหน้าประวัติการสมัคร & การสั่งซื้อ')}
             </button>
             <button
               type="button"

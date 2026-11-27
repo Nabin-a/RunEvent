@@ -1732,6 +1732,12 @@ textarea::placeholder {
   padding-top: 0.45rem;
 }
 
+.qr-token-box .pass-qr-img {
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--line-light);
+}
+
 .qr-token-box small {
   display: block;
   font-size: 0.75rem;
@@ -5675,9 +5681,9 @@ body.swal2-iosfix {
   }
 
   .runner-mobile-nav-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /* a long section name wraps instead of being cut (27 Nov 2026) */
+    overflow-wrap: anywhere;
+    line-height: 1.25;
   }
 
   .runner-mobile-nav-count {
@@ -8094,11 +8100,24 @@ body.swal2-iosfix {
 }
 
 .race-calendar-strip {
+  position: relative;
   display: flex;
   gap: 0.25rem 1rem;
   overflow-x: auto;
-  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+  /* swipe without a scrollbar line under the months (27 Nov 2026, user request) */
+  scrollbar-width: none;
   padding-bottom: 0.15rem;
+}
+
+.race-calendar-strip::-webkit-scrollbar,
+.race-calendar-views::-webkit-scrollbar {
+  display: none;
+}
+
+.race-calendar-strip .filter-pill {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .race-calendar-grid {
@@ -10821,6 +10840,217 @@ body.review-placing [data-review-ui] * {
   gap: 0.75rem;
 }
 
+/* held registration (26 Nov 2026): the seat is kept 15 minutes while the runner pays */
+.reg-hold-timer,
+.reg-lab-resume-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--amber-border);
+  border-radius: var(--radius-md, 0.75rem);
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+  font-size: 0.9375rem;
+}
+
+.reg-hold-timer > svg,
+.reg-lab-resume-notice > svg {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+}
+
+.reg-hold-timer strong {
+  font-size: 1.05rem;
+}
+
+.reg-hold-timer.is-low,
+.reg-hold-timer.is-over {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
+
+.reg-lab-terms {
+  margin-top: 1.25rem;
+}
+
+/* the area that holds a step's problem (not a plain input): red outline until fixed */
+.reg-lab-body [data-step-invalid] {
+  border-radius: var(--radius-md, 0.75rem);
+  outline: 2px solid var(--danger);
+  outline-offset: 6px;
+}
+
+/* order history: "ชำระเงิน" under the BIB of an unpaid entry */
+/* Dev / Demo list: what an organizer team role does (27 Nov 2026) */
+.dev-persona-duties {
+  margin: 0.3rem 0 0;
+  padding-left: 1rem;
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+/* registration card (27 Nov 2026): headline status, entry / payment / kit track, key facts */
+.reg-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.reg-card-code {
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+}
+
+.reg-headline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.reg-headline::before {
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.reg-headline.is-ok { background: var(--forest-soft); color: var(--forest-ink); }
+.reg-headline.is-wait { background: var(--amber-soft); color: var(--amber-ink); }
+.reg-headline.is-stop { background: var(--danger-soft); color: var(--danger-ink); }
+.reg-headline.is-muted { background: var(--bg-subtle); color: var(--ink-secondary); }
+
+.reg-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0.2rem 0 0.7rem;
+  color: var(--ink-secondary);
+  font-size: 0.875rem;
+}
+
+.reg-card-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* entry -> payment -> kit: dots joined by a line; done = filled, now = ringed, stop = red */
+.reg-progress {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 0 0.85rem;
+  padding: 0;
+  list-style: none;
+}
+
+.reg-progress li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding-top: 1.15rem;
+  font-size: 0.8125rem;
+}
+
+.reg-progress li::before {
+  content: '';
+  position: absolute;
+  top: 0.4rem;
+  left: 0.75rem;
+  right: 0;
+  height: 2px;
+  background: var(--line-medium);
+}
+
+.reg-progress li:last-child::before {
+  display: none;
+}
+
+.reg-progress li.is-done::before {
+  background: var(--forest, #2e7d4f);
+}
+
+.reg-progress-dot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid var(--line-strong, var(--line-medium));
+  border-radius: 50%;
+  background: var(--bg-surface);
+}
+
+.reg-progress li.is-done .reg-progress-dot {
+  border-color: var(--forest, #2e7d4f);
+  background: var(--forest, #2e7d4f);
+}
+
+.reg-progress li.is-now .reg-progress-dot {
+  border-color: var(--amber, #945606);
+  box-shadow: 0 0 0 3px var(--amber-soft);
+}
+
+.reg-progress li.is-stop .reg-progress-dot {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.reg-progress-name {
+  font-weight: 700;
+  color: var(--ink-primary);
+}
+
+.reg-progress-note {
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+}
+
+.reg-progress li.is-now .reg-progress-note {
+  color: var(--amber-ink);
+  font-weight: 600;
+}
+
+.reg-progress li.is-stop .reg-progress-note {
+  color: var(--danger-ink);
+}
+
+.reg-card-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem 1rem;
+  margin: 0 0 0.75rem;
+}
+
+.reg-card-facts dt {
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+}
+
+.reg-card-facts dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.pass-qr-card .pass-pay-btn {
+  width: 100%;
+  justify-content: center;
+}
+
 .reg-lab-footer {
   display: flex;
   flex-wrap: wrap;
@@ -12210,6 +12440,30 @@ body:has(.app-root.is-public) {
 }
 
 .reg-done-sub,
+/* scannable check-in QR on the success step (27 Nov 2026) */
+.reg-done-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.5rem 0 0;
+}
+
+.reg-done-qr .qr-code {
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 1px var(--line-light);
+}
+
+.reg-done-qr figcaption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
 .reg-done-note {
   margin: 0;
   color: var(--ink-secondary);
@@ -15915,3 +16169,27 @@ body:has(.app-root.is-public) {
   font-weight: 600;
   white-space: nowrap;
 }
+
+/* Phone pass (27 Nov 2026, user request): small controls get a finger-sized hit area
+   (at least ~40px) without changing how they look */
+@media (max-width: 40rem) {
+  /* zero specificity: a control that is already positioned (the postal toggle, editor
+     floats) keeps its own position, which also anchors the hit area */
+  :where(.reg-review-edit, .pe-icon-btn) {
+    position: relative;
+  }
+
+  .reg-review-edit::after,
+  .postal-typeahead-toggle::after,
+  .pe-icon-btn::after {
+    content: '';
+    position: absolute;
+    inset: -8px;
+  }
+
+  .kr-pass-filters .filter-pill,
+  .clean-panel .section-title-bar .filter-pill {
+    min-height: 2.5rem;
+  }
+}
+

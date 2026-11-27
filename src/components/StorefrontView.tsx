@@ -254,7 +254,7 @@ export function StorefrontView({
           }
         >
           <button type="button" className="btn-primary" onClick={onViewOrders}>
-            {tx('ไปหน้าบัตรวิ่งและคำสั่งซื้อของฉัน')}
+            {tx('ไปหน้าประวัติการสมัคร & การสั่งซื้อ')}
           </button>
           <button
             type="button"

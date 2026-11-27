@@ -4,7 +4,6 @@ import personalMascot from '../assets/mascot/profile/personal.webp';
 import emergencyMascot from '../assets/mascot/profile/emergency.webp';
 import addressesMascot from '../assets/mascot/profile/addresses.webp';
 import participantsMascot from '../assets/mascot/profile/participants.webp';
-import historyMascot from '../assets/mascot/profile/history.webp';
 import connectionsMascot from '../assets/mascot/profile/connections.webp';
 import privacyMascot from '../assets/mascot/profile/privacy.webp';
 import { RequiredFieldText } from './RequiredFieldText';
@@ -44,27 +43,16 @@ import {
 } from './AccountSettingsPanels';
 import {
   IconAlert,
-  IconArrowRight,
-  IconAward,
-  IconBib,
   IconBuilding,
-  IconCalendar,
   IconCamera,
   IconCheckCircle,
   IconChevronDown,
-  IconDownload,
   IconLock,
   IconMapPin,
   IconPlus,
-  IconQr,
   IconUsers,
   IconShirt,
 } from './Icons';
-import {
-  FulfillmentStatusBadge,
-  PaymentStatusBadge,
-  RegStatusBadge,
-} from './StatusBadges';
 import { DateOfBirthInput } from './DateOfBirthInput';
 import { AvatarCropDialog } from './AvatarCropDialog';
 import { AVATAR_MAX_FILE_BYTES, readImageFile } from '../utils/avatarFile';
@@ -82,7 +70,7 @@ import {
   sanitizeThaiNameInput,
 } from '../utils/dateFormat';
 import { getLang, tx, txf } from '../i18n';
-import { ageBreakdownOn, formatAgeGroupLabel, formatBasisDate, todayIsoInTimeZone } from '../utils/age';
+import { ageBreakdownOn, todayIsoInTimeZone } from '../utils/age';
 import { IdNumberInput } from './IdNumberInput';
 import { DefaultAvatarImg } from './DefaultAvatar';
 
@@ -92,7 +80,6 @@ const PROFILE_MASCOTS: Record<string, { src: string; w: number; h: number }> = {
   emergency: { src: emergencyMascot, w: 169, h: 300 },
   addresses: { src: addressesMascot, w: 195, h: 285 },
   participants: { src: participantsMascot, w: 163, h: 300 },
-  history: { src: historyMascot, w: 203, h: 300 },
   connections: { src: connectionsMascot, w: 159, h: 300 },
   privacy: { src: privacyMascot, w: 147, h: 300 },
 };
@@ -126,7 +113,6 @@ export type RunnerProfileTab =
   | 'emergency'
   | 'addresses'
   | 'participants'
-  | 'history'
   | 'organizer'
   | 'security'
   | 'privacy';
@@ -134,59 +120,6 @@ export type RunnerProfileTab =
 
 /** the saved-runner dialog is open for a new person, not an existing one */
 const NEW_PARTICIPANT_ID = '__new__';
-
-/** Reads the picked image for the crop dialog (the dialog makes the final 320 px square). */
-function downloadFinisherCertificateSvg(params: {
-  runnerName: string;
-  eventTitle: string;
-  eventDate: string;
-  distanceLabel: string;
-  bibNumber: string;
-  chipTime: string;
-  gunTime: string;
-  pace: string;
-  rank: string;
-  certCode: string;
-}) {
-  const esc = (s: string) =>
-    s
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="840" viewBox="0 0 1200 840">
-  <rect width="1200" height="840" fill="#f7f8fa"/>
-  <rect x="44" y="44" width="1112" height="752" rx="16" fill="#ffffff" stroke="#34495f" stroke-width="3"/>
-  <rect x="44" y="44" width="1112" height="96" rx="14" fill="#34495f"/>
-  <text x="96" y="102" fill="#f8fafc" font-family="Anuphan, sans-serif" font-size="28" font-weight="700">KRATAI · OFFICIAL FINISHER CERTIFICATE</text>
-  <text x="1104" y="102" text-anchor="end" fill="#cbd5e1" font-family="Anuphan, sans-serif" font-size="18">${esc(params.certCode)}</text>
-  <text x="600" y="220" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="22">ขอรับรองว่านักวิ่งผู้เข้าแข่งขัน</text>
-  <text x="600" y="290" text-anchor="middle" fill="#34495f" font-family="Anuphan, sans-serif" font-size="46" font-weight="700">${esc(params.runnerName)}</text>
-  <line x1="280" y1="322" x2="920" y2="322" stroke="#cbd5e1" stroke-width="2"/>
-  <text x="600" y="382" text-anchor="middle" fill="#34495f" font-family="Anuphan, sans-serif" font-size="30" font-weight="700">${esc(params.eventTitle)}</text>
-  <text x="600" y="424" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="20">วันที่แข่งขัน: ${esc(params.eventDate)} · ระยะทาง: ${esc(params.distanceLabel)}</text>
-  <rect x="140" y="476" width="920" height="156" rx="12" fill="#f1f4f8" stroke="#cbd5e1"/>
-  <text x="255" y="528" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="16">หมายเลข BIB</text>
-  <text x="255" y="578" text-anchor="middle" fill="#34495f" font-family="Anuphan, sans-serif" font-size="30" font-weight="700">${esc(params.bibNumber)}</text>
-  <text x="485" y="528" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="16">เวลาสุทธิ (Chip Time)</text>
-  <text x="485" y="578" text-anchor="middle" fill="#157347" font-family="Anuphan, sans-serif" font-size="30" font-weight="700">${esc(params.chipTime)}</text>
-  <text x="715" y="528" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="16">เฉลี่ยฝีเท้า (Pace)</text>
-  <text x="715" y="578" text-anchor="middle" fill="#34495f" font-family="Anuphan, sans-serif" font-size="28" font-weight="700">${esc(params.pace)}</text>
-  <text x="945" y="528" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="16">อันดับรวม (Overall)</text>
-  <text x="945" y="578" text-anchor="middle" fill="#34495f" font-family="Anuphan, sans-serif" font-size="26" font-weight="700">${esc(params.rank)}</text>
-  <text x="600" y="720" text-anchor="middle" fill="#475569" font-family="Anuphan, sans-serif" font-size="16">Gun Time: ${esc(params.gunTime)} · Verified Official Result by Kratai Timing Ledger</text>
-</svg>`;
-  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${params.certCode}.svg`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
 
 export interface RunnerProfileViewProps {
   user: UserAccount;
@@ -252,9 +185,7 @@ function flashFieldAttention(el: HTMLElement) {
 export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
   user,
   initialTab: rawInitialTab = 'personal',
-  events,
   organizations,
-  registrations,
   platformProfileConfig = DEFAULT_PLATFORM_PROFILE_CONFIG,
   onSaveProfile,
   onOpenEmailVerifyPage,
@@ -270,8 +201,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
   onAcceptTeamInvitation,
   onApplyNewOrganizerOrg,
   onEnterOrganizerOrg,
-  onNavigateDiscoverEvents,
-  onNavigateEventDetail,
   onPersonalDirtyChange,
   discardSignal = 0,
 }) => {
@@ -462,14 +391,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
   );
   const [editingPartId, setEditingPartId] = useState<string | null>(null);
 
-
-  /* ---- 5. Running History State ---- */
-  const [historyFilter, setHistoryFilter] = useState<
-    'all' | 'upcoming' | 'past'
-  >('all');
-  const [expandedRegId, setExpandedRegId] = useState<string | null>(null);
-  const [certPreviewReg, setCertPreviewReg] =
-    useState<RegistrationRecord | null>(null);
 
   /* ---- 7. Social Links State (with Auto-Fill from Linked Facebook / LINE) ---- */
   const initialAutoSocial = enrichSocialLinksFromIdentities(user);
@@ -838,38 +759,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
     }
   };
 
-  const myRegistrations = useMemo(
-    () =>
-      registrations.filter(
-        (r) =>
-          r.runnerUserId === user.id ||
-          (user.contactEmail &&
-            r.email.toLowerCase() === user.contactEmail.toLowerCase())
-      ),
-    [registrations, user.id, user.contactEmail]
-  );
-
-  const categorizedHistory = useMemo(() => {
-    return myRegistrations.map((reg) => {
-      const ev = events.find((e) => e.id === reg.eventId);
-      const cat = ev?.categories.find((c) => c.id === reg.categoryId);
-      const isPast =
-        ev?.status === 'completed' ||
-        (ev?.eventDate ? ev.eventDate < '2026-11-18' : false);
-      return { reg, ev, cat, isPast };
-    });
-  }, [myRegistrations, events]);
-
-  const filteredHistory = useMemo(() => {
-    if (historyFilter === 'upcoming') {
-      return categorizedHistory.filter((x) => !x.isPast);
-    }
-    if (historyFilter === 'past') {
-      return categorizedHistory.filter((x) => x.isPast);
-    }
-    return categorizedHistory;
-  }, [categorizedHistory, historyFilter]);
-
   const buildMergedProfile = (
     overrides: Partial<RunnerProfileData> = {}
   ): RunnerProfileData => ({
@@ -1136,11 +1025,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
         key: 'participants',
         label: tx('รายชื่อเพื่อนที่สมัครให้'),
         icon: <IconUsers size={16} />,
-      },
-      {
-        key: 'history',
-        label: tx('ประวัติงานที่สมัคร'),
-        icon: <IconBib size={16} />,
       },
       {
         key: 'privacy',
@@ -2107,344 +1991,6 @@ export const RunnerProfileView: React.FC<RunnerProfileViewProps> = ({
           )}
 
           {/* ==================== 5. RUNNING HISTORY & CERTIFICATES ==================== */}
-          {activeTab === 'history' && (
-            <section className="clean-panel canvas-stack">
-              <div className="section-title-bar">
-                <div className="kr-sec-head">
-                  <h2>{tx('ประวัติการสมัครและผลการแข่งขัน')}</h2>
-                  <p className="muted-block">
-                    {tx(
-                      'แสดงรายการสมัครทั้งหมด แยกงานที่กำลังจะมาถึงกับงานที่ผ่านมาแล้ว พร้อมดูข้อมูลใบสมัครและดาวน์โหลดใบประกาศนียบัตร'
-                    )}
-                  </p>
-                </div>
-                <div className="cta-inline-row">
-                  {(
-                    [
-                      ['all', tx('ทั้งหมด')],
-                      ['upcoming', tx('กำลังจะมาถึง')],
-                      ['past', tx('ผ่านมาแล้ว')],
-                    ] as const
-                  ).map(([key, lbl]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      className={`filter-pill ${historyFilter === key ? 'active' : ''
-                        }`}
-                      onClick={() => setHistoryFilter(key)}
-                    >
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {filteredHistory.length === 0 ? (
-                <div className="empty-state-box">
-                  <strong>{tx('ไม่มีรายการงานวิ่งในหมวดนี้')}</strong>
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={onNavigateDiscoverEvents}
-                  >
-                    <span>{tx('ค้นหางานวิ่งที่เปิดรับสมัคร')}</span>
-                    <IconArrowRight size={14} />
-                  </button>
-                </div>
-              ) : (
-                <div className="canvas-stack">
-                  {filteredHistory.map(({ reg, ev, cat, isPast }) => (
-                    <article key={reg.id} className="custom-field-creator">
-                      <div className="section-title-bar">
-                        <div>
-                          <div className="cta-inline-row">
-                            <span className="mono-code">{reg.regCode}</span>
-                            <span
-                              className={`status-pill ${isPast ? 'badge-neutral' : 'badge-navy'
-                                }`}
-                            >
-                              {isPast
-                                ? tx('จบการแข่งขันแล้ว')
-                                : tx('กำลังจะมาถึง')}
-                            </span>
-                            <RegStatusBadge
-                              status={reg.registrationStatus}
-                            />
-                            <PaymentStatusBadge status={reg.paymentStatus} />
-                            <FulfillmentStatusBadge
-                              status={reg.fulfillmentStatus}
-                            />
-                          </div>
-                          <h3 style={{ margin: '0.45rem 0 0.15rem' }}>
-                            {isEn
-                              ? ev?.titleEn || tx(ev?.titleTh ?? reg.eventId)
-                              : ev?.titleTh ?? reg.eventId}
-                          </h3>
-                          <div className="muted-inline">
-                            <IconCalendar size={13} />{' '}
-                            <span className="mono-num">
-                              {ev?.eventDate ?? '-'}
-                            </span>{' '}
-                            · <IconMapPin size={13} />{' '}
-                            {tx(ev?.venue ?? '-')} ({tx(ev?.province ?? '-')})
-                          </div>
-                        </div>
-
-                        <div className="cta-inline-row">
-                          <button
-                            type="button"
-                            className="btn-ghost-sm"
-                            onClick={() =>
-                              setExpandedRegId(
-                                expandedRegId === reg.id ? null : reg.id
-                              )
-                            }
-                          >
-                            {expandedRegId === reg.id
-                              ? tx('ซ่อนรายละเอียด')
-                              : tx('ดูรายละเอียดใบสมัคร')}
-                          </button>
-                          {ev && (
-                            <button
-                              type="button"
-                              className="btn-secondary"
-                              onClick={() => onNavigateEventDetail(ev.id)}
-                            >
-                              {tx('เปิดหน้างานวิ่ง')}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="receipt-summary-box" style={{ marginTop: '0.6rem' }}>
-                        <div>
-                          <span className="muted-inline">
-                            {tx('ประเภท / ระยะทาง')}
-                          </span>
-                          <strong className="mono-num">
-                            {tx(cat?.name ?? '-')} ({cat?.distanceKm ?? '-'}{' '}
-                            {tx('กม.')})
-                          </strong>
-                        </div>
-                        <div>
-                          <span className="muted-inline">
-                            {tx('อายุ / รุ่นอายุ')}
-                          </span>
-                          {reg.ageSnapshot ? (
-                            <strong className="mono-num">
-                              {txf(
-                                'อายุ {0} ปี ณ {1}',
-                                reg.ageSnapshot.ageYears,
-                                formatBasisDate(reg.ageSnapshot.basisDate)
-                              )}
-                              {' · '}
-                              {(() => {
-                                const snap = reg.ageSnapshot;
-                                if (!snap.groupId) {
-                                  return cat?.ageGroups?.length
-                                    ? tx('ไม่เข้ารุ่นใด')
-                                    : tx('งานนี้ไม่แบ่งรุ่นอายุ');
-                                }
-                                const g = cat?.ageGroups?.find((x) => x.id === snap.groupId);
-                                return g
-                                  ? formatAgeGroupLabel(g)
-                                  : tx(snap.groupLabelTh ?? '');
-                              })()}
-                            </strong>
-                          ) : (
-                            <span className="muted-inline">
-                              {tx('ไม่มีข้อมูลวันเกิดในใบสมัครนี้')}
-                            </span>
-                          )}
-                        </div>
-                        <div>
-                          <span className="muted-inline">
-                            {tx('หมายเลขบิบ')}
-                          </span>
-                          <strong className="mono-num">
-                            {reg.bibNumber ?? tx('รอกำหนดหมายเลข')}
-                          </strong>
-                        </div>
-                        <div>
-                          <span className="muted-inline">
-                            {tx('ไซส์เสื้อที่เลือกในงานนี้')}
-                          </span>
-                          <strong className="mono-num">
-                            {reg.shirtSize} ({tx('ค่าที่บันทึกไว้ ณ วันสมัคร')})
-                          </strong>
-                        </div>
-                        <div>
-                          <span className="muted-inline">
-                            {tx('ผลการแข่งขัน')}
-                          </span>
-                          {reg.raceResult ? (
-                            <strong className="mono-num text-forest">
-                              {reg.raceResult.chipTime} ({reg.raceResult.paceMinPerKm})
-                            </strong>
-                          ) : (
-                            <span className="muted-inline">
-                              {isPast
-                                ? tx('รอประกาศผลทางการ')
-                                : tx('ยังไม่ถึงวันแข่งขัน')}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {reg.raceResult && (
-                        <div
-                          className="cta-inline-row"
-                          style={{ marginTop: '0.65rem' }}
-                        >
-                          <button
-                            type="button"
-                            className="btn-primary"
-                            onClick={() => setCertPreviewReg(reg)}
-                          >
-                            <IconAward size={15} />
-                            <span>
-                              {tx('ดูผลการแข่งขันและใบประกาศนียบัตร')}
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            onClick={() =>
-                              downloadFinisherCertificateSvg({
-                                runnerName: reg.participantNameTh,
-                                eventTitle: ev?.titleTh ?? reg.eventId,
-                                eventDate: ev?.eventDate ?? '-',
-                                distanceLabel: `${cat?.distanceKm ?? 10} KM`,
-                                bibNumber: reg.bibNumber ?? '-',
-                                chipTime: reg.raceResult!.chipTime,
-                                gunTime: reg.raceResult!.gunTime,
-                                pace: reg.raceResult!.paceMinPerKm,
-                                rank: reg.raceResult!.overallRank,
-                                certCode: reg.raceResult!.certificateCode,
-                              })
-                            }
-                          >
-                            <IconDownload size={15} />
-                            <span>{tx('ดาวน์โหลดใบประกาศนียบัตร')}</span>
-                          </button>
-                        </div>
-                      )}
-
-                      {expandedRegId === reg.id && (
-                        <div
-                          className="price-breakdown-box"
-                          style={{ marginTop: '0.65rem' }}
-                        >
-                          <strong>
-                            {tx('ข้อมูลใบสมัครที่บันทึกไว้ ณ เวลาสมัคร (แยกจากโปรไฟล์ปัจจุบัน)')}
-                          </strong>
-                          <div className="breakdown-line">
-                            <span>{tx('ชื่อผู้เข้าแข่งขัน:')}</span>
-                            <strong>
-                              {isEn
-                                ? reg.participantNameEn || reg.participantNameTh
-                                : reg.participantNameTh}
-                            </strong>
-                          </div>
-                          {reg.participantSnapshot?.dateOfBirth && (
-                            <div className="breakdown-line">
-                              <span>{tx('วันเกิด ณ วันสมัคร:')}</span>
-                              <span className="mono-num">
-                                {isoToDdMmYyyy(reg.participantSnapshot.dateOfBirth)}
-                              </span>
-                            </div>
-                          )}
-                          {reg.participantSnapshot?.idNumberMasked && (
-                            <div className="breakdown-line">
-                              <span>{tx('เลขเอกสารยืนยันตัวตน:')}</span>
-                              <span className="mono-code">
-                                {reg.participantSnapshot.idNumberMasked}
-                              </span>
-                            </div>
-                          )}
-                          <div className="breakdown-line">
-                            <span>{tx('ผู้ติดต่อฉุกเฉินของใบสมัครนี้:')}</span>
-                            <span>{tx(reg.emergencyContact)}</span>
-                          </div>
-                          <div className="breakdown-line">
-                            <span>{tx('วิธีรับชุดแข่งขัน:')}</span>
-                            <span>
-                              {reg.kitDeliveryMethod === 'postal_shipping'
-                                ? txf(
-                                  'จัดส่งไปรษณีย์ ({0})',
-                                  reg.shippingAddressSnapshot ?? '-'
-                                )
-                                : tx('รับที่หน้างานด้วยคิวอาร์โค้ดเช็กอิน')}
-                            </span>
-                          </div>
-                          <div className="breakdown-line">
-                            <span>{tx('รหัสเช็กอิน:')}</span>
-                            <span className="mono-code">
-                              <IconQr size={12} /> {reg.qrCheckInToken}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </article>
-                  ))}
-                </div>
-              )}
-
-              {certPreviewReg && certPreviewReg.raceResult && (
-                <div className="custom-field-creator certificate-preview-card">
-                  <div className="section-title-bar">
-                    <div>
-                      <strong>
-                        OFFICIAL FINISHER E-CERTIFICATE ·{' '}
-                        <span className="mono-code">
-                          {certPreviewReg.raceResult.certificateCode}
-                        </span>
-                      </strong>
-                      <div className="muted-inline">
-                        {tx('ยืนยันผลจากระบบจับเวลากลางเมื่อ')}{' '}
-                        <span className="mono-num">
-                          {certPreviewReg.raceResult.verifiedAt}
-                        </span>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="btn-ghost-sm"
-                      onClick={() => setCertPreviewReg(null)}
-                    >
-                      {tx('ปิดหน้าต่างใบเซอร์')}
-                    </button>
-                  </div>
-                  <div className="receipt-summary-box">
-                    <div>
-                      <span className="muted-inline">{tx('นักวิ่ง')}</span>
-                      <strong>{certPreviewReg.participantNameTh}</strong>
-                    </div>
-                    <div>
-                      <span className="muted-inline">Chip Time / Gun Time</span>
-                      <strong className="mono-num text-forest">
-                        {certPreviewReg.raceResult.chipTime} /{' '}
-                        {certPreviewReg.raceResult.gunTime}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="muted-inline">Overall Rank</span>
-                      <strong className="mono-num">
-                        {certPreviewReg.raceResult.overallRank}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="muted-inline">Age Group Rank</span>
-                      <strong className="mono-num">
-                        {certPreviewReg.raceResult.categoryRank}
-                      </strong>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </section>
-          )}
-
           {/* ==================== 8. ACCOUNT & SECURITY ==================== */}
           {activeTab === 'organizer' && (
             <div className="canvas-stack">

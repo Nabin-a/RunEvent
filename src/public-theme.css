@@ -908,6 +908,69 @@
     padding: 0 1rem;
   }
 
+  /* phones: every filter option is on screen, nothing to swipe (27 Nov 2026, user pick "ก").
+     Home: the five distances share one segmented bar under the label. */
+  .kr-filter-top {
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+  }
+
+  #kr-browse .kr-chip-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0;
+    margin-top: 1.9rem;
+    padding: 3px;
+    border: 1px solid var(--kr-mint-line);
+    border-radius: 999px;
+    background: var(--bg-surface);
+    box-shadow: 0 4px 10px -8px rgba(52, 73, 95, 0.4);
+  }
+
+  #kr-browse .kr-chip-row .kr-chip-label {
+    position: absolute;
+    top: -1.9rem;
+    left: 0;
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  #kr-browse .kr-chip {
+    min-width: 0;
+    min-height: 2.5rem;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+    background: transparent;
+    font-size: 0.95rem;
+  }
+
+  #kr-browse .kr-chip.is-on {
+    background: var(--kr-mint);
+  }
+
+  /* calendar: the distance buckets (with counts) wrap into two columns */
+  .race-calendar-buckets.kr-chip-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+  }
+
+  .race-calendar-buckets.kr-chip-row .kr-chip-label {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .race-calendar-buckets .kr-chip {
+    min-height: 2.5rem;
+    padding: 0 0.5rem;
+    font-size: 0.875rem;
+    white-space: normal;
+  }
+
   .kr-filter-search {
     width: 100%;
   }
@@ -1004,6 +1067,7 @@
   width: max-content;
   max-width: 100%;
   overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .app-root.is-public .race-calendar-views .detail-tab-btn {
@@ -1242,8 +1306,48 @@
 }
 
 @media (max-width: 34rem) {
-  .kr-cal-mascot {
+  /* .mascot-anim sets display with a longer selector, so this one matches it */
+  .app-root.is-public .kr-cal-mascot {
     display: none;
+  }
+
+  /* phones: the view buttons get their own full-width row under the title, so all four
+     (รายเดือน / รายสัปดาห์ / ตามจังหวัด / ตามประเภทงาน) can be reached by a swipe
+     (27 Nov 2026, user request) */
+  .app-root.is-public .kr-cal-head {
+    grid-template-areas:
+      'title mascot'
+      'views views';
+  }
+
+  .app-root.is-public .race-calendar-views {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-self: stretch;
+    width: auto;
+    margin-top: 0.75rem;
+    border-radius: var(--kr-radius-card);
+    overflow: visible;
+  }
+
+  .app-root.is-public .race-calendar-views .detail-tab-btn {
+    padding: 0 0.4rem;
+    border-radius: 12px;
+    white-space: nowrap;
+  }
+
+  /* months with races: a three-column grid instead of a swiped strip */
+  .race-calendar-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.35rem;
+    overflow: visible;
+  }
+
+  .app-root.is-public .race-calendar-strip .filter-pill {
+    justify-content: center;
+    padding: 0 0.3rem;
+    font-size: 0.8125rem;
   }
 
   .app-root.is-public .race-calendar-day {
@@ -3544,4 +3648,54 @@ body:has(.auth-page-shell.is-scene) .minimal-footer {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Phone pass (27 Nov 2026, user request: mobile friendly everywhere) */
+/* ------------------------------------------------------------------ */
+@media (max-width: 34rem) {
+  /* home: the race-status tabs become a 2 x 2 set of buttons (27 Nov 2026, user pick "ก") */
+  .kr-status-row {
+    flex-wrap: wrap;
+    min-width: 0;
+    border-bottom: 0;
+  }
+
+  .kr-count {
+    white-space: nowrap;
+  }
+
+  .kr-tabs {
+    flex: 1 1 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .kr-tab {
+    min-height: 2.75rem;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--kr-mint-line);
+    border-radius: 12px;
+    background: var(--bg-surface);
+    text-align: left;
+    white-space: normal;
+    font-size: 0.875rem;
+    line-height: 1.3;
+  }
+
+  .kr-tab.is-on {
+    border-color: var(--kr-mint);
+    background: var(--kr-mint-3, #e3f7ee);
+  }
+
+  .kr-tab.is-on::after {
+    display: none;
+  }
+
+  /* event page: the shirt size table fits a 320px screen */
+  .racepack-size-head + .table-scroll .ops-table :is(th, td) {
+    padding: 0.45rem 0.35rem;
+    font-size: 0.8125rem;
+    white-space: normal;
+  }
+}
 

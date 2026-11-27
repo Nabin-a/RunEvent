@@ -10,6 +10,8 @@ import type {
   RaceEvent,
   ShirtSizeCode,
   UserAccount,
+  RegistrationRecord,
+  MerchOrderRecord,
 } from '../types';
 import { tx, txf } from '../i18n';
 import {
@@ -60,6 +62,7 @@ import {
   IconArrowLeft,
   IconCalendar,
   IconCheckCircle,
+  IconClock,
   IconMapPin,
   IconShirt,
 } from './Icons';
@@ -98,6 +101,12 @@ export interface LabLive {
   clearError: (fieldId: string) => void;
   /** books the place and takes the payment (the server checks everything again) */
   submit: () => void;
+  /** books the place as "waiting for payment" (the summary step's button, 26 Nov 2026) */
+  book?: () => void;
+  /** the registration held for payment, while there is one */
+  held?: LabHeld | null;
+  /** why the form went back (e.g. the 15 minutes to pay ran out) */
+  resumeNotice?: string | null;
   submitting: boolean;
   /** booking problem, with its own actions (e.g. add an email) */
   payError: ReactNode;
@@ -116,6 +125,21 @@ export interface LabLive {
   /** keeps an edited saved participant / emergency contact in the runner's profile (signed in only) */
   saveParticipants?: (list: SavedParticipant[]) => Promise<{ ok: boolean; error?: string }>;
   saveEmergencyContacts?: (list: RunnerEmergencyContact[]) => Promise<{ ok: boolean; error?: string }>;
+}
+
+/** A registration booked at the summary step and held (15 minutes) until it is paid. */
+export interface LabHeld {
+  reg: RegistrationRecord;
+  addonOrders: MerchOrderRecord[];
+  /** this form booked it, so going back to edit still has everything typed */
+  fromForm: boolean;
+  busy: boolean;
+  error: string | null;
+  pay: () => void;
+  /** gives the hold back and goes back to edit */
+  cancel: () => void;
+  /** keeps the hold and starts the form again for someone else */
+  another: () => void;
 }
 
 /** [value, setter] owned by the live form, so switching A <-> B keeps what was typed */
@@ -199,6 +223,44 @@ export function RegistrationLabView({
   // the step is the live form's (the organizer's preview and the booking move it too)
   const step: LabStep = shared.step[0];
   const [stepError, setStepError] = useState<string | null>(null);
+  /* the custom area (not a plain input) that holds the step's problem; outlined while the
+     step error shows (27 Nov 2026, user request: every step highlights and jumps to the gap) */
+  const [invalidZone, setInvalidZone] = useState<'who' | 'friend' | 'shirt' | 'terms' | null>(null);
+  const zoneMark = (zone: 'who' | 'friend' | 'shirt' | 'terms') =>
+    stepError && invalidZone === zone ? { 'data-step-invalid': '' } : {};
+  /** after a failed step: scroll to and focus the first marked problem on the page */
+  const jumpToProblem = () => {
+    window.setTimeout(() => {
+      const body = bodyRef.current;
+      if (!body) return;
+      const shown = (el: HTMLElement) => el.offsetParent !== null || el.getClientRects().length > 0;
+      const marked = [
+        ...body.querySelectorAll<HTMLElement>('[aria-invalid="true"], [data-step-invalid], .field-error'),
+      ].filter(shown);
+      marked.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+      const first = marked[0];
+      if (!first) return;
+      // what to focus inside the marked area: the picked friend's "แก้ไข", the first shirt size,
+      // the first unchecked consent, else the first control
+      const target =
+        first.querySelector<HTMLElement>('label:has(input:checked) button') ??
+        first.querySelector<HTMLElement>('input[name="pg-size"]:not([disabled])') ??
+        first.querySelector<HTMLElement>('input[type="checkbox"]:not(:checked)') ??
+        (first.matches('input, select, textarea, button')
+          ? first
+          : first.querySelector<HTMLElement>(
+              'input:not([type="hidden"]):not([disabled]), select, textarea, button:not([disabled])'
+            ) ??
+            (first.closest('.form-row, fieldset') as HTMLElement | null)?.querySelector<HTMLElement>(
+              'input:not([type="hidden"]), select, textarea, button'
+            ));
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      // a small hidden radio scrolls via its label
+      const scrollTo = (target?.closest('label') as HTMLElement | null) ?? target ?? first;
+      scrollTo.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+      target?.focus({ preventScroll: true });
+    }, 80);
+  };
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const stepperRef = useRef<HTMLElement | null>(null);
   const shellRef = useRef<HTMLElement | null>(null);
@@ -750,7 +812,31 @@ export function RegistrationLabView({
 
   const go = (next: LabStep) => {
     setStepError(null);
+    setInvalidZone(null);
+    // leaving the payment step backwards gives the held seat back first (it returns to edit)
+    if (step === 7 && live.held && next < 7) {
+      live.held.cancel();
+      return;
+    }
     shared.step[1](next);
+  };
+  // payment step without a held registration (e.g. it was paid elsewhere): back to the summary
+  useEffect(() => {
+    if (step === 7 && !live.held && !live.freeJump) shared.step[1](6);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, live.held]);
+  const termsRef = useRef<HTMLElement | null>(null);
+  /** summary: accept the terms, then the entry is booked and held while the runner pays */
+  const bookAndPay = () => {
+    if (live.submitting) return;
+    if (!acceptRules || !acceptPayTerms) {
+      setStepError('กรุณายอมรับกติกาการแข่งขันและเงื่อนไขการชำระเงินก่อนไปชำระเงิน');
+      setInvalidZone('terms');
+      jumpToProblem();
+      return;
+    }
+    setStepError(null);
+    (live.book ?? live.submit)();
   };
   /** forward: the live form's checks for this step first */
   const goNext = (next: LabStep) => {
@@ -774,12 +860,18 @@ export function RegistrationLabView({
             : contactProblem;
       }
     }
+    let zone: 'who' | 'friend' | 'shirt' | null = null;
+    if (step === 2 && forSelf === null) zone = 'who';
+    // a saved friend missing data is fixed on the friend's card
+    if (problem && step === 2 && forSelf === false && partMode === 'saved' && /แก้ไข ที่การ์ด/.test(problem)) zone = 'friend';
     if (!problem && step === 3 && !shirtSize) {
       problem = 'กรุณาเลือกไซส์เสื้อตามสิทธิ์สมัคร';
-      document.querySelector('.reg-lab-body .pg-tabbed')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      zone = 'shirt';
     }
     if (problem) {
       setStepError(problem);
+      setInvalidZone(zone);
+      jumpToProblem();
       return;
     }
     go(next);
@@ -930,6 +1022,12 @@ export function RegistrationLabView({
         )}
 
         <div ref={bodyRef} className={`reg-lab-body ${step === 6 ? 'is-review' : ''}`}>
+          {live.resumeNotice && step !== 8 && (
+            <div className="reg-lab-resume-notice" role="status">
+              <IconClock size={17} />
+              <span>{tx(live.resumeNotice)}</span>
+            </div>
+          )}
           {/* ---------- STEP 1 ---------- */}
           {step === 1 && (
             <>
@@ -980,7 +1078,7 @@ export function RegistrationLabView({
                 <p>{tx('ช่องที่มี * จำเป็นต้องกรอก ข้อมูลอื่นช่วยให้ผู้จัดติดต่อและจัดรุ่นอายุได้ถูกต้อง')}</p>
               </div>
 
-              <section className="reg-lab-section" aria-labelledby="lab-who">
+              <section className="reg-lab-section" aria-labelledby="lab-who" {...zoneMark('who')}>
                 <h3 id="lab-who">{tx('ใครเป็นผู้เข้าแข่งขัน')}</h3>
                 <div className="reg-lab-pair-cards" role="radiogroup" aria-labelledby="lab-who">
                   <label className={`reg-category-radio-card ${forSelf === true ? 'selected' : ''}`}>
@@ -1047,6 +1145,7 @@ export function RegistrationLabView({
                     )}
                     {step2NoticeEl}
                     {partMode === 'saved' && (
+                      <div className="reg-lab-zone" {...zoneMark('friend')}>
                       <SavedCardPicker
                         items={saved}
                         selectedId={savedId}
@@ -1103,6 +1202,17 @@ export function RegistrationLabView({
                                     <NoteTag>{tx('ยังไม่มีชื่อภาษาอังกฤษ กด แก้ไข เพื่อเพิ่ม')}</NoteTag>
                                   </span>
                                 )}
+                                {(!pt.email || !pt.phone) && (
+                                  <span className="reg-tag-row">
+                                    <NoteTag>
+                                      {!pt.email && !pt.phone
+                                        ? tx('ยังไม่มีอีเมลและเบอร์โทร กด แก้ไข เพื่อเพิ่ม')
+                                        : !pt.email
+                                          ? tx('ยังไม่มีอีเมล กด แก้ไข เพื่อเพิ่ม')
+                                          : tx('ยังไม่มีเบอร์โทร กด แก้ไข เพื่อเพิ่ม')}
+                                    </NoteTag>
+                                  </span>
+                                )}
                                 {(!pt.emergencyContactName || !pt.emergencyContactPhone) && (
                                   <span className="reg-tag-row">
                                     <NoteTag>{tx('ยังไม่มีผู้ติดต่อฉุกเฉิน กด แก้ไข เพื่อเพิ่ม')}</NoteTag>
@@ -1119,6 +1229,7 @@ export function RegistrationLabView({
                           );
                         }}
                       />
+                      </div>
                     )}
                   </>
                 )}
@@ -1513,6 +1624,7 @@ export function RegistrationLabView({
                   </span>
                 </p>
               )}
+              <div className="reg-lab-zone" {...zoneMark('shirt')}>
               <ShirtGallery
                 styles={galleryStyles}
                 styleId={shirtStyle}
@@ -1528,6 +1640,7 @@ export function RegistrationLabView({
                 onCutChange={(c) => setShirtCut(c as ShirtCut)}
                 cutNote={null}
               />
+              </div>
               {hasFinisher && (
                 <section className="reg-lab-section reg-lab-finisher" id="lab-finisher" aria-labelledby="lab-finisher-h">
                   <h3 id="lab-finisher-h">
@@ -1723,11 +1836,11 @@ export function RegistrationLabView({
                         </div>
                         <div className="form-row reg-lab-full">
                           <label htmlFor="lab-recipient"><RequiredFieldText text={tx('ชื่อผู้รับ *')} /></label>
-                          <input id="lab-recipient" type="text" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
+                          <input id="lab-recipient" type="text" required value={recipient} onChange={(e) => setRecipient(e.target.value)} />
                         </div>
                         <div className="form-row reg-lab-full">
                           <label htmlFor="lab-ship-phone"><RequiredFieldText text={tx('เบอร์โทรผู้รับ *')} /></label>
-                          <PhoneInput id="lab-ship-phone" value={shipPhone} onChange={setShipPhone} />
+                          <PhoneInput id="lab-ship-phone" value={shipPhone} onChange={setShipPhone} required />
                         </div>
                       </div>
                       <div className="reg-lab-address">
@@ -1902,70 +2015,145 @@ export function RegistrationLabView({
                   ledger={ledger}
                   totalSatang={totalSatang}
                   onEdit={(st) => go(st as LabStep)}
-                  action={{ label: 'ไปชำระเงิน', onClick: () => go(7) }}
+                  action={{
+                    label: live.submitting ? 'กำลังกันที่นั่ง…' : 'ไปชำระเงิน',
+                    onClick: bookAndPay,
+                  }}
                 />
+                {/* the entry is booked when leaving this step, so the terms are accepted here */}
+                <section className="reg-lab-section reg-lab-terms" ref={termsRef} {...zoneMark('terms')}>
+                  <RegistrationTerms
+                    event={event}
+                    organization={organization}
+                    acceptRules={acceptRules}
+                    onAcceptRules={(v) => {
+                      setAcceptRules(v);
+                      setStepError(null);
+                    }}
+                    acceptPayment={acceptPayTerms}
+                    onAcceptPayment={(v) => {
+                      setAcceptPayTerms(v);
+                      setStepError(null);
+                    }}
+                  />
+                </section>
+                {live.payError}
                 {footer(5, null)}
               </>
             );
           })()}
 
-          {/* ---------- STEP 7: payment ---------- */}
-          {step === 7 && category && tier && quote && (
-            <>
-              <div className="reg-lab-title">
-                <h2>{tx('ชำระเงินและยืนยันการสมัคร')}</h2>
-                <p>{tx('ยอดคำนวณจากราคาปัจจุบันของงาน')}</p>
-              </div>
-
-              <section className="reg-lab-section" aria-labelledby="lab-sum">
-                <h3 id="lab-sum">{tx('ยอดที่ต้องชำระ')}</h3>
-                <dl className="reg-lab-ledger">
-                  <div className="reg-lab-ledger-total">
-                    <dt>{tx('ยอดชำระสุทธิทั้งหมด')}</dt>
-                    <dd className="mono-num text-vermilion">{formatThb(totalSatang, true)}</dd>
-                  </div>
-                </dl>
-              </section>
-
-              <section className="reg-lab-section">
-                <PaymentMethodPicker name="lab-pay" value={channel} onChange={setChannel} />
-              </section>
-
-              {live.payError}
-
-              <section className="reg-lab-section">
-                <RegistrationTerms
-                  event={event}
-                  organization={organization}
-                  acceptRules={acceptRules}
-                  onAcceptRules={setAcceptRules}
-                  acceptPayment={acceptPayTerms}
-                  onAcceptPayment={setAcceptPayTerms}
-                />
-              </section>
-
-              <div className="reg-lab-footer">
-                <button type="button" className="btn-secondary" disabled={live.submitting} onClick={() => go(6)}>
-                  {tx('ย้อนกลับ')}
-                </button>
-                <div className="reg-lab-footer-actions">
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    disabled={!acceptRules || !acceptPayTerms || live.submitting}
-                    onClick={live.submit}
-                  >
-                    {tx('ชำระเงินและยืนยันการสมัครทันที')}
-                  </button>
+          {/* ---------- STEP 7: payment of the held registration ---------- */}
+          {step === 7 && live.held && (() => {
+            const held = live.held;
+            const reg = held.reg;
+            const regCat = event.categories.find((c) => c.id === reg.categoryId);
+            const addonSatang = held.addonOrders.reduce((sum, o) => sum + o.totalPaidSatang, 0);
+            const total = reg.snapshotTotalChargedSatang + addonSatang;
+            return (
+              <>
+                <div className="reg-lab-title">
+                  <h2>{tx('ชำระเงินและยืนยันการสมัคร')}</h2>
+                  <p>{tx('บันทึกใบสมัครไว้แล้ว ชำระเงินเพื่อยืนยันสิทธิ์')}</p>
                 </div>
-              </div>
-            </>
-          )}
+
+                <HoldCountdown expiresAt={reg.reservationExpiresAt} />
+
+                <section className="reg-lab-section" aria-labelledby="lab-held">
+                  <h3 id="lab-held">{tx('ใบสมัครที่รอชำระ')}</h3>
+                  <dl className="reg-lab-ledger">
+                    <div>
+                      <dt>{tx('ผู้เข้าแข่งขัน')}</dt>
+                      <dd>{reg.participantNameEn || reg.participantNameTh}</dd>
+                    </div>
+                    {regCat && (
+                      <div>
+                        <dt>{tx('ระยะ')}</dt>
+                        <dd>{tx(regCat.name)}</dd>
+                      </div>
+                    )}
+                    <div>
+                      <dt>{tx('ค่าสมัคร')}</dt>
+                      <dd className="mono-num">{formatThb(reg.snapshotTotalChargedSatang, true)}</dd>
+                    </div>
+                    {held.addonOrders.map((o) => (
+                      <div key={o.id}>
+                        <dt>
+                          {tx(o.productNameTh)}
+                          {o.variantSize !== '-' ? ` · ${o.variantSize}` : ''} × {o.quantity}
+                        </dt>
+                        <dd className="mono-num">{formatThb(o.totalPaidSatang, true)}</dd>
+                      </div>
+                    ))}
+                    <div className="reg-lab-ledger-total">
+                      <dt>{tx('ยอดชำระสุทธิทั้งหมด')}</dt>
+                      <dd className="mono-num text-vermilion">{formatThb(total, true)}</dd>
+                    </div>
+                  </dl>
+                  <p className="reg-lab-hint">
+                    {tx('รหัสใบสมัคร')} <span className="mono-code">{reg.regCode}</span>
+                  </p>
+                </section>
+
+                <section className="reg-lab-section">
+                  <PaymentMethodPicker name="lab-pay" value={channel} onChange={setChannel} />
+                </section>
+
+                {held.error && (
+                  <div className="error-callout" role="alert">
+                    <IconAlert size={17} />
+                    <span>{tx(held.error)}</span>
+                  </div>
+                )}
+
+                <div className="reg-lab-footer">
+                  <button type="button" className="btn-secondary" disabled={held.busy} onClick={held.cancel}>
+                    {held.fromForm ? tx('ย้อนกลับไปแก้ไข') : tx('ยกเลิกและกรอกใหม่')}
+                  </button>
+                  <div className="reg-lab-footer-actions">
+                    <button type="button" className="btn-ghost-sm" disabled={held.busy} onClick={held.another}>
+                      {tx('สมัครให้คนอื่น')}
+                    </button>
+                    <button type="button" className="btn-primary" disabled={held.busy} onClick={held.pay}>
+                      {held.busy ? tx('กำลังดำเนินการ…') : txf('ชำระเงิน {0}', formatThb(total, true))}
+                    </button>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
 
           {/* ---------- STEP 8: booked, on its own centred screen ---------- */}
           {step === 8 && live.done}
         </div>
       </section>
     </main>
+  );
+}
+
+/** minutes:seconds left on a held registration; past zero it says the time is up */
+function HoldCountdown({ expiresAt }: { expiresAt: string | null | undefined }) {
+  const end = expiresAt ? Date.parse(expiresAt) : NaN;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!Number.isFinite(end)) return;
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [end]);
+  if (!Number.isFinite(end)) return null;
+  const left = Math.max(0, Math.floor((end - now) / 1000));
+  const mm = String(Math.floor(left / 60)).padStart(2, '0');
+  const ss = String(left % 60).padStart(2, '0');
+  return (
+    <div className={`reg-hold-timer ${left === 0 ? 'is-over' : left < 120 ? 'is-low' : ''}`} role="timer" aria-live="off">
+      <IconClock size={17} />
+      {left > 0 ? (
+        <span>
+          {tx('กันที่นั่งไว้ให้ ชำระภายใน')} <strong className="mono-num">{mm}:{ss}</strong>
+        </span>
+      ) : (
+        <span>{tx('หมดเวลาชำระเงินแล้ว กดชำระเงินเพื่อตรวจสถานะ หรือกรอกใหม่')}</span>
+      )}
+    </div>
   );
 }

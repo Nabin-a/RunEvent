@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { tx } from '../i18n';
 import { formatThb } from '../utils/pricing';
 import { IconCheckCircle } from './Icons';
+import { QrCode } from './QrCode';
 
 /* Review step and success screen shared by registration forms A and B. */
 
@@ -150,9 +151,12 @@ export function RegistrationDone({
   subtitle,
   items,
   note,
+  qr,
   children,
 }: {
   title: string;
+  /** a scannable QR (the check-in token) under the facts */
+  qr?: { value: string; caption: string };
   subtitle?: ReactNode;
   items: { label: string; value: ReactNode; mono?: boolean; accent?: boolean }[];
   note?: ReactNode;
@@ -173,6 +177,15 @@ export function RegistrationDone({
           </div>
         ))}
       </dl>
+      {qr && (
+        <figure className="reg-done-qr">
+          <QrCode value={qr.value} size={176} label={qr.caption} />
+          <figcaption>
+            <span>{qr.caption}</span>
+            <span className="mono-code">{qr.value}</span>
+          </figcaption>
+        </figure>
+      )}
       {note && <p className="reg-done-note">{note}</p>}
       {children && <div className="reg-done-actions">{children}</div>}
     </section>

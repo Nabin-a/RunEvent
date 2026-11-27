@@ -11,6 +11,7 @@ import { tx, txf } from '../i18n';
 import '../event-home.css';
 import '../event-finance.css';
 import '../org-team.css';
+import { ORG_ROLES, ROLE_LABEL, ROLE_MATRIX } from '../data/orgRoles';
 
 export interface OrgTeamMember {
   id: string;
@@ -42,24 +43,9 @@ interface Props {
   onCreateInvite: (role: OrgRole) => TeamInvitation;
 }
 
-const ROLE_LABEL: Record<OrgRole, string> = {
-  owner: 'เจ้าขององค์กร',
-  event_manager: 'ผู้จัดการงาน',
-  finance: 'ฝ่ายการเงิน',
-  staff: 'เจ้าหน้าที่รับอุปกรณ์',
-};
-
-/* what each role can do: kept in step with the canX flags in OrganizerDashboardView */
-type Cell = true | false | string;
-const MATRIX: { label: string; cells: Record<OrgRole, Cell> }[] = [
-  { label: 'ตั้งค่างาน ราคา จำนวนรับ สินค้า', cells: { owner: true, event_manager: true, finance: false, staff: false } },
-  { label: 'ดูผู้สมัครและกำหนดเลข BIB', cells: { owner: true, event_manager: true, finance: 'ดูอย่างเดียว', staff: 'ค้นหาตอนเช็กอิน ซ่อนข้อมูลส่วนตัว' } },
-  { label: 'เช็กอินหน้างาน', cells: { owner: true, event_manager: true, finance: false, staff: true } },
-  { label: 'ดูเงินและอนุมัติคืนเงิน', cells: { owner: true, event_manager: false, finance: true, staff: false } },
-  { label: 'เปลี่ยนบัญชีรับเงิน', cells: { owner: true, event_manager: false, finance: false, staff: false } },
-  { label: 'เชิญเข้าทีม', cells: { owner: true, event_manager: false, finance: false, staff: false } },
-];
-const ROLES: OrgRole[] = ['owner', 'event_manager', 'finance', 'staff'];
+/* role names and what each role can do live in data/orgRoles (also used by the Dev / Demo list) */
+const MATRIX = ROLE_MATRIX;
+const ROLES = ORG_ROLES;
 
 /** first consonant (or Latin letter) of the first and last name: ทานตะวัน วงศ์เจริญ -> ทว */
 function initials(name: string) {
@@ -220,6 +206,41 @@ export const OrgTeamView: React.FC<Props> = ({
               ))}
             </tbody>
           </table>
+        </div>
+        {/* phones: one card per role instead of a wide table (27 Nov 2026, user request) */}
+        <div className="ot-role-cards">
+          {ROLES.map((r) => (
+            <section key={r} className={`ot-role-card ${r === currentRole ? 'is-you' : ''}`} aria-label={tx(ROLE_LABEL[r])}>
+              <h3>
+                {tx(ROLE_LABEL[r])}
+                {r === currentRole && <span className="ot-you">{tx('(คุณ)')}</span>}
+              </h3>
+              <ul>
+                {MATRIX.map((row) => {
+                  const c = row.cells[r];
+                  return (
+                    <li key={row.label} className={c === false ? 'is-no' : ''}>
+                      {c === false ? (
+                        <span className="ot-no">
+                          <FaIcon name="minus" />
+                          <span className="eh-sr">{tx('ไม่ได้')}</span>
+                        </span>
+                      ) : (
+                        <span className="ot-yes">
+                          <FaIcon name="circle-check" />
+                          <span className="eh-sr">{tx('ได้')}</span>
+                        </span>
+                      )}
+                      <span>
+                        {tx(row.label)}
+                        {typeof c === 'string' && <span className="ot-part"> · {tx(c)}</span>}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))}
         </div>
       </section>
 

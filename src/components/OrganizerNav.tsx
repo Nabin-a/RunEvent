@@ -310,7 +310,12 @@ export const OrganizerTopBar: React.FC<OrgNavProps> = (p) => {
     const el = topRef.current;
     if (!el) return;
     const root = document.documentElement;
-    const publish = () => root.style.setProperty('--orgnav-top-h', `${el.offsetHeight}px`);
+    // on phones the bar scrolls away (not sticky), so sticky parts below it start at the header
+    const publish = () =>
+      root.style.setProperty(
+        '--orgnav-top-h',
+        `${getComputedStyle(el).position === 'sticky' ? el.offsetHeight : 0}px`
+      );
     publish();
     const ro = new ResizeObserver(publish);
     ro.observe(el);

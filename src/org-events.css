@@ -521,3 +521,15 @@
   flex-direction: row-reverse;
   transform: translateX(calc(-100% + 0.6rem));
 }
+
+/* phones: event names wrap to two lines instead of being cut (27 Nov 2026) */
+@media (max-width: 40rem) {
+  .oe-cal-name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    line-height: 1.25;
+  }
+}

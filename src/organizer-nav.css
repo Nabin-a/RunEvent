@@ -549,6 +549,12 @@
 }
 
 @media (max-width: 48rem) {
+  /* phones: the search row scrolls away with the page instead of covering headings
+     (27 Nov 2026, user request); the bottom bar keeps the menu in reach */
+  .orgnav-top {
+    position: static;
+  }
+
   .orgnav-top-row {
     flex-wrap: wrap;
     padding: 0.5rem 0.8rem;

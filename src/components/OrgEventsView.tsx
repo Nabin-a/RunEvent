@@ -412,7 +412,7 @@ export const OrgEventsView: React.FC<Props> = ({
                 const past = ['closed', 'completed', 'suspended', 'cancelled'].includes(r.ev.status);
                 return (
                   <div key={r.ev.id} className="oe-cal-row">
-                    <span className="oe-cal-name">{tx(shortName(r.ev))}</span>
+                    <span className="oe-cal-name" title={r.ev.titleTh}>{tx(r.ev.titleTh)}</span>
                     <span className="oe-cal-lane">
                       {r.open !== null && r.close !== null ? (
                         <span

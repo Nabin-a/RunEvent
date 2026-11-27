@@ -45,6 +45,61 @@
   overflow-x: auto;
 }
 
+/* phones get one card per role (the table needs 34rem) */
+.ot-role-cards {
+  display: none;
+}
+
+@media (max-width: 40rem) {
+  .ot-matrix-wrap {
+    display: none;
+  }
+
+  .ot-role-cards {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .ot-role-card {
+    padding: 0.75rem 0.9rem;
+    border: 1px solid var(--line-light);
+    border-radius: var(--radius-md, 0.75rem);
+  }
+
+  .ot-role-card.is-you {
+    border-color: var(--forest);
+    background: var(--forest-soft);
+  }
+
+  .ot-role-card h3 {
+    display: flex;
+    gap: 0.35rem;
+    align-items: baseline;
+    margin: 0 0 0.45rem;
+    font-size: 1rem;
+  }
+
+  .ot-role-card ul {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.875rem;
+  }
+
+  .ot-role-card li {
+    display: grid;
+    grid-template-columns: 1.1rem minmax(0, 1fr);
+    gap: 0.45rem;
+    align-items: baseline;
+  }
+
+  .ot-role-card li.is-no {
+    color: var(--ink-secondary);
+  }
+}
+
 .ot-matrix {
   width: 100%;
   min-width: 34rem;
