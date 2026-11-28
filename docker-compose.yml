@@ -1,0 +1,20 @@
+services:
+  kratai:
+    build: .
+    container_name: kratai-fullstack
+    restart: unless-stopped
+    ports:
+      # only the reverse proxy on this VM may reach the app; it terminates HTTPS
+      - "127.0.0.1:3001:3001"
+    environment:
+      - NODE_ENV=production
+      - SERVE_STATIC=1
+      - API_HOST=0.0.0.0
+      - API_PORT=3001
+      # HTTPS-only session cookie and real client IP behind the proxy
+      - COOKIE_SECURE=1
+      - TRUST_PROXY=1
+      # Sandbox tools (dev account switcher, DB reset, simulated social sign-in) stay OFF.
+      # Never set ENABLE_SANDBOX_TOOLS=1 on a machine reachable from the internet.
+    volumes:
+      - ./data:/app/data

@@ -1,0 +1,65 @@
+{
+  "transparent": "Edit the supplied existing asset to black #111513 / LINE green #06C755 theme. Preserve composition, identity, expression, pose, all objects and proportions. Recolor slate/blue dark areas to charcoal black and mint/yellow accents to vivid LINE green; keep white rabbit fur, pink ears/nose and neutral whites readable. No text or logos added. This asset MUST remain genuinely TRANSPARENT with no background, scenery, moon, glow or cast shadow. It is for overlaying on a nighttime interface. Keep white fur and all props legible against a dark scene, use restrained subtle green edge highlights only INSIDE opaque shapes. Preserve the exact individual facial expression, eye direction, pose and prop; do NOT replace with generic smiling face. Full subject remains inside original canvas. Recolor clothing and accessories only; no change to design or silhouette. ",
+  "scene": "Edit the supplied existing asset to black #111513 / LINE green #06C755 theme. Preserve composition, identity, expression, pose, all objects and proportions. Recolor slate/blue dark areas to charcoal black and mint/yellow accents to vivid LINE green; keep white rabbit fur, pink ears/nose and neutral whites readable. No text or logos added. Nighttime outdoor scene with moon and stars, dark charcoal and LINE green. Preserve original scene and character composition.",
+  "method": {
+    "images": "Built-in imagegen edits from original references; transparent alpha retained",
+    "video": "Original frames recolored via LUT; connected neutral-gray backdrop replaced with nighttime running-track artwork; resolution, frame rate and frame counts verified"
+  },
+  "jobs": [
+    {
+      "id": "01-personal",
+      "group": "profile-mascots",
+      "source": "G:/Nar/Projects/RunEvent/output/profile-mascots/01-personal.png"
+    },
+    {
+      "id": "02-emergency",
+      "group": "profile-mascots",
+      "source": "G:/Nar/Projects/RunEvent/output/profile-mascots/02-emergency.png"
+    },
+    {
+      "id": "03-address",
+      "group": "profile-mascots",
+      "source": "G:/Nar/Projects/RunEvent/output/profile-mascots/03-address.png"
+    },
+    {
+      "id": "04-participants",
+      "group": "profile-mascots",
+      "source": "G:/Nar/Projects/RunEvent/output/profile-mascots/04-participants.png"
+    },
+    {
+      "id": "05-certificates",
+      "group": "profile-mascots",
+      "source": "G:/Nar/Projects/RunEvent/output/profile-mascots/05-certificates.png"
+    },
+    {
+      "id": "06-connections",
+      "group": "profile-mascots",
+      "source": "G:/Nar/Projects/RunEvent/output/profile-mascots/06-connections.png"
+    },
+    {
+      "id": "07-devices",
+      "group": "profile-mascots",
+      "source": "G:/Nar/Projects/RunEvent/output/profile-mascots/07-devices.png"
+    },
+    {
+      "id": "08-privacy",
+      "group": "profile-mascots",
+      "source": "G:/Nar/Projects/RunEvent/output/profile-mascots/08-privacy.png"
+    },
+    {
+      "id": "mascot-cheer-mint",
+      "group": "illustrations",
+      "source": "G:/Nar/Projects/RunEvent/output/playful-assets/illustrations/mascot-cheer-mint.png"
+    },
+    {
+      "id": "mascot-run-mint",
+      "group": "illustrations",
+      "source": "G:/Nar/Projects/RunEvent/output/playful-assets/illustrations/mascot-run-mint.png"
+    },
+    {
+      "id": "race-pack-demo",
+      "group": "illustrations",
+      "source": "G:/Nar/Projects/RunEvent/output/playful-assets/illustrations/race-pack-demo.png"
+    }
+  ]
+}

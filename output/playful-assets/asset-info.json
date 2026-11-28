@@ -1,0 +1,55 @@
+{
+  "date": "2026-11-21",
+  "palette": [
+    "#34495F",
+    "#9BE8C7"
+  ],
+  "imageGeneration": "Built-in image_gen; standalone reinterpretations of the approved UI previews, not exact extracted screenshot layers.",
+  "icons": "38 SVG exports from src/components/Icons.tsx; 24x24 viewBox, 1.75 stroke on general UI icons. Provider brand marks retain original colors.",
+  "originalMascot": "Five unchanged WebP files copied from src/assets/mascot. Original blue/yellow clothing retained.",
+  "generatedImages": [
+    {
+      "file": "illustrations/cover-chiang-mai.png",
+      "transparent": false,
+      "prompt": "Create one standalone production-use website illustration asset for Kratai, matching the attached Playful Modern UI style. This is NOT a website screenshot, NOT a moodboard, NOT a grid. NO UI, NO text, NO buttons, NO border/frame, NO watermark. Palette disciplined slate #34495F and mint #9BE8C7 with white and tonal tints, no orange/yellow/blue accents (pink permitted only inside rabbit ears and nose). Crisp polished vector-like digital illustration, friendly modern shapes, clean edges, minimal texture, enough detail for a premium Thai running website, coherent with reference. One wide landscape event cover illustration: Chiang Mai old Lanna brick gate and small temple silhouette on the RIGHT, layered northern mountains and lush foliage, open pale mint sky on LEFT. Stylized location-inspired illustration, not a factual venue map."
+    },
+    {
+      "file": "illustrations/cover-coast.png",
+      "transparent": false,
+      "prompt": "Create one standalone production-use website illustration asset for Kratai, matching the attached Playful Modern UI style. This is NOT a website screenshot, NOT a moodboard, NOT a grid. NO UI, NO text, NO buttons, NO border/frame, NO watermark. Palette disciplined slate #34495F and mint #9BE8C7 with white and tonal tints, no orange/yellow/blue accents (pink permitted only inside rabbit ears and nose). Crisp polished vector-like digital illustration, friendly modern shapes, clean edges, minimal texture, enough detail for a premium Thai running website, coherent with reference. One wide landscape event cover illustration: Thai tropical coastal bay, gently curling shoreline, palms framing RIGHT edge, layered islands, soft clouds, open sky upper left. No buildings required."
+    },
+    {
+      "file": "illustrations/cover-bangkok.png",
+      "transparent": false,
+      "prompt": "Create one standalone production-use website illustration asset for Kratai, matching the attached Playful Modern UI style. This is NOT a website screenshot, NOT a moodboard, NOT a grid. NO UI, NO text, NO buttons, NO border/frame, NO watermark. Palette disciplined slate #34495F and mint #9BE8C7 with white and tonal tints, no orange/yellow/blue accents (pink permitted only inside rabbit ears and nose). Crisp polished vector-like digital illustration, friendly modern shapes, clean edges, minimal texture, enough detail for a premium Thai running website, coherent with reference. One wide landscape event cover illustration: Bangkok riverside, elegant Thai temple spire on right, layered modern skyline across river on left, boats as tiny abstract silhouettes, foliage in corner."
+    },
+    {
+      "file": "illustrations/hero-running-track.png",
+      "transparent": false,
+      "prompt": "Create one standalone production-use website illustration asset for Kratai, matching the attached Playful Modern UI style. This is NOT a website screenshot, NOT a moodboard, NOT a grid. NO UI, NO text, NO buttons, NO border/frame, NO watermark. Palette disciplined slate #34495F and mint #9BE8C7 with white and tonal tints, no orange/yellow/blue accents (pink permitted only inside rabbit ears and nose). Crisp polished vector-like digital illustration, friendly modern shapes, clean edges, minimal texture, enough detail for a premium Thai running website, coherent with reference. One wide 3:1 website hero background illustration, mint running track sweeping from lower left to far right, white lane lines, low slate bushes and distant rounded hills, soft clouds. Keep upper left two-thirds almost empty pale mint-white for HTML heading and search overlay. NO character or text."
+    },
+    {
+      "file": "illustrations/mascot-run-mint.png",
+      "transparent": true,
+      "prompt": "Create one standalone production-use website illustration asset for Kratai, matching the attached Playful Modern UI style. This is NOT a website screenshot, NOT a moodboard, NOT a grid. NO UI, NO text, NO buttons, NO border/frame, NO watermark. Palette disciplined slate #34495F and mint #9BE8C7 with white and tonal tints, no orange/yellow/blue accents (pink permitted only inside rabbit ears and nose). Crisp polished vector-like digital illustration, friendly modern shapes, clean edges, minimal texture, enough detail for a premium Thai running website, coherent with reference. Transparent background single full-body existing rabbit mascot running joyfully, facing right, exactly the reference white rabbit identity, pink inner ears and nose, eyebrows, cheeks and toothy smile. Sports shirt and shorts ONLY slate #34495F and mint #9BE8C7, shoes slate/mint/white. Preserve simple person emblem on shirt chest. Clean crisp outline matching source. Entire ears and feet visible, no ground shadow, no lettering, no environment. One character only, centered with slight safe margin."
+    },
+    {
+      "file": "illustrations/mascot-cheer-mint.png",
+      "transparent": true,
+      "prompt": "Create one standalone production-use website illustration asset for Kratai, matching the attached Playful Modern UI style. This is NOT a website screenshot, NOT a moodboard, NOT a grid. NO UI, NO text, NO buttons, NO border/frame, NO watermark. Palette disciplined slate #34495F and mint #9BE8C7 with white and tonal tints, no orange/yellow/blue accents (pink permitted only inside rabbit ears and nose). Crisp polished vector-like digital illustration, friendly modern shapes, clean edges, minimal texture, enough detail for a premium Thai running website, coherent with reference. Transparent background single full-body existing rabbit mascot cheering with one hand raised and one leg bent, exactly reference character identity: white rabbit, pink ears/nose, eyebrows and smiling muzzle/front teeth. Recolor existing sportswear slate #34495F and mint #9BE8C7, white/slate/mint shoes, small simple person emblem on shirt chest. Entire ears and shoes visible, no shadow or scenery, no lettering, one character only."
+    },
+    {
+      "file": "illustrations/race-pack-demo.png",
+      "transparent": true,
+      "prompt": "Create one standalone production-use website illustration asset for Kratai, matching the attached Playful Modern UI style. This is NOT a website screenshot, NOT a moodboard, NOT a grid. NO UI, NO text, NO buttons, NO border/frame, NO watermark. Palette disciplined slate #34495F and mint #9BE8C7 with white and tonal tints, no orange/yellow/blue accents (pink permitted only inside rabbit ears and nose). Crisp polished vector-like digital illustration, friendly modern shapes, clean edges, minimal texture, enough detail for a premium Thai running website, coherent with reference. Transparent background grouped race kit illustration, one slate/mint short sleeve running shirt with simple small abstract athlete chest emblem, one matching drawstring bag, one generic race bib with NO text or numerals, one silver-toned medal on mint/slate ribbon. Clean flat vector-style illustration with restrained form shading, front views spaced apart, no brand claims, no labels, no fake QR, no shadows, centered with safe margin. Demo merchandise only."
+    }
+  ],
+  "usage": [
+    "PNG illustrations are raster, not SVG vectors.",
+    "Use scenic covers as illustrative demo artwork, not verified event venues.",
+    "Race Pack is demo artwork, not a confirmed product or registration entitlement.",
+    "Mint mascot PNGs are stills; they are not replacements for the three-frame running animation.",
+    "Generated cover illustrations include a mascot; hero-running-track is the reusable background without one.",
+    "No application source or live website changed."
+  ]
+}

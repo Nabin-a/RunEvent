@@ -201,7 +201,7 @@ export const FulfillmentStatusBadge: React.FC<{
       icon: <IconClock size={14} />,
     },
     ready: {
-      label: 'พร้อมรับ BIB / เสื้อ',
+      label: 'พร้อมรับ Race Kit',
       tone: 'badge-navy',
       icon: <IconBib size={14} />,
     },

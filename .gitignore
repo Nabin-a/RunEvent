@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-admin/
 data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal
@@ -7,3 +8,6 @@ data/*.sqlite-wal
 .impeccable/review/
 .impeccable/mocks/
 *.local
+dist.tar.gz
+# Mascot source artwork (~144 MB: .ai, full-size PNG, mp4). Optimised copies live in src/assets/mascot.
+กระต่าย_KraTai/

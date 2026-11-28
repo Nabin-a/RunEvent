@@ -1,0 +1,46 @@
+{
+  "mode": "built-in image_gen",
+  "date": "2026-11-21",
+  "purpose": "Visual proposals only; no application implementation",
+  "base": "Create a high-fidelity UX/UI redesign contact sheet for Kratai Thai running platform, matching the attached APPROVED visual reference. Playful Modern, STRICT slate #34495F + mint #9BE8C7 + white/pale mint. Preserve reference rabbit mascot identity (white rabbit, pink ears, slate/mint sportswear); use small purposeful mascot only, no giant mascot on forms. Consistent header brand 'กระต่าย Kratai', navigation, spacious rounded cards, strong readable Thai typography, slate buttons with white text, mint selected states. Clean flat screenshot artwork, no devices, no perspective. Show FOUR DISTINCT COMPLETE PAGE MOCKUPS in a 2x2 grid, each with an outside numbered Thai page title, ample gutters, large landscape high-resolution image. Each screen has readable content and genuinely distinct layout reflecting purpose, not duplicate homepages. Use fictional demo data only and label 'ข้อมูลตัวอย่าง'. For payment or social login show 'Sandbox' clearly. Events use future 2569/2570 sample dates. No admin or organizer dashboard. This is visual concept, not live website. Reference styling is binding; retain brand cohesiveness. ",
+  "boards": [
+    {
+      "id": "01-public",
+      "prompt": "Screens: 01 ค้นหางานวิ่ง: homepage hero 'ก้าวต่อไป ไปด้วยกัน', running rabbit, keyword/province/month search and scenic mint event cards with net prices. 02 ปฏิทินงานวิ่ง: month calendar with event markers, month navigation and distance/province filters, selected day event list on right. 03 รายละเอียดงานวิ่ง: scenic Chiang Mai event cover, date/location, tabs about/distances/race pack/schedule/rules, sticky right price/register summary. 04 ผลการแข่งขันและอัลบั้ม: same event context, results and photo-album links, clear empty state when organizer has not published results; no invented finish statistics."
+    },
+    {
+      "id": "02-auth",
+      "prompt": "Screens: 05 เข้าสู่ระบบ: email/password form, remember option, forgot password link, social Google Facebook LINE buttons explicitly Sandbox, friendly small mascot. 06 สมัครสมาชิก ขั้น 1: account creation email/password/confirm-password and consent, social Sandbox option, next button. 07 สมัครสมาชิก ขั้น 2: runner profile basics Thai/English name, birth date, gender, phone, nationality, document type, clear 2-column fields, submit. 08 ลืมรหัสผ่าน: email input and send-reset-link button, safe generic confirmation panel and Sandbox notice, return to login. Each is a real complete auth screen, not all variants in one panel."
+    },
+    {
+      "id": "03-register-a",
+      "prompt": "Screens: 09 สมัครวิ่ง เริ่มต้น: seven-stage progress with tiny rabbit at current stage; event context; registration category/distance radio cards and net fee; summary right. 10 สมัครวิ่ง ข้อมูลผู้สมัคร: saved-participant selector, name/birthdate/nationality/phone/document fields, emergency contact, 2-column form, next button and summary. 11 สมัครวิ่ง เสื้อและ Race Pack: shirt product illustration, XS-2XL selectable sizes with availability, size-chart link, package entitlement explained. 12 สมัครวิ่ง ของที่ระลึก: optional additional shirt/medal product tiles, size/quantity controls, skip button, clear added cost. Distinguish included race kit versus optional purchases. All four screens same persistent event context, same 7-step progress, back/next and right order summary."
+    },
+    {
+      "id": "04-register-b",
+      "prompt": "Screens: 13 สมัครวิ่ง ที่อยู่: choose pickup at event or delivery, saved address picker, recipient/phone/address fields, delivery fee, separate event rules acceptance from optional marketing consent. 14 สมัครวิ่ง ชำระเงิน: itemized entry fee, platform fee, optional merchandise, delivery, total THB, PromptPay/card choices labelled Sandbox, confirm button and duplicate-submit protection visual. 15 สมัครวิ่ง สำเร็จ: restrained cheering original rabbit, confirmation reference, runner name sample, event/distance, QR card explicitly sample, payment status and next steps collect BIB, button view my entries. 16 บัตรวิ่งและคำสั่งซื้อของฉัน: separate tabs race entries and merchandise orders, upcoming entries with payment states and QR details, orders with delivery status; no mixing race entitlement with product purchase."
+    },
+    {
+      "id": "05-shop-security",
+      "prompt": "Screens: 17 ร้านค้าประจำงาน: event context, merchandise grid of shirts/medals, sizes/prices/availability, text 'ซื้อสินค้าได้โดยไม่สมัครวิ่ง'. 18 เลือกสินค้าและการรับสินค้า: selected shirt detail with image/size/quantity, pickup or delivery and address, basket summary, no race registration fields. 19 สรุปและชำระค่าสินค้า: itemized merchandise checkout, Sandbox payment selection, confirmation/receipt area, no race entitlement, clear order and delivery status. 20 ความปลอดภัยบัญชี: contact email, change password with verify-code step access, linked accounts, active sessions, action revoke other devices; discreet small mascot, sober clear destructive actions, no giant hero."
+    },
+    {
+      "id": "06-profile-a",
+      "prompt": "Screens: 21 ข้อมูลส่วนตัว: account profile shell with slim left menu, avatar, Thai/English name, birthdate, gender, nationality, phone, document, completion progress, save. 22 ผู้ติดต่อฉุกเฉิน: SAME account shell, multiple contacts with name relationship phone, primary indicator, add/edit form panel. 23 ที่อยู่จัดส่ง: SAME shell, saved addresses with default label and add/edit form. 24 ผู้สมัครที่บันทึกไว้: SAME shell, saved family/team participant profiles, add/edit participant and select primary, clear fictional data. Left menu contains ข้อมูลส่วนตัว ผู้ติดต่อฉุกเฉิน ที่อยู่จัดส่ง ผู้สมัครที่บันทึกไว้ ประวัติการวิ่ง การเชื่อมต่อ อุปกรณ์ ความเป็นส่วนตัว. Keep headings and context visible."
+    },
+    {
+      "id": "07-profile-b",
+      "prompt": "Screens: 25 ประวัติการวิ่งและใบเซอร์: account shell with sidebar, upcoming/past tabs, event records and download certificate only for eligible completed race; demo data. 26 การเชื่อมต่อ: same shell, Google Facebook LINE connection cards marked Sandbox, linked/unlinked state, connect/unlink action. 27 อุปกรณ์: same shell, current device session and other sessions with last-active sample, revoke single or other sessions. 28 ความเป็นส่วนตัวและข้อมูล: same shell, consent preferences separate transactional from marketing, export data, pause account/delete request clearly separated at bottom with explanatory text, no coercive dark patterns."
+    },
+    {
+      "id": "08-shelved",
+      "prompt": "Override 4-screen layout: this board has SIX full page mockups in a 3x2 grid. Add clear top board heading 'หน้าที่พักใช้งาน — แบบเสนอเท่านั้น', and each screen visibly labelled 'พักใช้งาน'. These exist in code but are NOT currently active public features. Screens: 29 ไซส์เสื้อและการวิ่ง: preferences sizes/fit/distances. 30 รางวัลและความสำเร็จ: read-only achievements empty state, no made-up awards. 31 โซเชียลมีเดีย: social profile links editable rows. 32 การแจ้งเตือน: transaction versus marketing channels and consent. 33 องค์กรและคำเชิญ: user account organization membership and pending invitation, NOT organizer dashboard, fictional sample. 34 ยืนยันอีเมล: verification code form labelled Sandbox and feature paused, resend countdown visual. Same profile shell for first five. Do not imply these features are enabled."
+    }
+  ],
+  "limitations": [
+    "Generated Thai text, dates, prices, exact step labels and menu consistency need correction before implementation.",
+    "Screens 29–34 represent shelved code, not enabled public features.",
+    "Alternative registration layout register-b shares the same flow and is not a separate product page.",
+    "Current router does not expose custom-production."
+  ]
+}

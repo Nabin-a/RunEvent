@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import {
   DEMO_CUSTOM_FIELDS,
   DEMO_ORGANIZATIONS,
+  EXTRA_SOUVENIRS,
   INITIAL_AUDIT_LOGS,
   INITIAL_EVENTS,
   INITIAL_INVITATIONS,
@@ -20,6 +21,16 @@ import {
   INITIAL_GLOBAL_FIELDS,
   INITIAL_REGISTRATION_STEPS,
 } from '../src/data/formBuilderData';
+import {
+  DEFAULT_PLATFORM_PROFILE_CONFIG,
+  SEEDED_OLDMOAT_RACE_RESULT,
+  SEEDED_RUNNER_901_ACHIEVEMENTS,
+  SEEDED_RUNNER_901_LOGIN_HISTORY,
+  SEEDED_RUNNER_901_PROFILE,
+} from '../src/data/runnerProfileDefaults';
+import { SEEDED_SAVED_BOOKS } from '../src/data/seededSavedBooks';
+import { coreTextFromFreeBlocks } from '../src/data/eventPageConvert';
+import { BLOOD_GROUP_OPTIONS } from '../src/data/registrationForm';
 import type {
   AuditLogEntry,
   ConditionalRule,
@@ -30,6 +41,7 @@ import type {
   OrganizationMembership,
   OrganizerFieldRequest,
   PayoutBatch,
+  PlatformProfileConfig,
   ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
@@ -46,7 +58,7 @@ if (!fs.existsSync(dataDir)) {
 
 export const DB_FILE_PATH = path.resolve(
   dataDir,
-  process.env.RUNEVENT_DB_FILENAME || 'runevent.sqlite'
+  process.env.KRATAI_DB_FILENAME || 'kratai.sqlite'
 );
 
 export const db = new DatabaseSync(DB_FILE_PATH);
@@ -68,6 +80,7 @@ export interface SystemStatePayload {
   globalFields: GlobalFormFieldDef[];
   conditionalRules: ConditionalRule[];
   fieldRequests: OrganizerFieldRequest[];
+  platformProfileConfig: PlatformProfileConfig;
 }
 
 export function initSchema(): void {
@@ -305,7 +318,18 @@ export function initSchema(): void {
       created_at TEXT NOT NULL,
       detail_json TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS platform_config (
+      key TEXT PRIMARY KEY,
+      detail_json TEXT NOT NULL
+    );
   `);
+
+  // Safe column migration on existing SQLite files
+  const userCols = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+  if (!userCols.some((c) => c.name === 'user_meta_json')) {
+    db.exec("ALTER TABLE users ADD COLUMN user_meta_json TEXT NOT NULL DEFAULT '{}';");
+  }
 }
 
 function normalizeCategoryDistanceCode(code: string, distanceKm: number): string {
@@ -357,8 +381,13 @@ export function upsertUserRow(
   options?: { passwordPlain?: string; preservePasswordHash?: boolean; sortOrder?: number }
 ): void {
   const existing = db
-    .prepare('SELECT password_hash, sort_order FROM users WHERE id = ?')
-    .get(user.id) as { password_hash: string | null; sort_order: number } | undefined;
+    .prepare('SELECT password_hash, sort_order, user_meta_json FROM users WHERE id = ?')
+    .get(user.id) as
+    | { password_hash: string | null; sort_order: number; user_meta_json: string | null }
+    | undefined;
+  const existingMeta = existing?.user_meta_json
+    ? (JSON.parse(existing.user_meta_json) as { createdAt?: string })
+    : {};
 
   let pwHash: string | null = existing?.password_hash ?? null;
   if (options?.passwordPlain) {
@@ -370,14 +399,27 @@ export function upsertUserRow(
   }
 
   const sortOrder = options?.sortOrder ?? existing?.sort_order ?? 500;
+  const userMeta = {
+    accountStatus: user.accountStatus ?? 'active',
+    deletionRequestReason: user.deletionRequestReason,
+    deletionRequestedAt: user.deletionRequestedAt,
+    loginHistory: user.loginHistory ?? [],
+    achievements: user.achievements ?? [],
+    // Keep the first-seen creation time; brand-new rows get "now". Rows that predate
+    // this field keep it unset rather than inventing a date.
+    createdAt: user.createdAt ?? existingMeta.createdAt ?? (existing ? undefined : new Date().toISOString()),
+    passwordChangedAt: user.passwordChangedAt,
+    lastLoginAt: user.lastLoginAt,
+    consents: user.consents ?? [],
+  };
 
   db.prepare(`
     INSERT INTO users (
       id, sort_order, code, full_name_th, full_name_en, contact_email,
       email_verified, has_password, password_hash, demo_password_hint,
       is_platform_admin, demo_role_summary, is_demo_preset,
-      runner_profile_json, identities_json, device_sessions_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      runner_profile_json, identities_json, device_sessions_json, user_meta_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       code = excluded.code,
       full_name_th = excluded.full_name_th,
@@ -392,7 +434,8 @@ export function upsertUserRow(
       is_demo_preset = excluded.is_demo_preset,
       runner_profile_json = excluded.runner_profile_json,
       identities_json = excluded.identities_json,
-      device_sessions_json = excluded.device_sessions_json
+      device_sessions_json = excluded.device_sessions_json,
+      user_meta_json = excluded.user_meta_json
   `).run(
     user.id,
     sortOrder,
@@ -409,7 +452,8 @@ export function upsertUserRow(
     user.isDemoPreset ? 1 : 0,
     user.runnerProfile ? JSON.stringify(user.runnerProfile) : null,
     JSON.stringify(user.identities ?? []),
-    JSON.stringify(user.sessions ?? [])
+    JSON.stringify(user.sessions ?? []),
+    JSON.stringify(userMeta)
   );
 
   db.prepare('DELETE FROM organization_memberships WHERE user_id = ?').run(user.id);
@@ -655,11 +699,394 @@ export function insertAuditLog(entry: AuditLogEntry): void {
   );
 }
 
+export function upsertPlatformProfileConfig(cfg: PlatformProfileConfig): void {
+  db.prepare(`
+    INSERT INTO platform_config (key, detail_json) VALUES ('runner_profile', ?)
+    ON CONFLICT(key) DO UPDATE SET detail_json = excluded.detail_json
+  `).run(JSON.stringify(cfg));
+}
+
+export function readPlatformProfileConfig(): PlatformProfileConfig {
+  const row = db
+    .prepare("SELECT detail_json FROM platform_config WHERE key = 'runner_profile'")
+    .get() as { detail_json: string } | undefined;
+  if (!row) {
+    upsertPlatformProfileConfig(DEFAULT_PLATFORM_PROFILE_CONFIG);
+    return DEFAULT_PLATFORM_PROFILE_CONFIG;
+  }
+  return JSON.parse(row.detail_json) as PlatformProfileConfig;
+}
+
+const DOI_RACEPACK_PARAGRAPH =
+  'ทุกระยะการแข่งขันได้รับเสื้อวิ่งเนื้อผ้าไมโครโพลีเอสเตอร์ระบายอากาศ ป้ายหมายเลขแข่งขัน (BIB) พร้อม QR Token สำหรับรับอุปกรณ์ และเหรียญรางวัล Finisher สำหรับผู้ที่เข้าเส้นชัยภายในเวลา Cut-off ที่กำหนด';
+
+/** Sample banner covers for the demo events (files in public/event-covers). */
+const SAMPLE_EVENT_COVERS: Record<string, string> = {
+  'evt-doisuthep-2026': '/event-covers/evt-doisuthep-2026.webp',
+  'evt-promthep-2026': '/event-covers/evt-promthep-2026.webp',
+  'evt-oldmoat-2026': '/event-covers/evt-oldmoat-2026.webp',
+  'evt-maerim-suspended': '/event-covers/evt-maerim-suspended.webp',
+};
+const SAMPLE_COVER_ALT = 'ภาพแบนเนอร์ประกอบงานวิ่ง';
+
 export function seedDatabase(forceReset = false): void {
   initSchema();
 
   const countRow = db.prepare('SELECT COUNT(*) AS cnt FROM users').get() as { cnt: number };
   if (countRow.cnt > 0 && !forceReset) {
+    // Ensure platform profile config exists
+    readPlatformProfileConfig();
+    // Idempotent migration: ensure seeded runner USR-901 has Facebook + full Runner Profile + Race Result
+    const runner = getUserById('usr-runner');
+    if (runner) {
+      const hasFb = runner.identities.some((i) => i.provider === 'facebook');
+      const hasLatestSeededParticipants = Boolean(
+        runner.runnerProfile?.savedParticipants?.some(
+          (p) => p.id === 'sp-901-2' && Boolean(p.emergencyContactRelation)
+        )
+      );
+      const needsProfileUpgrade =
+        !runner.runnerProfile?.savedAddresses ||
+        !runner.runnerProfile?.firstNameEn ||
+        !hasLatestSeededParticipants;
+      if (!hasFb || needsProfileUpgrade) {
+        const existingCustomParticipants = (
+          runner.runnerProfile?.savedParticipants ?? []
+        ).filter((p) => p.id !== 'sp-901-1' && p.id !== 'sp-901-2');
+        upsertUserRow(
+          {
+            ...runner,
+            runnerProfile: needsProfileUpgrade
+              ? {
+                  ...SEEDED_RUNNER_901_PROFILE,
+                  ...runner.runnerProfile,
+                  firstNameEn:
+                    runner.runnerProfile?.firstNameEn ??
+                    SEEDED_RUNNER_901_PROFILE.firstNameEn,
+                  lastNameEn:
+                    runner.runnerProfile?.lastNameEn ??
+                    SEEDED_RUNNER_901_PROFILE.lastNameEn,
+                  nicknameEn:
+                    runner.runnerProfile?.nicknameEn ??
+                    SEEDED_RUNNER_901_PROFILE.nicknameEn,
+                  savedParticipants: hasLatestSeededParticipants
+                    ? runner.runnerProfile!.savedParticipants
+                    : [
+                        ...(SEEDED_RUNNER_901_PROFILE.savedParticipants ?? []),
+                        ...existingCustomParticipants,
+                      ],
+                }
+              : runner.runnerProfile,
+            achievements:
+              runner.achievements && runner.achievements.length > 0
+                ? runner.achievements
+                : SEEDED_RUNNER_901_ACHIEVEMENTS,
+            loginHistory:
+              runner.loginHistory && runner.loginHistory.length > 0
+                ? runner.loginHistory
+                : SEEDED_RUNNER_901_LOGIN_HISTORY,
+            identities: hasFb
+              ? runner.identities
+              : [
+                  ...runner.identities,
+                  {
+                    id: 'id-901-fb',
+                    provider: 'facebook',
+                    providerSubject: 'fb-uid-9014402',
+                    providerEmail: 'kanpitcha.runner@demo.kratai.local',
+                    linkedAt: '2026-10-14 19:20',
+                  },
+                ],
+          },
+          { preservePasswordHash: true }
+        );
+      }
+    }
+    // Idempotent migration: the Doi Suthep overview no longer repeats the race pack
+    // (it has its own section on the event page).
+    const doiRow = db
+      .prepare("SELECT detail_json FROM events WHERE id = 'evt-doisuthep-2026'")
+      .get() as { detail_json: string } | undefined;
+    if (doiRow) {
+      const doi = JSON.parse(doiRow.detail_json) as RaceEvent;
+      const kept = (doi.overviewParagraphs ?? []).filter((p) => p !== DOI_RACEPACK_PARAGRAPH);
+      if (kept.length !== (doi.overviewParagraphs ?? []).length) {
+        db.prepare("UPDATE events SET detail_json = ? WHERE id = 'evt-doisuthep-2026'").run(
+          JSON.stringify({ ...doi, overviewParagraphs: kept })
+        );
+      }
+    }
+    // Idempotent migration: sample banner covers for the public demo events,
+    // set only where the event has no cover yet so organizer uploads are kept.
+    for (const [eventId, url] of Object.entries(SAMPLE_EVENT_COVERS)) {
+      const row = db
+        .prepare('SELECT detail_json FROM events WHERE id = ?')
+        .get(eventId) as { detail_json: string } | undefined;
+      if (!row) continue;
+      const ev = JSON.parse(row.detail_json) as RaceEvent;
+      if (ev.coverImageUrl) continue;
+      db.prepare('UPDATE events SET detail_json = ?, cover_image_url = ?, cover_image_alt = ? WHERE id = ?').run(
+        JSON.stringify({ ...ev, coverImageUrl: url, coverImageAlt: SAMPLE_COVER_ALT }),
+        url,
+        SAMPLE_COVER_ALT,
+        eventId
+      );
+    }
+    // Idempotent migration: souvenirs added to the seed on 23 Nov 2026 reach databases
+    // seeded earlier. Products already present (same id) are left untouched.
+    for (const eventId of new Set(EXTRA_SOUVENIRS.map((p) => p.eventId))) {
+      const row = db
+        .prepare('SELECT detail_json FROM events WHERE id = ?')
+        .get(eventId) as { detail_json: string } | undefined;
+      if (!row) continue;
+      const ev = JSON.parse(row.detail_json) as RaceEvent;
+      const have = new Set((ev.products ?? []).map((p) => p.id));
+      const missing = EXTRA_SOUVENIRS.filter((p) => p.eventId === eventId && !have.has(p.id));
+      if (missing.length === 0) continue;
+      db.prepare('UPDATE events SET detail_json = ? WHERE id = ?').run(
+        JSON.stringify({ ...ev, products: [...(ev.products ?? []), ...missing] }),
+        eventId
+      );
+    }
+    // Idempotent migration: address books and saved registrants for the other demo
+    // accounts (23 Nov 2026). Only fills an account that has never had either list,
+    // so a user's own edits or deletions are never overwritten.
+    for (const [userId, book] of Object.entries(SEEDED_SAVED_BOOKS)) {
+      const user = getUserById(userId);
+      if (!user) continue;
+      const profile = user.runnerProfile;
+      if (profile?.savedAddresses !== undefined || profile?.savedParticipants !== undefined) continue;
+      upsertUserRow({ ...user, runnerProfile: { ...(profile ?? {}), ...book } });
+    }
+    // Idempotent migration (23 Nov 2026): the whole-event quota switch. Events stored before
+    // the switch existed get it set to "on", so their total cap keeps working as before.
+    const eventRows = db.prepare('SELECT id, detail_json FROM events').all() as {
+      id: string;
+      detail_json: string;
+    }[];
+    for (const row of eventRows) {
+      const ev = JSON.parse(row.detail_json) as RaceEvent;
+      if (typeof ev.totalEventQuotaEnabled === 'boolean') continue;
+      db.prepare('UPDATE events SET detail_json = ? WHERE id = ?').run(
+        JSON.stringify({ ...ev, totalEventQuotaEnabled: true }),
+        row.id
+      );
+    }
+    // Idempotent migration (24 Nov 2026): the event page is one template again. Text the
+    // organizer kept in a published free-block page (v 2) is copied back to the event's own
+    // fields once; the page data itself stays in detail_json, unused (decision: keep, not delete).
+    for (const row of db.prepare('SELECT id, detail_json FROM events').all() as { id: string; detail_json: string }[]) {
+      const ev = JSON.parse(row.detail_json) as RaceEvent;
+      if (ev.detailPageV !== 2 || ev.detailTextFromPageAt) continue;
+      const text = coreTextFromFreeBlocks({ customBlocks: ev.detailCustomBlocks ?? [] });
+      const next: RaceEvent = { ...ev, detailTextFromPageAt: new Date().toISOString() };
+      if (text.about) {
+        if (text.about.paragraphs.length > 0) next.overviewParagraphs = text.about.paragraphs;
+        next.highlights = text.about.highlights;
+      }
+      if (text.racepack && text.racepack.items.length > 0) next.racePackItems = text.racepack.items;
+      if (text.schedule && text.schedule.items.length > 0) next.scheduleItems = text.schedule.items;
+      db.prepare('UPDATE events SET detail_json = ? WHERE id = ?').run(JSON.stringify(next), row.id);
+    }
+    // Idempotent migration (25 Nov 2026, user request): the blood group question offers
+    // A+ … O- and "unknown". Only lists still equal to an old seeded list (A, B, AB, O with or
+    // without ไม่ทราบ) are replaced, in the global field library and in each event's published
+    // form; organizer edits, drafts and answers already given stay as they are.
+    const isOldBloodList = (opts: unknown) =>
+      Array.isArray(opts) &&
+      ['A|B|AB|O', 'A|B|AB|O|ไม่ทราบ'].includes((opts as string[]).join('|'));
+    const gfBlood = db.prepare("SELECT detail_json FROM global_fields WHERE id = 'cf_blood'").get() as
+      | { detail_json: string }
+      | undefined;
+    if (gfBlood) {
+      const gf = JSON.parse(gfBlood.detail_json) as { options?: string[] };
+      if (isOldBloodList(gf.options)) {
+        db.prepare("UPDATE global_fields SET detail_json = ? WHERE id = 'cf_blood'").run(
+          JSON.stringify({ ...gf, options: [...BLOOD_GROUP_OPTIONS] })
+        );
+      }
+    }
+    for (const row of db.prepare('SELECT id, detail_json FROM events').all() as { id: string; detail_json: string }[]) {
+      const ev = JSON.parse(row.detail_json) as RaceEvent;
+      if (!(ev.customFields ?? []).some((cf) => cf.id === 'cf_blood' && isOldBloodList(cf.options))) continue;
+      const next: RaceEvent = {
+        ...ev,
+        customFields: (ev.customFields ?? []).map((cf) =>
+          cf.id === 'cf_blood' && isOldBloodList(cf.options) ? { ...cf, options: [...BLOOD_GROUP_OPTIONS] } : cf
+        ),
+      };
+      db.prepare('UPDATE events SET detail_json = ? WHERE id = ?').run(JSON.stringify(next), row.id);
+    }
+    // Idempotent migration (26 Nov 2026, user rule: no "mock / sample" labels in the UI):
+    // strip the old seed labels such as " (ข้อมูลจำลอง)" from every text column that holds them.
+    const MOCK_LABELS: [string, string][] = [
+      [' (ข้อมูลจำลอง)', ''],
+      [' (บัญชีนิติบุคคลจำลอง)', ''],
+      [' (จำลองโมเดลบริการครบ)', ''],
+      [' (จำลองบริการครบ)', ''],
+      [' (จำลองสถานะระงับรับสมัครชั่วคราวเพื่อรอเอกสารอนุญาตพื้นที่)', ''],
+      ['ตัวอย่างการแสดงสถานะงานที่ระงับชั่วคราวโดยไม่ลบประวัติใบสมัครและธุรกรรมเดิม', 'ระงับรับสมัครชั่วคราวโดยไม่ลบประวัติใบสมัครและธุรกรรมเดิม'],
+      ['ทีมช่างภาพจำลอง ', 'ทีมช่างภาพ '],
+      ['ภาพแบนเนอร์ตัวอย่างประกอบงานวิ่ง', 'ภาพแบนเนอร์ประกอบงานวิ่ง'],
+      ['ผู้ติดต่อฉุกเฉินจำลอง ', 'ผู้ติดต่อฉุกเฉิน '],
+      ['เข้าสู่ระบบแบบจำลอง (Sandbox)', 'เข้าสู่ระบบ'],
+      ['ชมรมวิ่งเช้าสวนลุมฯ (ตัวอย่าง)', 'ชมรมวิ่งเช้าสวนลุมฯ'],
+      [' (จำลอง)', ''],
+    ];
+    const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[]).map((t) => t.name);
+    // audit logs and people's review comments are history as written; they are not rewritten
+    for (const table of tables.filter((t) => t !== 'audit_logs' && t !== 'review_comments' && t !== 'auth_sessions')) {
+      const cols = (db.prepare(`PRAGMA table_info("${table}")`).all() as { name: string; type: string }[])
+        .filter((c) => /TEXT/i.test(c.type))
+        .map((c) => c.name);
+      for (const col of cols) {
+        for (const [from, to] of MOCK_LABELS) {
+          db.prepare(`UPDATE "${table}" SET "${col}" = REPLACE("${col}", ?, ?) WHERE instr("${col}", ?) > 0`).run(from, to, from);
+        }
+      }
+    }
+    // test data (27 Nov 2026, user request): the LINE runner (USR-902) gets an email and a phone,
+    // once, only while the stored account still has no email
+    const lineRunner = getUserById('usr-line-noemail');
+    if (lineRunner && !lineRunner.contactEmail) {
+      upsertUserRow(
+        {
+          ...lineRunner,
+          contactEmail: 'paramin.line@demo.kratai.local',
+          emailVerified: true,
+          demoRoleSummary: 'ลูกค้าทั่วไปผ่าน LINE — สั่งซื้อเสื้อที่ระลึกได้โดยไม่สมัครวิ่ง และทดสอบการตั้งรหัสผ่านในหน้าความปลอดภัยได้',
+          runnerProfile: { ...(lineRunner.runnerProfile ?? {}), phone: lineRunner.runnerProfile?.phone || '086-517-3348' },
+        },
+        { preservePasswordHash: true }
+      );
+    }
+    // test data (27 Nov 2026): souvenir-free event + USR-901's unpaid entry, added once
+    if (!db.prepare("SELECT 1 FROM events WHERE id = 'evt-sukhothai-2027'").get()) {
+      const ev = INITIAL_EVENTS.find((e) => e.id === 'evt-sukhothai-2027');
+      // same defaults the first seed gives every event
+      if (ev) {
+        upsertEventRow(
+          {
+            ...ev,
+            activeTemplateId: ev.activeTemplateId ?? 'tpl-halfmarathon',
+            totalEventQuotaEnabled: ev.totalEventQuotaEnabled ?? true,
+            publishedFormVersion: ev.publishedFormVersion ?? 'v1.2-published',
+          },
+          500
+        );
+      }
+    }
+    // test data (27 Nov 2026): two events with unisex shirts (no ชาย / หญิง / เด็ก), added once
+    for (const id of ['evt-nan-riverside-2027', 'evt-krabi-ao-nang-2027']) {
+      if (db.prepare('SELECT 1 FROM events WHERE id = ?').get(id)) continue;
+      const ev = INITIAL_EVENTS.find((e) => e.id === id);
+      if (ev) {
+        upsertEventRow(
+          {
+            ...ev,
+            activeTemplateId: ev.activeTemplateId ?? 'tpl-halfmarathon',
+            totalEventQuotaEnabled: ev.totalEventQuotaEnabled ?? true,
+            publishedFormVersion: ev.publishedFormVersion ?? 'v1.2-published',
+          },
+          500
+        );
+      }
+    }
+    if (!db.prepare("SELECT 1 FROM registrations WHERE id = 'reg-901-sk-pending'").get()) {
+      const reg = INITIAL_REGISTRATIONS.find((r) => r.id === 'reg-901-sk-pending');
+      if (reg) upsertRegistrationRow(reg, 500);
+    }
+    const reg07Row = db
+      .prepare("SELECT detail_json FROM registrations WHERE id = 'reg-07'")
+      .get() as { detail_json: string } | undefined;
+    if (reg07Row) {
+      const reg07 = JSON.parse(reg07Row.detail_json) as RegistrationRecord;
+      if (!reg07.raceResult) {
+        upsertRegistrationRow({ ...reg07, raceResult: SEEDED_OLDMOAT_RACE_RESULT });
+      }
+    }
+    // test data (27 Nov 2026, user request): Old Moat gets its Fun Run 5 km (no age groups) and
+    // USR-901's friends' entries, one race result per tier on the history card; added once
+    const omRow = db
+      .prepare("SELECT detail_json FROM events WHERE id = 'evt-oldmoat-2026'")
+      .get() as { detail_json: string } | undefined;
+    if (omRow) {
+      const stored = JSON.parse(omRow.detail_json) as RaceEvent;
+      const funRun = INITIAL_EVENTS.find((e) => e.id === 'evt-oldmoat-2026')?.categories.find(
+        (c) => c.id === 'cat-om-5k'
+      );
+      if (funRun && !stored.categories.some((c) => c.id === 'cat-om-5k')) {
+        upsertEventRow({ ...stored, categories: [...stored.categories, funRun] });
+      }
+    }
+    for (const reg of INITIAL_REGISTRATIONS.filter((r) => r.id.startsWith('reg-om-fr-'))) {
+      if (!db.prepare('SELECT 1 FROM registrations WHERE id = ?').get(reg.id)) {
+        upsertRegistrationRow(reg, 500);
+      }
+    }
+    // test data (27 Nov 2026, user request "เพิ่มงาน/แก้ไขงานเดิม ให้มีสถานะครบตามตัวอย่าง"): one event
+    // per runner-facing state (src/data/eventStateTestData.ts, dates counted from the day this
+    // runs) and their entries; added once, only while missing
+    for (const ev of INITIAL_EVENTS.filter((e) => e.id.startsWith('evt-state-'))) {
+      if (db.prepare('SELECT 1 FROM events WHERE id = ?').get(ev.id)) continue;
+      upsertEventRow(
+        {
+          ...ev,
+          activeTemplateId: ev.activeTemplateId ?? 'tpl-halfmarathon',
+          publishedFormVersion: ev.publishedFormVersion ?? 'v1.2-published',
+        },
+        500
+      );
+    }
+    for (const reg of INITIAL_REGISTRATIONS.filter(
+      (r) => r.id.startsWith('reg-state-') || r.id.startsWith('reg-901-state-')
+    )) {
+      if (!db.prepare('SELECT 1 FROM registrations WHERE id = ?').get(reg.id)) {
+        upsertRegistrationRow(reg, 500);
+      }
+    }
+    // test data (27 Nov 2026, user request "แก้ test data ของเดิม ไม่เพิ่มใหม่"): the existing events
+    // get kit pickup days, Old Moat its results date, Promthep its postponement (new race day and
+    // kit text) and Sukhothai a full 10 km; applied once, only while a stored event lacks them
+    for (const seed of INITIAL_EVENTS) {
+      const row = db.prepare('SELECT detail_json FROM events WHERE id = ?').get(seed.id) as
+        | { detail_json: string }
+        | undefined;
+      if (!row) continue;
+      const stored = JSON.parse(row.detail_json) as RaceEvent;
+      let next = stored;
+      if (seed.kitPickupFrom && !stored.kitPickupFrom) {
+        next = { ...next, kitPickupFrom: seed.kitPickupFrom, kitPickupTo: seed.kitPickupTo };
+      }
+      // the state test events reuse an existing event's cover (27 Nov 2026, user request)
+      if (seed.id.startsWith('evt-state-') && seed.coverImageUrl && !stored.coverImageUrl) {
+        next = { ...next, coverImageUrl: seed.coverImageUrl, coverImageAlt: seed.coverImageAlt };
+      }
+      if (seed.resultsAnnouncedAt && !stored.resultsAnnouncedAt) {
+        next = { ...next, resultsAnnouncedAt: seed.resultsAnnouncedAt };
+      }
+      if (seed.postponement && !stored.postponement) {
+        next = {
+          ...next,
+          postponement: seed.postponement,
+          eventDate: seed.eventDate,
+          kitPickupWindow: seed.kitPickupWindow,
+        };
+      }
+      if (seed.id === 'evt-sukhothai-2027') {
+        const seedCat = seed.categories.find((c) => c.id === 'cat-sk-10k');
+        const storedCat = stored.categories.find((c) => c.id === 'cat-sk-10k');
+        if (seedCat && storedCat && storedCat.categoryQuota === 30 && seedCat.categoryQuota !== 30) {
+          next = {
+            ...next,
+            categories: next.categories.map((c) =>
+              c.id === 'cat-sk-10k' ? { ...c, categoryQuota: seedCat.categoryQuota } : c
+            ),
+          };
+        }
+      }
+      if (next !== stored) upsertEventRow(next);
+    }
     return;
   }
 
@@ -683,8 +1110,11 @@ export function seedDatabase(forceReset = false): void {
         DELETE FROM global_fields;
         DELETE FROM conditional_rules;
         DELETE FROM field_requests;
+        DELETE FROM platform_config;
       `);
     }
+
+    upsertPlatformProfileConfig(DEFAULT_PLATFORM_PROFILE_CONFIG);
 
     DEMO_ORGANIZATIONS.forEach((org, idx) => upsertOrganizationRow(org, idx + 1));
 
@@ -719,6 +1149,7 @@ export function seedDatabase(forceReset = false): void {
       const normalizedEv: RaceEvent = {
         ...rawEv,
         activeTemplateId: rawEv.activeTemplateId ?? 'tpl-halfmarathon',
+        totalEventQuotaEnabled: rawEv.totalEventQuotaEnabled ?? true,
         publishedFormVersion: rawEv.publishedFormVersion ?? 'v1.2-published',
         customFields:
           rawEv.customFields === undefined &&
@@ -743,7 +1174,7 @@ export function seedDatabase(forceReset = false): void {
           customAnswers: {
             cf_medical: 'แพ้ยาแอสไพริน',
             cf_club: 'Chiang Mai Morning Miles',
-            cf_blood: 'O',
+            cf_blood: 'O+',
           },
         };
       } else if (reg.customAnswers === undefined && reg.id === 'reg-02') {
@@ -752,7 +1183,7 @@ export function seedDatabase(forceReset = false): void {
           customAnswers: {
             cf_medical: 'ไม่มี',
             cf_club: 'Lanna Road Runners',
-            cf_blood: 'B',
+            cf_blood: 'B+',
           },
         };
       }
@@ -856,6 +1287,20 @@ function mapUserRow(uRow: Record<string, unknown>): UserAccount {
       : undefined,
   }));
 
+  const meta = uRow.user_meta_json
+    ? (JSON.parse(String(uRow.user_meta_json)) as {
+        accountStatus?: UserAccount['accountStatus'];
+        deletionRequestReason?: string;
+        deletionRequestedAt?: string;
+        loginHistory?: UserAccount['loginHistory'];
+        achievements?: UserAccount['achievements'];
+        createdAt?: string;
+        passwordChangedAt?: string;
+        lastLoginAt?: string;
+        consents?: UserAccount['consents'];
+      })
+    : {};
+
   return {
     id: String(uRow.id),
     code: String(uRow.code),
@@ -872,6 +1317,15 @@ function mapUserRow(uRow: Record<string, unknown>): UserAccount {
     runnerProfile: uRow.runner_profile_json
       ? JSON.parse(String(uRow.runner_profile_json))
       : undefined,
+    accountStatus: meta.accountStatus ?? 'active',
+    deletionRequestReason: meta.deletionRequestReason,
+    deletionRequestedAt: meta.deletionRequestedAt,
+    loginHistory: meta.loginHistory ?? [],
+    achievements: meta.achievements ?? [],
+    createdAt: meta.createdAt,
+    passwordChangedAt: meta.passwordChangedAt,
+    lastLoginAt: meta.lastLoginAt,
+    consents: meta.consents ?? [],
     isPlatformAdmin: Boolean(uRow.is_platform_admin),
     demoRoleSummary: String(uRow.demo_role_summary || ''),
     isDemoPreset: Boolean(uRow.is_demo_preset),
@@ -999,5 +1453,6 @@ export function readSystemState(): SystemStatePayload {
     globalFields,
     conditionalRules,
     fieldRequests,
+    platformProfileConfig: readPlatformProfileConfig(),
   };
 }

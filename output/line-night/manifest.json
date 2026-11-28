@@ -1,0 +1,173 @@
+{
+  "project": "Kratai",
+  "date": "2026-11-25",
+  "palette": {
+    "black": "#111513",
+    "green": "#06C755"
+  },
+  "notes": [
+    "สำเนาชุดปรับสี ไม่ทับต้นฉบับ",
+    "ภาพ PNG ปรับด้วย imagegen รูปทรงหรือรายละเอียดอาจต่างจากต้นฉบับเล็กน้อย",
+    "ภาพตัวละครคงพื้นหลังโปร่งใส ฉากประกอบและวิดีโอใช้บรรยากาศกลางคืน",
+    "วิดีโอคงจำนวนเฟรม ความละเอียด และอัตราเฟรมตามต้นฉบับ"
+  ],
+  "sources": [
+    "output/profile-mascots",
+    "output/playful-assets/illustrations",
+    "กระต่าย_KraTai/ต่าย Move"
+  ],
+  "assets": [
+    {
+      "file": "profile-mascots/01-personal.png",
+      "kind": "image"
+    },
+    {
+      "file": "profile-mascots/02-emergency.png",
+      "kind": "image"
+    },
+    {
+      "file": "profile-mascots/03-address.png",
+      "kind": "image"
+    },
+    {
+      "file": "profile-mascots/04-participants.png",
+      "kind": "image"
+    },
+    {
+      "file": "profile-mascots/05-certificates.png",
+      "kind": "image"
+    },
+    {
+      "file": "profile-mascots/06-connections.png",
+      "kind": "image"
+    },
+    {
+      "file": "profile-mascots/07-devices.png",
+      "kind": "image"
+    },
+    {
+      "file": "profile-mascots/08-privacy.png",
+      "kind": "image"
+    },
+    {
+      "file": "illustrations/cover-bangkok.png",
+      "kind": "image"
+    },
+    {
+      "file": "illustrations/cover-chiang-mai.png",
+      "kind": "image"
+    },
+    {
+      "file": "illustrations/cover-coast.png",
+      "kind": "image"
+    },
+    {
+      "file": "illustrations/hero-running-track.png",
+      "kind": "image"
+    },
+    {
+      "file": "illustrations/mascot-cheer-mint.png",
+      "kind": "image"
+    },
+    {
+      "file": "illustrations/mascot-run-mint.png",
+      "kind": "image"
+    },
+    {
+      "file": "illustrations/race-pack-demo.png",
+      "kind": "image"
+    },
+    {
+      "file": "motion/tai hap.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/tai run 05.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/TAI-hurt2.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายท่า 1 09.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายท่า 10 01.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายท่า 2 02.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายท่า 3 03.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายท่า 4 04.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายท่า 5 01.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายท่า 5 03.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายท่า 6 01.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายท่า 7 02.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายท่า 8 01.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายท่า 9 02.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายท่าอื่นๆ 1 01.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายท่าอื่นๆ 2 02.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายท่าอื่นๆ 3 01.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายท่าอื่นๆ 4 01.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายวิ่ง ท่า 1 03.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายวิ่ง ท่า 2 01.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายวิ่ง ท่า 3 01.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายวิ่ง ท่า 4 01.mp4",
+      "kind": "video"
+    },
+    {
+      "file": "motion/ต่ายวิ่ง ท่า 5 02.mp4",
+      "kind": "video"
+    }
+  ]
+}

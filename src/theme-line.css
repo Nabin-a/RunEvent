@@ -1,0 +1,499 @@
+/* ===================================================================== */
+/* LINE theme (25 Nov 2026, user request "theme เขียว/ดำ แบบสี LINE",     */
+/* chosen mockup: dark mode, black page, LINE green #06C755 accents,      */
+/* whole system). Switched on with <html data-theme="line"> (theme.ts,    */
+/* button next to TH/EN). Only colours change; layout stays the same.     */
+/*                                                                        */
+/* Contrast (WCAG AA): #f2f2f2 on #1b1b1b 15.6:1, #b8b8b8 on #1b1b1b      */
+/* 9.0:1, #8f8f8f on #1b1b1b 5.4:1, #06c755 on #111111 8.6:1, black text  */
+/* on #06c755 9.4:1 (white on LINE green is only 2.3:1, so buttons carry  */
+/* black text).                                                           */
+/* Pictures (scene, covers, mascot) keep their own light colours.         */
+/* ===================================================================== */
+
+:root[data-theme='line'] {
+  color-scheme: dark;
+
+  --line-green: #06c755;
+  --line-green-hover: #05b04b;
+  --line-black: #000000;
+
+  --bg-page: #111111;
+  --bg-canvas: #111111;
+  --bg-surface: #1b1b1b;
+  --bg-subtle: #232323;
+  --bg-selected: #0f2b1c;
+  --bg-inset: #262626;
+  --bg-card: var(--bg-surface);
+
+  --shell-navy: #000000;
+  --shell-navy-elevated: #161616;
+  --shell-border: #2e2e2e;
+  --shell-text: #f5f5f5;
+  --shell-text-muted: #a8a8a8;
+  --shell-bg: #000000;
+  --navy: #000000;
+
+  --ink-primary: #f2f2f2;
+  --ink-secondary: #b8b8b8;
+  --ink-placeholder: #8f8f8f;
+
+  --brand: var(--line-green);
+  --brand-hover: var(--line-green-hover);
+  --mint: var(--line-green);
+  --mint-soft: #0f2b1c;
+  --mint-strong: var(--line-green);
+  --vermilion-ink: #7ff0ae;
+  --on-accent: #000000;
+
+  --forest: #3ddc84;
+  --forest-soft: #0f2b1c;
+  --forest-border: #1e5a37;
+  --forest-ink: #8ef2b8;
+
+  --amber: #f2b24c;
+  --amber-soft: #2d2210;
+  --amber-border: #5e4518;
+  --amber-ink: #ffd38c;
+
+  --danger: #ff6f61;
+  --danger-soft: #2e1513;
+  --danger-border: #612822;
+  --danger-ink: #ffb4ab;
+
+  --navy-soft: #16222e;
+  --navy-border: #2d4357;
+  --navy-ink: #b5d2ee;
+
+  --line-light: #2a2a2a;
+  --line-medium: #3a3a3a;
+  --line-google: #3a3a3a;
+
+  --cover-sun: var(--line-green);
+  --cover-route: #f2f2f2;
+  --cover-mountain-bg: #1c2128;
+  --cover-mountain-mid: #2c3640;
+  --cover-mountain-fg: #242c35;
+  --cover-coast-bg: #18232a;
+  --cover-coast-mid: #27404d;
+  --cover-coast-fg: #1f323c;
+  --cover-heritage-bg: #24211c;
+  --cover-heritage-line: #8f8473;
+  --cover-heritage-fg: #322d25;
+  --cover-river-bg: #1a2129;
+  --cover-river-mid: #2a3846;
+  --cover-trail-bg: #1a231c;
+  --cover-trail-line: #6f8f78;
+  --cover-trail-fg: #253128;
+
+  --shadow-card: 0 4px 14px -4px rgba(0, 0, 0, 0.6);
+  --shadow-popover: 0 12px 28px -6px rgba(0, 0, 0, 0.7);
+
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%23b8b8b8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* the public site and the back office set their own page tints and brand tokens */
+:root[data-theme='line'] .app-root.is-public,
+:root[data-theme='line'] .app-root.is-backoffice,
+:root[data-theme='line'] .app-root.is-backoffice .global-topbar,
+:root[data-theme='line'] body:has(.app-root.is-public) {
+  --bg-page: #111111;
+  --bg-canvas: #111111;
+  --bg-subtle: #232323;
+  --bg-inset: #262626;
+
+  --kr-mint: var(--line-green);
+  --kr-mint-2: #12361f;
+  --kr-mint-3: #0f2b1c;
+  --kr-mint-line: #2e2e2e;
+  --kr-mint-hover: var(--line-green-hover);
+  --kr-slate: #f2f2f2;
+  --kr-slate-hover: #ffffff;
+  --kr-shadow-card: 0 10px 28px -14px rgba(0, 0, 0, 0.7);
+  --kr-shadow-raise: 0 16px 34px -16px rgba(0, 0, 0, 0.8);
+}
+
+:root[data-theme='line'] body {
+  background: var(--bg-page);
+  color: var(--ink-primary);
+}
+
+/* ---- top bar: black, LINE green for the current place ---- */
+:root[data-theme='line'] .app-root .global-topbar {
+  background: var(--line-black);
+  border-bottom: 1px solid #262626;
+}
+
+:root[data-theme='line'] .app-root .global-topbar .surface-switch-btn:hover,
+:root[data-theme='line'] .app-root .global-topbar .surface-switch-btn.active {
+  border-bottom-color: var(--line-green);
+}
+
+:root[data-theme='line'] .app-root .global-topbar .topbar-user-actions > .btn-primary {
+  border-color: var(--line-green);
+  background: var(--line-green);
+  color: #000000;
+}
+
+:root[data-theme='line'] .app-root .global-topbar .topbar-user-actions > .btn-primary:hover {
+  border-color: var(--line-green-hover);
+  background: var(--line-green-hover);
+}
+
+/* ===================================================================== */
+/* Theme switch (shown in both themes): a round, raised button          */
+/* (25 Nov 2026, user request, after a tactile power-button design by    */
+/* Jon Kantner; our own code and colours). Off: an unlit slate button    */
+/* with a sun. On (LINE theme): pressed in, a crescent moon and the      */
+/* inner rim glow LINE green. The icons swap with a quarter turn and the */
+/* press recoils a little (overshoot curve), unless the user asks for    */
+/* reduced motion.                                                       */
+/* ===================================================================== */
+.theme-switch {
+  --tsw-size: 2.25rem;
+  --tsw-ease: cubic-bezier(0.42, -1.84, 0.42, 1.84);
+  position: relative;
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: var(--tsw-size);
+  height: var(--tsw-size);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  /* socket */
+  background: radial-gradient(circle at 50% 35%, #4d6680, #24384c);
+  box-shadow:
+    inset 0 0 3px rgba(0, 0, 0, 0.55),
+    0 1px 1px rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  transition: box-shadow 0.3s ease-in-out;
+}
+
+/* plinth */
+.theme-switch::before {
+  content: '';
+  position: absolute;
+  inset: 11%;
+  border-radius: 50%;
+  background: linear-gradient(#5c7590, #2f4459);
+  box-shadow: 0 4px 5px rgba(0, 0, 0, 0.45);
+  transition: box-shadow 0.3s var(--tsw-ease), transform 0.3s var(--tsw-ease);
+}
+
+/* cap */
+.theme-switch::after {
+  content: '';
+  position: absolute;
+  inset: 25%;
+  border-radius: 50%;
+  background: #3b536b;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35);
+  transition: background-color 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+}
+
+.theme-switch svg {
+  position: relative;
+  z-index: 1;
+  width: 42%;
+  height: 42%;
+  color: #b4c3d2;
+  stroke-width: 2.2;
+  transition: color 0.3s ease-in-out, filter 0.3s ease-in-out;
+}
+
+.theme-switch:hover svg {
+  color: #ffffff;
+}
+
+/* sun while off, crescent moon while on: the hidden one is turned away and shrunk */
+.theme-switch .tsw-sun,
+.theme-switch .tsw-moon {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  transition: opacity 0.3s ease-in-out, transform 0.45s var(--tsw-ease);
+}
+
+.theme-switch .tsw-moon {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.4);
+}
+
+.theme-switch[aria-pressed='true'] .tsw-sun {
+  opacity: 0;
+  transform: rotate(90deg) scale(0.4);
+}
+
+.theme-switch[aria-pressed='true'] .tsw-moon {
+  opacity: 1;
+  transform: none;
+}
+
+.theme-switch:active::before,
+.theme-switch:active::after {
+  transform: scale(0.96);
+}
+
+.theme-switch[aria-pressed='true'] {
+  background: radial-gradient(circle at 50% 35%, #1d1d1d, #050505);
+  box-shadow:
+    inset 0 0 3px rgba(0, 0, 0, 0.8),
+    0 0 0 2px rgba(6, 199, 85, 0.35);
+}
+
+.theme-switch[aria-pressed='true']::before {
+  background: linear-gradient(#262626, #0f0f0f);
+  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.6);
+  transform: scale(0.97);
+}
+
+.theme-switch[aria-pressed='true']::after {
+  background: #141414;
+  box-shadow:
+    inset 0 1px 0 rgba(6, 199, 85, 0.5),
+    inset 0 0 8px 2px rgba(6, 199, 85, 0.18);
+}
+
+.theme-switch[aria-pressed='true'] svg {
+  color: var(--line-green, #06c755);
+  filter: drop-shadow(0 0 4px var(--line-green, #06c755));
+}
+
+.theme-switch:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 3px;
+}
+
+/* phones and tablets: the bar hides TH/EN, the drawer carries both switches */
+@media (max-width: 67.5rem) {
+  .topbar-user-actions > .theme-switch {
+    display: none;
+  }
+
+  .mobile-drawer-footer {
+    flex-wrap: wrap;
+  }
+}
+
+/* TH / EN slide switch in the LINE theme: black track, dark knob, green label */
+:root[data-theme='line'] .lang-slide {
+  background: #050505;
+  box-shadow:
+    inset 0 3px 8px rgba(0, 0, 0, 0.8),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.06),
+    0 0 0 2px rgba(6, 199, 85, 0.35);
+}
+
+:root[data-theme='line'] .lang-slide-knob {
+  background: linear-gradient(to bottom, #2a2a2a, #121212);
+  box-shadow:
+    0 3px 9px rgba(0, 0, 0, 0.7),
+    inset 1px 1px rgba(255, 255, 255, 0.12),
+    inset -1px 1px rgba(255, 255, 255, 0.12);
+}
+
+:root[data-theme='line'] .lang-slide button {
+  color: #8a8a8a;
+}
+
+:root[data-theme='line'] .lang-slide button:hover {
+  color: #ffffff;
+}
+
+:root[data-theme='line'] .lang-slide button[aria-pressed='true'] {
+  color: var(--line-green);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-switch,
+  .theme-switch::before,
+  .theme-switch::after,
+  .theme-switch svg,
+  .theme-switch .tsw-sun,
+  .theme-switch .tsw-moon {
+    transition: none;
+  }
+}
+
+/* ===================================================================== */
+/* Rules that pair a fill with a fixed text colour                        */
+/* ===================================================================== */
+
+/* footer: black like the top bar */
+:root[data-theme='line'] .app-root .minimal-footer {
+  border-top: 1px solid #262626;
+  background: var(--line-black);
+}
+
+/* text on a LINE green fill is black, including counts and icons inside it */
+:root[data-theme='line'] :is(
+    .kr-search-btn,
+    .kr-chip.is-on,
+    .kr-orders-tab.is-on,
+    .kr-cal-dot.is-selected,
+    .app-root.is-public .runner-nav-btn.active,
+    .app-root.is-public .event-detail-page .kr-mode-tabs .detail-tab-btn.active,
+    .app-root.is-public .race-calendar-views .detail-tab-btn.active,
+    .app-root.is-public .event-detail-page .editorial-anchor-strip .filter-pill:hover,
+    .race-calendar-grid td.is-selected button.race-calendar-day,
+    .race-calendar-weekdays li.is-selected button.race-calendar-day,
+    .race-calendar-grid td.is-selected .race-calendar-count,
+    .race-calendar-weekdays li.is-selected .race-calendar-count,
+    .orgnav-item.is-active,
+    .ci-tabs button.is-active,
+    .fin-btn.is-primary,
+    .fin-chip.is-on,
+    .eh-stage .eh-stage-now,
+    .rg-btn.is-primary,
+    .rg-chip.is-on,
+    .rg-seg button.is-on,
+    .es-btn.is-primary,
+    .sh-btn.is-primary,
+    .oe-btn.is-primary,
+    .oe-chip.is-on,
+    .btn-primary,
+    .btn-cta-accent,
+    .admin-login-icon,
+    .mstep-list-item.is-current .mstep-list-mark,
+    .mstep-seg.is-current,
+    .pay-method-icon,
+    .sf-card-cta,
+    .sf-cart-bar
+  ) {
+  color: #000000;
+}
+
+:root[data-theme='line'] :is(
+    .kr-chip.is-on,
+    .kr-orders-tab.is-on,
+    .app-root.is-public .race-calendar-views .detail-tab-btn.active,
+    .app-root.is-public .event-detail-page .kr-mode-tabs .detail-tab-btn.active,
+    .orgnav-item.is-active,
+    .rg-chip.is-on,
+    .oe-chip.is-on,
+    .fin-chip.is-on,
+    .btn-primary,
+    .sf-cart-bar
+  )
+  * {
+  color: inherit;
+}
+
+/* the slate "go" circle on event cards becomes a green one */
+:root[data-theme='line'] .kr-card-go {
+  background: var(--line-green);
+  color: #000000;
+}
+
+:root[data-theme='line'] .kr-card-go:hover {
+  background: var(--line-green-hover);
+}
+
+/* fills that used the dark shell colour to mean "selected": black would vanish on the black
+   page, so they turn LINE green with black text */
+:root[data-theme='line'] :is(
+    .size-choice-btn.selected,
+    .lifecycle-step.active,
+    .mobile-drawer-link.active,
+    .runner-nav-btn.active,
+    .dev-drawer-section .btn-ghost-sm[aria-pressed='true']
+  ) {
+  border-color: var(--line-green);
+  background: var(--line-green);
+  color: #000000;
+}
+
+:root[data-theme='line'] ::selection {
+  background-color: var(--line-green);
+  color: #000000;
+}
+
+/* banners and the avatar ring that sat on the slate shell keep a dark tile with light text */
+:root[data-theme='line'] :is(.reg-banner, .event-reg-poster-pane, .runner-avatar-frame) {
+  background: #000000;
+  color: var(--shell-text);
+}
+
+/* no photo yet: the black and green rabbit on a dark green disc */
+:root[data-theme='line'] .runner-avatar-frame:has(.runner-avatar-default) {
+  background: #24362b;
+}
+
+/* ===================================================================== */
+/* Landscape banners: the supplied night scene (output/line-night,        */
+/* moonlit sky, glowing green lanes) replaces the daytime picture; built  */
+/* into hero-running-track-night.webp by tools/build-line-night-assets.py */
+/* (25 Nov 2026, user request). White text reads on its near-black sky.   */
+/* ===================================================================== */
+:root[data-theme='line'] .app-root.is-public,
+:root[data-theme='line'] .app-root.is-backoffice {
+  /* the top of the night sky, used where the picture does not reach */
+  --kr-auth-sky: #05130c;
+}
+
+:root[data-theme='line'] .kr-hero,
+:root[data-theme='line'] .app-root.is-public .kr-cal-head {
+  background:
+    url('./assets/illustrations/hero-running-track-night.webp') center bottom / max(100%, 1100px) auto no-repeat,
+    #05130c;
+}
+
+:root[data-theme='line'] .kr-auth-art,
+:root[data-theme='line'] .app-root.is-public .auth-page-shell.is-scene,
+:root[data-theme='line'] .app-root.is-public .auth-page-shell.is-scene:not(.is-fit)::before {
+  background:
+    url('./assets/illustrations/hero-running-track-night.webp') 30% bottom / cover no-repeat,
+    var(--kr-auth-sky);
+}
+
+/* sign-up keeps its landscape on the fixed layer only */
+:root[data-theme='line'] .app-root.is-public .auth-page-shell.is-scene:not(.is-fit) {
+  background: none;
+}
+
+:root[data-theme='line'] .kr-prof-banner {
+  background:
+    url('./assets/illustrations/hero-running-track-night.webp') center 85% / cover no-repeat,
+    var(--kr-auth-sky);
+}
+
+/* status pill floating on an event cover: dark glass instead of white */
+:root[data-theme='line'] :is(.kr-card-status .status-badge, .kr-card-status > *) {
+  background: rgba(0, 0, 0, 0.82);
+}
+
+:root[data-theme='line'] .mstep-list {
+  background: var(--bg-surface);
+}
+
+/* inside the sign-in / sign-up scene the greeting sits straight on the landscape */
+:root[data-theme='line'] .app-root.is-public .auth-page-shell.is-scene .kr-auth-art {
+  background: none;
+}
+
+/* check-in search: a slate panel in the usual theme; here a dark panel with a green edge so the
+   big scan field stays the brightest thing on screen */
+:root[data-theme='line'] .ci-search {
+  border: 2px solid var(--line-green);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+}
+
+:root[data-theme='line'] .ci-search .ci-hint {
+  color: var(--ink-secondary);
+}
+
+/* the console's top bar has no menu drawer, so its switch stays visible on small screens */
+@media (max-width: 67.5rem) {
+  .topbar-user-actions > .theme-switch.admin-theme-switch {
+    display: inline-grid;
+  }
+}
+
+/* the hand-drawn underline under the hero title ("ไปด้วยกัน") takes LINE green in this theme
+   (25 Nov 2026, user request); same stroke as public-theme.css, only the colour changes */
+:root[data-theme='line'] .kr-swoosh::after {
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 20' preserveAspectRatio='none'%3E%3Cpath d='M3 14 C 60 4, 140 2, 197 9' fill='none' stroke='%2306c755' stroke-width='9' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat center / 100% 100%;
+}

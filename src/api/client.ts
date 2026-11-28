@@ -7,6 +7,7 @@ import type {
   Organization,
   OrganizerFieldRequest,
   PayoutBatch,
+  PlatformProfileConfig,
   ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
@@ -30,6 +31,7 @@ export interface ApiSystemState {
   globalFields: GlobalFormFieldDef[];
   conditionalRules: ConditionalRule[];
   fieldRequests: OrganizerFieldRequest[];
+  platformProfileConfig: PlatformProfileConfig;
 }
 
 export interface ApiSnapshotResponse {
@@ -37,14 +39,46 @@ export interface ApiSnapshotResponse {
   error?: string;
   currentUserId?: string | null;
   state?: ApiSystemState;
+  /** Server switches; sandboxTools = dev switcher, reset and simulated social sign-in. */
+  config?: { sandboxTools: boolean };
   user?: UserAccount;
   organization?: Organization;
   event?: RaceEvent;
   reg?: RegistrationRecord;
+  /** everyone of a group registration order, first entry first (28 Nov 2026) */
+  regs?: RegistrationRecord[];
+  orderCode?: string;
+  /** a refused group order: which person (0-based) and what was full */
+  entryIndex?: number;
+  /** a held (unpaid) registration whose 15 minutes ran out, or that was cancelled */
+  expired?: boolean;
   addonOrder?: MerchOrderRecord;
+  addonOrders?: MerchOrderRecord[];
   order?: MerchOrderRecord;
+  orders?: MerchOrderRecord[];
+  checkoutCode?: string;
   inquiry?: ProductionInquiry;
   invitation?: TeamInvitation;
+  /** Generic payload (e.g. /api/account/export). */
+  data?: unknown;
+}
+
+let cachedApiOrigin = '';
+
+/**
+ * Platform Owner console: every /api/... call is sent to /admin-api/... so the server uses the
+ * admin session and scope. Called once by the admin app's entry before it renders.
+ */
+let adminApi = false;
+export function enableAdminApi(): void {
+  adminApi = true;
+}
+
+function resolveFallbackApiOrigin(): string {
+  if (typeof window === 'undefined') return '';
+  const { protocol, hostname, port } = window.location;
+  if (port === '3001') return '';
+  return `${protocol}//${hostname}:3001`;
 }
 
 export async function apiRequest(
@@ -52,19 +86,50 @@ export async function apiRequest(
   path: string,
   body?: unknown
 ): Promise<ApiSnapshotResponse> {
-  try {
-    const res = await fetch(path, {
+  const finalPath = adminApi && path.startsWith('/api/') ? `/admin-api/${path.slice(5)}` : path;
+  const doFetch = (base: string) =>
+    fetch(`${base}${finalPath}`, {
       method,
       credentials: 'include',
       headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
+
+  try {
+    let res = await doFetch(cachedApiOrigin);
+    const contentType = res.headers.get('content-type') ?? '';
+
+    // When served behind static Nginx (e.g. :8090 without /api proxy), fallback to same-host :3001 API
+    if (!cachedApiOrigin && !contentType.includes('application/json')) {
+      const fallback = resolveFallbackApiOrigin();
+      if (fallback) {
+        const retryRes = await doFetch(fallback);
+        if ((retryRes.headers.get('content-type') ?? '').includes('application/json')) {
+          cachedApiOrigin = fallback;
+          res = retryRes;
+        }
+      }
+    }
+
     const json = (await res.json()) as ApiSnapshotResponse;
     if (!res.ok && json.ok === undefined) {
       return { ok: false, error: `HTTP ${res.status}` };
     }
     return json;
   } catch (err) {
+    if (!cachedApiOrigin) {
+      const fallback = resolveFallbackApiOrigin();
+      if (fallback) {
+        try {
+          const retryRes = await doFetch(fallback);
+          const json = (await retryRes.json()) as ApiSnapshotResponse;
+          cachedApiOrigin = fallback;
+          return json;
+        } catch {
+          // ignore secondary error
+        }
+      }
+    }
     return {
       ok: false,
       error: err instanceof Error ? err.message : 'Network error connecting to local API',

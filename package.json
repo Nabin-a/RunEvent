@@ -1,21 +1,31 @@
 {
-  "name": "runevent-local-system",
+  "name": "kratai-local-system",
   "private": true,
   "version": "0.2.0",
-  "description": "RunEvent local full-stack system — Vite + React + TypeScript frontend with Node.js + Express + SQLite backend (seeded test users & sandbox OAuth/payment)",
+  "description": "Kratai local full-stack system — Vite + React + TypeScript frontend with Node.js + Express + SQLite backend (seeded test users & sandbox OAuth/payment)",
   "type": "module",
   "scripts": {
-    "dev:api": "tsx server/index.ts",
+    "dev:api": "tsx watch server/index.ts",
     "dev:web": "vite --port 5173",
-    "dev": "concurrently -k -n api,web \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:admin": "vite --config vite.admin.config.ts",
+    "dev": "concurrently -k -n api,web,admin \"npm run dev:api\" \"npm run dev:web\" \"npm run dev:admin\"",
     "build": "tsc -b && vite build",
+    "build:admin": "vite build --config vite.admin.config.ts",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview --port 4173"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@fortawesome/fontawesome-free": "^7.3.1",
+    "@gsap/react": "^2.1.2",
     "express": "^5.1.0",
+    "gsap": "^3.15.1",
+    "qrcode-generator": "2.0.4",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "sweetalert2": "^11.26.25"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

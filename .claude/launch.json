@@ -1,0 +1,34 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "kratai-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "kratai-web-alt",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "--port",
+        "5175",
+        "--strictPort"
+      ],
+      "port": 5175
+    },
+    {
+      "name": "kratai-admin",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:admin"
+      ],
+      "port": 5174
+    }
+  ]
+}

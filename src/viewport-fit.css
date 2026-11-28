@@ -1,0 +1,213 @@
+/* Screen-size fixes across the public site, the organizer tools and the platform console
+   (24 Nov 2026, user request: fit PC, laptop and phone screens, starting with short laptop
+   screens where stacked sticky bars ate the height). Loaded last so it wins over page styles.
+   Offsets: --topbar-height (site header, 0 when it does not stick) and --orgnav-top-h
+   (organizer top bar) are measured by App.tsx / OrganizerNav.tsx. */
+
+/* ---------- every size: bars that stuck behind the site header + organizer bar ---------- */
+
+/* page content menu: its save bar used top: 0 and its preview top: 4.5rem, both under the bars */
+.page-content-settings .pcs-bar {
+  top: calc(var(--topbar-height, 0px) + var(--orgnav-top-h, 0px));
+}
+
+.pcs-preview {
+  top: calc(var(--topbar-height, 0px) + var(--orgnav-top-h, 0px) + 4.75rem);
+}
+
+.pcs-preview-frame {
+  height: calc(100dvh - var(--topbar-height, 0px) - var(--orgnav-top-h, 0px) - 9.5rem);
+  min-height: 18rem;
+}
+
+/* registrants: the detail panel ignored the organizer bar */
+.rg-detail {
+  top: calc(var(--topbar-height, 0px) + var(--orgnav-top-h, 0px) + 0.75rem);
+}
+
+/* sticky side columns use the visible height (dvh), not the layout height (vh) */
+.orgnav-rail {
+  height: calc(100dvh - var(--topbar-height, 0px) - var(--orgnav-top-h, 0px));
+}
+
+/* form editor: with the organizer rail (264px) on the left, a side preview below ~1400px left the
+   editor column ~380px wide (1366×768 laptops). There the preview lives only in its own tab. */
+@media (max-width: 87.49rem) {
+  .fe-layout.has-preview {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+
+  .fe-layout.has-preview.is-try {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fe-preview.is-side,
+  .fe-side-toggle {
+    display: none;
+  }
+}
+
+/* below 1024px the palette goes above the editor (form-editor.css), restated after the rule above */
+@media (max-width: 63.99rem) {
+  .fe-layout.has-preview,
+  .fe-layout.has-preview.is-try {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- tablets and phones: tool bars wrap to 2–4 rows there, so they scroll with the page ---------- */
+@media (max-width: 64rem) {
+  .fe-page {
+    --fe-stick-top: calc(var(--topbar-height, 0px) + var(--orgnav-top-h, 0px) + 0.75rem);
+  }
+
+  .fe-page .fe-bar,
+  .page-content-settings .pcs-bar {
+    position: static;
+  }
+
+  .pcs-preview {
+    top: calc(var(--topbar-height, 0px) + var(--orgnav-top-h, 0px) + 0.75rem);
+  }
+}
+
+/* phones: in the organizer tools the site header scrolls away; the organizer bar (event and
+   search) stays, and the bottom bar carries the menus */
+@media (max-width: 48rem) {
+  .app-root.is-backoffice .global-topbar {
+    position: relative;
+  }
+
+  /* registration form: a lower picture strip so the form starts higher */
+  .reg-lab-cover {
+    aspect-ratio: 16 / 6;
+  }
+
+  /* back button and price share the first row, title and facts below (was 4 stacked rows) */
+  .reg-lab-head {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.4rem 0.75rem;
+  }
+
+  .reg-lab-back {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .reg-lab-head-price {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    justify-items: end;
+    text-align: right;
+  }
+
+  .reg-lab-head-copy {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .reg-lab-shell {
+    gap: 0.75rem;
+    padding-top: 0.75rem;
+  }
+
+  /* event facts one per line; a long venue ends with … instead of taking two lines */
+  .reg-lab-meta {
+    gap: 0.2rem 0.75rem;
+  }
+
+  .reg-lab-meta > span {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* laptops (page height under ~900px): the registration form's picture strip is capped so the
+   first step shows without scrolling (it was 250px tall at 1440×900) */
+@media (max-height: 56rem) and (min-width: 48.01rem) {
+  .reg-lab-cover {
+    aspect-ratio: auto;
+    height: 9rem;
+  }
+}
+
+/* ---------- short screens (e.g. 1366×768 laptops: ~600–700px left for the page) ---------- */
+@media (max-height: 46rem) and (min-width: 48.01rem) {
+  /* organizer tools and console: the site header scrolls away, only the organizer bar stays.
+     App.tsx then reports --topbar-height: 0, so everything below moves up. */
+  .app-root.is-backoffice .global-topbar {
+    position: relative;
+  }
+
+  .app-root.is-backoffice .global-topbar {
+    min-height: 3.25rem;
+    padding-block: 0.4rem;
+  }
+
+  /* slimmer organizer bar */
+  .orgnav-top-row {
+    padding-block: 0.35rem;
+  }
+
+  .orgnav-tab {
+    padding-block: 0.35rem 0.3rem;
+  }
+
+  /* form editor: its own bar scrolls with the page; the palette and preview stick right under
+     the organizer bar */
+  .fe-page {
+    --fe-stick-top: calc(var(--topbar-height, 0px) + var(--orgnav-top-h, 0px) + 0.75rem);
+  }
+
+  .fe-page .fe-bar {
+    position: static;
+  }
+
+  /* registration form: a short picture strip (it was up to 256px) so the form gets the room */
+  .reg-lab-cover {
+    aspect-ratio: auto;
+    height: 7rem;
+  }
+
+  .reg-lab-shell {
+    padding-top: 0.75rem;
+  }
+}
+
+/* ---------- runner profile menu: never scrolls (24 Nov 2026, user request) ---------- */
+/* desktop: the sticky menu may use the whole visible height (it was capped 11rem short of it,
+   so at 1366×768 / 1280×720 the list scrolled) */
+@media (min-width: 67.51rem) {
+  .runner-profile-nav {
+    max-height: calc(100dvh - var(--topbar-height, 0px) - 2rem);
+  }
+}
+
+/* short desktop screens: slimmer rows so all menus fit */
+@media (min-width: 67.51rem) and (max-height: 46rem) {
+  .runner-profile-nav-list {
+    gap: 0.15rem;
+  }
+
+  .runner-profile-nav .runner-nav-btn {
+    min-height: 2.25rem;
+    padding-block: 0.3rem;
+  }
+
+  .runner-profile-nav .runner-nav-group-label {
+    padding-block: 0.1rem;
+  }
+}
+
+/* phones and tablets: the opened menu shows every item (it stopped at 20rem and scrolled) */
+@media (max-width: 67.5rem) {
+  .runner-profile-nav.is-mobile-open .runner-profile-nav-list {
+    max-height: none;
+    overflow-y: visible;
+  }
+}

@@ -10,14 +10,14 @@ related_targets:
   - "src/styles.css"
 ---
 
-# RunEvent Local Interactive Mockup Brief (v2 Rebuild)
+# Kratai Local Interactive Mockup Brief (v2 Rebuild)
 
 ## Scope & Mode
 - **Surface:** `src/App.tsx` (Unified multi-surface web application: Modern Minimal Customer Portal & Event Storefront, Unified Email/Google/LINE Mock Auth + Account Security, and Self-Explanatory Multi-Tenant Organizer Dashboard)
 - **Visitor Mode:** Operate + Discover (Modern Minimal discovery & checkout flow for runners and general merchandise buyers, paired with an immediately understandable operational race-control shell for organizers and staff)
 
 ## Task & Constraints
-- Deliver realistic end-to-end client-side flows (`localStorage` key `runevent_v2_mock_system`) covering:
+- Deliver realistic end-to-end client-side flows (`localStorage` key `kratai_v2_mock_system`) covering:
   1. **Customer & Runner Flows:** Modern minimal race discovery grid with SVG route covers, net-price fee-bearer transparency, 3-step race registration with optional add-on merchandise, standalone event storefront for general customers buying shirts/medals without registering to run, custom club/company production quote requests, and separated "My Tickets & Orders".
   2. **Unified Auth & Security (Blueprint §16):** Email + password login/signup/reset, simulated Google & LINE login in one unified `UserAccount` (including LINE-without-email prompt and email-collision ownership proof instead of auto-merge), Account & Security screen (email verification, password setup/change, link/unlink providers while guarding the last login method, revoke other sessions, accept team invite, request new organizer org), plus a clearly separated Demo Preset Switcher.
   3. **Self-Explanatory Organizer Dashboard (Blueprint §1–15):** Every screen states what it is and what it is used for; separates Organization vs Event context; leads with Urgent Action Queue, 4-stage Event Lifecycle stepper, and satang-accurate `BibLedgerStrip` (with separated merchandise sales); includes storefront & non-duplicated shirt production calculator (`package + store + buffer − stock`) and mobile-ready split BIB vs Merchandise handover check-in.

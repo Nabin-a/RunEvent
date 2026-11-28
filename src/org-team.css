@@ -1,0 +1,247 @@
+/* Organization team and info (ทีมและข้อมูลองค์กร) — approved mockup 24 Nov 2026.
+   Shares panels, tags and tables with event-finance.css. */
+
+.ot-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.ot-head h1 {
+  margin: 0;
+}
+
+.ot-head .fin-sub {
+  margin: 0.15rem 0 0;
+}
+
+.ot-dl {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: 0.35rem 0.75rem;
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.ot-dl dt {
+  color: var(--ink-secondary);
+}
+
+.ot-dl dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ot-bank {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+/* ---------- role matrix ---------- */
+.ot-matrix-wrap {
+  overflow-x: auto;
+}
+
+/* phones get one card per role (the table needs 34rem) */
+.ot-role-cards {
+  display: none;
+}
+
+@media (max-width: 40rem) {
+  .ot-matrix-wrap {
+    display: none;
+  }
+
+  .ot-role-cards {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .ot-role-card {
+    padding: 0.75rem 0.9rem;
+    border: 1px solid var(--line-light);
+    border-radius: var(--radius-md, 0.75rem);
+  }
+
+  .ot-role-card.is-you {
+    border-color: var(--forest);
+    background: var(--forest-soft);
+  }
+
+  .ot-role-card h3 {
+    display: flex;
+    gap: 0.35rem;
+    align-items: baseline;
+    margin: 0 0 0.45rem;
+    font-size: 1rem;
+  }
+
+  .ot-role-card ul {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.875rem;
+  }
+
+  .ot-role-card li {
+    display: grid;
+    grid-template-columns: 1.1rem minmax(0, 1fr);
+    gap: 0.45rem;
+    align-items: baseline;
+  }
+
+  .ot-role-card li.is-no {
+    color: var(--ink-secondary);
+  }
+}
+
+.ot-matrix {
+  width: 100%;
+  min-width: 34rem;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.ot-matrix th,
+.ot-matrix td {
+  padding: 0.5rem 0.5rem;
+  border-bottom: 1px solid var(--line-light);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.ot-matrix thead th {
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.ot-matrix tbody th {
+  text-align: left;
+  font-weight: 500;
+}
+
+.ot-matrix .is-you {
+  background: var(--bg-selected);
+}
+
+.ot-you {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--ink-secondary);
+}
+
+.ot-yes {
+  color: var(--chart-blue);
+  font-size: 1.125rem;
+}
+
+.ot-no {
+  color: var(--ink-placeholder);
+}
+
+.ot-part {
+  font-size: 0.75rem;
+  color: var(--ink-secondary);
+}
+
+/* ---------- members ---------- */
+.ot-members {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ot-members li {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1.4fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--line-light);
+  font-size: 0.875rem;
+}
+
+.ot-members li:first-child {
+  border-top: none;
+}
+
+.ot-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-pill);
+  background: var(--mint-soft);
+  color: var(--brand-hover);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.ot-member-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ot-scope {
+  font-size: 0.8125rem;
+  color: var(--ink-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- invite ---------- */
+.ot-invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.875rem;
+}
+
+.ot-invite label {
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+/* the shared dropdown sizes to the picked label; a floor keeps the row from shifting when the
+   role changes (the old native select was as wide as its longest option) */
+.ot-invite .kr-select {
+  min-width: 13rem;
+}
+
+.ot-created {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--forest-soft);
+  color: var(--forest-ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.ot-copy {
+  margin-left: 0.5rem;
+}
+
+@media (max-width: 48rem) {
+  .ot-members li {
+    grid-template-columns: 2.25rem minmax(0, 1fr) auto;
+  }
+
+  .ot-scope {
+    grid-column: 2 / -1;
+  }
+}

@@ -157,7 +157,8 @@ export const INITIAL_GLOBAL_FIELDS: GlobalFormFieldDef[] = [
     required: true,
     isSensitive: true,
     policy: 'CONFIGURABLE',
-    options: ['A', 'B', 'AB', 'O', 'ไม่ทราบ'],
+    // blood group choices (25 Nov 2026), same list as BLOOD_GROUP_OPTIONS in registrationForm.ts
+    options: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'unknown'],
     categoryTag: 'running_standard',
   },
   {

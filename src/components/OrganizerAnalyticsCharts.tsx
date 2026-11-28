@@ -6,6 +6,7 @@ import {
   TimeWindowFilter,
 } from '../types';
 import { formatThb, ScopedLedgerMetrics } from '../utils/pricing';
+import { isTotalQuotaEnabled } from '../utils/eventConfig';
 import {
   IconAlert,
   IconArrowRight,
@@ -48,24 +49,39 @@ interface OrganizerAnalyticsChartsProps {
 
 type PriorityTier = 'all' | 'P1' | 'P2' | 'P3';
 
-// ฟังก์ชันช่วยคำนวณข้อมูลสาธิตด้านประชากรศาสตร์และช่องทางชำระเงินจาก RegistrationRecord
+const AGE_BRACKETS = [
+  'ต่ำกว่า 18 ปี',
+  '18–29 ปี',
+  '30–39 ปี',
+  '40–49 ปี',
+  '50–59 ปี',
+  '60 ปีขึ้นไป',
+  'ไม่ทราบอายุ',
+] as const;
+
+// อายุและเพศมาจากใบสมัครจริง (อายุ ณ วันที่นับอายุของระยะ ที่บันทึกไว้ตอนสมัคร)
+// ส่วนช่องทางชำระเงินยังเป็นข้อมูลสาธิต เพราะต้นแบบยังไม่ได้เชื่อม payment provider จริง
 function inferDemographicsAndPayment(reg: RegistrationRecord, index: number) {
+  const rawGender = reg.gender ?? reg.participantSnapshot?.gender;
   const gender: 'ชาย' | 'หญิง' | 'ไม่ระบุ' =
-    reg.gender ??
-    (index % 5 === 0 ? 'ไม่ระบุ' : index % 2 === 0 ? 'หญิง' : 'ชาย');
+    rawGender === 'ชาย' || rawGender === 'หญิง' ? rawGender : 'ไม่ระบุ';
 
-  const age =
-    reg.age ??
-    [26, 33, 29, 42, 23, 38, 47, 31, 35, 52][index % 10];
+  const age = reg.ageSnapshot?.ageYears ?? reg.age ?? null;
 
-  const ageBracket =
-    age < 30
+  const ageBracket: (typeof AGE_BRACKETS)[number] =
+    age === null
+      ? 'ไม่ทราบอายุ'
+      : age < 18
+      ? 'ต่ำกว่า 18 ปี'
+      : age < 30
       ? '18–29 ปี'
       : age < 40
       ? '30–39 ปี'
       : age < 50
       ? '40–49 ปี'
-      : '50 ปีขึ้นไป';
+      : age < 60
+      ? '50–59 ปี'
+      : '60 ปีขึ้นไป';
 
   const paymentMethod: 'qr_promptpay' | 'credit_card' | 'mobile_banking' =
     reg.paymentMethod ??
@@ -367,6 +383,7 @@ export const OrganizerAnalyticsCharts: React.FC<
         confirmed,
         pending,
         fillPct,
+        capEnabled: isTotalQuotaEnabled(ev),
         grossSatang,
         netPayoutSatang,
         merchSatang,
@@ -384,16 +401,14 @@ export const OrganizerAnalyticsCharts: React.FC<
 
     const total = Math.max(1, enriched.length);
 
-    const ageGroups = ['18–29 ปี', '30–39 ปี', '40–49 ปี', '50 ปีขึ้นไป'].map(
-      (bracket) => {
-        const count = enriched.filter((x) => x.ageBracket === bracket).length;
-        return {
-          bracket,
-          count,
-          pct: Math.round((count / total) * 100),
-        };
-      }
-    );
+    const ageGroups = AGE_BRACKETS.map((bracket) => {
+      const count = enriched.filter((x) => x.ageBracket === bracket).length;
+      return {
+        bracket,
+        count,
+        pct: Math.round((count / total) * 100),
+      };
+    }).filter((ag) => ag.bracket !== 'ไม่ทราบอายุ' || ag.count > 0);
 
     const genders = (['ชาย', 'หญิง', 'ไม่ระบุ'] as const).map((g) => {
       const count = enriched.filter((x) => x.gender === g).length;
@@ -645,6 +660,7 @@ export const OrganizerAnalyticsCharts: React.FC<
             <article className="analytics-kpi-card">
               <div className="kpi-card-top">
                 <span className="priority-chip chip-p1">P1 · KPI Card</span>
+                {metrics.totalQuotaEnabled && (
                 <span
                   className={`status-pill ${
                     fillRatePct >= 80 ? 'badge-amber' : 'badge-forest'
@@ -657,24 +673,43 @@ export const OrganizerAnalyticsCharts: React.FC<
                       : txf("ใช้โควตา {0}%", fillRatePct)}
                   </span>
                 </span>
+                )}
               </div>
-              <h3>{tx("ผู้สมัครยืนยันสิทธิ์ / โควตารวม")}</h3>
+              <h3>
+                {metrics.totalQuotaEnabled
+                  ? tx("ผู้สมัครยืนยันสิทธิ์ / โควตารวม")
+                  : tx("ผู้สมัครยืนยันสิทธิ์")}
+              </h3>
               <div className="kpi-big-figure mono-num">
                 <strong>{metrics.confirmedParticipants.toLocaleString('th-TH')}</strong>
                 <span className="kpi-denom">
-                  / {metrics.totalEventQuota.toLocaleString('th-TH')} {tx(" คน")}
+                  {metrics.totalQuotaEnabled ? (
+                    <>
+                      / {metrics.totalEventQuota.toLocaleString('th-TH')} {tx(" คน")}
+                    </>
+                  ) : (
+                    <>
+                      {tx(" คน · ไม่จำกัดยอดรวม")}
+                    </>
+                  )}
                 </span>
               </div>
-              <div className="kpi-mini-meter" aria-hidden="true">
-                <div
-                  className="kpi-mini-fill fill-forest"
-                  style={{ width: `${Math.max(4, fillRatePct)}%` }}
-                />
-              </div>
+              {metrics.totalQuotaEnabled && (
+                <div className="kpi-mini-meter" aria-hidden="true">
+                  <div
+                    className="kpi-mini-fill fill-forest"
+                    style={{ width: `${Math.max(4, fillRatePct)}%` }}
+                  />
+                </div>
+              )}
               <div className="kpi-card-foot">
                 <span className="muted-inline mono-num">
-                  {tx("รอชำระ ")} {tx(metrics.pendingPaymentReservations)} {tx(" · ว่าง")}{' '}
-                  {tx(metrics.openEventQuota)} {tx(" ที่นั่ง")}
+                  {tx("รอชำระ ")} {tx(metrics.pendingPaymentReservations)}
+                  {metrics.totalQuotaEnabled && (
+                    <>
+                      {tx(" · ว่าง")} {tx(metrics.openEventQuota)} {tx(" ที่นั่ง")}
+                    </>
+                  )}
                 </span>
                 <button
                   type="button"
@@ -1217,17 +1252,23 @@ export const OrganizerAnalyticsCharts: React.FC<
                           <EventStatusBadge status={ev.status} />
                         </div>
 
-                        <div className="hbar-meter-row">
-                          <div className="hbar-track">
-                            <div
-                              className="hbar-fill fill-forest"
-                              style={{ width: `${Math.max(4, usedPct)}%` }}
-                            />
+                        {isTotalQuotaEnabled(ev) ? (
+                          <div className="hbar-meter-row">
+                            <div className="hbar-track">
+                              <div
+                                className="hbar-fill fill-forest"
+                                style={{ width: `${Math.max(4, usedPct)}%` }}
+                              />
+                            </div>
+                            <span className="mono-num hbar-pct-label">
+                              {confirmed + pending}/{tx(ev.totalEventQuota)} {tx(" คน (")}{tx(usedPct)}%)
+                            </span>
                           </div>
-                          <span className="mono-num hbar-pct-label">
-                            {confirmed + pending}/{tx(ev.totalEventQuota)} {tx(" คน (")}{tx(usedPct)}%)
-                          </span>
-                        </div>
+                        ) : (
+                          <div className="muted-inline mono-num">
+                            {confirmed + pending} {tx(" คน · ไม่จำกัดยอดรวม")}
+                          </div>
+                        )}
 
                         <div className="cta-inline-row">
                           <button
@@ -1363,6 +1404,7 @@ export const OrganizerAnalyticsCharts: React.FC<
                 )}
               </div>
 
+              {metrics.totalQuotaEnabled && (
               <div className="capacity-gauge-banner">
                 <div>
                   <strong>{tx("อัตราการครองโควตารวม (Confirmed + Reserved)")}</strong>
@@ -1378,10 +1420,17 @@ export const OrganizerAnalyticsCharts: React.FC<
                   {tx(fillRatePct)}%
                 </strong>
               </div>
+              )}
 
               {/* Shirt Size Stock Bars */}
               <div className="shirt-capacity-grid">
-                {(['XS', 'S', 'M', 'L', 'XL', '2XL'] as const).map((sz) => {
+                {Array.from(
+                  new Set(
+                    scopedEvents.flatMap((ev) =>
+                      ev.shirtStocks.map((s) => s.size)
+                    )
+                  )
+                ).map((sz) => {
                   const totalSz = scopedEvents.reduce((acc, ev) => {
                     const row = ev.shirtStocks.find((s) => s.size === sz);
                     return acc + (row?.total ?? 0);
@@ -1443,21 +1492,28 @@ export const OrganizerAnalyticsCharts: React.FC<
                     </div>
                     <div className="muted-inline mono-num">
                       {tx(row.event.code)} {tx(" · วันงาน")} {tx(row.event.eventDate)} {tx(" · ยืนยัน")}{' '}
-                      {tx(row.confirmed)}/{tx(row.event.totalEventQuota)} {tx(" คน")}
+                      {tx(row.confirmed)}
+                      {row.capEnabled ? (
+                        <>/{tx(row.event.totalEventQuota)} {tx(" คน")}</>
+                      ) : (
+                        tx(" คน · ไม่จำกัดยอดรวม")
+                      )}
                     </div>
                   </div>
 
                   <div className="perf-bars-col">
-                    <div className="hbar-meter-row">
-                      <span className="muted-inline">{tx("อัตราเติมเต็มโควตา")}</span>
-                      <div className="hbar-track">
-                        <div
-                          className="hbar-fill fill-forest"
-                          style={{ width: `${Math.max(4, row.fillPct)}%` }}
-                        />
+                    {row.capEnabled && (
+                      <div className="hbar-meter-row">
+                        <span className="muted-inline">{tx("อัตราเติมเต็มโควตา")}</span>
+                        <div className="hbar-track">
+                          <div
+                            className="hbar-fill fill-forest"
+                            style={{ width: `${Math.max(4, row.fillPct)}%` }}
+                          />
+                        </div>
+                        <strong className="mono-num">{tx(row.fillPct)}%</strong>
                       </div>
-                      <strong className="mono-num">{tx(row.fillPct)}%</strong>
-                    </div>
+                    )}
                     {canViewFinance && (
                       <div className="perf-finance-metrics mono-num">
                         <span>
@@ -1518,10 +1574,13 @@ export const OrganizerAnalyticsCharts: React.FC<
                 <div>
                   <div className="chart-title-inline">
                     <span className="priority-chip chip-p3">P3 · Chart</span>
-                    <h3>{tx("Demographics (วิเคราะห์ช่วงอายุและเพศของนักวิ่ง · ข้อมูลสาธิต)")}</h3>
+                    <h3>{tx("ช่วงอายุและเพศของผู้สมัคร")}</h3>
                   </div>
                   <p className="muted-inline">
-                    {tx("วิเคราะห์โครงสร้างกลุ่มเป้าหมายจากฐานผู้สมัคร (")}{tx(demographicsAndPayments.totalCount)} {tx(" คน) เพื่อวางแผนประชาสัมพันธ์และไซส์เสื้อ")}
+                    {txf(
+                      "จากวันเกิดและเพศในใบสมัคร {0} ใบ อายุนับตามเกณฑ์ของแต่ละระยะ ณ ตอนสมัคร ใช้วางแผนประชาสัมพันธ์และไซส์เสื้อ",
+                      demographicsAndPayments.totalCount
+                    )}
                   </p>
                 </div>
               </div>
@@ -1541,7 +1600,7 @@ export const OrganizerAnalyticsCharts: React.FC<
                         <div className="hbar-track">
                           <div
                             className="hbar-fill fill-navy"
-                            style={{ width: `${Math.max(4, ag.pct)}%` }}
+                            style={{ width: `${ag.count > 0 ? Math.max(4, ag.pct) : 0}%` }}
                           />
                         </div>
                       </div>
@@ -1563,7 +1622,7 @@ export const OrganizerAnalyticsCharts: React.FC<
                         <div className="hbar-track">
                           <div
                             className="hbar-fill fill-forest"
-                            style={{ width: `${Math.max(4, g.pct)}%` }}
+                            style={{ width: `${g.count > 0 ? Math.max(4, g.pct) : 0}%` }}
                           />
                         </div>
                       </div>
@@ -1579,7 +1638,7 @@ export const OrganizerAnalyticsCharts: React.FC<
                 <div>
                   <div className="chart-title-inline">
                     <span className="priority-chip chip-p3">P3 · Chart</span>
-                    <h3>{tx("Payment Method (วิเคราะห์ช่องทางชำระเงิน · ข้อมูลสาธิต)")}</h3>
+                    <h3>{tx("Payment Method (วิเคราะห์ช่องทางชำระเงิน)")}</h3>
                   </div>
                   <p className="muted-inline">
                     {tx("เปรียบเทียบช่องทางชำระเงินที่นักวิ่งเลือกใช้และอัตราการชำระสำเร็จของแต่ละช่องทาง")}

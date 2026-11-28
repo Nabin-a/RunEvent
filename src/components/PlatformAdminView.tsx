@@ -12,6 +12,7 @@ import {
   OrgRole,
   PayoutBatch,
   PayoutStatus,
+  PlatformProfileConfig,
   ProductionInquiry,
   RaceEvent,
   RegistrationRecord,
@@ -20,8 +21,10 @@ import {
   UserAccount,
 } from '../types';
 import { computeMetrics, feePolicyLabel, formatThb } from '../utils/pricing';
+import { isTotalQuotaEnabled } from '../utils/eventConfig';
 import { BibLedgerStrip } from './BibLedgerStrip';
 import { RegistrationFormBuilderAdmin } from './RegistrationFormBuilderAdmin';
+import { SelectMenu } from './SelectMenu';
 import {
   IconAlert,
   IconArrowRight,
@@ -47,6 +50,7 @@ import {
 } from './StatusBadges';
 
 import { tx, txf } from '../i18n';
+import { FEATURES } from '../config/features';
 export type PlatformSection =
   | 'plat_overview'
   | 'plat_orgs'
@@ -73,6 +77,8 @@ interface PlatformAdminViewProps {
   globalFields: GlobalFormFieldDef[];
   conditionalRules: ConditionalRule[];
   fieldRequests: OrganizerFieldRequest[];
+  platformProfileConfig?: PlatformProfileConfig;
+  onUpdatePlatformProfileConfig?: (next: PlatformProfileConfig) => void;
   onUpsertStep: (step: RegistrationStepDef) => void;
   onReorderStep: (stepId: string, direction: 'up' | 'down') => void;
   onDeleteStep: (stepId: string) => void;
@@ -163,6 +169,8 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
   globalFields,
   conditionalRules,
   fieldRequests,
+  platformProfileConfig,
+  onUpdatePlatformProfileConfig,
   onUpsertStep,
   onReorderStep,
   onDeleteStep,
@@ -340,7 +348,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
           </div>
         </div>
 
-        <nav className="rail-nav-group" aria-label={tx("เมนูบริหารแพลตฟอร์ม RunEvent")}>
+        <nav className="rail-nav-group" aria-label={tx("เมนูบริหารแพลตฟอร์ม กระต่าย")}>
           <div className="rail-group-heading">{tx("ระบบส่วนกลาง (Platform HQ)")}</div>
 
           <button
@@ -436,7 +444,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
           <div className="breadcrumb-trail">
             <span className="mono-code">PLT-HQ-01</span>
             <strong>
-              {tx("ศูนย์ควบคุมแพลตฟอร์มกลาง RunEvent (ครอบคลุม ")} {tx(organizations.length)}{' '}
+              {tx("ศูนย์ควบคุมแพลตฟอร์มกลาง กระต่าย (ครอบคลุม ")} {tx(organizations.length)}{' '}
               {tx("องค์กรผู้จัด · ")} {tx(events.length)} {tx(" งานวิ่ง)")}
             </strong>
           </div>
@@ -445,17 +453,16 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
             <label htmlFor="plat-tw-sel" className="sr-only">
               {tx("ช่วงเวลาคำนวณยอดเงินทั้งแพลตฟอร์ม")}
             </label>
-            <select
+            <SelectMenu
               id="plat-tw-sel"
               value={timeWindow}
-              onChange={(e) =>
-                setTimeWindow(e.target.value as TimeWindowFilter)
-              }
-            >
-              <option value="all_time">{tx("ยอดเงิน: ตลอดอายุแพลตฟอร์ม")}</option>
-              <option value="last_30d">{tx("ยอดเงิน: 30 วันล่าสุด")}</option>
-              <option value="last_7d">{tx("ยอดเงิน: 7 วันล่าสุด")}</option>
-            </select>
+              onChange={(v) => setTimeWindow(v as TimeWindowFilter)}
+              options={[
+                { value: 'all_time', label: tx("ยอดเงิน: ตลอดอายุแพลตฟอร์ม") },
+                { value: 'last_30d', label: tx("ยอดเงิน: 30 วันล่าสุด") },
+                { value: 'last_7d', label: tx("ยอดเงิน: 7 วันล่าสุด") },
+              ]}
+            />
           </div>
         </header>
 
@@ -548,7 +555,8 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                         </strong>
                         <p>
                           {tx("วันจัดงาน ")} {tx(ev.eventDate)} {tx(" · จ.")}{tx(ev.province)} {tx(" · โควตา")}{' '}
-                          {tx(ev.totalEventQuota)} {tx(" คน — รอ Platform Owner กดอนุมัติขึ้นหน้ารวมงานวิ่งสาธารณะ")}
+                          {isTotalQuotaEnabled(ev) ? <>{tx(ev.totalEventQuota)} {tx(" คน")}</> : tx("ไม่จำกัดยอดรวม")}
+                          {tx(" — รอ Platform Owner กดอนุมัติขึ้นหน้ารวมงานวิ่งสาธารณะ")}
                         </p>
                       </div>
                     </div>
@@ -1079,24 +1087,21 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
 
               <div className="filter-field">
                 <label htmlFor="plat-ev-st">{tx("กรองตามสถานะงาน")}</label>
-                <select
+                <SelectMenu
                   id="plat-ev-st"
                   value={eventStatusFilter}
-                  onChange={(e) =>
-                    setEventStatusFilter(e.target.value as 'all' | EventStatus)
-                  }
-                >
-                  <option value="all">{tx("ทุกสถานะ (")}{tx(events.length)})</option>
-                  <option value="in_review">
-                    {tx("รอตรวจอนุมัติเผยแพร่ (")}{tx(inReviewEvents.length)})
-                  </option>
-                  <option value="published">{tx("เปิดรับสมัคร (Published)")}</option>
-                  <option value="suspended">{tx("ระงับชั่วคราว (Suspended)")}</option>
-                  <option value="draft">{tx("แบบร่าง (Draft)")}</option>
-                  <option value="closed">{tx("ปิดรับสมัคร (Closed)")}</option>
-                  <option value="completed">{tx("จบงานแล้ว (Completed)")}</option>
-                  <option value="cancelled">{tx("ยกเลิกงาน (Cancelled)")}</option>
-                </select>
+                  onChange={(v) => setEventStatusFilter(v as 'all' | EventStatus)}
+                  options={[
+                    { value: 'all', label: `${tx("ทุกสถานะ (")}${tx(events.length)})` },
+                    { value: 'in_review', label: `${tx("รอตรวจอนุมัติเผยแพร่ (")}${tx(inReviewEvents.length)})` },
+                    { value: 'published', label: tx("เปิดรับสมัคร (Published)") },
+                    { value: 'suspended', label: tx("ระงับชั่วคราว (Suspended)") },
+                    { value: 'draft', label: tx("แบบร่าง (Draft)") },
+                    { value: 'closed', label: tx("ปิดรับสมัคร (Closed)") },
+                    { value: 'completed', label: tx("จบงานแล้ว (Completed)") },
+                    { value: 'cancelled', label: tx("ยกเลิกงาน (Cancelled)") },
+                  ]}
+                />
               </div>
             </div>
 
@@ -1165,7 +1170,8 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                       {tx("· จ.")}{tx(ev.province)} {tx(" · นโยบายค่าบริการ:")}{' '}
                       <strong>{feePolicyLabel(ev.feeBearerPolicy)}</strong> {tx(" · ผู้สมัครยืนยันแล้ว:")}{' '}
                       <strong className="mono-num">
-                        {tx(confirmedCount)} / {tx(ev.totalEventQuota)}
+                        {tx(confirmedCount)}
+                        {isTotalQuotaEnabled(ev) ? <> / {tx(ev.totalEventQuota)}</> : tx(" (ไม่จำกัดยอดรวม)")}
                       </strong>{' '}
                       {tx("คน · คำถามเพิ่มเติม:")}{' '}
                       <strong className="mono-num">
@@ -1385,7 +1391,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
             <div className="page-guide-header">
               <h1>{tx("บริหารคำขอใบเสนอราคาผลิตเสื้อ/เหรียญ และกำกับร้านค้าทั้งแพลตฟอร์ม")}</h1>
               <p className="page-purpose-desc">
-                {tx("ทีมหลังบ้าน RunEvent ใช้ประเมินราคา ส่งใบเสนอราคาให้ผู้จัดงานหรือชมรมทั่วไป และอัปเดตสถานะการผลิตของโรงงานแยกจากสถานะใบเสนอราคาอย่างชัดเจน")}
+                {tx("ทีมหลังบ้าน กระต่าย ใช้ประเมินราคา ส่งใบเสนอราคาให้ผู้จัดงานหรือชมรมทั่วไป และอัปเดตสถานะการผลิตของโรงงานแยกจากสถานะใบเสนอราคาอย่างชัดเจน")}
               </p>
             </div>
 
@@ -1756,41 +1762,30 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                 <div className="form-grid-3">
                   <div className="form-row">
                     <label htmlFor="po-org">{tx("เลือกองค์กรผู้จัด")}</label>
-                    <select
+                    <SelectMenu
                       id="po-org"
                       value={newPoOrgId}
-                      onChange={(e) => {
-                        const oid = e.target.value;
+                      onChange={(oid) => {
                         setNewPoOrgId(oid);
                         const firstEv = events.find(
                           (ev) => ev.organizationId === oid
                         );
                         if (firstEv) setNewPoEventId(firstEv.id);
                       }}
-                    >
-                      {organizations.map((o) => (
-                        <option key={o.id} value={o.id}>
-                          {tx(o.nameTh)}
-                        </option>
-                      ))}
-                    </select>
+                      options={organizations.map((o) => ({ value: o.id, label: tx(o.nameTh) }))}
+                    />
                   </div>
 
                   <div className="form-row">
                     <label htmlFor="po-ev">{tx("เลือกงานวิ่งอ้างอิง")}</label>
-                    <select
+                    <SelectMenu
                       id="po-ev"
                       value={newPoEventId}
-                      onChange={(e) => setNewPoEventId(e.target.value)}
-                    >
-                      {events
+                      onChange={(v) => setNewPoEventId(v)}
+                      options={events
                         .filter((ev) => ev.organizationId === newPoOrgId)
-                        .map((ev) => (
-                          <option key={ev.id} value={ev.id}>
-                            {tx(ev.titleTh)}
-                          </option>
-                        ))}
-                    </select>
+                        .map((ev) => ({ value: ev.id, label: tx(ev.titleTh) }))}
+                    />
                   </div>
 
                   <div className="form-row">
@@ -2019,7 +2014,9 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
             <div className="page-guide-header">
               <h1>{tx("บริหารบัญชีผู้ใช้งาน สิทธิ์สมาชิกองค์กร และตรวจสอบ Audit Log ทั้งแพลตฟอร์ม")}</h1>
               <p className="page-purpose-desc">
-                {tx("ตรวจสอบบัญชีผู้ใช้ทั้งหมด ช่วยยืนยันอีเมลกรณีติดปัญหา กำหนดหรือเพิกถอนสิทธิ์ในองค์กรผู้จัด และตรวจสอบประวัติการทำงานย้อนหลังของทุกบทบาท")}
+                {FEATURES.emailVerification
+                  ? tx("ตรวจสอบบัญชีผู้ใช้ทั้งหมด ช่วยยืนยันอีเมลกรณีติดปัญหา กำหนดหรือเพิกถอนสิทธิ์ในองค์กรผู้จัด และตรวจสอบประวัติการทำงานย้อนหลังของทุกบทบาท")
+                  : tx("ตรวจสอบบัญชีผู้ใช้ทั้งหมด กำหนดหรือเพิกถอนสิทธิ์ในองค์กรผู้จัด และตรวจสอบประวัติการทำงานย้อนหลังของทุกบทบาท")}
               </p>
             </div>
 
@@ -2057,7 +2054,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                                 <span>Platform Owner</span>
                               </span>
                             )}
-                            {u.emailVerified ? (
+                            {!FEATURES.emailVerification ? null : u.emailVerified ? (
                               <span className="status-pill badge-forest">
                                 <IconCheckCircle size={13} />
                                 <span>{tx("อีเมลยืนยันแล้ว")}</span>
@@ -2071,7 +2068,7 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                           </div>
 
                           <div className="cta-inline-row">
-                            {!u.emailVerified && (
+                            {FEATURES.emailVerification && !u.emailVerified && (
                               <button
                                 type="button"
                                 className="btn-secondary"
@@ -2153,38 +2150,34 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
                         )}
 
                         <div className="cta-inline-row" style={{ marginTop: '0.6rem' }}>
-                          <select
-                            aria-label={txf("เลือกองค์กรให้ {0}", u.fullNameTh)}
+                          <SelectMenu
+                            ariaLabel={txf("เลือกองค์กรให้ {0}", u.fullNameTh)}
                             value={selectedGrantOrg}
-                            onChange={(e) =>
+                            onChange={(v) =>
                               setGrantOrgMap((prev) => ({
                                 ...prev,
-                                [u.id]: e.target.value,
+                                [u.id]: v,
                               }))
                             }
-                          >
-                            {organizations.map((o) => (
-                              <option key={o.id} value={o.id}>
-                                {tx(o.nameTh)}
-                              </option>
-                            ))}
-                          </select>
+                            options={organizations.map((o) => ({ value: o.id, label: tx(o.nameTh) }))}
+                          />
 
-                          <select
-                            aria-label={txf("เลือกบทบาทให้ {0}", u.fullNameTh)}
+                          <SelectMenu
+                            ariaLabel={txf("เลือกบทบาทให้ {0}", u.fullNameTh)}
                             value={selectedGrantRole}
-                            onChange={(e) =>
+                            onChange={(v) =>
                               setGrantRoleMap((prev) => ({
                                 ...prev,
-                                [u.id]: e.target.value as OrgRole,
+                                [u.id]: v as OrgRole,
                               }))
                             }
-                          >
-                            <option value="owner">{tx("เจ้าขององค์กร")}</option>
-                            <option value="event_manager">{tx("ผู้จัดการงานวิ่ง")}</option>
-                            <option value="finance">{tx("ฝ่ายการเงิน")}</option>
-                            <option value="staff">{tx("เจ้าหน้าที่หน้างาน")}</option>
-                          </select>
+                            options={[
+                              { value: 'owner', label: tx("เจ้าขององค์กร") },
+                              { value: 'event_manager', label: tx("ผู้จัดการงานวิ่ง") },
+                              { value: 'finance', label: tx("ฝ่ายการเงิน") },
+                              { value: 'staff', label: tx("เจ้าหน้าที่หน้างาน") },
+                            ]}
+                          />
 
                           <button
                             type="button"
@@ -2213,19 +2206,16 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
             <section className="clean-panel">
               <div className="section-title-bar">
                 <h2>Global Platform Audit Log ({tx(filteredAuditLogs.length)} {tx(" รายการ)")}</h2>
-                <select
-                  aria-label={tx("กรองประวัติตามองค์กร")}
+                <SelectMenu
+                  ariaLabel={tx("กรองประวัติตามองค์กร")}
                   value={auditOrgFilter}
-                  onChange={(e) => setAuditOrgFilter(e.target.value)}
-                >
-                  <option value="all">{tx("ทุกองค์กรและส่วนกลางแพลตฟอร์ม")}</option>
-                  <option value="PLATFORM-HQ">{tx("เฉพาะการกระทำของ Platform Owner")}</option>
-                  {organizations.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {tx(o.nameTh)}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setAuditOrgFilter(v)}
+                  options={[
+                    { value: 'all', label: tx("ทุกองค์กรและส่วนกลางแพลตฟอร์ม") },
+                    { value: 'PLATFORM-HQ', label: tx("เฉพาะการกระทำของ Platform Owner") },
+                    ...organizations.map((o) => ({ value: o.id, label: tx(o.nameTh) })),
+                  ]}
+                />
               </div>
 
               <div className="audit-list">
@@ -2254,6 +2244,8 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
             events={events}
             organizations={organizations}
             registrations={registrations}
+            platformProfileConfig={platformProfileConfig}
+            onUpdatePlatformProfileConfig={onUpdatePlatformProfileConfig}
             onUpsertStep={onUpsertStep}
             onReorderStep={onReorderStep}
             onDeleteStep={onDeleteStep}
