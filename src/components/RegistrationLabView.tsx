@@ -950,7 +950,10 @@ export function RegistrationLabView({
                         >
                           {ageCheck.ageYears !== null ? (
                             <>
-                              {txf('อายุ {0} ปี ณ {1}', ageCheck.ageYears, formatBasisDate(ageCheck.basisDate))}
+                              {/* the age says what it is counted on, not the date (28 Nov 2026, user request):
+                                  "ณ วันแข่ง" or "ณ สิ้นปีที่แข่ง" (the organizer's choice per distance) */}
+                              {txf('อายุ {0} ปี', ageCheck.ageYears)}{' '}
+                              {ageCheck.basis === 'year_end' ? tx('ณ สิ้นปีที่แข่ง') : tx('ณ วันแข่ง')}
                               {ageCheck.group && ` · ${txf('รุ่น {0}', formatAgeGroupLabel(ageCheck.group))}`}
                               {ageCheck.unassigned && ` · ${tx('ยังไม่เข้ารุ่นอายุ (ระบุเพศชายหรือหญิงเพื่อจัดรุ่น)')}`}
                               {!ageCheck.eligible && ` · ${txf('ระยะนี้รับ{0}', formatAgeLimit(category) ?? '')}`}
@@ -1288,8 +1291,9 @@ export function RegistrationLabView({
     }
   };
 
-  /* the window opened by "ถัดไป": mark what the person still lacks, like a step check */
-  const checkPerson = () => {
+  /* the window opened by "ถัดไป", and "บันทึก" in the window (28 Nov 2026, user request): mark what
+     the person still lacks, like a step check; true when nothing is missing */
+  const checkPerson = (): boolean => {
     const scope = windowRef.current;
     if (forSelf === false) setFriendContactCheck(true);
     let problem = page ? live.check(page, scope) : null;
@@ -1312,11 +1316,12 @@ export function RegistrationLabView({
       problem = 'กรุณาเลือกไซส์เสื้อตามสิทธิ์สมัคร';
       zone = 'shirt';
     }
-    if (!problem) return;
+    if (!problem) return true;
     setStepError(problem);
     setInvalidZone(zone);
     setMarkZones((['who', 'friend', 'cat', 'ec', 'shirt'] as Zone[]).filter(zoneMissing));
     jumpToProblem();
+    return false;
   };
   const errorsShownFor = useRef<number | null>(null);
   useEffect(() => {
@@ -1326,7 +1331,7 @@ export function RegistrationLabView({
     }
     if (errorsShownFor.current === editing) return;
     errorsShownFor.current = editing;
-    window.setTimeout(checkPerson, 80);
+    window.setTimeout(() => checkPerson(), 80);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, group?.errorsAt]);
   const resetChecks = () => {
@@ -1340,9 +1345,12 @@ export function RegistrationLabView({
     resetChecks();
     group.open(target);
   };
+  // "บันทึก" files the person only when everything is filled in; otherwise the window stays open
+  // with the gaps marked (28 Nov 2026, user request: validate on save like the step check)
   const savePerson = () => {
     if (!group) return;
     resetChecks();
+    if (!checkPerson()) return;
     group.save();
   };
   const closePerson = () => {
@@ -1920,7 +1928,6 @@ export function RegistrationLabView({
                   >
                   <section className="reg-lab-section" aria-labelledby="lab-names">
                     <h3 id="lab-names">{tx('ชื่อผู้เข้าแข่งขัน')}</h3>
-                    <p className="reg-lab-hint">{tx('ชื่ออังกฤษใช้พิมพ์บนป้าย BIB')}</p>
                     <div className="reg-lab-fields">
                       <div className="form-row">
                         <label htmlFor="lab-fen"><RequiredFieldText text="First Name (EN) *" /></label>
@@ -2064,11 +2071,6 @@ export function RegistrationLabView({
 
                   <section className="reg-lab-section" aria-labelledby="lab-emergency">
                     <h3 id="lab-emergency">{tx('ผู้ติดต่อฉุกเฉิน')}</h3>
-                    <p className="reg-lab-hint">
-                      {forSelf === false
-                        ? tx('ผู้ติดต่อฉุกเฉินของเพื่อนที่สมัครให้ (ไม่ใช่ของคุณ) ผู้จัดจะโทรหาคนนี้หากเกิดเหตุระหว่างแข่งขัน')
-                        : tx('ผู้จัดจะโทรหาคนนี้หากเกิดเหตุระหว่างแข่งขัน')}
-                    </p>
                     {forSelf === true && contacts.length > 0 && (
                       <>
                         {modeTabs(
@@ -2225,10 +2227,7 @@ export function RegistrationLabView({
                     done={Boolean(shirtSize)}
                     todo="ยังไม่เลือกไซส์เสื้อ"
                   >
-                    <p className="reg-lab-hint">
-                      {tx('เสื้อรวมในค่าสมัครแล้ว แก้ไขไซส์ได้ถึงวันที่')}{' '}
-                      <span className="mono-num">{tx(event.editDeadlineDate)}</span>
-                    </p>
+                    {/* no hint lines under the headings of the form (28 Nov 2026, user request) */}
               <h3 className="reg-lab-shirt-h" id="lab-race-shirt-h">
                 <RequiredFieldText text={tx('เสื้อแข่ง *')} />
               </h3>
@@ -2278,9 +2277,6 @@ export function RegistrationLabView({
                   <h3 id="lab-finisher-h">
                     {tx('เสื้อ Finisher (ไม่บังคับ)')}
                   </h3>
-                  <p className="reg-lab-hint">
-                    {tx('ได้รับเมื่อวิ่งเข้าเส้นชัยภายในเวลาที่กำหนด เลือกไซส์ไว้ล่วงหน้า')}
-                  </p>
                   <ShirtGallery
                     idPrefix="pg-fin"
                     styles={[finisherStyle]}
