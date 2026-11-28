@@ -10,7 +10,7 @@ import { SHIRT_PHOTOS } from './productPhotos';
  * registration still saves only the size, and stock is taken from the event's
  * single shirt stock, so the demo styles must not go to production as they are.
  */
-export type ShirtStyleId = 'tee' | 'sleeveless' | 'tank';
+export type ShirtStyleId = 'tee' | 'sleeveless' | 'tank' | 'longsleeve' | 'tank-wave' | 'sleeveless-oldtown';
 
 export interface ShirtStyleDef {
   id: ShirtStyleId;
@@ -45,6 +45,44 @@ export const SHIRT_STYLES: ShirtStyleDef[] = [
       { size: 'S', total: 10, reservedOrConfirmed: 5 },
       { size: 'M', total: 12, reservedOrConfirmed: 5 },
       { size: 'L', total: 10, reservedOrConfirmed: 10 },
+    ],
+  },
+  /* three more styles (28 Nov 2026, user request: more than three shirt types in the details step,
+     to review the sideways style row); demo stock like the two above */
+  {
+    id: 'longsleeve',
+    nameTh: 'เสื้อแขนยาว',
+    art: 'tee',
+    photo: SHIRT_PHOTOS.longsleeve,
+    demoStock: [
+      { size: 'S', total: 8, reservedOrConfirmed: 3 },
+      { size: 'M', total: 12, reservedOrConfirmed: 6 },
+      { size: 'L', total: 10, reservedOrConfirmed: 4 },
+      { size: 'XL', total: 6, reservedOrConfirmed: 2 },
+    ],
+  },
+  {
+    id: 'tank-wave',
+    nameTh: 'เสื้อกล้าม ลายทะเล',
+    art: 'tank',
+    photo: SHIRT_PHOTOS.tankWave,
+    demoStock: [
+      { size: 'XS', total: 6, reservedOrConfirmed: 2 },
+      { size: 'S', total: 10, reservedOrConfirmed: 4 },
+      { size: 'M', total: 12, reservedOrConfirmed: 7 },
+      { size: 'L', total: 8, reservedOrConfirmed: 3 },
+    ],
+  },
+  {
+    id: 'sleeveless-oldtown',
+    nameTh: 'เสื้อแขนกุด ลายเมืองเก่า',
+    art: 'sleeveless',
+    photo: SHIRT_PHOTOS.sleevelessOldTown,
+    demoStock: [
+      { size: 'S', total: 10, reservedOrConfirmed: 6 },
+      { size: 'M', total: 14, reservedOrConfirmed: 9 },
+      { size: 'L', total: 10, reservedOrConfirmed: 5 },
+      { size: 'XL', total: 6, reservedOrConfirmed: 6 },
     ],
   },
 ];

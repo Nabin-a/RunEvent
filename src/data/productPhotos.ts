@@ -51,6 +51,9 @@ export const SHIRT_PHOTOS = {
   tee,
   sleeveless: sleevelessSunrise,
   tank: tankHills,
+  longsleeve: longSleeve,
+  tankWave,
+  sleevelessOldTown,
   finisher: tee,
 } as const;
 

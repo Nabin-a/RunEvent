@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { FaIcon } from './components/FaIcon';
 import { AdminLogin } from './admin/AdminLogin';
 import Swal from 'sweetalert2';
 import {
@@ -372,6 +373,8 @@ function publicSiteOrigin(): string {
   return env?.VITE_PUBLIC_SITE_URL || `${window.location.protocol}//${window.location.hostname}:5173`;
 }
 
+const DEV_SCREEN_KEY = 'kratai.dev.screen';
+
 function findEventBySlug(events: RaceEvent[], slug: string | null): RaceEvent | null {
   if (!slug) return null;
   const lower = slug.toLowerCase();
@@ -479,6 +482,30 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showDemoTools, setShowDemoTools] = useState(false);
+  // Dev / Demo: see the site as a phone (28 Nov 2026, user request). The page is shown in a
+  // phone-wide frame of the same address, so the phone layout's media queries really apply.
+  // Kept in this browser only; the copy inside the frame shows no Dev / Demo of its own.
+  const inDevFrame = typeof window !== 'undefined' && window.self !== window.top;
+  const [devScreen, setDevScreen] = useState<'desktop' | 'mobile'>(() => {
+    try {
+      return window.localStorage.getItem(DEV_SCREEN_KEY) === 'mobile' ? 'mobile' : 'desktop';
+    } catch {
+      return 'desktop';
+    }
+  });
+  const [devFrameSrc, setDevFrameSrc] = useState(() =>
+    typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/'
+  );
+  const pickDevScreen = (next: 'desktop' | 'mobile') => {
+    // the frame opens on the page you are on now
+    if (next === 'mobile') setDevFrameSrc(window.location.pathname + window.location.search);
+    setDevScreen(next);
+    try {
+      window.localStorage.setItem(DEV_SCREEN_KEY, next);
+    } catch {
+      /* storage blocked: the choice lasts until reload */
+    }
+  };
   // testers' review comments (sandbox only): drop-a-pin mode, list panel, open count
   // floating menus close on a press outside them or Escape (27 Nov 2026, user request)
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
@@ -4243,7 +4270,20 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
 
       {/* COLLAPSIBLE FLOATING DEV / DEMO SWITCHER BAR (SEPARATED FROM PRODUCTION UI) */}
       {/* Hidden when the server runs without sandbox tools (production) and in the console */}
-      {sandboxTools && !isAdminApp && (
+      {/* Dev / Demo phone view: the same page in a phone-wide frame over the site */}
+      {sandboxTools && !isAdminApp && !inDevFrame && devScreen === 'mobile' && (
+        <div className="dev-phone-stage" role="region" aria-label={tx("มุมมองมือถือ")}>
+          <iframe
+            // a new sign-in (another test user) reloads the phone page
+            key={currentUserId ?? 'guest'}
+            className="dev-phone-frame"
+            src={devFrameSrc}
+            title={tx("มุมมองมือถือ")}
+          />
+        </div>
+      )}
+
+      {sandboxTools && !isAdminApp && !inDevFrame && (
         <aside
           ref={devDockRef}
           className="dev-demo-dock"
@@ -4333,9 +4373,36 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                   })}
               </section>
 
-              {/* Dev / Demo keeps two parts (27 Nov 2026, user request; the souvenir-step template
-                  switch went on 28 Nov 2026: the folding categories are the only layout): test
-                  users, reset */}
+              {/* screen size: the whole window, or the page in a phone-wide frame (28 Nov 2026) */}
+              <section className="dev-drawer-section" aria-labelledby="dev-sec-screen">
+                <h3 id="dev-sec-screen" className="dev-sec-title">
+                  <IconSliders size={15} /> {tx("ขนาดหน้าจอ")}
+                </h3>
+                <div className="dev-seg" role="radiogroup" aria-labelledby="dev-sec-screen">
+                  {(
+                    [
+                      ['desktop', 'จอคอม', 'desktop'],
+                      ['mobile', 'มือถือ', 'mobile-screen'],
+                    ] as const
+                  ).map(([v, label, icon]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      role="radio"
+                      aria-checked={devScreen === v}
+                      className={devScreen === v ? 'is-on' : ''}
+                      onClick={() => pickDevScreen(v)}
+                    >
+                      <FaIcon name={icon} />
+                      <span>{tx(label)}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              {/* Dev / Demo keeps three parts (27 Nov 2026, user request; the souvenir-step template
+                  switch went on 28 Nov 2026, the screen size came in the same day): test users,
+                  screen size, reset */}
               <section className="dev-drawer-section is-danger" aria-labelledby="dev-sec-reset">
                 <h3 id="dev-sec-reset" className="dev-sec-title">
                   <IconAlert size={15} /> {tx("ล้างข้อมูล")}

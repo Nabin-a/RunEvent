@@ -3716,6 +3716,41 @@ textarea::placeholder {
 }
 
 /* two or four choices side by side */
+/* Dev / Demo phone view (28 Nov 2026): the page in a 390px frame over the site; the dock stays
+   on top so the view can be switched back */
+.dev-phone-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 2400;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--ink-primary) 70%, transparent);
+}
+
+/* the dock stays above the phone view */
+.dev-phone-stage + .dev-demo-dock {
+  z-index: 2401;
+}
+
+/* the screen-size buttons carry a small desktop / phone icon before the word */
+.dev-seg button:has(> .fa-fw) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.dev-phone-frame {
+  width: 390px;
+  max-width: 100%;
+  height: min(844px, calc(100dvh - 2rem));
+  border: 8px solid var(--ink-primary);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-popover);
+}
+
 .dev-seg {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -9196,6 +9231,23 @@ fieldset[aria-invalid='true'] input[type='radio'] {
   cursor: not-allowed;
 }
 
+/* narrow phones (28 Nov 2026, mobile pass): the number was cut at 320px; the country box drops
+   the "TH" letters (flag and +66 stay, the full name is in its label) and gets narrower */
+@media (max-width: 26rem) {
+  .phone-input-code-wrap {
+    flex-basis: 5.6rem;
+  }
+
+  .phone-input .phone-code-iso {
+    display: none;
+  }
+
+  .phone-input .phone-input-code {
+    padding-left: 0.55rem;
+    padding-right: 1.5rem;
+  }
+}
+
 /* flags are emoji; Windows has no flag glyphs, so a small Noto Color Emoji subset is loaded */
 .phone-flag {
   font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
@@ -10308,6 +10360,26 @@ button.mstep-list-btn:hover {
     margin: -0.5rem -0.5rem -0.5rem 0;
     padding: 0 0.5rem;
     min-height: 2.75rem;
+  }
+}
+
+/* narrow phones (28 Nov 2026, mobile pass): the chevron and its padding took the day box (the day
+   showed nothing at 320px). A slimmer chevron that still fills the field's height, less side
+   padding, so day / month / year stay readable */
+@media (max-width: 26rem) {
+  .dob-split {
+    gap: 0.4rem;
+  }
+
+  .dob-split .wheel-trigger.dob-part {
+    padding-left: 0.5rem;
+    padding-right: 0.35rem;
+  }
+
+  .dob-split .dob-part .dob-part-chevron {
+    min-width: 1.1rem;
+    margin: -0.5rem -0.35rem -0.5rem 0;
+    padding: 0 0.3rem 0 0;
   }
 }
 
@@ -12073,7 +12145,6 @@ button.mstep-list-btn:hover {
 }
 
 .pg-hero {
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -12410,6 +12481,85 @@ button.mstep-list-btn:hover {
 
 .pg-rail-track::-webkit-scrollbar {
   display: none;
+}
+
+/* hold and slide with the mouse (28 Nov 2026): an open hand everywhere in the row except on the
+   tiles and arrows (they keep the pointer); a closed hand and no snapping while the row follows */
+.pg-rail-drag.can-drag {
+  cursor: grab;
+}
+
+.pg-rail-drag.can-drag .pg-rail-track {
+  padding-block: 0.5rem;
+}
+
+.pg-rail-drag.is-dragging,
+.pg-rail-drag.is-dragging .pg-tile,
+.pg-rail-drag.is-dragging .pg-rail-arrow {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.pg-rail-drag.is-dragging .pg-rail-track {
+  scroll-snap-type: none;
+}
+
+.pg-rail-dots {
+  padding-block: 0.25rem;
+}
+
+/* phones and other touch screens (28 Nov 2026): the row is swiped, so the arrows that covered the
+   end tiles go; the dots still say there is more */
+@media (max-width: 40rem), (hover: none) {
+  .pg-rail-box.has-arrows .pg-rail-arrow {
+    display: none;
+  }
+
+  .pg-rail .pg-rail-box.has-arrows .pg-rail-track {
+    padding-inline: 0.15rem;
+    scroll-padding-inline: 0;
+  }
+}
+
+/* phones (28 Nov 2026): the size chart sat in three frames (style panel, tinted cut page, white
+   card), which ate the width; the outer frame goes and the tinted page is slimmer */
+@media (max-width: 40rem) {
+  .pg-tabbed.is-rail > .pg-stab-panel,
+  .pg-tabbed.is-single > .pg-stab-panel {
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  .pg-cut-tabbed > .pg-cut-panel {
+    padding: 0.4rem;
+  }
+
+  .pg-cut-panel > .pg-group {
+    padding: 0.15rem 0.35rem 0.25rem;
+  }
+
+  /* the shirt preview: a compact strip, picture left, name right on one line */
+  .pg .pg-hero {
+    justify-content: flex-start;
+    gap: 0.9rem;
+    min-height: 0;
+    padding: 0.6rem 0.9rem;
+  }
+
+  .pg .pg-hero .pg-hero-photo {
+    height: 6.5rem;
+    max-width: 45%;
+  }
+
+  .pg .pg-hero figcaption strong {
+    font-size: 1rem;
+  }
+}
+
+.pg-rail-track img {
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 /* room for the arrows over the ends of the row */
@@ -13637,6 +13787,19 @@ body:has(.app-root.is-public) {
   min-height: 3rem;
 }
 
+/* very narrow column (320px phones, 28 Nov 2026 mobile pass): label above value, so a phone
+   number or an e-mail is not chopped into three lines next to its label */
+@container (max-width: 17rem) {
+  .reg-review-rows > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .reg-review-rows dt {
+    font-size: 0.75rem;
+  }
+}
+
 @container (max-width: 30rem) {
   .reg-sheet-sec,
   .reg-sheet-total {
@@ -14073,10 +14236,6 @@ body:has(.app-root.is-public) {
 }
 
 /* the shirt preview has its name along the bottom: the button sits top right there */
-.pg-hero > .photo-flip-btn {
-  top: 0.5rem;
-  bottom: auto;
-}
 
 .photo-flip-btn:focus-visible {
   outline: 2px solid var(--focus-ring, var(--ink-primary));

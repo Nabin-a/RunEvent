@@ -81,12 +81,63 @@ function StyleRail({
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     t.scrollBy({ left: dir * t.clientWidth * 0.8, behavior: reduce ? 'auto' : 'smooth' });
   };
+  // hold and slide with the mouse (28 Nov 2026, user request); a finger already swipes the row.
+  // A drag of more than a few pixels does not count as picking the tile it started on.
+  // The whole row area (round the tiles, the dots) slides; the open hand shows there and the
+  // pointer stays on the tiles and arrows (28 Nov 2026, user request).
+  const dragRef = useRef<HTMLDivElement | null>(null);
+  const drag = useRef<{ x: number; left: number; moved: boolean; id: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const t = trackRef.current;
+    if (!t || e.pointerType !== 'mouse' || e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('.pg-rail-arrow')) return;
+    drag.current = { x: e.clientX, left: t.scrollLeft, moved: false, id: e.pointerId };
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    const t = trackRef.current;
+    if (!d || !t) return;
+    const dx = e.clientX - d.x;
+    if (!d.moved && Math.abs(dx) > 5) {
+      d.moved = true;
+      setDragging(true);
+      dragRef.current?.setPointerCapture(d.id);
+    }
+    if (d.moved) t.scrollLeft = d.left - dx;
+  };
+  const endDrag = () => {
+    const box = dragRef.current;
+    const d = drag.current;
+    if (box && d?.moved && box.hasPointerCapture(d.id)) box.releasePointerCapture(d.id);
+    setDragging(false);
+    // keep the flag for the click that follows the release, then forget the drag
+    window.setTimeout(() => {
+      drag.current = null;
+    }, 0);
+  };
   const overflow = edge.prev || edge.next;
   return (
     <fieldset className="pg-rail">
       <legend className="pg-rail-label">
         {tx('ทรงเสื้อ')} <small>{txf('{0} ทรง', styles.length)}</small>
       </legend>
+      <div
+        ref={dragRef}
+        className={`pg-rail-drag${overflow ? ' can-drag' : ''}${dragging ? ' is-dragging' : ''}`}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onClickCapture={(e) => {
+          // the click at the end of a slide is not a pick
+          if (drag.current?.moved) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }}
+        onDragStart={(e) => e.preventDefault()}
+      >
       <div className={`pg-rail-box${overflow ? ' has-arrows' : ''}`}>
         {overflow && (
           <button type="button" className="pg-rail-arrow is-prev" disabled={!edge.prev} aria-label={tx('ทรงก่อนหน้า')} onClick={() => go(-1)}>
@@ -119,6 +170,7 @@ function StyleRail({
           ))}
         </div>
       )}
+      </div>
     </fieldset>
   );
 }

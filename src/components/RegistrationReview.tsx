@@ -300,18 +300,8 @@ export function RegistrationOrderSheet({
           )}
         </section>
       </div>
-
-      {action && (
-        <div className="reg-review-bar" aria-hidden="true">
-          <span className="reg-review-bar-total">
-            <span>{tx('ยอดชำระสุทธิ')}</span>
-            <strong className="mono-num">{formatThb(totalSatang, true)}</strong>
-          </span>
-          <button type="button" className="btn-primary reg-review-pay" tabIndex={-1} onClick={action.onClick}>
-            {tx(action.label)}
-          </button>
-        </div>
-      )}
+      {/* no floating total / pay bar at the bottom on phones (28 Nov 2026, user request): the
+          sheet's own total and pay button are at its end */}
     </div>
   );
 }
