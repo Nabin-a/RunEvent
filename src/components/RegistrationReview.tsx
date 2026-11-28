@@ -3,6 +3,7 @@ import { tx } from '../i18n';
 import { formatThb } from '../utils/pricing';
 import { IconAlert, IconCheckCircle, IconClock } from './Icons';
 import { QrCode } from './QrCode';
+import { FaIcon } from './FaIcon';
 
 /* Review step and success screen shared by registration forms A and B. */
 
@@ -144,6 +145,172 @@ export function RegistrationSummary({
           {tx(action.label)}
         </button>
       </div>
+      )}
+    </div>
+  );
+}
+
+/** one person of the order sheet: a row with the price, opening to their details */
+export interface SheetPerson {
+  key: string;
+  name: string;
+  isSelf?: boolean;
+  /** distance · rate · shirt size */
+  line: string;
+  satang: number;
+  rows: ReviewRow[];
+  /** changes this person (group order: back to the list with their window open) */
+  onEdit?: () => void;
+}
+
+/** a part of the order under the people (souvenirs, how the kit is received) */
+export interface SheetBlock {
+  key: string;
+  title: string;
+  count?: string;
+  editStep?: number;
+  lines: { key: string; label: ReactNode; sub?: ReactNode; satang?: number; freeText?: string }[];
+}
+
+/**
+ * Review step as one order sheet (28 Nov 2026, user pick "B" of output/review-summary-mockup):
+ * one column read top to bottom like a receipt: the people (one row and price each, opening to
+ * their details) -> souvenirs -> how the kit is received (+ postage) -> totals -> agreements ->
+ * the pay button naming the amount. Every name and price appears once. In a narrow column a bar
+ * with the total and the pay button stays at the bottom edge.
+ */
+export function RegistrationOrderSheet({
+  people,
+  peopleEditStep,
+  blocks,
+  totals,
+  totalSatang,
+  onEdit,
+  action,
+  consent,
+}: {
+  people: SheetPerson[];
+  peopleEditStep?: number;
+  blocks: SheetBlock[];
+  /** the lines above the net total (entry fees, souvenirs, postage) */
+  totals: ReviewLine[];
+  totalSatang: number;
+  onEdit: (step: number) => void;
+  action?: { label: string; onClick: () => void };
+  consent?: ReactNode;
+}) {
+  const editBtn = (what: string, onClick: () => void) => (
+    <button type="button" className="reg-review-edit reg-sheet-edit" onClick={onClick} aria-label={`${tx('แก้ไข')} ${what}`}>
+      <FaIcon name="pen" />
+      <span>{tx('แก้ไข')}</span>
+    </button>
+  );
+  const one = people.length === 1;
+  const payLabel = action ? `${tx(action.label)} · ${formatThb(totalSatang, true)}` : '';
+  return (
+    <div className="reg-review reg-sheet-wrap">
+      <div className="reg-review-card reg-sheet">
+        <section className="reg-sheet-sec" aria-labelledby="rs-people">
+          <header className="reg-sheet-head">
+            <h3 id="rs-people">
+              {tx('ผู้สมัคร')}
+              <span className="reg-sheet-count">{`${people.length} ${tx('คน')}`}</span>
+            </h3>
+            {peopleEditStep !== undefined && editBtn(tx('ผู้สมัคร'), () => onEdit(peopleEditStep))}
+          </header>
+          {people.map((pp, i) => (
+            <details key={pp.key} className="reg-sheet-person" open={one}>
+              <summary>
+                <span className="reg-person-no" aria-hidden="true">
+                  {i + 1}
+                </span>
+                <span className="reg-sheet-who">
+                  <strong>
+                    {pp.name}
+                    {pp.isSelf && <span className="reg-sheet-me">{tx('ตัวฉัน')}</span>}
+                  </strong>
+                  <small>{pp.line}</small>
+                </span>
+                <span className="reg-sheet-price mono-num">{formatThb(pp.satang, true)}</span>
+                <FaIcon name="chevron-down" className="reg-sheet-chev" />
+              </summary>
+              <div className="reg-sheet-detail">
+                <dl className="reg-review-rows">
+                  {pp.rows.map((row) => (
+                    <div key={row.label}>
+                      <dt>{row.label}</dt>
+                      <dd>{row.value === '' || row.value === null || row.value === undefined ? '—' : row.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                {pp.onEdit && editBtn(pp.name, pp.onEdit)}
+              </div>
+            </details>
+          ))}
+        </section>
+
+        {blocks
+          .filter((b) => b.lines.length > 0)
+          .map((b) => (
+            <section key={b.key} className="reg-sheet-sec" aria-labelledby={`rs-${b.key}`}>
+              <header className="reg-sheet-head">
+                <h3 id={`rs-${b.key}`}>
+                  {b.title}
+                  {b.count && <span className="reg-sheet-count">{b.count}</span>}
+                </h3>
+                {b.editStep !== undefined && editBtn(b.title, () => onEdit(b.editStep as number))}
+              </header>
+              {b.lines.map((l) => (
+                <div key={l.key} className="reg-sheet-line">
+                  <span>
+                    {l.label}
+                    {l.sub && <small>{l.sub}</small>}
+                  </span>
+                  <span className="mono-num">{l.satang !== undefined ? formatThb(l.satang, true) : l.freeText ?? ''}</span>
+                </div>
+              ))}
+            </section>
+          ))}
+
+        <section className="reg-sheet-total" aria-labelledby="rs-total">
+          <h3 id="rs-total" className="sr-only">
+            {tx('ยอดชำระ')}
+          </h3>
+          <dl className="reg-review-lines">
+            {totals.map((l) => (
+              <div key={l.label}>
+                <dt>
+                  {l.label}
+                  {l.sub && <span className="muted-inline">{l.sub}</span>}
+                </dt>
+                <dd className="mono-num">{formatThb(l.satang, true)}</dd>
+              </div>
+            ))}
+          </dl>
+          <div className="reg-sheet-net">
+            <span>{tx('ยอดชำระสุทธิ')}</span>
+            <strong className="mono-num">{formatThb(totalSatang, true)}</strong>
+          </div>
+          {consent && <div className="reg-review-consent">{consent}</div>}
+          {action && (
+            <button type="button" className="btn-primary reg-review-pay" onClick={action.onClick}>
+              <FaIcon name="lock" />
+              <span>{payLabel}</span>
+            </button>
+          )}
+        </section>
+      </div>
+
+      {action && (
+        <div className="reg-review-bar" aria-hidden="true">
+          <span className="reg-review-bar-total">
+            <span>{tx('ยอดชำระสุทธิ')}</span>
+            <strong className="mono-num">{formatThb(totalSatang, true)}</strong>
+          </span>
+          <button type="button" className="btn-primary reg-review-pay" tabIndex={-1} onClick={action.onClick}>
+            {tx(action.label)}
+          </button>
+        </div>
       )}
     </div>
   );

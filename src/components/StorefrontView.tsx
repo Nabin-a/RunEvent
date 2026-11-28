@@ -320,7 +320,7 @@ export function StorefrontView({
                   return (
                     <li key={`${l.productId}-${l.size}`} className="sf-cart-line">
                       <div className="sf-cart-art" aria-hidden="true">
-                        <ProductArt categoryLabel={l.prd.categoryLabel} name={l.prd.nameTh} kind={souvenirArt(l.prd.categoryLabel, l.prd.nameTh)} className="sf-art-svg" />
+                        <ProductArt categoryLabel={l.prd.categoryLabel} name={l.prd.nameTh} kind={souvenirArt(l.prd.categoryLabel, l.prd.nameTh)} className="sf-art-svg" flip="none" />
                       </div>
                       <div className="sf-cart-copy">
                         <strong>{tx(l.prd.nameTh)}</strong>
@@ -698,7 +698,7 @@ function ProductDialog({
           <IconClose size={18} />
         </button>
         <div className="sf-dialog-art">
-          <ProductArt categoryLabel={p.categoryLabel} name={p.nameTh} kind={souvenirArt(p.categoryLabel, p.nameTh)} className="sf-art-svg" />
+          <ProductArt categoryLabel={p.categoryLabel} name={p.nameTh} kind={souvenirArt(p.categoryLabel, p.nameTh)} className="sf-art-svg" flip="button" />
         </div>
         <div className="sf-dialog-body">
           <span className="muted-inline">{tx(p.categoryLabel)}</span>

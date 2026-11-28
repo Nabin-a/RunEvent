@@ -5,6 +5,7 @@ import type {
   FormStepDef,
   OrganizerFormStep,
   RaceEvent,
+  RetiredFormBlock,
 } from '../types';
 import { CORE_STEP, FORM_LIMITS, fieldShown, isContentField, type AnswerContext, type AnsweredIndex } from './registrationForm';
 
@@ -25,7 +26,16 @@ import { CORE_STEP, FORM_LIMITS, fieldShown, isContentField, type AnswerContext,
 export const FLOW_LIMITS = {
   /** every step, payment not counted (user decision 27 Nov 2026) */
   steps: 10,
+  /** people one registration order may hold: the organizer picks 1–20, 10 when not set (28 Nov 2026) */
+  entriesDefault: 10,
+  entriesMax: 20,
 };
+
+/** the organizer's "สมัครได้สูงสุดต่อครั้ง", or null when it is not a whole number in range */
+export function checkMaxEntries(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 1 && n <= FLOW_LIMITS.entriesMax ? n : null;
+}
 
 export interface CoreBlockDef {
   key: FormCoreBlock;
@@ -38,9 +48,11 @@ export interface CoreBlockDef {
 
 export const CORE_BLOCKS: CoreBlockDef[] = [
   { key: 'category', label: 'เลือกระยะ', icon: 'route', after: [] },
-  { key: 'participant', label: 'ข้อมูลผู้สมัคร', icon: 'id-card', after: [] },
-  // the shirt, souvenirs and summary are priced and stocked by the picked distance
-  { key: 'shirt', label: 'เสื้อที่ระลึก', icon: 'shirt', after: ['category'] },
+  // the souvenir shirt is part of the runner details since 28 Nov 2026 (user request: one card per
+  // person holds general details, the organizer's questions and the souvenirs); the shirt is
+  // stocked by the picked distance, so the details come after the distance too
+  { key: 'participant', label: 'ข้อมูลผู้สมัคร', icon: 'id-card', after: ['category'] },
+  // souvenirs and the summary are priced by the picked distance
   { key: 'souvenir', label: 'ของที่ระลึก', icon: 'bag-shopping', after: ['category'] },
   { key: 'delivery', label: 'วิธีรับอุปกรณ์และที่อยู่', icon: 'truck', after: [] },
   { key: 'review', label: 'สรุปและยอมรับกติกา', icon: 'receipt', after: ['category'] },
@@ -52,7 +64,6 @@ export const coreBlockOf = (key: FormCoreBlock) => CORE_BLOCKS.find((b) => b.key
 export const DEFAULT_STEP_IDS = {
   category: 'start',
   participant: CORE_STEP,
-  shirt: 'shop',
   souvenir: 'souvenir',
   delivery: 'address',
   review: 'review',
@@ -61,7 +72,6 @@ export const DEFAULT_STEP_IDS = {
 const DEFAULT_TITLES: Record<FormCoreBlock, string> = {
   category: 'เริ่ม',
   participant: 'ข้อมูล',
-  shirt: 'เสื้อที่ระลึก',
   souvenir: 'ของที่ระลึก',
   delivery: 'ที่อยู่',
   review: 'สรุป',
@@ -81,22 +91,56 @@ const ownStep = (s: OrganizerFormStep): FormStepDef => ({
   ...(s.hidden ? { hidden: true } : {}),
 });
 
-/** the order before 27 Nov 2026: start, details, the organizer's steps, shirt, souvenirs, address, summary */
+/** the default order: start, details (with the shirt), the organizer's steps, souvenirs, address, summary */
 export function defaultFlow(customSteps: OrganizerFormStep[] = []): FormStepDef[] {
   return [
     systemStep('category'),
     systemStep('participant'),
     ...customSteps.map(ownStep),
-    systemStep('shirt'),
     systemStep('souvenir'),
     systemStep('delivery'),
     systemStep('review'),
   ];
 }
 
+/**
+ * A step order saved before 28 Nov 2026 without the old "เสื้อที่ระลึก" part (the shirt now sits in
+ * the runner details). A step that held only the shirt goes away, unless the organizer put
+ * questions in it (then it stays as the organizer's own step). Anything else is unchanged.
+ */
+export function withoutRetiredBlocks(
+  flow: FormStepDef[],
+  fields: Pick<CustomRegistrationField, 'stepKey'>[] = []
+): FormStepDef[] {
+  const retired = new Set<string>(['shirt' satisfies RetiredFormBlock]);
+  // (also used on raw drafts from the browser, so a step may not even be an object)
+  const has = (s: FormStepDef) => Array.isArray(s?.blocks) && s.blocks.some((b) => retired.has(b));
+  if (!flow.some(has)) return flow;
+  const out: FormStepDef[] = [];
+  for (const s of flow) {
+    if (!has(s)) {
+      out.push(s);
+      continue;
+    }
+    const had = s.blocks ?? [];
+    const kept = had.filter((b) => !retired.has(b));
+    if (kept.length === had.length) {
+      out.push(s);
+      continue;
+    }
+    if (kept.length === 0 && !fields.some((f) => f.stepKey === s.id)) continue;
+    const { blocks: _gone, ...rest } = s;
+    out.push(kept.length ? { ...rest, blocks: kept } : rest);
+  }
+  return out;
+}
+
 /** the event's steps in order (payment not included) */
-export function formFlowOf(ev: Pick<RaceEvent, 'formFlow' | 'formCustomSteps'>): FormStepDef[] {
-  if (Array.isArray(ev.formFlow) && ev.formFlow.length > 0 && flowProblem(ev.formFlow) === null) return ev.formFlow;
+export function formFlowOf(ev: Pick<RaceEvent, 'formFlow' | 'formCustomSteps' | 'customFields'>): FormStepDef[] {
+  if (Array.isArray(ev.formFlow) && ev.formFlow.length > 0) {
+    const flow = withoutRetiredBlocks(ev.formFlow, ev.customFields ?? []);
+    if (flowProblem(flow) === null) return flow;
+  }
   return defaultFlow(ev.formCustomSteps ?? []);
 }
 
@@ -188,7 +232,7 @@ export function flowWarnings(flow: FormStepDef[]): string[] {
   const idx = (b: FormCoreBlock) => flow.findIndex((s) => s.blocks?.includes(b));
   const review = idx('review');
   const out: string[] = [];
-  for (const b of ['shirt', 'souvenir', 'delivery'] as FormCoreBlock[]) {
+  for (const b of ['souvenir', 'delivery'] as FormCoreBlock[]) {
     if (idx(b) > review) out.push(`"${coreBlockOf(b).label}" อยู่หลังสรุป ยอดที่นักวิ่งเห็นในสรุปจะยังไม่รวมส่วนนี้`);
   }
   return out;
@@ -217,9 +261,11 @@ export function normalizeFormFlow(
   answered: AnsweredIndex
 ): { ok: true; value: FormStepDef[] } | { ok: false; error: string } {
   if (!Array.isArray(raw)) return { ok: false, error: 'ข้อมูลขั้นตอนไม่ถูกต้อง' };
-  if (raw.length > FLOW_LIMITS.steps) return { ok: false, error: `ฟอร์มมีได้ไม่เกิน ${FLOW_LIMITS.steps} ขั้น (ไม่นับขั้นชำระเงิน)` };
+  // a draft made before 28 Nov 2026 may still carry the old shirt part
+  const steps = withoutRetiredBlocks(raw as FormStepDef[], prev.fields) as unknown[];
+  if (steps.length > FLOW_LIMITS.steps) return { ok: false, error: `ฟอร์มมีได้ไม่เกิน ${FLOW_LIMITS.steps} ขั้น (ไม่นับขั้นชำระเงิน)` };
   const flow: FormStepDef[] = [];
-  for (const s of raw as Record<string, unknown>[]) {
+  for (const s of steps as Record<string, unknown>[]) {
     const id = String(s?.id ?? '');
     if (!ID_RE.test(id) || id === 'pay') return { ok: false, error: 'รหัสขั้นตอนไม่ถูกต้อง' };
     if (flow.some((x) => x.id === id)) return { ok: false, error: 'มีขั้นตอนซ้ำกัน' };

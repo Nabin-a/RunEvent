@@ -90,6 +90,8 @@ const RefundCard: React.FC<{
         </h3>
         <p className="fin-sub">
           {r.regCode} · {txf('จ่ายเมื่อ {0}', stamp(r.paidAt))}
+          {(r.orderEntryCount ?? 1) > 1 &&
+            ` · ${txf('คำสั่งซื้อ {0} คนที่ {1}/{2}', r.orderCode, r.orderEntryNo ?? 1, r.orderEntryCount ?? 1)}`}
         </p>
         <p className="fin-reason">
           <span className="fin-sub">{tx('เหตุผลที่แจ้ง')}</span>
@@ -106,6 +108,11 @@ const RefundCard: React.FC<{
           </dd>
         </dl>
         <p className="fin-sub">{tx('คืนเฉพาะค่าสมัคร ไม่คืนค่าบริการระบบ อนุมัติแล้วสิทธิ์วิ่งจะถูกยกเลิกและที่นั่งกลับเข้าโควตา')}</p>
+        {(r.orderEntryCount ?? 1) > 1 && (
+          <p className="fin-sub">
+            {tx('สมัครมาเป็นกลุ่ม: คืนเฉพาะคนนี้ คนอื่นในคำสั่งซื้อไม่เปลี่ยน ค่าจัดส่งของคำสั่งซื้อไม่คืน')}
+          </p>
+        )}
         <label htmlFor={noteId} className="fin-label">
           {tx('บันทึกเหตุผลการตัดสินใจ (ต้องใส่เมื่อปฏิเสธ)')}
         </label>
@@ -401,6 +408,7 @@ export const EventFinanceView: React.FC<Props> = ({
                       <span className="fin-sub fin-block">
                         {r.regCode} · {tx(catName(r.categoryId))}
                         {r.buyerName !== r.participantNameTh && ` · ${txf('จ่ายโดย {0}', tx(r.buyerName))}`}
+                        {(r.orderEntryCount ?? 1) > 1 && ` · ${txf('คำสั่งซื้อ {0}', r.orderCode)}`}
                       </span>
                     </td>
                     <td className="num">{paid ? formatThb(r.snapshotTotalChargedSatang, true) : '—'}</td>

@@ -558,7 +558,9 @@ export interface OrganizerFormStep {
  * hold the seat and shirt, make the BIB and insure the runner. Each sits in exactly one step; it
  * can move to another step but never be removed.
  */
-export type FormCoreBlock = 'category' | 'participant' | 'shirt' | 'souvenir' | 'delivery' | 'review';
+export type FormCoreBlock = 'category' | 'participant' | 'souvenir' | 'delivery' | 'review';
+/** a system part that no longer exists: the shirt moved into the runner details on 28 Nov 2026 */
+export type RetiredFormBlock = 'shirt';
 
 /**
  * One registration step (27 Nov 2026, docs/registration-form-editor-plan.md section 9): the organizer
@@ -610,6 +612,8 @@ export interface EventFormVersionRecord {
   customSteps?: OrganizerFormStep[];
   /** every step in order at that version (27 Nov 2026) */
   flow?: FormStepDef[];
+  /** the most people per order at that version (28 Nov 2026) */
+  maxEntries?: number;
   publishedBy?: string;
 }
 
@@ -871,6 +875,9 @@ export interface EventRegisterCardConfig {
   /** the whole-event seat bar (only ever shown while the total cap is on) */
   showQuota?: boolean;
   showShortcuts?: boolean;
+  /** the race-day countdown under the event title (28 Nov 2026); kept with the card's switches so it
+   *  is drafted and published with the page. undefined = shown (only in the last 30 days) */
+  showCountdown?: boolean;
 }
 
 export interface EventDetailPage {
@@ -910,6 +917,8 @@ export interface PublishFailure {
 export interface FormDraftRecord {
   fields: CustomRegistrationField[];
   flow: FormStepDef[];
+  /** "สมัครได้สูงสุดต่อครั้ง" waiting to be published with the form (28 Nov 2026) */
+  maxEntries?: number;
   updatedAt: string;
   updatedBy: string;
 }
@@ -946,6 +955,9 @@ export interface RaceEvent {
   status: EventStatus;
   statusNote?: string;
   totalEventQuota: number;
+  /** the most people one registration order may hold (group registration, 28 Nov 2026);
+   *  unset = 10, the server never allows more than 20 */
+  maxEntriesPerOrder?: number;
   /** Organizer switch for the whole-event cap. false = no total cap (per-distance quotas only)
    *  and the total is hidden on public pages. Unset = on (events created before the switch). */
   totalEventQuotaEnabled?: boolean;
@@ -992,7 +1004,7 @@ export interface RaceEvent {
   formDraft?: FormDraftRecord;
   /** registering on the web is paused for now; event status and seats are not touched (27 Nov 2026) */
   formHidden?: PublishHold;
-  formSchedule?: PublishSchedule<{ fields: CustomRegistrationField[]; flow: FormStepDef[] }>;
+  formSchedule?: PublishSchedule<{ fields: CustomRegistrationField[]; flow: FormStepDef[]; maxEntries?: number }>;
   formScheduleFailed?: PublishFailure;
   overviewParagraphs?: string[];
   racePackItems?: RacePackItem[];
@@ -1047,6 +1059,12 @@ export interface RegistrationRecord {
   shirtSize: ShirtSizeCode;
   kitDeliveryMethod?: 'pickup_at_expo' | 'postal_shipping';
   shippingAddressSnapshot?: string;
+  /** place in a group order (1 = the order's first entry, which carries the postage and the
+   *  souvenirs) and how many people the order holds; unset on single-person orders (28 Nov 2026) */
+  orderEntryNo?: number;
+  orderEntryCount?: number;
+  /** in a group order, the entry the account owner made for themself */
+  orderSelfEntry?: boolean;
   participantSnapshot?: {
     firstName?: string;
     lastName?: string;

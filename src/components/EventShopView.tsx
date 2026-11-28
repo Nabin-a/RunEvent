@@ -9,6 +9,7 @@ import React, { useMemo, useState } from 'react';
 import type { MerchOrderRecord, RaceEvent, SellerServiceModel } from '../types';
 import { formatThb } from '../utils/pricing';
 import { FaIcon } from './FaIcon';
+import { SelectMenu } from './SelectMenu';
 import { tx, txf } from '../i18n';
 import '../event-home.css';
 import '../event-shop.css';
@@ -173,32 +174,42 @@ export const EventShopView: React.FC<Props> = ({ event, orders, canEdit, canView
             </label>
             <label>
               <span>{tx('หมวด')}</span>
-              <select value={form.categoryLabel} onChange={(e) => setForm({ ...form, categoryLabel: e.target.value as Category })}>
-                <option value="เสื้อที่ระลึก">{tx('เสื้อที่ระลึก')}</option>
-                <option value="เหรียญที่ระลึก">{tx('เหรียญที่ระลึก')}</option>
-                <option value="อุปกรณ์เสริม">{tx('อุปกรณ์เสริม')}</option>
-              </select>
+              {/* the wrapping <label> would point at the hidden native select, so the button is named here */}
+              <SelectMenu
+                ariaLabel={tx('หมวด')}
+                value={form.categoryLabel}
+                onChange={(v) => setForm({ ...form, categoryLabel: v as Category })}
+                options={[
+                  { value: 'เสื้อที่ระลึก', label: tx('เสื้อที่ระลึก') },
+                  { value: 'เหรียญที่ระลึก', label: tx('เหรียญที่ระลึก') },
+                  { value: 'อุปกรณ์เสริม', label: tx('อุปกรณ์เสริม') },
+                ]}
+              />
             </label>
             <label>
               <span>{tx('ขายแบบ')}</span>
-              <select
+              <SelectMenu
+                ariaLabel={tx('ขายแบบ')}
                 value={form.saleMode}
-                onChange={(e) => setForm({ ...form, saleMode: e.target.value as 'ready_stock' | 'preorder' })}
-              >
-                <option value="preorder">{tx('พรีออเดอร์ (ผลิตหลังปิดยอด)')}</option>
-                <option value="ready_stock">{tx('พร้อมขาย (มีของแล้ว)')}</option>
-              </select>
+                onChange={(v) => setForm({ ...form, saleMode: v as 'ready_stock' | 'preorder' })}
+                options={[
+                  { value: 'preorder', label: tx('พรีออเดอร์ (ผลิตหลังปิดยอด)') },
+                  { value: 'ready_stock', label: tx('พร้อมขาย (มีของแล้ว)') },
+                ]}
+              />
             </label>
             <label>
               <span>{tx('ใครขาย ใครส่ง')}</span>
-              <select
+              <SelectMenu
+                ariaLabel={tx('ใครขาย ใครส่ง')}
                 value={form.serviceModel}
-                onChange={(e) => setForm({ ...form, serviceModel: e.target.value as SellerServiceModel })}
-              >
-                <option value="organizer_self_sell">{tx(SERVICE_TEXT.organizer_self_sell)}</option>
-                <option value="kratai_produce_bulk">{tx(SERVICE_TEXT.kratai_produce_bulk)}</option>
-                <option value="kratai_full_service">{tx(SERVICE_TEXT.kratai_full_service)}</option>
-              </select>
+                onChange={(v) => setForm({ ...form, serviceModel: v as SellerServiceModel })}
+                options={[
+                  { value: 'organizer_self_sell', label: tx(SERVICE_TEXT.organizer_self_sell) },
+                  { value: 'kratai_produce_bulk', label: tx(SERVICE_TEXT.kratai_produce_bulk) },
+                  { value: 'kratai_full_service', label: tx(SERVICE_TEXT.kratai_full_service) },
+                ]}
+              />
             </label>
             <label>
               <span>{tx('ราคาต่อชิ้น (บาท)')}</span>

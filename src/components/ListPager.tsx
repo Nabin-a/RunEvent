@@ -19,7 +19,25 @@ export const matchesQuery = (hay: string, query: string) => {
   return hd.includes(d) || (d.startsWith('0') && hd.includes(d.slice(1)));
 };
 
-/** previous / "หน้า x / y · รายการที่ a–b จาก n" / next */
+/** the page numbers to draw: every page up to 7, otherwise first, last and the pages around the current one */
+export const pageNumbers = (page: number, pageCount: number): (number | 'gap')[] => {
+  if (pageCount <= 7) return Array.from({ length: pageCount }, (_, i) => i);
+  // keep the row the same width: 5 numbers near either end, 3 in the middle
+  const from = page <= 3 ? 1 : page >= pageCount - 4 ? pageCount - 5 : page - 1;
+  const to = page <= 3 ? 4 : page >= pageCount - 4 ? pageCount - 2 : page + 1;
+  const out: (number | 'gap')[] = [0];
+  if (from > 1) out.push('gap');
+  for (let i = from; i <= to; i++) out.push(i);
+  if (to < pageCount - 2) out.push('gap');
+  out.push(pageCount - 1);
+  return out;
+};
+
+/**
+ * Numbered page buttons ‹ 1 2 3 … 8 › (28 Nov 2026, user chose numbered pages over the old
+ * "หน้า x / y" row, everywhere the pager is used; the "แสดง a–b จาก n รายการ" line under them
+ * was taken out at the user's request). pageSize / shown / total stay in the props for callers.
+ */
 export const Pager: React.FC<{
   page: number;
   pageCount: number;
@@ -28,35 +46,46 @@ export const Pager: React.FC<{
   total: number;
   onPage: (page: number) => void;
   className?: string;
-}> = ({ page, pageCount, pageSize, shown, total, onPage, className = '' }) => (
-  <nav className={`list-pager ${className}`} aria-label={tx('เลือกหน้า')}>
-    <button
-      type="button"
-      className="btn-secondary"
-      disabled={page === 0}
-      onClick={() => onPage(page - 1)}
-      aria-label={tx('หน้าก่อนหน้า')}
-    >
-      <IconArrowLeft size={16} />
-    </button>
-    <span className="list-pager-text" aria-live="polite">
-      {txf('หน้า {0} / {1}', page + 1, pageCount)}
-      <span className="list-pager-sep" aria-hidden="true">
-        {' · '}
-      </span>
-      <span className="muted-inline list-pager-range">
-        {txf('รายการที่ {0}–{1} จาก {2}', page * pageSize + 1, page * pageSize + shown, total)}
-      </span>
-    </span>
-    <button
-      type="button"
-      className="btn-secondary"
-      disabled={page >= pageCount - 1}
-      onClick={() => onPage(page + 1)}
-      aria-label={tx('หน้าถัดไป')}
-    >
-      <IconArrowRight size={16} />
-    </button>
+}> = ({ page, pageCount, onPage, className = '' }) => (
+  <nav className={`list-pager${className ? ` ${className}` : ''}`} aria-label={tx('เลือกหน้า')}>
+    <div className="list-pager-buttons">
+      <button
+        type="button"
+        className="list-pager-btn is-step"
+        disabled={page === 0}
+        onClick={() => onPage(page - 1)}
+        aria-label={tx('หน้าก่อนหน้า')}
+      >
+        <IconArrowLeft size={16} />
+      </button>
+      {pageNumbers(page, pageCount).map((n, i) =>
+        n === 'gap' ? (
+          <span key={`gap-${i}`} className="list-pager-gap" aria-hidden="true">
+            …
+          </span>
+        ) : (
+          <button
+            key={n}
+            type="button"
+            className={`list-pager-btn${n === page ? ' is-current' : ''}`}
+            aria-current={n === page ? 'page' : undefined}
+            aria-label={txf('หน้า {0}', n + 1)}
+            onClick={() => n !== page && onPage(n)}
+          >
+            {n + 1}
+          </button>
+        )
+      )}
+      <button
+        type="button"
+        className="list-pager-btn is-step"
+        disabled={page >= pageCount - 1}
+        onClick={() => onPage(page + 1)}
+        aria-label={tx('หน้าถัดไป')}
+      >
+        <IconArrowRight size={16} />
+      </button>
+    </div>
   </nav>
 );
 

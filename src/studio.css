@@ -99,8 +99,7 @@
 .st-field { display: grid; gap: 0.35rem; font-size: 0.875rem; }
 .st-field > span:first-child { font-weight: 600; color: var(--ink-secondary); font-size: 0.8125rem; }
 .st-field input,
-.st-field textarea,
-.st-field select {
+.st-field textarea {
   width: 100%;
   min-height: 40px;
   padding: 0.45rem 0.6rem;
@@ -110,6 +109,8 @@
   color: var(--ink-primary);
   font: inherit;
 }
+/* dropdowns are SelectMenu (shared look from styles.css .kr-select); only the width is set here */
+.st-field .kr-select { width: 100%; }
 .st-hint { margin: 0; color: var(--ink-secondary); font-size: 0.78rem; }
 
 /* ---------- toolbar under the bar ---------- */
@@ -148,7 +149,7 @@
 }
 .st-center-bar .fe-count { margin-left: auto; }
 .st-try { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; color: var(--ink-secondary); }
-.st-try select { min-height: 36px; border: 1px solid var(--line-medium); border-radius: 6px; padding: 0 0.5rem; background: var(--bg-surface); color: var(--ink-primary); }
+.st-try .kr-select { flex: 0 0 auto; }
 .st-preview { display: grid; gap: 0.5rem; }
 .st-preview .fe-preview-frame { height: max(640px, calc(100vh - 9rem)); min-height: 640px; }
 .st-part + .st-part { margin-top: 1rem; }
@@ -363,22 +364,22 @@
 .st-seg button:disabled { cursor: not-allowed; opacity: 0.55; }
 .st-parts { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
 .st-parts li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 0.3rem 0.5rem; align-items: center; font-size: 0.85rem; }
-.st-parts select { grid-column: 1 / -1; min-height: 38px; }
+.st-parts .kr-select { grid-column: 1 / -1; }
 .st-panel-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .st-panel-actions .btn-secondary { display: inline-flex; align-items: center; gap: 0.4rem; }
 .st-panel-actions .is-danger { color: var(--danger); border-color: var(--danger-border); }
 
 /* ---------- narrower spaces: by the editor's own width (the organizer menu takes part of the screen) ---------- */
-.st-page { container-type: inline-size; container-name: studio; width: 100%; min-width: 0; }
+.st-editor { container-type: inline-size; container-name: studio; }
 .st-status { flex: 1 1 14rem; min-width: 0; }
-.st-toolbar .st-mobile-tree { display: none; }
+.st-subbar .st-mobile-tree { display: none; }
 @container studio (max-width: 1180px) {
   .st-form { grid-template-columns: minmax(0, 1fr); }
   .st-panel { position: static; max-height: none; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); align-items: start; }
 }
 @container studio (max-width: 760px) {
   .st-layout { grid-template-columns: minmax(0, 1fr); }
-  .st-toolbar .st-mobile-tree {
+  .st-subbar .st-mobile-tree {
     display: inline-flex;
     align-items: center;
     gap: 0.6rem;
@@ -460,38 +461,168 @@
 .st-plain { border: 0; margin: 0; padding: 0; min-width: 0; }
 .st-page-frame { height: max(640px, calc(100vh - 9rem)); min-height: 640px; }
 
-/* ---------- full screen: the preview and the panel take the whole window (27 Nov 2026, user request) ---------- */
-/* a container would hold the fixed layer inside the page: none while full screen (the wide layout applies) */
-.st-page.is-full-on { container-type: normal; }
-body.st-full-screen .dashboard-canvas { transform: none !important; animation: none !important; }
-.st-layout.is-full {
+.st-media { min-width: 0; }
+
+
+/* ====================================================================== */
+/* The editor on its own page, WordPress-style (27 Nov 2026, user request) */
+/* ====================================================================== */
+.st-editor {
   position: fixed;
   inset: 0;
-  z-index: 80;
-  overflow: auto;
-  padding: 0.6rem 0.9rem 0.9rem;
+  z-index: 60;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
   background: var(--bg-canvas);
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 0.6rem;
+  color: var(--ink-primary);
 }
-.st-layout.is-full > .st-tree { display: none; }
-.st-layout.is-full .st-form { grid-template-columns: minmax(0, 1fr) 320px; }
-.st-layout.is-full .st-page-frame,
-.st-layout.is-full .st-preview .fe-preview-frame { height: calc(100vh - 7.5rem); }
-.st-layout.is-full .st-panel { top: 0; max-height: calc(100vh - 5rem); }
-.st-fullbar {
+.st-topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem 0.8rem;
+  flex-wrap: wrap;
+  min-height: 60px;
+  padding: 0.45rem 0.9rem;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--line-light);
+}
+.st-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 42px;
+  padding: 0 0.8rem;
+  border: 0;
+  border-radius: 10px;
+  background: var(--brand);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.st-back:hover { background: var(--brand-hover); }
+.st-titles { display: grid; min-width: 0; max-width: 22rem; line-height: 1.25; }
+.st-titles small { font-size: 0.75rem; color: var(--ink-secondary); }
+.st-titles strong { font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-partseg {
+  display: inline-flex;
+  border: 1px solid var(--line-medium);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.st-partseg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 40px;
+  padding: 0 0.8rem;
+  border: 0;
+  background: var(--bg-surface);
+  color: var(--ink-secondary);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.st-partseg button + button { border-left: 1px solid var(--line-light); }
+.st-partseg button[aria-selected='true'] { background: var(--brand); color: #fff; }
+.st-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--forest); flex: none; }
+.st-dot.is-changed,
+.st-dot.is-scheduled { background: var(--amber); }
+.st-dot.is-hidden { background: var(--danger); }
+.st-dot.is-draft { background: var(--ink-placeholder); }
+.st-partseg button[aria-selected='true'] .st-dot { box-shadow: 0 0 0 2px #fff; }
+.st-tools { display: inline-flex; align-items: center; gap: 0.2rem; }
+.st-tools .pe-icon-btn[aria-pressed='false'] { color: var(--ink-placeholder); }
+.st-layout-lock.is-on { background: var(--amber-soft); color: var(--amber-ink); }
+.st-topbar-pub { margin-left: auto; min-width: 0; }
+.st-pubbar.is-compact { border: 0; padding: 0; background: none; flex-wrap: nowrap; gap: 0.6rem; }
+.st-pubbar.is-compact .st-pub-actions { margin-left: 0; flex-wrap: nowrap; }
+.st-pubbar.is-compact .st-state { white-space: nowrap; cursor: default; }
+.st-pubbar.is-compact .st-state-fail { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-subbar {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  flex-wrap: wrap;
-  min-height: 44px;
+  min-height: 0;
+  padding: 0 0.9rem;
 }
-.st-fullbar strong { font-size: 1rem; }
-.st-fullbar .st-status { flex: 1 1 12rem; }
-.st-fullbar .btn-secondary,
-.st-full-toggle { display: inline-flex; align-items: center; gap: 0.4rem; }
-@media (max-width: 760px) {
-  .st-layout.is-full .st-form { grid-template-columns: minmax(0, 1fr); }
+.st-subbar .st-status:not(:empty) { padding: 0.35rem 0; }
+.st-editor .st-layout {
+  min-height: 0;
+  overflow: hidden;
+  padding: 0.6rem 0.9rem 0.9rem;
+  grid-template-columns: 280px minmax(0, 1fr);
 }
-.st-media { min-width: 0; }
+.st-editor .st-layout.is-tree-off { grid-template-columns: minmax(0, 1fr); }
+.st-editor .st-layout.is-tree-off > .st-tree { display: none; }
+.st-editor .st-tree { position: static; max-height: none; height: 100%; overflow: auto; align-content: start; }
+.st-editor .st-panel { position: static; max-height: none; height: 100%; overflow: auto; align-content: start; }
+.st-editor .st-form { height: 100%; min-height: 0; grid-template-columns: minmax(0, 1fr) 320px; }
+.st-editor .st-layout.is-panel-off .st-form { grid-template-columns: minmax(0, 1fr); }
+.st-editor .st-layout.is-panel-off .st-panel { display: none; }
+.st-editor .st-center { min-height: 0; overflow: auto; align-content: start; }
+.st-editor .st-media { height: 100%; overflow: auto; }
+.st-editor .st-page-frame,
+.st-editor .st-preview .fe-preview-frame { height: calc(100vh - 11rem); min-height: 480px; }
+
+@container studio (max-width: 1180px) {
+  .st-editor .st-form { grid-template-columns: minmax(0, 1fr); overflow: auto; }
+  .st-editor .st-center { overflow: visible; }
+  .st-editor .st-panel { height: auto; }
+}
+@container studio (max-width: 760px) {
+  .st-editor .st-layout { grid-template-columns: minmax(0, 1fr); overflow: auto; }
+  .st-editor .st-form { overflow: visible; height: auto; }
+  .st-editor .st-tree { height: auto; }
+  .st-titles { max-width: 100%; flex: 1 1 10rem; }
+  .st-back-text { display: none; }
+  .st-topbar-pub { margin-left: 0; width: 100%; }
+  .st-pubbar.is-compact { flex-wrap: wrap; }
+  .st-subbar { padding-top: 0.4rem; }
+  .st-editor .st-page-frame,
+  .st-editor .st-preview .fe-preview-frame { height: 70vh; }
+}
+
+/* ---------- the dashboard card that opens the editor ---------- */
+.st-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+.st-card {
+  display: grid;
+  gap: 0.9rem;
+  align-content: start;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line-light);
+  border-radius: 10px;
+  background: var(--bg-surface);
+}
+.st-card header { display: flex; align-items: center; gap: 0.7rem; }
+.st-card header span:last-child { display: grid; }
+.st-card header small { color: var(--ink-secondary); font-size: 0.8125rem; }
+.st-card dl { margin: 0; display: grid; gap: 0.45rem; }
+.st-card dl div { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 0.5rem; font-size: 0.875rem; }
+.st-card dt { color: var(--ink-secondary); }
+.st-card dd { margin: 0; }
+.st-card dl .is-fail dd { color: var(--danger-ink); }
+.st-card .btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; min-height: 44px; }
+
+/* runner card groups inside the "ข้อมูลผู้สมัคร" part (28 Nov 2026) */
+.st-part-group {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.st-sub li.is-sub {
+  padding-left: 1.6rem;
+}
+
+.st-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.st-stepper output {
+  min-width: 4.5rem;
+  text-align: center;
+  font-weight: 700;
+}

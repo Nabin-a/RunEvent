@@ -632,54 +632,78 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: 0.5rem 1rem;
-  border-bottom: 1px solid var(--kr-mint-line);
 }
 
+/* race-status filter (28 Nov 2026, user request "redesign kr-status-row ให้เข้ากับ theme"):
+   one mint-edged capsule like the distance bar on phones; the picked part is filled mint and
+   each part carries its count in a small pill */
 .kr-tabs {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
-  gap: 0 1.35rem;
+  gap: 2px;
+  max-width: 100%;
+  padding: 3px;
+  border: 1px solid var(--kr-mint-line);
+  /* a full capsule on one line; still neat when a mid-size screen wraps it onto two */
+  border-radius: 24px;
+  background: var(--bg-surface);
+  box-shadow: 0 4px 10px -8px rgba(52, 73, 95, 0.4);
 }
 
 .kr-tab {
-  position: relative;
-  min-height: 2.75rem;
-  padding: 0 0.1rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0 0.6rem 0 1.1rem;
   border: 0;
-  background: none;
+  border-radius: 999px;
+  background: transparent;
   color: var(--ink-secondary);
   font: inherit;
+  font-family: var(--kr-font-display);
   font-size: 0.9375rem;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
+  transition: background-color 0.18s var(--kr-ease), color 0.18s var(--kr-ease);
 }
 
-.kr-tab .mono-num {
-  color: var(--ink-secondary);
-  font-size: 0.8125rem;
-}
-
-.kr-tab.is-on {
+.kr-tab:hover {
+  background: var(--kr-mint-3);
   color: var(--kr-slate);
 }
 
-.kr-tab.is-on::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 3px;
-  border-radius: 999px;
-  background: var(--kr-slate);
+.kr-tab.is-on {
+  background: var(--kr-mint);
+  color: var(--kr-slate);
 }
 
-.kr-count {
-  color: var(--ink-secondary);
-  font-size: 0.875rem;
+.kr-tab-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6rem;
+  height: 1.5rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--kr-mint-3);
+  color: var(--kr-slate);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.kr-tab.is-on .kr-tab-count {
+  background: var(--bg-surface);
+}
+
+/* home: page numbers under the race cards (28 Nov 2026), round like the cards' arrow buttons */
+.kr-pager {
+  margin-top: 2rem;
+}
+
+.kr-pager .list-pager-btn {
+  border-radius: 999px;
 }
 
 /* a filter click scrolls here; stop below the sticky site header */
@@ -996,6 +1020,7 @@
   .kr-card-go,
   .kr-search-btn,
   .kr-chip,
+  .kr-tab,
   .app-root:is(.is-public, .is-backoffice) .surface-switch-btn::after {
     transition: none;
   }
@@ -2054,6 +2079,12 @@
 .app-root.is-public .auth-primary-card input:not([type='checkbox']):not([type='radio']),
 .app-root.is-public .auth-primary-card select {
   min-height: 3rem;
+  border-radius: 12px;
+}
+
+/* dropdowns in the sign-up cards line up with the 3rem inputs beside them */
+.app-root.is-public .auth-primary-card .kr-select-btn {
+  height: 3rem;
   border-radius: 12px;
 }
 
@@ -3651,48 +3682,37 @@ body:has(.auth-page-shell.is-scene) .minimal-footer {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* Phone pass (27 Nov 2026, user request: mobile friendly everywhere) */
-/* ------------------------------------------------------------------ */
-@media (max-width: 34rem) {
-  /* home: the race-status tabs become a 2 x 2 set of buttons (27 Nov 2026, user pick "ก") */
+/* home: below the width that fits the race-status capsule on one line, it becomes a 2 x 2 set
+   (27 Nov 2026, user pick "ก"; restyled 28 Nov 2026) */
+@media (max-width: 40rem) {
   .kr-status-row {
-    flex-wrap: wrap;
     min-width: 0;
-    border-bottom: 0;
   }
 
-  .kr-count {
-    white-space: nowrap;
-  }
-
+  /* the capsule becomes a 2 x 2 block with rounded parts; the name wraps, the count stays right */
   .kr-tabs {
     flex: 1 1 100%;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.5rem;
+    border-radius: 22px;
   }
 
   .kr-tab {
+    justify-content: space-between;
     min-height: 2.75rem;
-    padding: 0.3rem 0.6rem;
-    border: 1px solid var(--kr-mint-line);
-    border-radius: 12px;
-    background: var(--bg-surface);
+    padding: 0.3rem 0.45rem 0.3rem 0.8rem;
+    border-radius: 18px;
     text-align: left;
     white-space: normal;
     font-size: 0.875rem;
     line-height: 1.3;
   }
+}
 
-  .kr-tab.is-on {
-    border-color: var(--kr-mint);
-    background: var(--kr-mint-3, #e3f7ee);
-  }
-
-  .kr-tab.is-on::after {
-    display: none;
-  }
+/* ------------------------------------------------------------------ */
+/* Phone pass (27 Nov 2026, user request: mobile friendly everywhere) */
+/* ------------------------------------------------------------------ */
+@media (max-width: 34rem) {
 
   /* event page: the shirt size table fits a 320px screen */
   .racepack-size-head + .table-scroll .ops-table :is(th, td) {

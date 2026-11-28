@@ -213,3 +213,13 @@ The visual system rejects generic SaaS decorative charts, eyebrow kickers above 
   - **Pills are allowed on public pages:** distance chips, filter chips, status badges on covers and the TH/EN switch use filled mint pills as on the boards. This overrides the Frameless Status Rule for these pages only; organizer screens keep frameless statuses.
   - **Nav:** existing menu items only (no shop or "my list" link); the active item has a 4px mint underline.
   - **Imagery:** painted mint scenes (`src/assets/illustrations/`) as cover fallbacks and page backdrops; the rabbit is the supplied Kratai mascot (`กระต่าย_KraTai`), outfit recoloured to slate/mint and animated from the supplied clips (`src/components/MascotAnim.tsx`, still frame under reduced motion).
+
+## Components
+
+### Dropdowns (one look everywhere — user rule, 28 Nov 2026)
+- **Every single-choice dropdown uses `SelectMenu`** (`src/components/SelectMenu.tsx`) on public pages, the registration form, the organizer system, the event editor and the platform console. A bare `<select>` is not used in screens: the operating system draws its open list, so it can never match.
+- **Closed:** the same box as a text field (`.kr-select-btn`: 2.625rem high, `--radius-sm`, `--line-medium` border, `--select-chevron` arrow). `compact` gives a 2.25rem box for filter bars and toolbars; nothing else changes. Screens may set width / grid placement on `.kr-select`, and height/radius only to line up with the text fields beside it (sign-up cards 3rem, age-group table rows 2.25rem); never their own colours, borders or arrow.
+- **Open:** one list (`.kr-menu`): rows 2.25rem, hover/keyboard row `--bg-subtle`, picked row `--bg-selected` and bold, at most 7 rows visible. It floats at the page root fixed to its button (never clipped by a panel, table or the editor), at least as wide as the button, and opens upward when there is no room below.
+- **Labels and checks:** a visible `<label htmlFor>` pointing at the dropdown's `id`, or `ariaLabel` when the screen has no visible label; `required` / invalid marks work through the hidden native select inside.
+- **Groups:** a list split into groups (`group` on the options) shows each group's heading on a `--bg-subtle` band; a later group, or a lone option after a group (e.g. "+ เพิ่มคนใหม่"), is set apart by a `--line-light` rule (28 Nov 2026, user request "แยกให้มันชัดเจนกว่านี้").
+- **Exceptions:** multi-select lists, the date-of-birth wheel, the phone-code list and the address suggestions keep their own controls but share the same open-list look (`.kr-menu` rows).

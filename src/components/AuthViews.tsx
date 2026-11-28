@@ -36,6 +36,7 @@ import { DateOfBirthInput } from './DateOfBirthInput';
 import { PrivacyNoticeModal } from './PrivacyNoticeModal';
 import { reportInvalidFieldsWithin } from '../utils/formValidation';
 import { NationalitySelect } from './NationalitySelect';
+import { SelectMenu } from './SelectMenu';
 import { ThaiPostalAddressSelector } from './ThaiPostalAddressSelector';
 import {
   detectNameScript,
@@ -1733,25 +1734,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         <label htmlFor="rn-idtype">
                           {tx("ประเภทเอกสารยืนยันตัวตน (บัตรประชาชน / Passport)")}
                         </label>
-                        <select
+                        <SelectMenu
                           id="rn-idtype"
                           value={runnerIdType}
-                          onChange={(e) =>
+                          onChange={(v) =>
                             setRunnerIdType(
-                              e.target.value as 'none' | 'thai_id' | 'passport'
+                              v as 'none' | 'thai_id' | 'passport'
                             )
                           }
-                        >
-                          <option value="thai_id">
-                            {tx("บัตรประจำตัวประชาชน 13 หลัก")}
-                          </option>
-                          <option value="passport">
-                            {tx("หนังสือเดินทาง (Passport)")}
-                          </option>
-                          <option value="none">
-                            {tx("-- ยังไม่ระบุในขั้นตอนนี้ --")}
-                          </option>
-                        </select>
+                          options={[
+                            { value: 'thai_id', label: tx("บัตรประจำตัวประชาชน 13 หลัก") },
+                            { value: 'passport', label: tx("หนังสือเดินทาง (Passport)") },
+                            { value: 'none', label: tx("-- ยังไม่ระบุในขั้นตอนนี้ --") },
+                          ]}
+                        />
                       </div>
 
                       {runnerIdType !== 'none' && (
@@ -2182,30 +2178,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           </div>
                           <div className="form-row">
                             <label htmlFor="og-type"><RequiredFieldText text="Organization Type *" /></label>
-                            <select
+                            <SelectMenu
                               id="og-type"
                               value={orgType}
-                              onChange={(e) =>
-                                setOrgType(e.target.value as OrganizationType)
+                              onChange={(v) =>
+                                setOrgType(v as OrganizationType)
                               }
-                            >
-                              <option value="Private Company">
-                                {tx("Private Company (บริษัทเอกชน / นิติบุคคล)")}
-                              </option>
-                              <option value="Government Organization">
-                                {tx("Government Organization (หน่วยงานราชการ / ท้องถิ่น)")}
-                              </option>
-                              <option value="Sports Club / Association">
-                                {tx("Sports Club / Association (ชมรมวิ่ง / สมาคมกีฬา)")}
-                              </option>
-                              <option value="Independent Organizer">
-                                {tx("Independent Organizer (ผู้จัดงานอิสระ)")}
-                              </option>
-                              <option value="Non-Profit Organization">
-                                {tx("Non-Profit Organization (มูลนิธิ / องค์กรการกุศล)")}
-                              </option>
-                              <option value="Other">{tx("Other (อื่น ๆ)")}</option>
-                            </select>
+                              options={[
+                                { value: 'Private Company', label: tx("Private Company (บริษัทเอกชน / นิติบุคคล)") },
+                                { value: 'Government Organization', label: tx("Government Organization (หน่วยงานราชการ / ท้องถิ่น)") },
+                                { value: 'Sports Club / Association', label: tx("Sports Club / Association (ชมรมวิ่ง / สมาคมกีฬา)") },
+                                { value: 'Independent Organizer', label: tx("Independent Organizer (ผู้จัดงานอิสระ)") },
+                                { value: 'Non-Profit Organization', label: tx("Non-Profit Organization (มูลนิธิ / องค์กรการกุศล)") },
+                                { value: 'Other', label: tx("Other (อื่น ๆ)") },
+                              ]}
+                            />
                           </div>
                         </div>
 
@@ -2431,18 +2418,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                             <label htmlFor="og-iddoc">
                               {tx("Section B — ประเภทเอกสารยืนยันตัวตนบุคคล")}
                             </label>
-                            <select
+                            <SelectMenu
                               id="og-iddoc"
                               value={idDocType}
-                              onChange={(e) => setIdDocType(e.target.value)}
-                            >
-                              <option value="บัตรประจำตัวประชาชน">
-                                {tx("บัตรประจำตัวประชาชน (Thai National ID)")}
-                              </option>
-                              <option value="หนังสือเดินทาง (Passport)">
-                                {tx("หนังสือเดินทาง (Passport)")}
-                              </option>
-                            </select>
+                              onChange={(v) => setIdDocType(v)}
+                              options={[
+                                { value: 'บัตรประจำตัวประชาชน', label: tx("บัตรประจำตัวประชาชน (Thai National ID)") },
+                                { value: 'หนังสือเดินทาง (Passport)', label: tx("หนังสือเดินทาง (Passport)") },
+                              ]}
+                            />
                           </div>
                           <div className="form-row">
                             <label htmlFor="og-idexp">
@@ -2926,36 +2910,38 @@ export const AccountSecurityView: React.FC<AccountSecurityViewProps> = ({
           </div>
           <div className="form-row">
             <label htmlFor="rp-exp">{tx("ประสบการณ์การวิ่ง (Running Experience)")}</label>
-            <select
+            <SelectMenu
               id="rp-exp"
               value={profExp}
-              onChange={(e) =>
+              onChange={(v) =>
                 setProfExp(
-                  e.target.value as 'Beginner' | 'Intermediate' | 'Advanced'
+                  v as 'Beginner' | 'Intermediate' | 'Advanced'
                 )
               }
-            >
-              <option value="Beginner">Beginner</option>
-              <option value="Intermediate">Intermediate</option>
-              <option value="Advanced">Advanced</option>
-            </select>
+              options={[
+                { value: 'Beginner', label: 'Beginner' },
+                { value: 'Intermediate', label: 'Intermediate' },
+                { value: 'Advanced', label: 'Advanced' },
+              ]}
+            />
           </div>
         </div>
 
         <div className="form-grid-3" style={{ marginTop: '0.6rem' }}>
           <div className="form-row">
             <label htmlFor="rp-gen">{tx("เพศ (Gender)")}</label>
-            <select
+            <SelectMenu
               id="rp-gen"
               value={profGender}
-              onChange={(e) =>
-                setProfGender(e.target.value as 'ชาย' | 'หญิง' | 'ไม่ระบุ')
+              onChange={(v) =>
+                setProfGender(v as 'ชาย' | 'หญิง' | 'ไม่ระบุ')
               }
-            >
-              <option value="หญิง">{tx("หญิง")}</option>
-              <option value="ชาย">{tx("ชาย")}</option>
-              <option value="ไม่ระบุ">{tx("ไม่ระบุ")}</option>
-            </select>
+              options={[
+                { value: 'หญิง', label: tx("หญิง") },
+                { value: 'ชาย', label: tx("ชาย") },
+                { value: 'ไม่ระบุ', label: tx("ไม่ระบุ") },
+              ]}
+            />
           </div>
           <div className="form-row">
             <label htmlFor="rp-emn">{tx("ชื่อผู้ติดต่อฉุกเฉินเริ่มต้น")}</label>

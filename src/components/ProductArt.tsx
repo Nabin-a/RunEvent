@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
-import { souvenirPhoto } from '../data/productPhotos';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { backPhotoOf, souvenirPhoto } from '../data/productPhotos';
+import { tx } from '../i18n';
 
 const categoryPreviews = import.meta.glob<string>('../assets/souvenir-categories/*.webp', { eager: true, import: 'default' });
 const categoryFiles: Record<string, string> = {
@@ -33,34 +34,113 @@ const PATHS: Record<ProductArtKind, ReactNode> = {
   bag: <path d="M24 36 L76 36 L72 88 L28 88 Z M38 36 Q38 16 50 16 Q62 16 62 36" />,
 };
 
+/**
+ * How a shirt photo shows its back (28 Nov 2026, user request "hover เสื้อให้แสดงด้านหลัง"):
+ * - 'hover': a mouse over the photo shows the back (the default; safe inside a clickable card)
+ * - 'button': the same, plus a small "ดูด้านหลัง" button for touch screens and the keyboard;
+ *   only where the photo is not inside a button or label, and its box is positioned
+ * - 'none': small thumbnails (cart lines, tabs) keep the front
+ * Photos with no back view (see data/productPhotos) always show the front.
+ */
+export type PhotoFlip = 'hover' | 'button' | 'none';
+
+export function ProductPhoto({
+  src,
+  className,
+  alt = '',
+  flip = 'hover',
+  onError,
+}: {
+  src: string;
+  className?: string;
+  /** '' for a picture that sits next to its name */
+  alt?: string;
+  flip?: PhotoFlip;
+  onError?: () => void;
+}) {
+  const back = flip === 'none' ? undefined : backPhotoOf(src);
+  const [hover, setHover] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+
+  // another shirt starts on its front; the back is fetched early so the swap does not blink
+  useEffect(() => {
+    setHover(false);
+    setPinned(false);
+    if (back) new Image().src = back;
+  }, [src, back]);
+
+  const showBack = !!back && (hover || pinned);
+  const enter = (e: React.PointerEvent) => {
+    if (back && e.pointerType === 'mouse') setHover(true);
+  };
+  // moving between the photo and its button keeps the back showing
+  const leave = (e: React.PointerEvent) => {
+    const to = e.relatedTarget as Node | null;
+    if (to && (to === btnRef.current || to === imgRef.current)) return;
+    setHover(false);
+  };
+
+  const img = (
+    <img
+      ref={imgRef}
+      src={showBack ? back : src}
+      className={className}
+      alt={alt && showBack ? `${alt} (${tx('ด้านหลัง')})` : alt}
+      aria-hidden={alt ? undefined : true}
+      loading="lazy"
+      decoding="async"
+      onError={onError}
+      onPointerEnter={enter}
+      onPointerLeave={leave}
+    />
+  );
+  if (!back || flip !== 'button') return img;
+  return (
+    <>
+      {img}
+      <button
+        ref={btnRef}
+        type="button"
+        className="photo-flip-btn"
+        onPointerEnter={enter}
+        onPointerLeave={leave}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setPinned((v) => !v);
+          setHover(false);
+        }}
+      >
+        {/* the button names the side it turns to */}
+        {pinned ? tx('ดูด้านหน้า') : tx('ดูด้านหลัง')}
+      </button>
+    </>
+  );
+}
+
 export function ProductArt({
   kind,
   className,
   categoryLabel,
   name,
+  flip,
 }: {
   kind: ProductArtKind;
   className?: string;
   categoryLabel?: string;
   /** product name: picks a product photo when one matches (26 Nov 2026) */
   name?: string;
+  /** how a shirt photo shows its back (see PhotoFlip) */
+  flip?: PhotoFlip;
 }) {
   const file = categoryLabel ? categoryFiles[categoryLabel] : undefined;
   const photo = categoryLabel && name ? souvenirPhoto(categoryLabel, name) : undefined;
   const src = photo ?? (file ? categoryPreviews[`../assets/souvenir-categories/${file}.webp`] : undefined);
   const [failedSrc, setFailedSrc] = useState<string>();
   if (src && src !== failedSrc) {
-    return (
-      <img
-        src={src}
-        className={`${className ?? ''} product-preview-image`}
-        alt=""
-        aria-hidden="true"
-        loading="lazy"
-        decoding="async"
-        onError={() => setFailedSrc(src)}
-      />
-    );
+    return <ProductPhoto src={src} className={`${className ?? ''} product-preview-image`} flip={flip} onError={() => setFailedSrc(src)} />;
   }
   return (
     <svg

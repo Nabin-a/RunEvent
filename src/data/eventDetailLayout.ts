@@ -509,7 +509,7 @@ function cleanCard(v: unknown): EventRegisterCardConfig | undefined {
   const line = (x: unknown, max: number) => cleanText(x, max).replace(/\n/g, ' ').trim();
   if (typeof o.kicker === 'string' && line(o.kicker, CARD_LIMITS.kicker)) out.kicker = line(o.kicker, CARD_LIMITS.kicker);
   if (typeof o.promo === 'string' && line(o.promo, CARD_LIMITS.promo)) out.promo = line(o.promo, CARD_LIMITS.promo);
-  for (const k of ['showMascot', 'showQuota', 'showShortcuts'] as const) if (typeof o[k] === 'boolean') out[k] = o[k] as boolean;
+  for (const k of ['showMascot', 'showQuota', 'showShortcuts', 'showCountdown'] as const) if (typeof o[k] === 'boolean') out[k] = o[k] as boolean;
   return Object.keys(out).length ? out : undefined;
 }
 

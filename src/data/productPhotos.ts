@@ -27,6 +27,24 @@ import softFlask from '../assets/products/soft-flask.webp';
 import bottle from '../assets/products/bottle.webp';
 import coolingTowel from '../assets/products/cooling-towel.webp';
 import beachTowel from '../assets/products/beach-towel.webp';
+import teeBack from '../assets/products/tee-back.webp';
+import tankHillsBack from '../assets/products/tank-hills-back.webp';
+import sleevelessSunriseBack from '../assets/products/sleeveless-sunrise-back.webp';
+
+/**
+ * Back views of the shirts that have one (28 Nov 2026, user request: hovering a shirt shows its
+ * back). A front photo with no entry here simply keeps showing its front.
+ */
+const BACKS = new Map<string, string>([
+  [tee, teeBack],
+  [tankHills, tankHillsBack],
+  [sleevelessSunrise, sleevelessSunriseBack],
+]);
+
+/** the back view of a product photo, when there is one */
+export function backPhotoOf(front: string | undefined): string | undefined {
+  return front ? BACKS.get(front) : undefined;
+}
 
 /** shirts on the registration shirt step */
 export const SHIRT_PHOTOS = {

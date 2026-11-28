@@ -212,8 +212,10 @@
   color: var(--ink-secondary);
 }
 
-.ot-invite select {
-  min-height: 42px;
+/* the shared dropdown sizes to the picked label; a floor keeps the row from shifting when the
+   role changes (the old native select was as wide as its longest option) */
+.ot-invite .kr-select {
+  min-width: 13rem;
 }
 
 .ot-created {

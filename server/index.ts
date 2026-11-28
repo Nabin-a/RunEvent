@@ -69,6 +69,7 @@ import type {
   PayoutStatus,
   PlatformProfileConfig,
   ProductionInquiry,
+  RaceCategory,
   RaceEvent,
   RegistrationRecord,
   RegistrationStepDef,
@@ -1389,242 +1390,377 @@ app.post('/api/organizations', (req, res) => {
 
 /* ==================== REGISTRATIONS & MERCH ORDERS (ATOMIC) ==================== */
 
-app.post('/api/registrations', (req, res) => {
-  const { user } = resolveSessionUser(req);
-  const payload = req.body ?? {};
-  const eventId = String(payload.eventId ?? '');
-  const categoryId = String(payload.categoryId ?? '');
+/* ======================================================================================
+ * Registration orders (28 Nov 2026, docs/group-registration-plan.md phase 1): one order holds
+ * one or more people, each a registration of their own (own seat, shirt, BIB and QR), paid
+ * once. Every seat, shirt and souvenir of the order is booked in one SQLite transaction: the
+ * whole order gets its places or none do. The single-person form uses the same code (an order
+ * of one), so the rules live in one place.
+ * ====================================================================================== */
 
-  // Idempotency: the browser makes one registration id per checkout attempt and resends the
-  // same id when it retries (slow network, timeout, double click). A repeat must not take a
-  // second seat or shirt, so it gets the registration that already exists instead.
-  const clientRegId = payload.id ? String(payload.id) : '';
-  if (payload.acceptedRules !== true || !payload.acceptedPaymentTermsVersion) {
-    return res.status(400).json({
-      ok: false,
-      error: 'กรุณายอมรับกติกาการแข่งขันและข้อกำหนดการชำระเงินก่อนยืนยัน',
-    });
+/** the most people one order may hold, whatever the organizer sets */
+const ORDER_ENTRY_CAP = 20;
+const maxEntriesOf = (ev: RaceEvent) =>
+  Math.min(ORDER_ENTRY_CAP, Math.max(1, Math.floor(Number(ev.maxEntriesPerOrder ?? 10)) || 10));
+
+/** one person of an order, as the browser sends it */
+interface OrderEntryInput {
+  /** made by the browser for this checkout attempt; a retry resends it (no second seat) */
+  id: string;
+  categoryId: string;
+  forFriend: boolean;
+  participantNameTh: string;
+  participantNameEn: string;
+  phone: string;
+  emergencyContact: string;
+  shirtSize: string;
+  participantSnapshot: RegistrationRecord['participantSnapshot'];
+  customAnswers: unknown;
+}
+
+interface OrderInput {
+  eventId: string;
+  buyerName: string;
+  entries: OrderEntryInput[];
+  acceptedPaymentTermsVersion: string;
+  acceptedPrivacyVersion: string;
+  marketingConsent: boolean;
+  formVersion?: string;
+  kitByPost: boolean;
+  shippingAddressSnapshot?: string;
+  addonItems: unknown[];
+  addonOrderId?: string;
+  immediate: boolean;
+}
+
+const entryFrom = (raw: Record<string, unknown>): OrderEntryInput => ({
+  id: raw.id ? String(raw.id).slice(0, 80) : '',
+  categoryId: String(raw.categoryId ?? ''),
+  forFriend: Boolean(raw.forFriend),
+  participantNameTh: String(raw.participantNameTh ?? '').slice(0, 200),
+  participantNameEn: String(raw.participantNameEn ?? '').slice(0, 200),
+  phone: String(raw.phone ?? '').slice(0, 40),
+  emergencyContact: String(raw.emergencyContact ?? '').slice(0, 300),
+  shirtSize: String(raw.shirtSize ?? ''),
+  participantSnapshot:
+    raw.participantSnapshot && typeof raw.participantSnapshot === 'object'
+      ? (raw.participantSnapshot as RegistrationRecord['participantSnapshot'])
+      : undefined,
+  customAnswers: raw.customAnswers,
+});
+
+const orderFrom = (payload: Record<string, unknown>, entries: OrderEntryInput[]): OrderInput => ({
+  eventId: String(payload.eventId ?? ''),
+  buyerName: String(payload.buyerName ?? '').slice(0, 200),
+  entries,
+  acceptedPaymentTermsVersion: String(payload.acceptedPaymentTermsVersion ?? ''),
+  acceptedPrivacyVersion: String(payload.acceptedPrivacyVersion ?? ''),
+  marketingConsent: Boolean(payload.marketingConsent),
+  formVersion: typeof payload.formVersion === 'string' ? payload.formVersion : undefined,
+  kitByPost: payload.kitDeliveryMethod === 'postal_shipping',
+  shippingAddressSnapshot: payload.shippingAddressSnapshot ? String(payload.shippingAddressSnapshot) : undefined,
+  addonItems: Array.isArray(payload.addonItems)
+    ? payload.addonItems
+    : payload.addonProductId || (payload.addonProduct as { id?: string } | undefined)
+      ? [{ productId: payload.addonProductId ?? (payload.addonProduct as { id?: string }).id, variantSize: payload.addonSize, quantity: 1 }]
+      : [],
+  addonOrderId: payload.addonOrderId ? String(payload.addonOrderId) : undefined,
+  immediate: Boolean(payload.simulateImmediateWebhook),
+});
+
+type BookFail = { fail: true; status: number; body: Record<string, unknown> };
+type BookDone = { fail: false; regs: RegistrationRecord[]; addonOrders: MerchOrderRecord[]; replayed: boolean };
+
+/** who a person is, for spotting the same runner twice: English name + date of birth */
+function personKey(ps: RegistrationRecord['participantSnapshot'], nameEn?: string): string | null {
+  const fromSnap = `${ps?.firstNameEn ?? ''} ${ps?.lastNameEn ?? ''}`.trim();
+  const name = (fromSnap || String(nameEn ?? '')).trim().toLowerCase().replace(/\s+/g, ' ');
+  const dob = String(ps?.dateOfBirth ?? '').trim().slice(0, 10);
+  return name && dob ? `${name}|${dob}` : null;
+}
+
+/** every registration of an order, lead (first) first */
+function orderRegistrations(orderCode: string): RegistrationRecord[] {
+  const rows = db
+    .prepare('SELECT detail_json FROM registrations WHERE order_code = ? ORDER BY sort_order, id')
+    .all(orderCode) as { detail_json: string }[];
+  const regs = rows.map((r) => JSON.parse(r.detail_json) as RegistrationRecord);
+  return regs.sort((x, y) => (x.orderEntryNo ?? 1) - (y.orderEntryNo ?? 1));
+}
+
+/**
+ * Checks and books one order. Call inside BEGIN IMMEDIATE; on a failure nothing has been
+ * written and the caller rolls back. Problems name the person ("คนที่ 2: …") when the order
+ * holds more than one, so the form can point at the right card.
+ */
+function bookOrderInTx(user: UserAccount | null, o: OrderInput): BookFail | BookDone {
+  const fail = (status: number, error: string, extra: Record<string, unknown> = {}): BookFail => ({
+    fail: true,
+    status,
+    body: { ok: false, error, ...extra },
+  });
+  const many = o.entries.length > 1;
+  const who = (i: number) => (many ? `คนที่ ${i + 1}: ` : '');
+  if (o.entries.length === 0) return fail(400, 'กรุณาเพิ่มผู้สมัครอย่างน้อย 1 คน');
+  if (o.entries.length > ORDER_ENTRY_CAP) return fail(400, `สมัครได้ไม่เกิน ${ORDER_ENTRY_CAP} คนต่อครั้ง`);
+
+  // a retry of an order already booked gets that order back (no second seat or shirt)
+  const ids = o.entries.map((e) => e.id).filter(Boolean);
+  if (new Set(ids).size !== ids.length) return fail(400, 'ข้อมูลผู้สมัครซ้ำกัน กรุณาเริ่มสมัครใหม่');
+  for (const id of ids) {
+    const prior = db.prepare('SELECT runner_user_id, order_code FROM registrations WHERE id = ?').get(id) as
+      | { runner_user_id: string | null; order_code: string }
+      | undefined;
+    if (!prior) continue;
+    if ((prior.runner_user_id ?? null) !== (user?.id ?? null)) {
+      return fail(409, 'รหัสคำสั่งซื้อนี้ถูกใช้ไปแล้ว กรุณาเริ่มสมัครใหม่');
+    }
+    const regs = orderRegistrations(prior.order_code);
+    const leadCode = regs[0]?.regCode;
+    const addonOrders = leadCode ? readSystemState().merchOrders.filter((m) => m.linkedRegistrationCode === leadCode) : [];
+    return { fail: false, regs, addonOrders, replayed: true };
   }
-  // PDPA (27 Nov 2026): the entry's personal and health data go to the organizer only with consent
-  if (!payload.acceptedPrivacyVersion) {
-    return res.status(400).json({
-      ok: false,
-      error: 'กรุณายินยอมการส่งข้อมูลส่วนบุคคลให้ผู้จัดงานก่อนยืนยัน',
-    });
+
+  const evRow = db.prepare('SELECT detail_json FROM events WHERE id = ?').get(o.eventId) as
+    | { detail_json: string }
+    | undefined;
+  if (!evRow) return fail(404, 'ไม่พบงานวิ่งที่เลือก');
+  const ev = JSON.parse(evRow.detail_json) as RaceEvent;
+  if (ev.status !== 'published') return fail(400, 'งานวิ่งนี้ไม่ได้เปิดรับสมัครในขณะนี้');
+  const max = maxEntriesOf(ev);
+  if (o.entries.length > max) return fail(400, `งานนี้สมัครได้ไม่เกิน ${max} คนต่อครั้ง`);
+  // "yourself" once per order (a friend is anyone else)
+  if (o.entries.filter((e) => !e.forFriend).length > 1) {
+    return fail(400, 'สมัครให้ตนเองได้ 1 คนต่อคำสั่งซื้อ คนอื่นให้เลือก "สมัครให้ผู้อื่น"');
+  }
+  // the same person twice: same English name and date of birth (the ID number is kept masked,
+  // so it cannot tell two people apart). Twice in this order, or already holding a place in this
+  // event from an earlier order (28 Nov 2026, user request "เพิ่มการกันซ้ำ"). Cancelled, refunded
+  // and expired entries do not count; holds whose time is up were freed before this runs.
+  const people = new Map<string, number>();
+  const holders = new Map<string, RegistrationRecord>();
+  for (const row of db
+    .prepare(
+      `SELECT detail_json FROM registrations WHERE event_id = ? AND registration_status IN ('confirmed', 'pending_payment')`
+    )
+    .all(ev.id) as { detail_json: string }[]) {
+    const r = JSON.parse(row.detail_json) as RegistrationRecord;
+    const key = personKey(r.participantSnapshot, r.participantNameEn);
+    if (key && !holders.has(key)) holders.set(key, r);
+  }
+  for (const [i, e] of o.entries.entries()) {
+    const key = personKey(e.participantSnapshot, e.participantNameEn);
+    if (!key) continue;
+    const at = people.get(key);
+    if (at !== undefined) return fail(400, `${who(i)}เป็นคนเดียวกับคนที่ ${at + 1} ในคำสั่งซื้อนี้`, { entryIndex: i, duplicate: 'order' });
+    people.set(key, i);
+    const held = holders.get(key);
+    if (held) {
+      // the account's own entry is named; someone else's is not shown to this account
+      const mine = held.runnerUserId && held.runnerUserId === user?.id;
+      return fail(
+        409,
+        mine
+          ? `${who(i)}ผู้สมัครคนนี้มีใบสมัครในงานนี้แล้ว (${held.regCode}${held.registrationStatus === 'pending_payment' ? ' รอชำระเงิน' : ''}) ดูได้ที่ ประวัติการสมัคร & การสั่งซื้อ`
+          : `${who(i)}ผู้สมัครคนนี้มีใบสมัครในงานนี้แล้ว หากไม่ได้สมัครเอง กรุณาติดต่อผู้จัดงาน`,
+        { entryIndex: i, duplicate: 'event' }
+      );
+    }
   }
 
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    // seats held by unpaid entries whose time is up are free again before counting
-    expireStaleHolds();
-    if (clientRegId) {
-      const prior = db
-        .prepare('SELECT runner_user_id FROM registrations WHERE id = ?')
-        .get(clientRegId) as { runner_user_id: string | null } | undefined;
-      if (prior) {
-        db.exec('ROLLBACK');
-        if ((prior.runner_user_id ?? null) !== (user?.id ?? null)) {
-          return res
-            .status(409)
-            .json({ ok: false, error: 'รหัสคำสั่งซื้อนี้ถูกใช้ไปแล้ว กรุณาเริ่มสมัครใหม่' });
-        }
-        const state = readSystemState();
-        const reg = state.registrations.find((r) => r.id === clientRegId);
-        const addonOrders = reg
-          ? state.merchOrders.filter((m) => m.linkedRegistrationCode === reg.regCode)
-          : [];
-        return res.json({
-          ok: true,
-          currentUserId: user?.id ?? null,
-          state,
-          config: { sandboxTools: SANDBOX_TOOLS },
-          reg,
-          addonOrder: addonOrders[0],
-          addonOrders,
-          replayed: true,
-        });
-      }
-    }
+  // the form version this runner filled in (27 Nov 2026): a runner who started before a new
+  // version went live, or before web registration was paused, finishes on what they saw
+  const gate = formGate(ev, o.formVersion, Date.now());
+  if (!gate.ok) return fail(409, gate.error);
 
-    const evRow = db
-      .prepare('SELECT detail_json FROM events WHERE id = ?')
-      .get(eventId) as { detail_json: string } | undefined;
-    if (!evRow) {
-      db.exec('ROLLBACK');
-      return res.status(404).json({ ok: false, error: 'ไม่พบงานวิ่งที่เลือก' });
+  // Atomic seat counts inside the transaction, with the people of this order added one by one
+  const seatsInEvent = (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS cnt FROM registrations
+         WHERE event_id = ? AND registration_status IN ('confirmed', 'pending_payment')`
+      )
+      .get(ev.id) as { cnt: number }
+  ).cnt;
+  const seatsByCat = new Map<string, number>();
+  const seatsOf = (catId: string) => {
+    if (!seatsByCat.has(catId)) {
+      seatsByCat.set(
+        catId,
+        (
+          db
+            .prepare(
+              `SELECT COUNT(*) AS cnt FROM registrations
+               WHERE event_id = ? AND category_id = ? AND registration_status IN ('confirmed', 'pending_payment')`
+            )
+            .get(ev.id, catId) as { cnt: number }
+        ).cnt
+      );
     }
-    const ev = JSON.parse(evRow.detail_json) as RaceEvent;
-    if (ev.status !== 'published') {
-      db.exec('ROLLBACK');
-      return res.status(400).json({ ok: false, error: 'งานวิ่งนี้ไม่ได้เปิดรับสมัครในขณะนี้' });
-    }
-    const cat = ev.categories.find((c) => c.id === categoryId);
-    if (!cat) {
-      db.exec('ROLLBACK');
-      return res.status(400).json({ ok: false, error: 'ไม่พบระยะการแข่งขันที่เลือก' });
-    }
+    return seatsByCat.get(catId) as number;
+  };
+  const shirtsTaken = new Map<string, number>();
+
+  type Ready = {
+    e: OrderEntryInput;
+    cat: RaceCategory;
+    answers: Record<string, string | boolean>;
+    ageCheck: ReturnType<typeof evaluateCategoryAge>;
+    dob: string;
+    gender: string | null;
+    shirtSize: RegistrationRecord['shirtSize'];
+  };
+  const ready: Ready[] = [];
+  for (const [i, e] of o.entries.entries()) {
+    const cat = ev.categories.find((c) => c.id === e.categoryId);
+    if (!cat) return fail(400, `${who(i)}ไม่พบระยะการแข่งขันที่เลือก`, { entryIndex: i });
 
     // Registering a friend: the friend's own email and phone are required and may not be the
     // account owner's (26 Nov 2026). Checked here too; the form check is only a hint.
-    if (payload.forFriend) {
+    if (e.forFriend) {
       const problem = firstFriendContactProblem(
         friendContactProblems(
-          { email: payload.participantSnapshot?.email, phone: payload.phone },
+          { email: e.participantSnapshot?.email, phone: e.phone },
           { email: user?.contactEmail, phone: user?.runnerProfile?.phone },
           { requireBoth: true }
         )
       );
-      if (problem) {
-        db.exec('ROLLBACK');
-        return res.status(400).json({ ok: false, error: problem });
-      }
+      if (problem) return fail(400, `${who(i)}${problem}`, { entryIndex: i });
     }
 
-    // The organizer's questions are checked by the server too, against the live form version
-    // (only the questions this runner is asked: right distance, approved, condition met).
+    // The organizer's questions are checked by the server too, against the form version used
     const answers: Record<string, string | boolean> = {};
-    if (payload.customAnswers && typeof payload.customAnswers === 'object') {
-      for (const [k, v] of Object.entries(payload.customAnswers as Record<string, unknown>)) {
+    if (e.customAnswers && typeof e.customAnswers === 'object') {
+      for (const [k, v] of Object.entries(e.customAnswers as Record<string, unknown>)) {
         if (typeof v === 'string') answers[k] = v.slice(0, 4000);
         else if (typeof v === 'boolean') answers[k] = v;
       }
     }
-    // the form version this runner filled in (27 Nov 2026): a runner who started before a new version
-    // went live, or before web registration was paused, finishes on what they saw (within a grace time)
-    const gate = formGate(ev, typeof payload.formVersion === 'string' ? payload.formVersion : undefined, Date.now());
-    if (!gate.ok) {
-      db.exec('ROLLBACK');
-      return res.status(409).json({ ok: false, error: gate.error });
-    }
-    const answerProblems = validateAnswers(gate.fields, answers, {
-      raceDistance: cat.code,
-      shirtSize: String(payload.shirtSize ?? ''),
-    });
-    const firstProblem = Object.values(answerProblems)[0];
-    if (firstProblem) {
-      db.exec('ROLLBACK');
-      return res.status(400).json({ ok: false, error: firstProblem });
-    }
+    const answerProblem = Object.values(validateAnswers(gate.fields, answers, { raceDistance: cat.code, shirtSize: e.shirtSize }))[0];
+    if (answerProblem) return fail(400, `${who(i)}${answerProblem}`, { entryIndex: i });
 
     // Age eligibility is checked on the server too; the browser check is only a hint.
-    const participantDob = String(payload.participantSnapshot?.dateOfBirth ?? '').trim();
-    const participantGender = payload.participantSnapshot?.gender
-      ? String(payload.participantSnapshot.gender)
-      : null;
-    const ageCheck = evaluateCategoryAge(ev, cat, participantDob, participantGender);
+    const dob = String(e.participantSnapshot?.dateOfBirth ?? '').trim();
+    const gender = e.participantSnapshot?.gender ? String(e.participantSnapshot.gender) : null;
+    const ageCheck = evaluateCategoryAge(ev, cat, dob, gender);
     if (!ageCheck.eligible) {
-      db.exec('ROLLBACK');
-      return res.status(400).json({
-        ok: false,
-        error: ageCheckMessage(ageCheck, cat) ?? 'ผู้เข้าแข่งขันไม่ผ่านเกณฑ์อายุของระยะนี้',
+      return fail(400, `${who(i)}${ageCheckMessage(ageCheck, cat) ?? 'ผู้เข้าแข่งขันไม่ผ่านเกณฑ์อายุของระยะนี้'}`, { entryIndex: i });
+    }
+
+    // seats: the whole-event cap (only while the organizer keeps it on) and the distance quota,
+    // counting the people already placed in this order
+    const inOrderSoFar = ready.length;
+    const eventFull = isTotalQuotaEnabled(ev) && seatsInEvent + inOrderSoFar >= ev.totalEventQuota;
+    const catSeats = seatsOf(cat.id);
+    if (eventFull || catSeats >= cat.categoryQuota) {
+      return fail(
+        409,
+        many ? `${who(i)}${cat.name} เต็มแล้ว เปลี่ยนระยะของคนนี้แล้วลองอีกครั้ง` : 'ขออภัย โควตาเต็มแล้ว ระบบป้องกันการขายเกินอัตโนมัติ',
+        { entryIndex: i, full: 'category' }
+      );
+    }
+    seatsByCat.set(cat.id, catSeats + 1);
+
+    // shirts: the stock of each size, counting this order's people
+    const shirtSize = e.shirtSize as RegistrationRecord['shirtSize'];
+    const slot = ev.shirtStocks.find((st) => st.size === shirtSize);
+    const taken = shirtsTaken.get(shirtSize) ?? 0;
+    if (slot && slot.reservedOrConfirmed + taken >= slot.total) {
+      return fail(409, many ? `${who(i)}เสื้อไซส์ ${shirtSize} หมดแล้ว เลือกไซส์อื่นแล้วลองอีกครั้ง` : 'สต็อกไซส์นี้เต็มแล้ว', {
+        entryIndex: i,
+        full: 'shirt',
       });
     }
+    shirtsTaken.set(shirtSize, taken + 1);
+    ready.push({ e, cat, answers, ageCheck, dob, gender, shirtSize });
+  }
 
-    // Atomic quota checks inside SQLite transaction
-    const activeEventSeats = (
-      db
-        .prepare(
-          `SELECT COUNT(*) AS cnt FROM registrations
-           WHERE event_id = ? AND registration_status IN ('confirmed', 'pending_payment')`
-        )
-        .get(ev.id) as { cnt: number }
-    ).cnt;
-    const activeCategorySeats = (
-      db
-        .prepare(
-          `SELECT COUNT(*) AS cnt FROM registrations
-           WHERE event_id = ? AND category_id = ? AND registration_status IN ('confirmed', 'pending_payment')`
-        )
-        .get(ev.id, cat.id) as { cnt: number }
-    ).cnt;
+  if (o.kitByPost && !String(o.shippingAddressSnapshot ?? '').trim()) {
+    return fail(400, 'กรุณาระบุที่อยู่สำหรับจัดส่งชุดแข่ง');
+  }
 
-    // The whole-event cap applies only while the organizer keeps it switched on;
-    // the per-distance quota always applies.
-    const eventCapReached = isTotalQuotaEnabled(ev) && activeEventSeats >= ev.totalEventQuota;
-    if (eventCapReached || activeCategorySeats >= cat.categoryQuota) {
-      db.exec('ROLLBACK');
-      return res.status(409).json({
-        ok: false,
-        error: 'ขออภัย โควตาเต็มแล้ว ระบบป้องกันการขายเกินอัตโนมัติ',
-      });
+  // Souvenirs bought with the order: any number of lines, each a separate merch order linked to
+  // the order's first entry. Every line is checked here (size, 1–10 pieces, pre-order still open,
+  // stock for the summed quantity), so the places and the souvenirs are booked together or not at all.
+  if (o.addonItems.length > 20) return fail(400, 'เลือกของที่ระลึกได้ไม่เกิน 20 รายการ');
+  const createdIso = nowIsoBangkok();
+  const today = createdIso.slice(0, 10);
+  const addonLines: { prd: EventProduct; size: string; qty: number }[] = [];
+  const addonQtyByProduct = new Map<string, number>();
+  for (const raw of o.addonItems) {
+    const it = (raw ?? {}) as Record<string, unknown>;
+    const prd = ev.products.find((x) => x.id === String(it.productId ?? ''));
+    if (!prd) return fail(404, 'ไม่พบของที่ระลึกบางรายการ');
+    const qty = Math.floor(Number(it.quantity ?? 1));
+    if (!Number.isFinite(qty) || qty < 1 || qty > 10) return fail(400, `จำนวนของ ${prd.nameTh} ต้องอยู่ระหว่าง 1–10 ชิ้น`);
+    const size = String(it.variantSize ?? '').trim();
+    if (prd.availableSizes.length > 0 && !prd.availableSizes.includes(size)) return fail(400, `กรุณาเลือกไซส์ของ ${prd.nameTh}`);
+    if (prd.saleMode === 'preorder' && prd.preorderCloseDate && prd.preorderCloseDate < today) {
+      return fail(409, `${prd.nameTh} ปิดรับพรีออเดอร์แล้ว`);
     }
+    addonQtyByProduct.set(prd.id, (addonQtyByProduct.get(prd.id) ?? 0) + qty);
+    addonLines.push({ prd, size: size || '-', qty });
+  }
+  for (const [prdId, qty] of addonQtyByProduct) {
+    const prd = ev.products.find((x) => x.id === prdId)!;
+    const left = prd.stockOrCeiling - prd.soldCount;
+    if (qty > left) return fail(409, left > 0 ? `${prd.nameTh} เหลือเพียง ${left} ชิ้น` : `${prd.nameTh} หมดแล้ว`);
+  }
 
-    const shirtSize = payload.shirtSize as RegistrationRecord['shirtSize'];
-    const shirtSlot = ev.shirtStocks.find((s) => s.size === shirtSize);
-    if (shirtSlot && shirtSlot.reservedOrConfirmed >= shirtSlot.total) {
-      db.exec('ROLLBACK');
-      return res.status(409).json({ ok: false, error: 'สต็อกไซส์นี้เต็มแล้ว' });
-    }
-
-    // Server-side fee calculation (authoritative integer satang)
-    const tier = getCurrentTier(cat);
-    const quote = calculateFeeQuote(tier.priceSatang, ev.feeBearerPolicy);
-    const regCount = (
-      db.prepare('SELECT COUNT(*) AS cnt FROM registrations').get() as { cnt: number }
-    ).cnt;
-    const seq = regCount + 101;
-    // Codes are issued here, inside the locked transaction, so two runners checking out at the
-    // same moment never get the same number (a browser-made code could collide).
+  // Codes are issued here, inside the locked transaction, so two orders made at the same moment
+  // never get the same number. The order code is the first entry's.
+  const regCount = (db.prepare('SELECT COUNT(*) AS cnt FROM registrations').get() as { cnt: number }).cnt;
+  const firstSeq = regCount + 101;
+  const orderCode = `ORD-89${firstSeq}`;
+  const holdUntil = o.immediate ? null : new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const profile = user?.runnerProfile;
+  const regs: RegistrationRecord[] = ready.map((r, i) => {
+    const seq = firstSeq + i;
     const regCode = `REG-2611-${seq}`;
-    const orderCode = `ORD-89${seq}`;
-    const tokenSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const immediate = Boolean(payload.simulateImmediateWebhook);
-    const createdIso = nowIsoBangkok();
-    const kitByPost = payload.kitDeliveryMethod === 'postal_shipping';
-    if (kitByPost && !String(payload.shippingAddressSnapshot ?? '').trim()) {
-      db.exec('ROLLBACK');
-      return res.status(400).json({ ok: false, error: 'กรุณาระบุที่อยู่สำหรับจัดส่งชุดแข่ง' });
-    }
-
-    const newReg: RegistrationRecord = {
-      id: String(payload.id || `reg-dyn-${Date.now()}`),
+    // Server-side fee calculation (authoritative integer satang), per person
+    const quote = calculateFeeQuote(getCurrentTier(r.cat).priceSatang, ev.feeBearerPolicy);
+    const reg: RegistrationRecord = {
+      id: r.e.id || `reg-dyn-${Date.now()}-${i + 1}`,
       regCode,
       orderCode,
+      ...(many ? { orderEntryNo: i + 1, orderEntryCount: o.entries.length } : {}),
       eventId: ev.id,
       organizationId: ev.organizationId,
-      categoryId: cat.id,
+      categoryId: r.cat.id,
       runnerUserId: user?.id,
-      buyerName: String(payload.buyerName ?? ''),
-      participantNameTh: String(payload.participantNameTh ?? ''),
-      participantNameEn: String(payload.participantNameEn ?? ''),
+      buyerName: o.buyerName,
+      participantNameTh: r.e.participantNameTh,
+      participantNameEn: r.e.participantNameEn,
       email: user?.contactEmail ?? 'verified.runner@demo.local',
       // a friend's entry keeps the friend's phone; only your own entry falls back to the profile
-      phoneMasked: String(
-        payload.phone || (payload.forFriend ? '' : user?.runnerProfile?.phone) || '081-•••-9900'
-      ),
+      phoneMasked: String(r.e.phone || (r.e.forFriend ? '' : profile?.phone) || '081-•••-9900'),
       emergencyContact: String(
-        payload.emergencyContact ||
-          (user?.runnerProfile?.emergencyContactName &&
-          user?.runnerProfile?.emergencyContactPhone
-            ? `${user.runnerProfile.emergencyContactName} (${
-                user.runnerProfile.emergencyContactRelation ?? 'ฉุกเฉิน'
-              }) ${user.runnerProfile.emergencyContactPhone}`
+        r.e.emergencyContact ||
+          (profile?.emergencyContactName && profile?.emergencyContactPhone
+            ? `${profile.emergencyContactName} (${profile.emergencyContactRelation ?? 'ฉุกเฉิน'}) ${profile.emergencyContactPhone}`
             : 'ผู้ติดต่อฉุกเฉิน 089-•••-0011')
       ),
-      shirtSize,
-      kitDeliveryMethod: kitByPost ? 'postal_shipping' : 'pickup_at_expo',
-      shippingAddressSnapshot: payload.shippingAddressSnapshot
-        ? String(payload.shippingAddressSnapshot)
-        : undefined,
-      participantSnapshot: payload.participantSnapshot,
-      customAnswers: answers,
+      shirtSize: r.shirtSize,
+      kitDeliveryMethod: o.kitByPost ? 'postal_shipping' : 'pickup_at_expo',
+      shippingAddressSnapshot: o.shippingAddressSnapshot,
+      participantSnapshot: r.e.participantSnapshot,
+      customAnswers: r.answers,
       formVersionUsed: gate.versionLabel,
       bibNumber: null,
-      qrCheckInToken: `TKN-${cat.bibPrefix}${seq}-${tokenSuffix}`,
+      qrCheckInToken: `TKN-${r.cat.bibPrefix}${seq}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
       acceptedRulesVersion: ev.rulesVersion,
-      acceptedPaymentTermsVersion: String(payload.acceptedPaymentTermsVersion),
-      acceptedPrivacyVersion: String(payload.acceptedPrivacyVersion),
-      marketingConsent: Boolean(payload.marketingConsent),
+      acceptedPaymentTermsVersion: o.acceptedPaymentTermsVersion,
+      acceptedPrivacyVersion: o.acceptedPrivacyVersion,
+      marketingConsent: o.marketingConsent,
       createdAt: createdIso,
-      paidAt: immediate ? createdIso : null,
+      paidAt: o.immediate ? createdIso : null,
       refundedAt: null,
-      reservationExpiresAt: immediate
-        ? null
-        : new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-      registrationStatus: immediate ? 'confirmed' : 'pending_payment',
-      paymentStatus: immediate ? 'succeeded' : 'pending',
+      // one hold time for the whole order: its places expire together
+      reservationExpiresAt: holdUntil,
+      registrationStatus: o.immediate ? 'confirmed' : 'pending_payment',
+      paymentStatus: o.immediate ? 'succeeded' : 'pending',
       refundStatus: 'none',
-      fulfillmentStatus: immediate ? 'ready' : 'not_ready',
+      fulfillmentStatus: o.immediate ? 'ready' : 'not_ready',
       snapshotBaseSatang: quote.baseSatang,
       snapshotPlatformFeeSatang: quote.platformFeeSatang,
       snapshotRunnerFeeSatang: quote.runnerFeeSatang,
@@ -1632,149 +1768,143 @@ app.post('/api/registrations', (req, res) => {
       snapshotTotalChargedSatang: quote.runnerNetPaySatang,
       snapshotRefundedSatang: 0,
     };
-    const ageSnapshot = participantDob
-      ? buildAgeSnapshot(ageCheck, participantDob, createdIso)
-      : undefined;
+    if (many && !r.e.forFriend) reg.orderSelfEntry = true;
+    const ageSnapshot = r.dob ? buildAgeSnapshot(r.ageCheck, r.dob, createdIso) : undefined;
     if (ageSnapshot) {
-      newReg.ageSnapshot = ageSnapshot;
-      newReg.age = ageSnapshot.ageYears;
+      reg.ageSnapshot = ageSnapshot;
+      reg.age = ageSnapshot.ageYears;
     }
-    if (participantGender === 'ชาย' || participantGender === 'หญิง' || participantGender === 'ไม่ระบุ') {
-      newReg.gender = participantGender;
-    }
+    if (r.gender === 'ชาย' || r.gender === 'หญิง' || r.gender === 'ไม่ระบุ') reg.gender = r.gender;
+    return reg;
+  });
+  const lead = regs[0];
 
-    // Souvenirs bought with the entry: any number of lines, each a separate merch order linked
-    // to this registration (the entry total itself never changes). Every line is checked in this
-    // same transaction (size, 1–10 pieces, pre-order still open, stock for the summed quantity),
-    // so the seat and the souvenirs are either all booked or none.
-    const rawAddonItems: unknown[] = Array.isArray(payload.addonItems)
-      ? payload.addonItems
-      : payload.addonProductId || payload.addonProduct
-      ? [{ productId: payload.addonProductId ?? payload.addonProduct?.id, variantSize: payload.addonSize, quantity: 1 }]
-      : [];
-    if (rawAddonItems.length > 20) {
-      db.exec('ROLLBACK');
-      return res.status(400).json({ ok: false, error: 'เลือกของที่ระลึกได้ไม่เกิน 20 รายการ' });
-    }
-    const today = createdIso.slice(0, 10);
-    const addonLines: { prd: EventProduct; size: string; qty: number }[] = [];
-    const addonQtyByProduct = new Map<string, number>();
-    for (const raw of rawAddonItems) {
-      const it = (raw ?? {}) as Record<string, unknown>;
-      const prd = ev.products.find((p) => p.id === String(it.productId ?? ''));
-      if (!prd) {
-        db.exec('ROLLBACK');
-        return res.status(404).json({ ok: false, error: 'ไม่พบของที่ระลึกบางรายการ' });
-      }
-      const qty = Math.floor(Number(it.quantity ?? 1));
-      if (!Number.isFinite(qty) || qty < 1 || qty > 10) {
-        db.exec('ROLLBACK');
-        return res.status(400).json({ ok: false, error: `จำนวนของ ${prd.nameTh} ต้องอยู่ระหว่าง 1–10 ชิ้น` });
-      }
-      const size = String(it.variantSize ?? '').trim();
-      if (prd.availableSizes.length > 0 && !prd.availableSizes.includes(size)) {
-        db.exec('ROLLBACK');
-        return res.status(400).json({ ok: false, error: `กรุณาเลือกไซส์ของ ${prd.nameTh}` });
-      }
-      if (prd.saleMode === 'preorder' && prd.preorderCloseDate && prd.preorderCloseDate < today) {
-        db.exec('ROLLBACK');
-        return res.status(409).json({ ok: false, error: `${prd.nameTh} ปิดรับพรีออเดอร์แล้ว` });
-      }
-      addonQtyByProduct.set(prd.id, (addonQtyByProduct.get(prd.id) ?? 0) + qty);
-      addonLines.push({ prd, size: size || '-', qty });
-    }
-    for (const [prdId, qty] of addonQtyByProduct) {
-      const prd = ev.products.find((p) => p.id === prdId)!;
-      const left = prd.stockOrCeiling - prd.soldCount;
-      if (qty > left) {
-        db.exec('ROLLBACK');
-        return res.status(409).json({
-          ok: false,
-          error: left > 0 ? `${prd.nameTh} เหลือเพียง ${left} ชิ้น` : `${prd.nameTh} หมดแล้ว`,
-        });
-      }
-    }
-
-    // Postage: the kit fee is part of the entry total (and goes to the organizer); souvenirs from
-    // other sellers pay once per seller on their own order. Same rule as the forms show.
-    const shipQuote = quoteRegistrationShipping(ev, kitByPost ? 'postal_shipping' : 'pickup_at_expo', addonLines);
-    if (shipQuote.kitSatang > 0) {
-      newReg.snapshotKitShippingSatang = shipQuote.kitSatang;
-      newReg.snapshotTotalChargedSatang += shipQuote.kitSatang;
-    }
-    const sellerFee = new Map(shipQuote.sellers.map((x) => [x.seller, x.satang]));
-    const sellerCharged = new Set<string>();
-    const shipAddress = kitByPost ? String(payload.shippingAddressSnapshot).trim() : undefined;
-
-    let mSeqLast = lastMerchSeq();
-    const addonBaseId = String(payload.addonOrderId || `mord-dyn-${Date.now()}`);
-    const addonOrders: MerchOrderRecord[] = addonLines.map((l, i) => {
-      const mSeq = ++mSeqLast;
-      const ship = sellerCharged.has(l.prd.sellerLabel) ? 0 : sellerFee.get(l.prd.sellerLabel) ?? 0;
-      sellerCharged.add(l.prd.sellerLabel);
-      return {
-        id: addonLines.length === 1 ? addonBaseId : `${addonBaseId}-${i + 1}`,
-        merchOrderCode: `SHP-2611-${mSeq}`,
-        checkoutCode: `ADD-${regCode}`,
-        eventId: ev.id,
-        organizationId: ev.organizationId,
-        buyerUserId: user?.id,
-        buyerName: newReg.buyerName,
-        buyerEmail: user?.contactEmail ?? 'ติดต่อผ่านบัญชีผู้ใช้',
-        productId: l.prd.id,
-        productNameTh: l.prd.nameTh,
-        sellerLabel: l.prd.sellerLabel,
-        variantSize: l.size,
-        quantity: l.qty,
-        deliveredQty: 0,
-        deliveryMethod: kitByPost ? 'postal_shipping' : 'pickup_at_expo',
-        shippingAddress: shipAddress,
-        unitPriceSatang: l.prd.priceSatang,
-        shippingSatang: ship,
-        totalPaidSatang: l.prd.priceSatang * l.qty + ship,
-        paymentStatus: immediate ? 'succeeded' : 'pending',
-        fulfillmentStatus: kitByPost ? 'preparing' : 'ready_or_shipped',
-        pickupToken: `PICK-SHP-${mSeq}`,
-        linkedRegistrationCode: regCode,
-        createdAt: createdIso,
-      };
-    });
-
-    const updatedEv: RaceEvent = {
-      ...ev,
-      shirtStocks: ev.shirtStocks.map((st) =>
-        st.size === shirtSize
-          ? { ...st, reservedOrConfirmed: st.reservedOrConfirmed + 1 }
-          : st
-      ),
-      products: ev.products.map((p) =>
-        addonQtyByProduct.has(p.id)
-          ? { ...p, soldCount: p.soldCount + (addonQtyByProduct.get(p.id) ?? 0) }
-          : p
-      ),
+  // Postage: once per order (user decision A, 28 Nov 2026), on the first entry; souvenirs from
+  // other sellers pay once per seller on their own order. Same rule as the forms show.
+  const shipQuote = quoteRegistrationShipping(ev, o.kitByPost ? 'postal_shipping' : 'pickup_at_expo', addonLines);
+  if (shipQuote.kitSatang > 0) {
+    lead.snapshotKitShippingSatang = shipQuote.kitSatang;
+    lead.snapshotTotalChargedSatang += shipQuote.kitSatang;
+  }
+  const sellerFee = new Map(shipQuote.sellers.map((x) => [x.seller, x.satang]));
+  const sellerCharged = new Set<string>();
+  const shipAddress = o.kitByPost ? String(o.shippingAddressSnapshot).trim() : undefined;
+  let mSeqLast = lastMerchSeq();
+  const addonBaseId = String(o.addonOrderId || `mord-dyn-${Date.now()}`);
+  const addonOrders: MerchOrderRecord[] = addonLines.map((l, i) => {
+    const mSeq = ++mSeqLast;
+    const ship = sellerCharged.has(l.prd.sellerLabel) ? 0 : sellerFee.get(l.prd.sellerLabel) ?? 0;
+    sellerCharged.add(l.prd.sellerLabel);
+    return {
+      id: addonLines.length === 1 ? addonBaseId : `${addonBaseId}-${i + 1}`,
+      merchOrderCode: `SHP-2611-${mSeq}`,
+      checkoutCode: `ADD-${lead.regCode}`,
+      eventId: ev.id,
+      organizationId: ev.organizationId,
+      buyerUserId: user?.id,
+      buyerName: o.buyerName,
+      buyerEmail: user?.contactEmail ?? 'ติดต่อผ่านบัญชีผู้ใช้',
+      productId: l.prd.id,
+      productNameTh: l.prd.nameTh,
+      sellerLabel: l.prd.sellerLabel,
+      variantSize: l.size,
+      quantity: l.qty,
+      deliveredQty: 0,
+      deliveryMethod: o.kitByPost ? 'postal_shipping' : 'pickup_at_expo',
+      shippingAddress: shipAddress,
+      unitPriceSatang: l.prd.priceSatang,
+      shippingSatang: ship,
+      totalPaidSatang: l.prd.priceSatang * l.qty + ship,
+      paymentStatus: o.immediate ? 'succeeded' : 'pending',
+      fulfillmentStatus: o.kitByPost ? 'preparing' : 'ready_or_shipped',
+      pickupToken: `PICK-SHP-${mSeq}`,
+      linkedRegistrationCode: lead.regCode,
+      createdAt: createdIso,
     };
+  });
 
-    upsertEventRow(updatedEv);
-    upsertRegistrationRow(newReg, 1);
-    addonOrders.forEach((o) => upsertMerchOrderRow(o, 1));
+  upsertEventRow({
+    ...ev,
+    shirtStocks: ev.shirtStocks.map((st) =>
+      shirtsTaken.has(st.size) ? { ...st, reservedOrConfirmed: st.reservedOrConfirmed + (shirtsTaken.get(st.size) ?? 0) } : st
+    ),
+    products: ev.products.map((x) =>
+      addonQtyByProduct.has(x.id) ? { ...x, soldCount: x.soldCount + (addonQtyByProduct.get(x.id) ?? 0) } : x
+    ),
+  });
+  regs.forEach((r) => upsertRegistrationRow(r, 1));
+  addonOrders.forEach((m) => upsertMerchOrderRow(m, 1));
+  recordAudit(
+    user,
+    ev.organizationId,
+    many
+      ? `สมัครวิ่ง ${regs.length} คนในคำสั่งซื้อเดียว (${orderCode}: ${regs.map((r) => r.regCode).join(', ')})${
+          addonOrders.length > 0 ? ` พร้อมซื้อสินค้าเพิ่ม (${addonOrders.map((m) => m.merchOrderCode).join(', ')})` : ''
+        }`
+      : `สมัครวิ่งรายการใหม่ (${lead.regCode})${
+          addonOrders.length > 0 ? ` พร้อมซื้อสินค้าเพิ่ม (${addonOrders.map((m) => m.merchOrderCode).join(', ')})` : ''
+        }`,
+    ready.map((r) => `${r.cat.code} · เสื้อ ${r.shirtSize}`).join(' / '),
+    ev.id
+  );
+  return { fail: false, regs, addonOrders, replayed: false };
+}
 
-    recordAudit(
-      user,
-      ev.organizationId,
-      `สมัครวิ่งรายการใหม่ (${regCode})${
-        addonOrders.length > 0
-          ? ` พร้อมซื้อสินค้าเพิ่ม (${addonOrders.map((o) => o.merchOrderCode).join(', ')})`
-          : ''
-      }`,
-      `${cat.code} · เสื้อ ${shirtSize}`,
-      ev.id
-    );
-    db.exec('COMMIT');
-    return okSnapshot(res, user?.id ?? null, { reg: newReg, addonOrder: addonOrders[0], addonOrders });
+/** the terms every order needs before anything is checked */
+function orderTermsProblem(payload: Record<string, unknown>): string | null {
+  if (payload.acceptedRules !== true || !payload.acceptedPaymentTermsVersion) {
+    return 'กรุณายอมรับกติกาการแข่งขันและข้อกำหนดการชำระเงินก่อนยืนยัน';
+  }
+  // PDPA (27 Nov 2026): the entry's personal and health data go to the organizer only with consent
+  if (!payload.acceptedPrivacyVersion) return 'กรุณายินยอมการส่งข้อมูลส่วนบุคคลให้ผู้จัดงานก่อนยืนยัน';
+  return null;
+}
+
+function runBooking(req: Request, res: Response, o: OrderInput, shape: 'single' | 'order') {
+  const { user } = resolveSessionUser(req);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    // seats held by unpaid entries whose time is up are free again before counting
+    expireStaleHolds();
+    const out = bookOrderInTx(user, o);
+    if (out.fail) {
+      db.exec('ROLLBACK');
+      return res.status(out.status).json(out.body);
+    }
+    if (out.replayed) db.exec('ROLLBACK');
+    else db.exec('COMMIT');
+    const extra =
+      shape === 'single'
+        ? { reg: out.regs[0], addonOrder: out.addonOrders[0], addonOrders: out.addonOrders }
+        : { orderCode: out.regs[0]?.orderCode, regs: out.regs, reg: out.regs[0], addonOrders: out.addonOrders };
+    return okSnapshot(res, user?.id ?? null, { ...extra, ...(out.replayed ? { replayed: true } : {}) });
   } catch (err) {
-    db.exec('ROLLBACK');
+    if (db.isTransaction) db.exec('ROLLBACK');
     throw err;
   }
+}
+
+// one person (the form used before group registration): an order of one
+app.post('/api/registrations', (req, res) => {
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const terms = orderTermsProblem(payload);
+  if (terms) return res.status(400).json({ ok: false, error: terms });
+  return runBooking(req, res, orderFrom(payload, [entryFrom(payload)]), 'single');
+});
+
+// several people in one order (28 Nov 2026): `entries` holds one object per person
+app.post('/api/registration-orders', (req, res) => {
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const terms = orderTermsProblem(payload);
+  if (terms) return res.status(400).json({ ok: false, error: terms });
+  if (!Array.isArray(payload.entries) || payload.entries.length === 0) {
+    return res.status(400).json({ ok: false, error: 'กรุณาเพิ่มผู้สมัครอย่างน้อย 1 คน' });
+  }
+  if (payload.entries.length > ORDER_ENTRY_CAP) {
+    return res.status(400).json({ ok: false, error: `สมัครได้ไม่เกิน ${ORDER_ENTRY_CAP} คนต่อครั้ง` });
+  }
+  const entries = (payload.entries as unknown[]).map((x) => entryFrom((x ?? {}) as Record<string, unknown>));
+  return runBooking(req, res, orderFrom(payload, entries), 'order');
 });
 
 app.patch('/api/registrations/:id/shirt-size', (req, res) => {
@@ -1912,85 +2042,160 @@ function expireStaleHolds(): number {
   return stale.length;
 }
 
-app.post('/api/registrations/:id/confirm-payment', (req, res) => {
-  const { user } = resolveSessionUser(req);
-  const regId = req.params.id;
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const reg = readRegistration(regId);
-    if (!reg) {
-      db.exec('ROLLBACK');
-      return res.status(404).json({ ok: false, error: 'ไม่พบใบสมัคร' });
-    }
-    if (reg.paymentStatus === 'succeeded') {
-      // Idempotent webhook behavior
-      db.exec('ROLLBACK');
-      return okSnapshot(res, user?.id ?? null, { reg });
-    }
-    // a hold that ran out (or was cancelled) has already given its seat back
-    if (holdIsOver(reg)) {
-      releaseHeldRegistration(reg, 'expired');
-      recordAudit(null, reg.organizationId, `หมดเวลาชำระเงิน คืนที่นั่ง (${reg.regCode})`, `${reg.orderCode}: expired`, reg.eventId);
-      db.exec('COMMIT');
-      return res.status(409).json({ ok: false, error: 'หมดเวลาชำระเงินแล้ว ที่นั่งถูกคืนเข้าระบบ กรุณายืนยันการสมัครใหม่', expired: true });
-    }
-    if (reg.registrationStatus !== 'pending_payment') {
-      db.exec('ROLLBACK');
-      return res.status(409).json({ ok: false, error: 'ใบสมัครนี้ไม่ได้รอชำระเงินแล้ว กรุณายืนยันการสมัครใหม่', expired: true });
-    }
-    const paidAt = nowIsoBangkok();
-    const updated: RegistrationRecord = {
-      ...reg,
+/** the registrations paid together with this one (a group order pays once) */
+function paidTogether(reg: RegistrationRecord): RegistrationRecord[] {
+  return (reg.orderEntryCount ?? 1) > 1 ? orderRegistrations(reg.orderCode) : [reg];
+}
+
+/**
+ * The payment signal for an order (Local: the simulated webhook). Idempotent: a repeat after
+ * success returns the same result. Every person of the order is confirmed together; a hold that
+ * ran out gives every seat back first. Call inside BEGIN IMMEDIATE.
+ */
+function confirmOrderInTx(
+  user: UserAccount | null,
+  regs: RegistrationRecord[]
+): { status: number; body: Record<string, unknown> } | { regs: RegistrationRecord[]; changed: boolean } {
+  const lead = regs[0];
+  if (regs.every((r) => r.paymentStatus === 'succeeded')) return { regs, changed: false };
+  if (regs.some((r) => holdIsOver(r))) {
+    for (const r of regs) if (r.registrationStatus === 'pending_payment') releaseHeldRegistration(r, 'expired');
+    recordAudit(
+      null,
+      lead.organizationId,
+      `หมดเวลาชำระเงิน คืนที่นั่ง (${regs.map((r) => r.regCode).join(', ')})`,
+      `${lead.orderCode}: expired`,
+      lead.eventId
+    );
+    return {
+      status: 409,
+      body: { ok: false, error: 'หมดเวลาชำระเงินแล้ว ที่นั่งถูกคืนเข้าระบบ กรุณายืนยันการสมัครใหม่', expired: true, commit: true },
+    };
+  }
+  const pending = regs.filter((r) => r.registrationStatus === 'pending_payment');
+  if (pending.length !== regs.length) {
+    return { status: 409, body: { ok: false, error: 'ใบสมัครนี้ไม่ได้รอชำระเงินแล้ว กรุณายืนยันการสมัครใหม่', expired: true } };
+  }
+  const paidAt = nowIsoBangkok();
+  const updated = regs.map((r) => {
+    const next: RegistrationRecord = {
+      ...r,
       registrationStatus: 'confirmed',
       paymentStatus: 'succeeded',
       fulfillmentStatus: 'ready',
       paidAt,
       reservationExpiresAt: null,
     };
-    upsertRegistrationRow(updated);
-    // souvenirs booked with the entry are paid in the same payment
-    linkedPendingAddonOrders(reg).forEach((o) => upsertMerchOrderRow({ ...o, paymentStatus: 'succeeded' }));
-    recordAudit(
-      user,
-      reg.organizationId,
-      `ยืนยันผล Webhook รับเงินสำเร็จ (${reg.orderCode})`,
-      `${reg.regCode}: confirmed`,
-      reg.eventId
-    );
-    db.exec('COMMIT');
-    return okSnapshot(res, user?.id ?? null, { reg: updated });
+    upsertRegistrationRow(next);
+    // souvenirs booked with the order are paid in the same payment
+    linkedPendingAddonOrders(r).forEach((o) => upsertMerchOrderRow({ ...o, paymentStatus: 'succeeded' }));
+    return next;
+  });
+  recordAudit(
+    user,
+    lead.organizationId,
+    `ยืนยันผล Webhook รับเงินสำเร็จ (${lead.orderCode})`,
+    `${updated.map((r) => r.regCode).join(', ')}: confirmed`,
+    lead.eventId
+  );
+  return { regs: updated, changed: true };
+}
+
+function runConfirm(req: Request, res: Response, find: () => RegistrationRecord[] | null, pick?: string) {
+  const { user } = resolveSessionUser(req);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const regs = find();
+    if (!regs || regs.length === 0) {
+      db.exec('ROLLBACK');
+      return res.status(404).json({ ok: false, error: 'ไม่พบใบสมัคร' });
+    }
+    const out = confirmOrderInTx(user, regs);
+    if ('status' in out) {
+      const commit = out.body.commit === true;
+      delete out.body.commit;
+      db.exec(commit ? 'COMMIT' : 'ROLLBACK');
+      return res.status(out.status).json(out.body);
+    }
+    db.exec(out.changed ? 'COMMIT' : 'ROLLBACK');
+    const reg = out.regs.find((r) => r.id === pick) ?? out.regs[0];
+    return okSnapshot(res, user?.id ?? null, { reg, regs: out.regs, orderCode: reg.orderCode });
   } catch (err) {
-    db.exec('ROLLBACK');
+    if (db.isTransaction) db.exec('ROLLBACK');
     throw err;
   }
+}
+
+app.post('/api/registrations/:id/confirm-payment', (req, res) => {
+  const regId = req.params.id;
+  return runConfirm(
+    req,
+    res,
+    () => {
+      const reg = readRegistration(regId);
+      return reg ? paidTogether(reg) : null;
+    },
+    regId
+  );
 });
 
+// a group order is paid once: confirm it by its order code (28 Nov 2026)
+app.post('/api/registration-orders/:orderCode/confirm-payment', (req, res) =>
+  runConfirm(req, res, () => {
+    const regs = orderRegistrations(String(req.params.orderCode));
+    return regs.length ? regs : null;
+  })
+);
+
 // The runner goes back from the payment step to edit: their own unpaid hold is cancelled and
-// its seat, shirt and souvenirs are given back. The form keeps what they typed.
-app.post('/api/registrations/:id/cancel-hold', (req, res) => {
+// its seats, shirts and souvenirs are given back (every person of a group order together).
+// The form keeps what they typed.
+function runCancelHold(req: Request, res: Response, find: () => RegistrationRecord[] | null) {
   const { user } = resolveSessionUser(req);
   if (!user) return res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' });
   db.exec('BEGIN IMMEDIATE');
   try {
-    const reg = readRegistration(req.params.id);
-    if (!reg || reg.runnerUserId !== user.id) {
+    const regs = find();
+    if (!regs || regs.length === 0 || regs.some((r) => r.runnerUserId !== user.id)) {
       db.exec('ROLLBACK');
       return res.status(404).json({ ok: false, error: 'ไม่พบใบสมัคร' });
     }
-    if (reg.registrationStatus !== 'pending_payment') {
+    const held = regs.filter((r) => r.registrationStatus === 'pending_payment');
+    if (held.length === 0) {
       // already paid, expired or cancelled: nothing to give back
       db.exec('ROLLBACK');
-      return okSnapshot(res, user.id, { reg });
+      return okSnapshot(res, user.id, { reg: regs[0], regs });
     }
-    releaseHeldRegistration(reg, 'cancelled');
-    recordAudit(user, reg.organizationId, `ยกเลิกใบสมัครที่รอชำระเพื่อแก้ไขข้อมูล (${reg.regCode})`, `${reg.orderCode}: cancelled`, reg.eventId);
+    held.forEach((r) => releaseHeldRegistration(r, 'cancelled'));
+    recordAudit(
+      user,
+      regs[0].organizationId,
+      `ยกเลิกใบสมัครที่รอชำระเพื่อแก้ไขข้อมูล (${held.map((r) => r.regCode).join(', ')})`,
+      `${regs[0].orderCode}: cancelled`,
+      regs[0].eventId
+    );
     db.exec('COMMIT');
-    return okSnapshot(res, user.id, { reg: readRegistration(reg.id) });
+    const after = regs.map((r) => readRegistration(r.id) ?? r);
+    return okSnapshot(res, user.id, { reg: after[0], regs: after });
   } catch (err) {
-    db.exec('ROLLBACK');
+    if (db.isTransaction) db.exec('ROLLBACK');
     throw err;
   }
-});
+}
+
+app.post('/api/registrations/:id/cancel-hold', (req, res) =>
+  runCancelHold(req, res, () => {
+    const reg = readRegistration(req.params.id);
+    return reg ? paidTogether(reg) : null;
+  })
+);
+
+app.post('/api/registration-orders/:orderCode/cancel-hold', (req, res) =>
+  runCancelHold(req, res, () => {
+    const regs = orderRegistrations(String(req.params.orderCode));
+    return regs.length ? regs : null;
+  })
+);
 
 app.post('/api/registrations/:id/bib', (req, res) => {
   const { user } = resolveSessionUser(req);

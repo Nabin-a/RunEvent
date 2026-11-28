@@ -1,4 +1,5 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * A drop-in for <select> whose open list looks like every other list in the forms (24 Nov 2026,
@@ -9,11 +10,26 @@ import React, { useEffect, useId, useRef, useState } from 'react';
  * - A hidden real <select> keeps `required` working with the form checks
  *   (reportInvalidFieldsWithin) and its red "invalid" mark shows on the button.
  * - Keyboard: ↑/↓ or Enter/Space open; ↑/↓, Home/End and typing move; Enter picks; Esc closes.
+ * - The open list floats over the page (drawn at the page root, fixed to the button), so a
+ *   scrolling panel, a table or the editor never cuts it off; with no room below it opens upward.
+ *
+ * Rule (28 Nov 2026, user request "dropdown select ให้เหมือนกันทั้งระบบ"): every dropdown in the
+ * site, the organizer system and the console uses this component — no bare <select> in screens.
  */
-export type SelectMenuOption = { value: string; label: string; disabled?: boolean };
+export type SelectMenuOption = {
+  value: string;
+  label: string;
+  disabled?: boolean;
+  /** a second, smaller line under the label (e.g. a friend's age, or why a choice is off) */
+  hint?: string;
+  /** a heading drawn above the first option of each group (options of one group sit together) */
+  group?: string;
+};
 
 export function SelectMenu({
-  id,
+  id: givenId,
+  ariaLabel,
+  compact,
   value,
   options,
   onChange,
@@ -24,7 +40,12 @@ export function SelectMenu({
   ariaInvalid,
   className,
 }: {
-  id: string;
+  /** the button's id, for <label htmlFor>; omit it when the dropdown has no visible label */
+  id?: string;
+  /** the name read out when there is no visible <label> */
+  ariaLabel?: string;
+  /** a shorter box for filter bars and toolbars (same list, same arrow) */
+  compact?: boolean;
   value: string;
   options: SelectMenuOption[];
   onChange: (value: string) => void;
@@ -44,6 +65,9 @@ export function SelectMenu({
   const nativeRef = useRef<HTMLSelectElement | null>(null);
   const typed = useRef({ text: '', at: 0 });
   const listId = useId();
+  const id = givenId ?? `${listId}-btn`;
+  /** where the floating list sits: under the button, or above it when the page has no room below */
+  const [place, setPlace] = useState<{ left: number; width: number; top?: number; bottom?: number } | null>(null);
   const picked = options.findIndex((o) => o.value === value);
   const current = picked >= 0 ? options[picked] : null;
   const showsPlaceholder = !current || current.value === '';
@@ -77,10 +101,38 @@ export function SelectMenu({
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (!wrapRef.current?.contains(t) && !listRef.current?.contains(t)) setOpen(false);
     };
     document.addEventListener('pointerdown', onDown);
     return () => document.removeEventListener('pointerdown', onDown);
+  }, [open]);
+
+  // place the list against the button; it follows the button while the page or a panel scrolls
+  useLayoutEffect(() => {
+    if (!open) {
+      setPlace(null);
+      return;
+    }
+    const measure = () => {
+      const r = btnRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const listH = Math.min(listRef.current?.scrollHeight ?? 260, 260) + 8;
+      const below = window.innerHeight - r.bottom;
+      const up = below < listH && r.top > below;
+      setPlace(
+        up
+          ? { left: r.left, width: r.width, bottom: window.innerHeight - r.top + 4 }
+          : { left: r.left, width: r.width, top: r.bottom + 4 }
+      );
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+    };
   }, [open]);
 
   useEffect(() => {
@@ -137,7 +189,7 @@ export function SelectMenu({
   };
 
   return (
-    <span className={`kr-select ${open ? 'is-open' : ''} ${className ?? ''}`} ref={wrapRef}>
+    <span className={`kr-select${open ? ' is-open' : ''}${compact ? ' is-compact' : ''}${className ? ` ${className}` : ''}`} ref={wrapRef}>
       {/* the real control for the form checks; focus moves on to the button */}
       <select
         ref={nativeRef}
@@ -165,6 +217,7 @@ export function SelectMenu({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
+        aria-label={ariaLabel}
         aria-describedby={ariaDescribedBy}
         aria-invalid={ariaInvalid || undefined}
         disabled={disabled}
@@ -177,34 +230,62 @@ export function SelectMenu({
         }}
       >
         <span className="kr-select-value">{showsPlaceholder ? placeholder ?? current?.label ?? '' : current?.label}</span>
+        {/* like a native select, the box is as wide as its longest choice, so a toolbar does not
+            jump when another value is picked; these copies are invisible and take no height */}
+        <span className="kr-select-sizer" aria-hidden="true">
+          {placeholder && <span>{placeholder}</span>}
+          {options.map((o) => (
+            <span key={o.value}>{o.label}</span>
+          ))}
+        </span>
       </button>
-      {open && (
+      {open &&
+        createPortal(
         <ul
           ref={listRef}
           id={listId}
           role="listbox"
           tabIndex={-1}
-          className="kr-menu"
+          className={`kr-menu is-floating${compact ? ' is-compact' : ''}${place?.bottom !== undefined ? ' is-up' : ''}`}
+          style={place ? { left: place.left, minWidth: place.width, top: place.top, bottom: place.bottom } : { visibility: 'hidden' }}
           aria-labelledby={id}
           aria-activedescendant={`${listId}-${active}`}
           onKeyDown={onListKey}
         >
           {options.map((o, i) => (
+            <React.Fragment key={o.value}>
+            {/* sections of a grouped list are set apart by a line (28 Nov 2026, user request):
+                a heading starts each group; an option after a group with none of its own gets the line only */}
+            {o.group && o.group !== options[i - 1]?.group && (
+              <li role="presentation" className={`kr-menu-group${i > 0 ? ' has-rule' : ''}`}>
+                {o.group}
+              </li>
+            )}
+            {!o.group && i > 0 && options[i - 1]?.group && <li role="presentation" className="kr-menu-rule" />}
             <li
-              key={o.value}
               id={`${listId}-${i}`}
               data-i={i}
               role="option"
               aria-selected={i === picked}
               aria-disabled={o.disabled || undefined}
-              className={`kr-menu-item ${i === active ? 'is-active' : ''} ${i === picked ? 'is-picked' : ''}`}
+              className={`kr-menu-item ${i === active ? 'is-active' : ''} ${i === picked ? 'is-picked' : ''}${o.hint ? ' has-hint' : ''}`}
               onPointerEnter={() => enabled(i) && setActive(i)}
               onClick={() => choose(i)}
             >
-              {o.label}
+              {o.hint ? (
+                <>
+                  <span className="kr-menu-label">{o.label}</span>
+                  <small className="kr-menu-hint">{o.hint}</small>
+                </>
+              ) : (
+                o.label
+              )}
             </li>
+            </React.Fragment>
           ))}
-        </ul>
+        </ul>,
+        // inside the app root so the page's theme colours still apply
+        wrapRef.current?.closest('.app-root') ?? document.body
       )}
     </span>
   );

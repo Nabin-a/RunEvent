@@ -92,6 +92,7 @@ export function SouvenirCartBar({
                       name={l.prd.nameTh}
                       kind={souvenirArt(l.prd.categoryLabel, l.prd.nameTh)}
                       className="sf-art-svg"
+                      flip="none"
                     />
                   </span>
                   <span className="sv-cart-copy">

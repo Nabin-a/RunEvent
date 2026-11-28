@@ -1,3 +1,5 @@
+import { LIST_PAGE_SIZE, Pager } from './ListPager';
+import { SelectMenu } from './SelectMenu';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   MerchOrderRecord,
@@ -41,7 +43,6 @@ import {
 import { RegistrationDone } from './RegistrationReview';
 import { StorefrontView, type CartLine, type MerchCheckoutPayload, type MerchCheckoutResult } from './StorefrontView';
 import { PAYMENT_TERMS_VERSION, REGISTRATION_PRIVACY_VERSION } from './RegistrationTerms';
-import type { SouvenirLayout } from './SouvenirPicker';
 import {
   ConfirmationFileActions,
   ConfirmationModal,
@@ -50,7 +51,9 @@ import {
   confirmationQr,
   confirmationTitle,
   confirmationTone,
+  orderConfirmationSheets,
 } from './RegistrationConfirmation';
+import { QrCode } from './QrCode';
 import { displayPhone } from '../utils/phone';
 import { CategoryAgeGroups, categoryHasAgeGroups } from './EventAgeGroupsSection';
 import { ProductArt, souvenirArt } from './ProductArt';
@@ -72,15 +75,60 @@ import { isTotalQuotaEnabled } from '../utils/eventConfig';
 import { DirectoryEmptyState, HeroRegionSelect, HeroSearchField, matchesSearchText, similarSearchTerms } from './DirectorySearch';
 import { DONE_STEP, PAY_STEP, RegistrationLabView, type LabLive, type LabShared } from './RegistrationLabView';
 import { flowStepOf, formFlowOf, runnerFlow } from '../data/formFlow';
-import { type ShirtStyleId } from '../data/mockShirtStyles';
+
+/** one person already filled in on a group order (28 Nov 2026) */
+interface PersonSnap {
+  id: string;
+  option: string;
+  catId: string;
+  forSelf: boolean;
+  savedId: string;
+  fTh: string;
+  lTh: string;
+  fEn: string;
+  lEn: string;
+  nTh: string;
+  nEn: string;
+  dob: string;
+  gender: 'ชาย' | 'หญิง' | 'ไม่ระบุ';
+  phone: string;
+  email: string;
+  idType: 'none' | 'thai_id' | 'passport';
+  idNumber: string;
+  eName: string;
+  eRel: string;
+  ePhone: string;
+  answers: Record<string, string | boolean>;
+  shirtSize: ShirtSizeCode;
+  shirtStyle: ShirtStyleId;
+}
+/** one person of a group order as the server takes it */
+export interface GroupEntryPayload {
+  id: string;
+  categoryId: string;
+  participantNameTh: string;
+  participantNameEn: string;
+  phone?: string;
+  forFriend: boolean;
+  emergencyContact: string;
+  shirtSize: ShirtSizeCode;
+  participantSnapshot: RegistrationRecord['participantSnapshot'];
+  customAnswers?: Record<string, string | boolean>;
+}
+/** race cards per page on the home page: three rows of three on a wide screen (28 Nov 2026) */
+const HOME_PAGE_SIZE = 9;
+
+const newPersonId = () => `ent-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+import { shirtStyleName, type ShirtStyleId } from '../data/mockShirtStyles';
 import { MascotSprite } from './MascotRunner';
 import { reportInvalidFieldsWithin } from '../utils/formValidation';
 import type { CascadingAddressValue } from './ThaiPostalAddressSelector';
 import { maskIdNumber } from '../utils/dateFormat';
 import { EventStatusBadge, PaymentStatusBadge } from './StatusBadges';
 import { EventPhaseBanner, EventPhasePill, phaseDetail } from './EventPhaseParts';
+import { EventCountdown } from './EventCountdown';
 import { runnerEventPhase, type PhaseSeats } from '../utils/eventPhase';
-import { validateAnswers } from '../data/registrationForm';
+import { answerText, fieldShown, isContentField, validateAnswers } from '../data/registrationForm';
 
 import { getLang, tx, txf } from '../i18n';
 import { FEATURES } from '../config/features';
@@ -97,7 +145,10 @@ import {
   RegResult,
   regAgeShort,
   regIsPast,
+  regStatusKey,
+  HISTORY_STATUS_OPTIONS,
   type HistoryFilter,
+  type HistoryStatus,
 } from './RegistrationHistoryParts';
 import { formatBasisDate, todayIsoInTimeZone } from '../utils/age';
 /** Registration wizard steps: 1 start, 2 participant, 3 race-kit shirt, 4 souvenirs,
@@ -159,14 +210,16 @@ interface CustomerPortalViewProps {
     addonItems?: CartLine[];
     customAnswers?: Record<string, string | boolean>;
     requestId: string;
+    /** a group order: the people filed before the card being sent (28 Nov 2026) */
+    others?: GroupEntryPayload[];
   }) => Promise<
-    | { ok: true; reg: RegistrationRecord; addonOrders?: MerchOrderRecord[] }
-    | { ok: false; error: string }
+    | { ok: true; reg: RegistrationRecord; addonOrders?: MerchOrderRecord[]; regs?: RegistrationRecord[] }
+    | { ok: false; error: string; entryIndex?: number }
   >;
-  /** pays a registration held at the summary step; `expired` when its 15 minutes ran out */
+  /** pays a registration held at the summary step (a group order is paid as a whole); `expired` when its 15 minutes ran out */
   onPayHeldRegistration: (
     regId: string
-  ) => Promise<{ ok: true; reg: RegistrationRecord } | { ok: false; error: string; expired: boolean }>;
+  ) => Promise<{ ok: true; reg: RegistrationRecord; regs?: RegistrationRecord[] } | { ok: false; error: string; expired: boolean }>;
   /** gives a held registration back (runner goes back to edit) */
   onCancelHeldRegistration: (regId: string) => Promise<{ ok: boolean; error?: string }>;
   /** storefront cart checkout (server checks stock for the whole cart in one go) */
@@ -174,8 +227,6 @@ interface CustomerPortalViewProps {
   /** 'b' renders the alternative registration layout (sandbox review only, cannot submit) */
   /** event-wide quota box on the event detail page (dev-dock mockup for now) */
   showQuotaBox?: boolean;
-  /** souvenir step layout picked in the Dev / Demo dock */
-  souvenirLayout?: SouvenirLayout;
 }
 
 export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
@@ -199,7 +250,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   onCancelHeldRegistration,
   onCheckoutMerchCart,
   showQuotaBox = true,
-  souvenirLayout = 'accordion',
 }) => {
   // Directory filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -410,7 +460,30 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     reg: RegistrationRecord;
     addonOrder?: MerchOrderRecord;
     addonOrders?: MerchOrderRecord[];
+    /** everyone of a group order, first entry first (28 Nov 2026) */
+    regs?: RegistrationRecord[];
   } | null>(null);
+  /* Group registration (28 Nov 2026, docs/group-registration-plan.md phase 3): the people already
+     filled in on this order. The card being filled is the form's own state; "+ เพิ่มผู้สมัคร" files
+     it here and starts an empty card, "แก้ไข" swaps a filed person back into the form. */
+  const [groupPeople, setGroupPeople] = useState<PersonSnap[]>([]);
+  /** the stable id of the card being filled (kept across retries so the server never books twice) */
+  const activePersonId = useRef('');
+  /** a filed "yourself" card coming back must not be refilled from the profile */
+  const skipSelfFill = useRef(false);
+  /* the person window (modal, 28 Nov 2026, user approved output/group-registration-modal-mockup):
+     null = closed, -1 = a new person, i = person i. The form's fields are the window's working copy;
+     the list keeps each person until "บันทึก" puts the copy back. */
+  const [editingPerson, setEditingPerson] = useState<number | null>(null);
+  /** the person whose window opened because "ถัดไป" found something missing */
+  const [personErrorsAt, setPersonErrorsAt] = useState<number | null>(null);
+  /** the window's copy as it was opened (to ask before throwing edits away) */
+  const editOrig = useRef('');
+  const snapNow = useRef<() => PersonSnap>(() => ({}) as PersonSnap);
+  /** this tab's unfinished group order (sessionStorage: this tab only, gone when it closes) */
+  const groupDraftKey = selectedEventId && currentUser ? `kratai_group_draft_${selectedEventId}_${currentUser.id}` : '';
+  const groupDraftSave = useRef<() => void>(() => undefined);
+  const groupDraftRestored = useRef('');
 
   // Storefront state (General customer without registration)
   const [linkedRegForMerch, setLinkedRegForMerch] = useState<string>('');
@@ -421,6 +494,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     setDetailTab(initialEventTab);
     setShowRegForm(false);
     setCustomAnswers({});
+    setGroupPeople([]);
+    activePersonId.current = '';
   }, [initialEventTab, selectedEventId]);
 
   React.useEffect(() => {
@@ -480,7 +555,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         : currentUser.fullNameTh;
     setBuyerName(fullTh);
     // "for myself" is not picked for the runner any more; picking it fills the profile in
-    if (registerForSelf) applySelfProfile();
+    // (not when a filed person of a group order comes back: their card keeps what was typed)
+    if (registerForSelf && !skipSelfFill.current) applySelfProfile();
+    skipSelfFill.current = false;
 
     const addrs = p?.savedAddresses ?? [];
     const defAddr = addrs.find((a) => a.isDefault) ?? addrs[0] ?? null;
@@ -570,6 +647,16 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   const filteredEvents = listedEvents.filter((ev) =>
     matchesDirectoryFilters(ev, activeDirectoryFilters)
   );
+  // home: the race cards come in pages of HOME_PAGE_SIZE (28 Nov 2026, user request); a new
+  // filter or search starts again on page 1
+  const [homePage, setHomePage] = useState(0);
+  const homeListKey = filteredEvents.map((ev) => ev.id).join(',');
+  useEffect(() => {
+    setHomePage(0);
+  }, [homeListKey]);
+  const homePageCount = Math.max(1, Math.ceil(filteredEvents.length / HOME_PAGE_SIZE));
+  const homePageNo = Math.min(homePage, homePageCount - 1);
+  const pagedEvents = filteredEvents.slice(homePageNo * HOME_PAGE_SIZE, (homePageNo + 1) * HOME_PAGE_SIZE);
   const countWith = (override: Partial<DirectoryFilters>) =>
     listedEvents.filter((ev) =>
       matchesDirectoryFilters(ev, { ...activeDirectoryFilters, ...override })
@@ -646,9 +733,18 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       formVersionAtStart.current = { eventId: selectedEvent.id, version: selectedEvent.publishedFormVersion };
     }
   }, [regStep, selectedEvent?.id, selectedEvent?.publishedFormVersion]);
+  // signed in, every person picks a distance in their own window (28 Nov 2026): the step that
+  // only picked one distance for the whole form is not shown
+  const listFlow = useMemo(
+    () =>
+      currentUser && !formPreview.active
+        ? regFlow.map((st) => (st.blocks?.includes('category') ? { ...st, blocks: st.blocks.filter((b) => b !== 'category') } : st))
+        : regFlow,
+    [regFlow, currentUser, formPreview.active]
+  );
   const regPages = () =>
     selectedEvent
-      ? runnerFlow(regFlow, regFields, customAnswers, { raceDistance: activeCategory?.code, shirtSize }, {
+      ? runnerFlow(listFlow, regFields, customAnswers, { raceDistance: activeCategory?.code, shirtSize }, {
           hasSouvenirs: selectedEvent.products.some((p) => p.stockOrCeiling - p.soldCount > 0),
         })
       : [];
@@ -705,21 +801,49 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   // one place for every entry (27 Nov 2026, user request): the profile's old "ประวัติงานที่สมัคร"
   // filters, results, certificates and sign-up details now live on this page
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
+  // status filter next to the time filter (27 Nov 2026, user request); both apply together
+  const [historyStatus, setHistoryStatus] = useState<HistoryStatus>('all');
+  // fold-open rows (27 Nov 2026, user chose output/history-accordion-mockup): an entry waiting for
+  // payment starts open, the rest start folded; the runner's own clicks win after that
+  const [regOpen, setRegOpen] = useState<Record<string, boolean>>({});
+  const isRegOpen = (r: RegistrationRecord) => regOpen[r.id] ?? r.registrationStatus === 'pending_payment';
   const historyToday = todayIsoInTimeZone();
   const shownRegistrations = useMemo(
     () =>
       myRegistrations.filter((r) => {
-        if (historyFilter === 'all') return true;
         const past = regIsPast(events.find((e) => e.id === r.eventId), historyToday);
-        return historyFilter === 'past' ? past : !past;
+        if (historyFilter !== 'all' && (historyFilter === 'past') !== past) return false;
+        return historyStatus === 'all' || regStatusKey(r, past) === historyStatus;
       }),
-    [myRegistrations, historyFilter, events, historyToday]
+    [myRegistrations, historyFilter, historyStatus, events, historyToday]
   );
 
   const myMerchOrders = useMemo(() => {
     if (!currentUser) return [];
     return merchOrders.filter((m) => m.buyerUserId === currentUser.id);
   }, [merchOrders, currentUser]);
+
+  // pages of 10 on the history page (28 Nov 2026, user request "หน้าประวัติทำ pagination ด้วย");
+  // a filter change goes back to page 1, a shorter list clamps to its last page
+  const [regPage, setRegPage] = useState(0);
+  const [merchPage, setMerchPage] = useState(0);
+  useEffect(() => setRegPage(0), [historyFilter, historyStatus]);
+  const regPageCount = Math.max(1, Math.ceil(shownRegistrations.length / LIST_PAGE_SIZE));
+  const regPageNo = Math.min(regPage, regPageCount - 1);
+  const pagedRegistrations = shownRegistrations.slice(regPageNo * LIST_PAGE_SIZE, (regPageNo + 1) * LIST_PAGE_SIZE);
+  const merchPageCount = Math.max(1, Math.ceil(myMerchOrders.length / LIST_PAGE_SIZE));
+  const merchPageNo = Math.min(merchPage, merchPageCount - 1);
+  const pagedMerchOrders = myMerchOrders.slice(merchPageNo * LIST_PAGE_SIZE, (merchPageNo + 1) * LIST_PAGE_SIZE);
+  /** the next page starts at the top of its list, below the sticky site bar */
+  const ordersListRef = useRef<HTMLElement | null>(null);
+  const goOrdersPage = (set: (n: number) => void, n: number) => {
+    set(n);
+    const el = ordersListRef.current;
+    const bar = document.querySelector('.global-topbar')?.getBoundingClientRect().height ?? 0;
+    if (el && el.getBoundingClientRect().top < bar) {
+      window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - bar - 12 });
+    }
+  };
 
   const getCategoryOpenSeats = (evId: string, cat: RaceCategory) => {
     const used = registrations.filter(
@@ -786,6 +910,230 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  /** the card being filled, as a filed person */
+  const snapPerson = (): PersonSnap => {
+    if (!activePersonId.current) activePersonId.current = newPersonId();
+    return {
+      id: activePersonId.current,
+      option: selectedDivisionOption,
+      catId: selectedCatId,
+      forSelf: registerForSelf,
+      savedId: selectedParticipantId,
+      fTh: regFirstNameTh,
+      lTh: regLastNameTh,
+      fEn: regFirstNameEn,
+      lEn: regLastNameEn,
+      nTh: regNicknameTh,
+      nEn: regNicknameEn,
+      dob: regDob,
+      gender: regGender,
+      phone: regPhone,
+      email: regEmail,
+      idType: regIdType,
+      idNumber: regIdNumber,
+      eName: emergencyName,
+      eRel: emergencyRelation,
+      ePhone: emergencyPhone,
+      answers: customAnswers,
+      shirtSize,
+      shirtStyle,
+    };
+  };
+  /** puts a filed person back into the form (its card opens for editing) */
+  const loadPerson = (pp: PersonSnap) => {
+    activePersonId.current = pp.id;
+    if (pp.forSelf && !registerForSelf) skipSelfFill.current = true;
+    setSelectedDivisionOption(pp.option);
+    setSelectedCatId(pp.catId);
+    setRegModeChosen(true);
+    setRegisterForSelf(pp.forSelf);
+    setSelectedParticipantId(pp.savedId);
+    setRegFirstNameTh(pp.fTh);
+    setRegLastNameTh(pp.lTh);
+    setParticipantNameTh(`${pp.fTh} ${pp.lTh}`.trim());
+    setRegFirstNameEn(pp.fEn);
+    setRegLastNameEn(pp.lEn);
+    setParticipantNameEn(`${pp.fEn} ${pp.lEn}`.trim());
+    setRegNicknameTh(pp.nTh);
+    setRegNicknameEn(pp.nEn);
+    setRegDob(pp.dob);
+    setRegGender(pp.gender);
+    setRegPhone(pp.phone);
+    setRegEmail(pp.email);
+    setRegIdType(pp.idType);
+    setRegIdNumber(pp.idNumber);
+    setEmergencyContact(pp.eName, pp.eRel, pp.ePhone);
+    setCustomAnswers(pp.answers);
+    setShirtSize(pp.shirtSize);
+    setShirtStyle(pp.shirtStyle);
+    setFormErrors({});
+    setCheckoutError(null);
+  };
+  /** an empty card: yourself (filled from the profile) or someone else (picked from the list first) */
+  const startNewPerson = (forSelfNow: boolean) => {
+    activePersonId.current = newPersonId();
+    const hasSaved = (currentUser?.runnerProfile?.savedParticipants?.length ?? 0) > 0;
+    setRegModeChosen(true);
+    setRegisterForSelf(forSelfNow);
+    setSelectedParticipantId(forSelfNow ? '' : hasSaved ? '' : 'new');
+    setRegFirstNameTh('');
+    setRegLastNameTh('');
+    setParticipantNameTh('');
+    setRegFirstNameEn('');
+    setRegLastNameEn('');
+    setParticipantNameEn('');
+    setRegNicknameTh('');
+    setRegNicknameEn('');
+    setRegDob('');
+    setRegGender('ไม่ระบุ');
+    setRegPhone('');
+    setRegEmail('');
+    setRegIdType('thai_id');
+    setRegIdNumber('');
+    setEmergencyContact('', '', '');
+    setCustomAnswers({});
+    setShirtSize('' as ShirtSizeCode);
+    setFormErrors({});
+    setCheckoutError(null);
+    // yourself: the profile fills the card (names, phone, emergency contact…)
+    if (forSelfNow) window.setTimeout(() => applySelfProfile(), 0);
+  };
+  /** what a person still lacks, by group of the window (empty = complete) */
+  const missingOf = (pp: PersonSnap): string[] => {
+    if (!selectedEvent) return [];
+    const cat = selectedEvent.categories.find((c) => c.id === pp.catId);
+    const out: string[] = [];
+    // this account already holds a place in the event: the card cannot go through as "yourself"
+    if (pp.forSelf && selfRegCode) out.push('สมัครงานนี้แล้ว');
+    if (!cat) out.push('ระยะ');
+    const age = cat ? evaluateCategoryAge(selectedEvent, cat, pp.dob, pp.gender) : null;
+    const dobNeeded = Boolean(age && age.status !== 'not_required');
+    if (
+      !pp.fEn.trim() ||
+      !pp.lEn.trim() ||
+      !pp.eName.trim() ||
+      !pp.eRel.trim() ||
+      !pp.ePhone.trim() ||
+      (dobNeeded && !pp.dob) ||
+      (age && !age.eligible) ||
+      (!pp.forSelf && (!pp.phone.trim() || !pp.email.trim()))
+    )
+      out.push('ข้อมูลทั่วไป');
+    const detailsStep = regFlow.find((st) => st.blocks?.includes('participant'))?.id;
+    if (
+      cat &&
+      detailsStep &&
+      Object.keys(validateAnswers(regFields, pp.answers, { raceDistance: cat.code, shirtSize: pp.shirtSize }, { steps: regFlow, stepId: detailsStep })).length > 0
+    )
+      out.push('ข้อมูลเพิ่มเติม');
+    if (!pp.shirtSize) out.push('ไซส์เสื้อ');
+    return out;
+  };
+  /** this account's own entry in this event, if it already holds a place (yourself cannot be added
+   *  again). Same key as the server's duplicate guard (`personKey` in server/index.ts): English name
+   *  from the snapshot, else the entry's English name (older entries keep it only there), plus the
+   *  date of birth. 28 Nov 2026: older entries were missed, so "yourself" could be added and the
+   *  booking was refused and sent the runner back to the first step. */
+  const selfRegCode = (() => {
+    const pr = currentUser?.runnerProfile;
+    const norm = (x: string) => x.trim().toLowerCase().replace(/\s+/g, ' ');
+    const en = norm(`${pr?.firstNameEn ?? ''} ${pr?.lastNameEn ?? ''}`);
+    const dob = (pr?.dateOfBirth ?? '').slice(0, 10);
+    if (!selectedEvent || !currentUser || !en || !dob) return undefined;
+    return myRegistrations.find((r) => {
+      if (r.eventId !== selectedEvent.id) return false;
+      if (r.registrationStatus !== 'confirmed' && r.registrationStatus !== 'pending_payment') return false;
+      const fromSnap = `${r.participantSnapshot?.firstNameEn ?? ''} ${r.participantSnapshot?.lastNameEn ?? ''}`.trim();
+      return norm(fromSnap || r.participantNameEn || '') === en && (r.participantSnapshot?.dateOfBirth ?? '').slice(0, 10) === dob;
+    })?.regCode;
+  })();
+  // keep the unfinished group order in this tab, so a reload does not lose the people filed (28 Nov 2026)
+  groupDraftSave.current = () => {
+    if (!groupDraftKey) return;
+    try {
+      if (groupPeople.length === 0) window.sessionStorage.removeItem(groupDraftKey);
+      else
+        window.sessionStorage.setItem(
+          groupDraftKey,
+          JSON.stringify({ people: groupPeople, step: regStep, at: Date.now() })
+        );
+    } catch {
+      // storage may be off (private mode): the form still works, it just is not kept
+    }
+  };
+  React.useEffect(() => {
+    groupDraftSave.current();
+  }, [groupPeople, regStep]);
+  React.useEffect(() => {
+    const onHide = () => groupDraftSave.current();
+    window.addEventListener('pagehide', onHide);
+    return () => window.removeEventListener('pagehide', onHide);
+  }, []);
+  React.useEffect(() => {
+    if (!groupDraftKey || groupDraftRestored.current === groupDraftKey || heldRegId) return;
+    groupDraftRestored.current = groupDraftKey;
+    try {
+      const raw = window.sessionStorage.getItem(groupDraftKey);
+      if (!raw) return;
+      const draft = JSON.parse(raw) as { people?: PersonSnap[]; step?: number; at?: number };
+      // an old draft (more than 6 hours) is not brought back
+      if (!draft.people?.length || Date.now() - (draft.at ?? 0) > 6 * 3600 * 1000) {
+        window.sessionStorage.removeItem(groupDraftKey);
+        return;
+      }
+      setGroupPeople(draft.people);
+      const detailsPage = regPages().findIndex((pg) => pg.blocks?.includes('participant')) + 1;
+      setRegStep((detailsPage > 0 ? detailsPage : 1) as RegStep);
+      setResumeNotice(tx('นำผู้สมัครที่กรอกไว้ในแท็บนี้กลับมาแล้ว ตรวจข้อมูลแล้วกรอกต่อได้เลย'));
+    } catch {
+      // a broken draft is ignored
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupDraftKey, heldRegId]);
+
+  /** one person in the shape the server takes (the order's own fields are added by the caller) */
+  const entryOf = (pp: PersonSnap): GroupEntryPayload => {
+    const prof = currentUser?.runnerProfile;
+    const thName = `${pp.fTh.trim()} ${pp.lTh.trim()}`.trim();
+    const enName = `${pp.fEn.trim()} ${pp.lEn.trim()}`.trim();
+    const primary = prof?.emergencyContacts?.find((c) => c.isPrimary);
+    return {
+      id: pp.id,
+      categoryId: pp.catId || activeCategory?.id || '',
+      participantNameTh: thName || enName,
+      participantNameEn: enName || thName,
+      // a friend's entry carries the friend's own phone, never the owner's (26 Nov 2026)
+      phone: pp.forSelf ? pp.phone.trim() || prof?.phone : pp.phone.trim(),
+      forFriend: !pp.forSelf,
+      emergencyContact: [pp.eName.trim(), pp.eRel.trim() ? `(${pp.eRel.trim()})` : '', displayPhone(pp.ePhone)]
+        .filter(Boolean)
+        .join(' ')
+        .trim(),
+      shirtSize: pp.shirtSize,
+      participantSnapshot: {
+        firstName: pp.fTh.trim() || undefined,
+        lastName: pp.lTh.trim() || undefined,
+        nickname: pp.nTh.trim() || undefined,
+        firstNameEn: pp.fEn.trim() || undefined,
+        lastNameEn: pp.lEn.trim() || undefined,
+        nicknameEn: pp.nEn.trim() || undefined,
+        phone: pp.phone.trim() || undefined,
+        email: pp.forSelf ? undefined : pp.email.trim().toLowerCase() || undefined,
+        dateOfBirth: pp.dob || undefined,
+        gender: pp.gender,
+        nationality: pp.forSelf ? prof?.nationality : undefined,
+        idType: (pp.idNumber.trim() ? (pp.idType === 'passport' ? 'passport' : 'thai_id') : 'none') as 'none' | 'thai_id' | 'passport',
+        idNumberMasked: pp.idNumber.trim() ? maskIdNumber(pp.idNumber) : undefined,
+        emergencyContactName: pp.forSelf ? primary?.contactName ?? prof?.emergencyContactName : undefined,
+        emergencyContactRelation: pp.forSelf ? primary?.relationship ?? prof?.emergencyContactRelation : undefined,
+        emergencyContactPhone: pp.forSelf ? primary?.phone ?? prof?.emergencyContactPhone : undefined,
+        preferredShirtType: pp.forSelf ? prof?.preferredShirtType : undefined,
+        preferredShirtFit: pp.forSelf ? prof?.preferredShirtFit : undefined,
+      },
+      customAnswers: (selectedEvent?.customFields ?? []).length > 0 ? pp.answers : undefined,
+    };
+  };
+
   const submitRegistrationOrder = async (payImmediately: boolean) => {
     if (!selectedEvent || !activeCategory) return;
     // a request is already on its way: a second press must not send another booking
@@ -819,18 +1167,26 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       return;
     }
 
-    const finalBuyer = buyerName.trim();
+    // the payer is the signed-in account; there is no field for it (28 Nov 2026, user request)
+    const finalBuyer = buyerName.trim() || currentUser.fullNameTh || currentUser.fullNameEn || '';
+    // signed in: the people come from the list of the "ผู้สมัครและระยะ" step (28 Nov 2026)
+    const listMode = true;
+    if (listMode && groupPeople.length === 0) {
+      setCheckoutError(tx('กรุณาเพิ่มผู้สมัครอย่างน้อย 1 คน'));
+      return;
+    }
+    const lastPerson = listMode ? entryOf(groupPeople[groupPeople.length - 1]) : null;
     const finalParticipant =
       `${regFirstNameTh.trim()} ${regLastNameTh.trim()}`.trim() ||
       `${regFirstNameEn.trim()} ${regLastNameEn.trim()}`.trim() ||
       (registerForSelf ? finalBuyer : participantNameTh.trim());
 
-    if (!finalBuyer || !finalParticipant) {
+    if (!listMode && (!finalBuyer || !finalParticipant)) {
       setCheckoutError(tx("กรุณากรอกชื่อผู้ชำระเงินและชื่อผู้เข้าแข่งขันให้ครบถ้วน"));
       return;
     }
     // the English name is the required one (printed on the BIB); Thai is optional
-    if (!regFirstNameEn.trim() || !regLastNameEn.trim()) {
+    if (!listMode && (!regFirstNameEn.trim() || !regLastNameEn.trim())) {
       setCheckoutError(tx("กรุณากรอกชื่อ-นามสกุลภาษาอังกฤษของผู้เข้าแข่งขันให้ครบ"));
       return;
     }
@@ -851,7 +1207,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       raceDistance: activeCategory.code,
       shirtSize,
     });
-    const firstCustomProblem = Object.values(customProblems)[0];
+    const firstCustomProblem = listMode ? undefined : Object.values(customProblems)[0];
     if (firstCustomProblem) {
       setFormErrors(customProblems);
       setCheckoutError(txf('กรุณาตรวจคำตอบที่ผู้จัดถาม: {0}', firstCustomProblem));
@@ -859,14 +1215,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     }
 
     const ageCheck = evaluateCategoryAge(selectedEvent, activeCategory, regDob, regGender);
-    if (!ageCheck.eligible) {
+    if (!listMode && !ageCheck.eligible) {
       setCheckoutError(ageCheckMessage(ageCheck, activeCategory));
       return;
     }
 
     const catSeats = getCategoryOpenSeats(selectedEvent.id, activeCategory);
     const eventSeats = getEventOpenSeats(selectedEvent);
-    if (catSeats <= 0 || eventSeats <= 0) {
+    if (!listMode && (catSeats <= 0 || eventSeats <= 0)) {
       setCheckoutError(tx("ขออภัย โควตาเต็มแล้ว ระบบป้องกันการขายเกินอัตโนมัติ"));
       return;
     }
@@ -890,7 +1246,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     let outcome: Awaited<ReturnType<typeof onCreateRegistrationAndOptionalAddon>>;
     try {
     outcome = await onCreateRegistrationAndOptionalAddon({
-      requestId: checkoutRequestId.current,
+      // a group order: everyone before the last person goes in `others` (each with a retry-safe id)
+      others: listMode ? groupPeople.slice(0, -1).map(entryOf) : undefined,
+      requestId: lastPerson ? lastPerson.id : checkoutRequestId.current,
       eventId: selectedEvent.id,
       categoryId: activeCategory.id,
       buyerName: finalBuyer,
@@ -951,6 +1309,20 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         (selectedEvent.customFields ?? []).length > 0
           ? customAnswers
           : undefined,
+      // list mode: the last person of the list, in place of the form's fields
+      ...(lastPerson
+        ? {
+            categoryId: lastPerson.categoryId,
+            participantNameTh: lastPerson.participantNameTh,
+            participantNameEn: lastPerson.participantNameEn,
+            phone: lastPerson.phone,
+            forFriend: lastPerson.forFriend,
+            emergencyContact: lastPerson.emergencyContact,
+            shirtSize: lastPerson.shirtSize,
+            participantSnapshot: lastPerson.participantSnapshot,
+            customAnswers: lastPerson.customAnswers,
+          }
+        : {}),
     });
     } finally {
       // always unlock, even if the request throws, so the runner is never stuck
@@ -960,15 +1332,63 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     if (!outcome.ok) {
       // keep everything the runner typed; pressing confirm again retries with the same id
       setCheckoutError(outcome.error);
+      // a group order refused because of one person: open that person's card to fix it
+      const at = outcome.entryIndex;
+      if (listMode && typeof at === 'number' && at >= 0 && at < groupPeople.length) {
+        const detailsPage = regPages().findIndex((pg) => pg.blocks?.includes('participant')) + 1;
+        if (detailsPage > 0) {
+          setResumeNotice(outcome.error);
+          setRegStep(detailsPage as RegStep);
+        }
+        // open that person's window to fix it
+        loadPerson(groupPeople[at]);
+        editOrig.current = JSON.stringify(groupPeople[at]);
+        setPersonErrorsAt(at);
+        setEditingPerson(at);
+      }
       return;
     }
     checkoutRequestId.current = null;
-    const res = { reg: outcome.reg, addonOrder: outcome.addonOrders?.[0], addonOrders: outcome.addonOrders };
+    const res = { reg: outcome.reg, addonOrder: outcome.addonOrders?.[0], addonOrders: outcome.addonOrders, regs: outcome.regs };
 
-    // Persist reusable data back to the Runner Profile
+    // Persist reusable data back to the Runner Profile: every friend of a group order too
     const profilePatch: Partial<RunnerProfileData> = {};
-    if (!registerForSelf) {
-      const existing = prof?.savedParticipants ?? [];
+    let friendsList = prof?.savedParticipants ?? [];
+    for (const fp of groupPeople.filter((x) => !x.forSelf)) {
+      const cleanId = fp.idNumber.trim();
+      const match =
+        friendsList.find((x) => x.id === fp.savedId) ??
+        (cleanId ? friendsList.find((x) => x.idNumber === cleanId) : undefined) ??
+        friendsList.find(
+          (x) =>
+            (x.firstNameEn ?? '').toLowerCase() === fp.fEn.trim().toLowerCase() &&
+            (x.lastNameEn ?? '').toLowerCase() === fp.lEn.trim().toLowerCase()
+        );
+      const saved: SavedParticipant = {
+        id: match?.id ?? `sp-${Date.now()}-${fp.id.slice(-4)}`,
+        firstName: fp.fTh.trim(),
+        lastName: fp.lTh.trim(),
+        nickname: fp.nTh.trim() || undefined,
+        firstNameEn: fp.fEn.trim() || undefined,
+        lastNameEn: fp.lEn.trim() || undefined,
+        nicknameEn: fp.nEn.trim() || undefined,
+        dateOfBirth: fp.dob || undefined,
+        gender: fp.gender,
+        idType: cleanId ? (fp.idType === 'passport' ? 'passport' : 'thai_id') : 'none',
+        idNumber: cleanId || undefined,
+        phone: fp.phone.trim() || undefined,
+        email: fp.email.trim().toLowerCase() || undefined,
+        preferredShirtSize: fp.shirtSize,
+        emergencyContactName: fp.eName.trim() || undefined,
+        emergencyContactRelation: fp.eRel.trim() || undefined,
+        emergencyContactPhone: fp.ePhone.trim() || undefined,
+        lastUsedAt: new Date().toISOString(),
+      };
+      friendsList = match ? friendsList.map((x) => (x.id === match.id ? saved : x)) : [...friendsList, saved];
+    }
+    if (friendsList !== (prof?.savedParticipants ?? [])) profilePatch.savedParticipants = friendsList;
+    if (!listMode && !registerForSelf) {
+      const existing = friendsList;
       const cleanId = regIdNumber.trim();
       const match =
         existing.find((x) => x.id === selectedParticipantId) ??
@@ -1016,6 +1436,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       return;
     }
     setCreatedResult(res);
+    setGroupPeople([]);
+    activePersonId.current = '';
     setRegStep(DONE_STEP);
   };
 
@@ -1046,7 +1468,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     );
     heldFromForm.current = false;
     setHeldRegId(null);
-    setCreatedResult({ reg: out.reg, addonOrder: linked[0], addonOrders: linked });
+    setCreatedResult({ reg: out.reg, addonOrder: linked[0], addonOrders: linked, regs: out.regs });
+    setGroupPeople([]);
+    activePersonId.current = '';
     setRegStep(DONE_STEP);
   };
 
@@ -1081,6 +1505,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
 
   const registerAnother = () => {
     if (heldReg) skipResume.current.add(heldReg.id);
+    setGroupPeople([]);
+    activePersonId.current = '';
     heldFromForm.current = false;
     setHeldRegId(null);
     setHeldError(null);
@@ -1173,7 +1599,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             </div>
 
             {ordersTab === 'entries' && (
-            <section className="clean-panel" aria-label={tx("ใบสมัครวิ่งของฉัน")}>
+            <section className="clean-panel" aria-label={tx("ใบสมัครวิ่งของฉัน")} ref={ordersListRef}>
               <div className="section-title-bar">
                 <div>
                   <h2>
@@ -1185,24 +1611,37 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   </p>
                 </div>
                 {myRegistrations.length > 0 && (
-                  <div className="cta-inline-row" role="group" aria-label={tx('กรองใบสมัคร')}>
-                    {(
-                      [
-                        ['all', 'ทั้งหมด'],
-                        ['upcoming', 'กำลังจะมาถึง'],
-                        ['past', 'ผ่านมาแล้ว'],
-                      ] as const
-                    ).map(([key, lbl]) => (
-                      <button
-                        key={key}
-                        type="button"
-                        className={`filter-pill ${historyFilter === key ? 'active' : ''}`}
-                        aria-pressed={historyFilter === key}
-                        onClick={() => setHistoryFilter(key)}
-                      >
-                        {tx(lbl)}
-                      </button>
-                    ))}
+                  <div className="reg-history-filters">
+                    {/* new look (28 Nov 2026, user request): a segmented time switch and the shared dropdown */}
+                    <div className="reg-time-seg" role="group" aria-label={tx('กรองตามช่วงเวลา')}>
+                      {(
+                        [
+                          ['all', 'ทั้งหมด'],
+                          ['upcoming', 'กำลังจะมาถึง'],
+                          ['past', 'ผ่านมาแล้ว'],
+                        ] as const
+                      ).map(([key, lbl]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          className={`reg-time-seg-btn${historyFilter === key ? ' is-on' : ''}`}
+                          aria-pressed={historyFilter === key}
+                          onClick={() => setHistoryFilter(key)}
+                        >
+                          {tx(lbl)}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="reg-status-filter">
+                      <label htmlFor="reg-status-filter">{tx('สถานะ')}</label>
+                      <SelectMenu
+                        id="reg-status-filter"
+                        compact
+                        value={historyStatus}
+                        onChange={(v) => setHistoryStatus(v as HistoryStatus)}
+                        options={HISTORY_STATUS_OPTIONS.map(([key, lbl]) => ({ value: key, label: tx(lbl) }))}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -1212,44 +1651,131 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   {tx("บัญชีนี้ยังไม่มีใบสมัครวิ่ง (ลูกค้าทั่วไปสามารถดูคำสั่งซื้อสินค้าที่ระลึกได้ในส่วนถัดไปด้านล่าง)")}
                 </div>
               ) : shownRegistrations.length === 0 ? (
-                <div className="subtle-empty-note">{tx('ไม่มีรายการงานวิ่งในหมวดนี้')}</div>
+                <div className="subtle-empty-note reg-history-empty">
+                  <span>{tx('ไม่มีรายการงานวิ่งในหมวดนี้')}</span>
+                  {(historyFilter !== 'all' || historyStatus !== 'all') && (
+                    <button
+                      type="button"
+                      className="btn-ghost-sm"
+                      onClick={() => {
+                        setHistoryFilter('all');
+                        setHistoryStatus('all');
+                      }}
+                    >
+                      {tx('ล้างตัวกรอง')}
+                    </button>
+                  )}
+                </div>
               ) : (
-                <div className="pass-list">
-                  {shownRegistrations.map((reg) => {
+                <>
+                <div className="reg-acc-tools">
+                  <span>{txf('แสดง {0} จาก {1} รายการ', shownRegistrations.length, myRegistrations.length)}</span>
+                  {(() => {
+                    const allOpen = pagedRegistrations.every(isRegOpen);
+                    return (
+                      <button
+                        type="button"
+                        className="reg-acc-all"
+                        onClick={() =>
+                          setRegOpen((prev) => {
+                            const next = { ...prev };
+                            pagedRegistrations.forEach((r) => {
+                              next[r.id] = !allOpen;
+                            });
+                            return next;
+                          })
+                        }
+                      >
+                        {allOpen ? tx('พับทั้งหมด') : tx('กางทั้งหมด')}
+                      </button>
+                    );
+                  })()}
+                </div>
+                <ul className="reg-acc">
+                  {pagedRegistrations.map((reg) => {
                     const ev = events.find((e) => e.id === reg.eventId);
                     const cat = ev?.categories.find(
                       (c) => c.id === reg.categoryId
                     );
                     const isPast = regIsPast(ev, historyToday);
                     const ageText = regAgeShort(reg, cat);
+                    const open = isRegOpen(reg);
+                    const phase = ev ? runnerEventPhase(ev, historyToday, { hasResult: Boolean(reg.raceResult) }) : null;
+                    const headId = `reg-acc-h-${reg.id}`;
+                    const bodyId = `reg-acc-b-${reg.id}`;
                     return (
-                      <article key={reg.id} className="runner-pass-item kr-pass">
-                        {ev && (
-                          <div className="kr-pass-thumb" aria-hidden="true">
-                            <EventCoverMedia event={ev} illustrated className="kr-card-img" />
-                          </div>
-                        )}
-                        <div className="pass-main-info">
-                          {/* easy-to-read card (27 Nov 2026, user request): one headline status, a
-                              three-step track, then the key facts in a small grid */}
+                      <li key={reg.id} className={`reg-acc-item${open ? ' is-open' : ''}`}>
+                        <div className="reg-acc-head">
+                          {/* the whole row head is one button; the pay button sits beside it, never inside */}
+                          <button
+                            type="button"
+                            id={headId}
+                            className="reg-acc-toggle"
+                            aria-expanded={open}
+                            aria-controls={bodyId}
+                            onClick={() => setRegOpen((prev) => ({ ...prev, [reg.id]: !open }))}
+                          >
+                            <span className="reg-acc-thumb" aria-hidden="true">
+                              {ev && <EventCoverMedia event={ev} illustrated className="kr-card-img" />}
+                            </span>
+                            <span className="reg-acc-title">
+                              <strong>
+                                {getLang() === 'en' ? ev?.titleEn || ev?.titleTh || reg.eventId : ev?.titleTh ?? reg.eventId}
+                              </strong>
+                              <span className="reg-acc-meta">
+                                {ev?.eventDate && (
+                                  <span>
+                                    <IconCalendar size={14} /> {formatBasisDate(ev.eventDate)}
+                                  </span>
+                                )}
+                                {ev?.province && (
+                                  <span>
+                                    <IconMapPin size={14} /> {tx(ev.province)}
+                                  </span>
+                                )}
+                                <span className="mono-code reg-card-code">{reg.regCode}</span>
+                                {/* a group order (28 Nov 2026): who came in with this entry */}
+                                {(reg.orderEntryCount ?? 1) > 1 && (
+                                  <span className="reg-order-tag">
+                                    <FaIcon name="user-group" />
+                                    <span>
+                                      {txf('สมัครมาด้วยกัน {0} คน', reg.orderEntryCount ?? 1)} · <span className="mono-code">{reg.orderCode}</span>
+                                    </span>
+                                  </span>
+                                )}
+                              </span>
+                              <span className="reg-acc-tags">
+                                <RegHeadline reg={reg} isPast={isPast} />
+                                {phase?.postponed ? (
+                                  <span className="event-phase-pill is-warn">
+                                    <FaIcon name="calendar-xmark" />
+                                    {tx('เลื่อนงาน')}
+                                  </span>
+                                ) : (
+                                  phase && <EventPhasePill phase={phase} />
+                                )}
+                              </span>
+                            </span>
+                            <span className="reg-acc-chev" aria-hidden="true">
+                              <FaIcon name="chevron-down" />
+                            </span>
+                          </button>
+                          {/* unpaid: pay without opening the row (26 Nov 2026; on the row head since 27 Nov) */}
+                          {reg.registrationStatus === 'pending_payment' && (
+                            <div className="reg-acc-quick">
+                              <button
+                                type="button"
+                                className="btn-primary reg-card-pay"
+                                onClick={() => openHeldPayment(reg)}
+                              >
+                                {tx('ชำระเงิน')}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="reg-acc-body" id={bodyId} role="region" aria-labelledby={headId} hidden={!open}>
                           <RegEventStatus ev={ev} reg={reg} today={historyToday} place="top" />
-                          <div className="reg-card-head">
-                            <RegHeadline reg={reg} isPast={isPast} />
-                            <span className="mono-code reg-card-code">{reg.regCode}</span>
-                          </div>
-                          <h3>{getLang() === 'en' ? ev?.titleEn || ev?.titleTh || reg.eventId : ev?.titleTh ?? reg.eventId}</h3>
-                          <p className="reg-card-meta">
-                            {ev?.eventDate && (
-                              <span>
-                                <IconCalendar size={14} /> {formatBasisDate(ev.eventDate)}
-                              </span>
-                            )}
-                            {ev?.province && (
-                              <span>
-                                <IconMapPin size={14} /> {tx(ev.province)}
-                              </span>
-                            )}
-                          </p>
                           <RegEventStatus ev={ev} reg={reg} today={historyToday} place="line" />
                           <RegProgress reg={reg} />
                           <dl className="reg-card-facts">
@@ -1261,8 +1787,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               <dt>{tx('ระยะ')}</dt>
                               <dd>{tx(cat?.name ?? '-')}</dd>
                             </div>
-                            {/* the BIB moved here from the QR box, which now lives in the
-                                confirmation popup (27 Nov 2026, user request) */}
                             {reg.registrationStatus === 'confirmed' && (
                               <div>
                                 <dt>{tx('เลข BIB')}</dt>
@@ -1279,6 +1803,28 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               <dt>{reg.registrationStatus === 'pending_payment' ? tx('ยอดที่ต้องชำระ') : tx('ยอดชำระ')}</dt>
                               <dd className="mono-num">{formatThb(reg.snapshotTotalChargedSatang, true)}</dd>
                             </div>
+                            {(reg.orderEntryCount ?? 1) > 1 &&
+                              (() => {
+                                // the order is paid once: its people and its total
+                                const mates = registrations
+                                  .filter((r) => r.orderCode === reg.orderCode && r.eventId === reg.eventId)
+                                  .sort((a, b) => (a.orderEntryNo ?? 1) - (b.orderEntryNo ?? 1));
+                                return (
+                                  <div>
+                                    <dt>{txf('คำสั่งซื้อ {0}', reg.orderCode)}</dt>
+                                    <dd>
+                                      {mates.map((r) => r.participantNameEn || r.participantNameTh).join(', ')}
+                                      <span className="muted-inline">
+                                        {' · '}
+                                        {txf(
+                                          reg.registrationStatus === 'pending_payment' ? 'ชำระรวมทั้งใบ {0}' : 'ยอดรวมทั้งใบ {0}',
+                                          formatThb(mates.reduce((n, r) => n + r.snapshotTotalChargedSatang, 0), true)
+                                        )}
+                                      </span>
+                                    </dd>
+                                  </div>
+                                );
+                              })()}
                             {reg.buyerName && reg.buyerName.trim() !== reg.participantNameTh.trim() && (
                               <div>
                                 <dt>{tx('ผู้ชำระเงิน')}</dt>
@@ -1286,32 +1832,18 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               </div>
                             )}
                           </dl>
-
-                          <div className="cta-inline-row" style={{ marginTop: '0.55rem' }}>
-                            {/* unpaid: pay first in the row (26 Nov 2026; moved out of the QR box 27 Nov) */}
-                            {reg.registrationStatus === 'pending_payment' && (
+                          <RegResult reg={reg} cat={cat} />
+                          <div className="cta-inline-row">
+                            {ev?.verifiedPhotoAlbums && ev.verifiedPhotoAlbums.length > 0 && (
                               <button
                                 type="button"
-                                className="btn-primary reg-card-pay"
-                                onClick={() => openHeldPayment(reg)}
+                                className="btn-ghost-sm"
+                                onClick={() => openEventPage(ev, 'info_results')}
                               >
-                                {tx('ชำระเงิน')}
+                                <IconCamera size={14} />
+                                <span>{tx("ดูผลและรูปภาพหลังงาน")}</span>
                               </button>
                             )}
-                            {ev?.verifiedPhotoAlbums &&
-                              ev.verifiedPhotoAlbums.length > 0 && (
-                                <button
-                                  type="button"
-                                  className="btn-ghost-sm"
-                                  onClick={() =>
-                                    openEventPage(ev, 'info_results')
-                                  }
-                                >
-                                  <IconCamera size={14} />
-                                  <span>{tx("ดูผลและรูปภาพหลังงาน")}</span>
-                                </button>
-                              )}
-
                             {/* the confirmation card in a popup, with print and download; the entry
                                 details saved at sign-up live inside it too (27 Nov 2026, user request) */}
                             <button
@@ -1328,13 +1860,22 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                               </span>
                             </button>
                           </div>
-                          <RegResult reg={reg} cat={cat} />
                         </div>
-
-                      </article>
+                      </li>
                     );
                   })}
-                </div>
+                </ul>
+                {regPageCount > 1 && (
+                  <Pager
+                    page={regPageNo}
+                    pageCount={regPageCount}
+                    pageSize={LIST_PAGE_SIZE}
+                    shown={pagedRegistrations.length}
+                    total={shownRegistrations.length}
+                    onPage={(n) => goOrdersPage(setRegPage, n)}
+                  />
+                )}
+                </>
               )}
               {(() => {
                 const reg = confirmRegId ? myRegistrations.find((r) => r.id === confirmRegId) : undefined;
@@ -1346,6 +1887,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     event={ev}
                     category={ev?.categories.find((c) => c.id === reg.categoryId)}
                     addonOrders={merchOrders.filter((m) => m.linkedRegistrationCode === reg.regCode)}
+                    orderRegs={
+                      (reg.orderEntryCount ?? 1) > 1
+                        ? myRegistrations
+                            .filter((r) => r.orderCode === reg.orderCode && r.eventId === reg.eventId)
+                            .sort((a, b) => (a.orderEntryNo ?? 1) - (b.orderEntryNo ?? 1))
+                        : []
+                    }
+                    orderAddonOrders={merchOrders.filter((m) => m.linkedRegistrationCode && m.eventId === reg.eventId)}
                     onClose={() => setConfirmRegId(null)}
                   />
                 );
@@ -1354,7 +1903,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             )}
 
             {ordersTab === 'merch' && (
-            <section className="clean-panel" aria-label={tx("คำสั่งซื้อสินค้าที่ระลึก")}>
+            <section className="clean-panel" aria-label={tx("คำสั่งซื้อสินค้าที่ระลึก")} ref={ordersListRef}>
               <div className="section-title-bar">
                 <div>
                   <h2>
@@ -1372,11 +1921,23 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   {tx("ยังไม่มีคำสั่งซื้อสินค้าที่ระลึกในบัญชีนี้")}
                 </div>
               ) : (
+                <>
                 <div className="pass-list">
-                  {myMerchOrders.map((ord) => {
+                  {pagedMerchOrders.map((ord) => {
                     const ev = events.find((e) => e.id === ord.eventId);
+                    // the product's picture beside the order (28 Nov 2026, user request)
+                    const prd = ev?.products.find((p) => p.id === ord.productId);
+                    const cat = prd?.categoryLabel ?? '';
                     return (
-                      <article key={ord.id} className="runner-pass-item">
+                      <article key={ord.id} className="runner-pass-item has-art">
+                        <div className="pass-art" aria-hidden="true">
+                          <ProductArt
+                            categoryLabel={cat || undefined}
+                            name={ord.productNameTh}
+                            kind={souvenirArt(cat, ord.productNameTh)}
+                            className="sf-art-svg"
+                          />
+                        </div>
                         <div className="pass-main-info">
                           <div className="pass-badges-row">
                             <span className="mono-code">
@@ -1426,6 +1987,17 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     );
                   })}
                 </div>
+                {merchPageCount > 1 && (
+                  <Pager
+                    page={merchPageNo}
+                    pageCount={merchPageCount}
+                    pageSize={LIST_PAGE_SIZE}
+                    shown={pagedMerchOrders.length}
+                    total={myMerchOrders.length}
+                    onPage={(n) => goOrdersPage(setMerchPage, n)}
+                  />
+                )}
+                </>
               )}
             </section>
             )}
@@ -1493,6 +2065,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       );
     };
     const labShared: LabShared = {
+      personId: activePersonId.current,
       step: [regStep, (v) => setRegStep(v as RegStep)],
       optionId: [
         selectedDivisionOption,
@@ -1620,7 +2193,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       if (blocks.includes('participant')) {
         if (!regModeChosen) return 'กรุณาเลือกว่าจะสมัครให้ตนเองหรือสมัครให้ผู้อื่นก่อน';
         if (!reportInvalidFieldsWithin(scope)) return 'กรุณากรอกช่องที่มีเครื่องหมาย * ให้ครบ ช่องที่ยังไม่ครบถูกไฮไลต์ไว้';
-        if (!regFirstNameEn.trim() || !regLastNameEn.trim() || !buyerName.trim()) {
+        if (!regFirstNameEn.trim() || !regLastNameEn.trim()) {
           return 'กรุณากรอกชื่อ-นามสกุลภาษาอังกฤษของผู้เข้าแข่งขันให้ครบ';
         }
         if (regIdType === 'thai_id' && regIdNumber.trim() && regIdNumber.trim().length !== 13) {
@@ -1647,9 +2220,111 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         }),
       submit: () => void submitRegistrationOrder(true),
       book: () => void submitRegistrationOrder(false),
+      group:
+        currentUser && !formPreview.active
+          ? (() => {
+              snapNow.current = snapPerson;
+              const summary = (pp: PersonSnap) => {
+                const cat = selectedEvent.categories.find((c) => c.id === pp.catId);
+                const tierNow = cat ? getCurrentTier(cat) : null;
+                const q = tierNow ? calculateFeeQuote(tierNow.priceSatang, selectedEvent.feeBearerPolicy) : null;
+                return {
+                  key: pp.id,
+                  name: `${pp.fEn} ${pp.lEn}`.trim() || `${pp.fTh} ${pp.lTh}`.trim() || tx(pp.forSelf ? 'ตัวฉัน' : 'ผู้สมัครใหม่'),
+                  isSelf: pp.forSelf,
+                  savedId: pp.savedId,
+                  catName: cat ? tx(cat.name) : '',
+                  shirtSize: pp.shirtSize,
+                  satang: q?.runnerNetPaySatang ?? 0,
+                  baseSatang: q?.baseSatang ?? 0,
+                  tierLabel: tierNow ? tx(tierNow.label) : '',
+                  missing: missingOf(pp),
+                  optionId: pp.option,
+                  // the summary's details of this person (28 Nov 2026, order sheet "B")
+                  details: (() => {
+                    const idDigits = pp.idNumber.replace(/\s/g, '');
+                    const nameTh = `${pp.fTh} ${pp.lTh}`.trim();
+                    const answers = regFields
+                      .filter((f) => !isContentField(f) && fieldShown(f, pp.answers, { raceDistance: cat?.code, shirtSize: pp.shirtSize }))
+                      .map((f) => {
+                        const val = pp.answers[f.id] ?? f.defaultValue;
+                        return {
+                          label: tx(f.label),
+                          value: typeof val === 'boolean' ? (val ? tx('ใช่') : tx('ไม่ใช่')) : tx(answerText(f, val).trim()),
+                        };
+                      });
+                    return [
+                      ...(nameTh ? [{ label: tx('ชื่อ-นามสกุล'), value: pp.nTh.trim() ? `${nameTh} (${pp.nTh.trim()})` : nameTh }] : []),
+                      { label: tx('วันเกิด · เพศ'), value: [pp.dob, tx(pp.gender)].filter(Boolean).join(' · ') },
+                      { label: tx('เบอร์โทร'), value: displayPhone(pp.phone) },
+                      ...(pp.forSelf ? [] : [{ label: tx('อีเมล'), value: pp.email }]),
+                      {
+                        label: pp.idType === 'passport' ? tx('หนังสือเดินทาง') : tx('เลขบัตรประชาชน'),
+                        value: idDigits ? `•••• ${idDigits.slice(-4)}` : '',
+                      },
+                      {
+                        label: tx('ผู้ติดต่อฉุกเฉิน'),
+                        value: [pp.eName.trim(), pp.eRel.trim() ? `(${pp.eRel.trim()})` : '', displayPhone(pp.ePhone)].filter(Boolean).join(' '),
+                      },
+                      {
+                        label: tx('เสื้อตามสิทธิ์'),
+                        value: pp.shirtSize ? `${tx(shirtStyleName(pp.shirtStyle))} · ${txf('ไซส์ {0}', pp.shirtSize)}` : '',
+                      },
+                      ...answers,
+                    ];
+                  })(),
+                };
+              };
+              const closeWindow = () => {
+                setEditingPerson(null);
+                setFormErrors({});
+              };
+              return {
+                people: groupPeople.map(summary),
+                max: Math.min(20, Math.max(1, selectedEvent.maxEntriesPerOrder ?? 10)),
+                selfRegCode,
+                editing: editingPerson,
+                errorsAt: personErrorsAt,
+                open: (target: number | 'self' | 'friend', withErrors?: boolean) => {
+                  if (typeof target === 'number') {
+                    loadPerson(groupPeople[target]);
+                    editOrig.current = JSON.stringify(groupPeople[target]);
+                    setPersonErrorsAt(withErrors ? target : null);
+                    setEditingPerson(target);
+                  } else {
+                    startNewPerson(target === 'self');
+                    editOrig.current = '';
+                    setPersonErrorsAt(null);
+                    setEditingPerson(-1);
+                    // the copy a cancel compares against: once the profile has filled the card
+                    window.setTimeout(() => {
+                      editOrig.current = JSON.stringify(snapNow.current());
+                    }, 200);
+                  }
+                },
+                save: () => {
+                  const snap = snapPerson();
+                  const at = editingPerson;
+                  const next = at === null || at < 0 ? [...groupPeople, snap] : groupPeople.map((x, k) => (k === at ? snap : x));
+                  setGroupPeople(next);
+                  if (at !== null && at === personErrorsAt && missingOf(snap).length === 0) setPersonErrorsAt(null);
+                  closeWindow();
+                },
+                cancel: closeWindow,
+                isDirty: () => editOrig.current !== '' && JSON.stringify(snapPerson()) !== editOrig.current,
+                remove: (i: number) => {
+                  setGroupPeople(groupPeople.filter((_, k) => k !== i));
+                  setPersonErrorsAt((cur) => (cur === null || cur === i ? null : cur > i ? cur - 1 : cur));
+                },
+              };
+            })()
+          : undefined,
       held: heldReg
         ? {
             reg: heldReg,
+            regs: registrations
+              .filter((r) => r.orderCode === heldReg.orderCode && r.eventId === heldReg.eventId)
+              .sort((x, y) => (x.orderEntryNo ?? 1) - (y.orderEntryNo ?? 1)),
             addonOrders: merchOrders.filter(
               (m) => m.linkedRegistrationCode === heldReg.regCode && m.eventId === heldReg.eventId
             ),
@@ -1699,27 +2374,86 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
           (() => {
             // shared with the history popup (27 Nov 2026): the same items, print and download
             const reg = createdResult.reg;
-            const title = confirmationTitle(reg);
-            const items = confirmationItems({
-              reg,
-              event: selectedEvent,
-              category: activeCategory ?? undefined,
-              addonOrders: createdResult.addonOrders ?? [],
-            });
+            const many = (createdResult.regs?.length ?? 0) > 1;
+            const title = many ? txf('สมัครสำเร็จ {0} คน', createdResult.regs!.length) : confirmationTitle(reg);
+            const groupRegs = createdResult.regs ?? [];
+            // a group order: the order as a whole (each person is listed below with their own QR)
+            const items =
+              groupRegs.length > 1
+                ? [
+                    { label: tx('งานวิ่ง'), value: tx(getLang() === 'en' ? selectedEvent.titleEn || selectedEvent.titleTh : selectedEvent.titleTh) },
+                    { label: tx('รหัสคำสั่งซื้อ'), value: reg.orderCode, mono: true },
+                    { label: tx('ผู้สมัคร'), value: txf('{0} คน', groupRegs.length) },
+                    ...(createdResult.addonOrders ?? []).map((m) => ({
+                      label: `${tx(m.productNameTh)}${m.variantSize !== '-' ? ` · ${m.variantSize}` : ''} × ${m.quantity}`,
+                      value: m.merchOrderCode,
+                      mono: true,
+                    })),
+                    {
+                      label: tx('ยอดค่าสมัครสุทธิทั้งใบ'),
+                      value: formatThb(groupRegs.reduce((n, r) => n + r.snapshotTotalChargedSatang, 0), true),
+                      accent: true,
+                    },
+                  ]
+                : confirmationItems({
+                    reg,
+                    event: selectedEvent,
+                    category: activeCategory ?? undefined,
+                    addonOrders: createdResult.addonOrders ?? [],
+                  });
             const qr = confirmationQr(reg);
             return (
               <RegistrationDone
                 title={title}
                 subtitle={tx('บันทึกใบสมัครเรียบร้อยแล้ว')}
-                qr={qr}
+                // a group order lists every person with their own QR below (no duplicate of the first)
+                qr={many ? undefined : qr}
                 items={items}
                 tone={confirmationTone(reg)}
               >
+                {(createdResult.regs?.length ?? 0) > 1 && (
+                  <section className="reg-done-people" aria-label={tx('ผู้สมัครในคำสั่งซื้อนี้')}>
+                    <h3>{txf('ผู้สมัครในคำสั่งซื้อนี้ {0} คน', createdResult.regs!.length)}</h3>
+                    <ul>
+                      {createdResult.regs!.map((r) => {
+                        const rq = confirmationQr(r);
+                        const rc = selectedEvent.categories.find((c) => c.id === r.categoryId);
+                        return (
+                          <li key={r.id}>
+                            {rq && <QrCode value={rq.value} size={96} label={txf('QR รับอุปกรณ์ของ {0}', r.participantNameEn || r.participantNameTh)} />}
+                            <span>
+                              <strong>{r.participantNameEn || r.participantNameTh}</strong>
+                              <small>
+                                {[rc ? tx(rc.name) : '', txf('ไซส์ {0}', r.shirtSize), r.regCode].filter(Boolean).join(' · ')}
+                              </small>
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                )}
                 <button type="button" className="btn-primary" onClick={() => onNavigate('my_orders', null)}>
                   {tx('ไปหน้าประวัติการสมัคร & การสั่งซื้อ')}
                 </button>
                 {confirmationIsPaid(reg) && (
-                  <ConfirmationFileActions title={title} items={items} qr={qr} fileName={reg.regCode} />
+                  // a group order prints and saves every person's confirmation, one after another in
+                  // the same layout (28 Nov 2026, user request)
+                  <ConfirmationFileActions
+                    title={title}
+                    items={items}
+                    qr={many ? undefined : qr}
+                    fileName={many ? reg.orderCode : reg.regCode}
+                    sheets={
+                      many
+                        ? orderConfirmationSheets({
+                            regs: groupRegs,
+                            event: selectedEvent,
+                            addonOrders: createdResult.addonOrders ?? [],
+                          })
+                        : undefined
+                    }
+                  />
                 )}
                 <button
                   type="button"
@@ -1764,7 +2498,6 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
       <RegistrationLabView
         live={labLive}
         shared={labShared}
-        souvenirLayout={souvenirLayout}
         key={selectedEvent.id}
         event={selectedEvent}
         organization={org}
@@ -2182,9 +2915,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             type="button"
             className="btn-ghost-sm"
             onClick={() => onNavigate('directory', null)}
+            // the button reads "กลับ" (28 Nov 2026, user request); a screen reader still hears where it goes
+            aria-label={tx("กลับหน้ารวมงานวิ่งทั้งหมด")}
           >
             <IconArrowLeft size={15} />
-            <span>{tx("กลับหน้ารวมงานวิ่งทั้งหมด")}</span>
+            <span>{tx("กลับ")}</span>
           </button>
 
           <div className="cta-inline-row">
@@ -2273,6 +3008,17 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                     )}
                   </div>
                 )}
+                {/* countdown to the first start (28 Nov 2026, user request): only while the race is
+                    still ahead and not cancelled or suspended; it hides itself once the start passes */}
+                {detailPhase &&
+                  !detailPhase.loud &&
+                  detailPhase.id !== 'results' &&
+                  detailPhase.id !== 'results_pending' &&
+                  cardCfg.showCountdown !== false && (
+                    // the organizer's switch (28 Nov 2026); runners see it in the last 30 days only,
+                    // the page editor's preview always shows it so the organizer can see what it is
+                    <EventCountdown event={selectedEvent} anyTime={pagePreview.active} />
+                  )}
                 <p className="muted-block">{tx(selectedEvent.tagline)}</p>
 
               </div>
@@ -2713,10 +3459,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   /* ================= SUBVIEW 1: MODERN MINIMAL DIRECTORY ================= */
   return (
     <main className="customer-container">
-      <HomeScrollMotion
-        cardCount={filteredEvents.length}
-        listKey={filteredEvents.map((ev) => ev.id).join(',')}
-      />
+      <HomeScrollMotion cardCount={pagedEvents.length} listKey={pagedEvents.map((ev) => ev.id).join(',')} />
       {/* HERO: headline, running rabbit, search (keyword + region) */}
       <section className="kr-hero" aria-labelledby="kr-hero-title">
         <div className="kr-hero-copy">
@@ -2826,13 +3569,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                   jumpToResults();
                 }}
               >
-                {tx(lbl)} <span className="mono-num">{countWith({ quick: k })}</span>
+                <span>{tx(lbl)}</span> <span className="mono-num kr-tab-count">{countWith({ quick: k })}</span>
               </button>
             ))}
           </div>
-          <span className="kr-count">
-            {tx("พบ ")} <strong className="mono-num">{tx(filteredEvents.length)}</strong> {tx(" งานวิ่ง")}
-          </span>
+          {/* no "พบ N งานวิ่ง" line here (28 Nov 2026, user request) */}
         </div>
       </section>
 
@@ -2868,7 +3609,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
         />
       ) : (
         <section id="kr-results" className="modern-event-grid kr-event-grid" aria-label={tx("รายการงานวิ่ง")}>
-          {filteredEvents.map((ev) => {
+          {pagedEvents.map((ev) => {
             const openSeats = getEventOpenSeats(ev);
             const listPhase = eventPhaseFor(ev);
             const lowestCat = [...ev.categories].sort(
@@ -2970,6 +3711,20 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             );
           })}
         </section>
+      )}
+      {homePageCount > 1 && (
+        <Pager
+          className="kr-pager"
+          page={homePageNo}
+          pageCount={homePageCount}
+          pageSize={HOME_PAGE_SIZE}
+          shown={pagedEvents.length}
+          total={filteredEvents.length}
+          onPage={(n) => {
+            setHomePage(n);
+            jumpToResults();
+          }}
+        />
       )}
 
     </main>

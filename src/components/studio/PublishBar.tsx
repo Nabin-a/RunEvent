@@ -37,6 +37,7 @@ export function PublishBar({
   saving,
   canEdit,
   versions,
+  compact = false,
   hideLabel,
   showLabel,
   onPublish,
@@ -54,6 +55,8 @@ export function PublishBar({
   saving: boolean;
   canEdit: boolean;
   versions: PublishVersion[];
+  /** one line for the editor's top bar: the explanation goes into the badge's tooltip */
+  compact?: boolean;
   hideLabel: string;
   showLabel: string;
   onPublish: () => void;
@@ -75,25 +78,28 @@ export function PublishBar({
   const hasChanges = state.hasDraft || dirty;
   const partName = part === 'page' ? 'หน้ารายละเอียดงาน' : 'ฟอร์มสมัคร';
   const badgeIcon = { draft: 'pen-ruler', changed: 'pen', scheduled: 'clock', hidden: 'eye-slash', published: 'circle-check' }[state.key];
+  const noteText = saving
+    ? tx('กำลังบันทึกร่าง…')
+    : state.schedule
+      ? txf('เผยแพร่ {0} (ตั้งโดย {1})', fmtEventTime(state.schedule.at), state.schedule.by)
+      : state.hidden
+        ? txf(part === 'form' ? 'ปิดโดย {0} เมื่อ {1}' : 'ซ่อนโดย {0} เมื่อ {1}', state.hidden.by, fmtEventTime(state.hidden.at))
+        : hasChanges
+          ? tx('ร่างถูกบันทึกแล้ว นักวิ่งยังเห็นฉบับเดิมจนกว่าจะเผยแพร่')
+          : '';
 
   return (
-    <div className="st-pubbar" ref={boxRef} role="region" aria-label={txf('การเผยแพร่{0}', tx(partName))}>
-      <span className={`st-state is-${state.key}`}>
+    <div className={`st-pubbar${compact ? ' is-compact' : ''}`} ref={boxRef} role="region" aria-label={txf('การเผยแพร่{0}', tx(partName))}>
+      <span className={`st-state is-${state.key}`} title={compact ? noteText || undefined : undefined}>
         <FaIcon name={badgeIcon} />
         {/* a paused form means runners cannot sign up on the web; say so in those words */}
         <span>{tx(part === 'form' && state.key === 'hidden' ? 'ปิดรับสมัครทางเว็บชั่วคราว' : state.label)}</span>
       </span>
-      <span className="st-state-note" role="status" aria-live="polite">
-        {saving
-          ? tx('กำลังบันทึกร่าง…')
-          : state.schedule
-            ? txf('เผยแพร่ {0} (ตั้งโดย {1})', fmtEventTime(state.schedule.at), state.schedule.by)
-            : state.hidden
-              ? txf(part === 'form' ? 'ปิดโดย {0} เมื่อ {1}' : 'ซ่อนโดย {0} เมื่อ {1}', state.hidden.by, fmtEventTime(state.hidden.at))
-              : hasChanges
-                ? tx('ร่างถูกบันทึกแล้ว นักวิ่งยังเห็นฉบับเดิมจนกว่าจะเผยแพร่')
-                : ''}
-      </span>
+      {!compact && (
+        <span className="st-state-note" role="status" aria-live="polite">
+          {noteText}
+        </span>
+      )}
       {state.failed && (
         <span className="st-state-fail" role="alert">
           <FaIcon name="triangle-exclamation" />
@@ -103,7 +109,7 @@ export function PublishBar({
       {canEdit && (
         <span className="st-pub-actions">
           {state.schedule ? (
-            <button type="button" className="btn-secondary" onClick={onCancelSchedule}>
+            <button type="button" className="btn-secondary" onClick={onCancelSchedule} title={compact ? noteText : undefined}>
               <FaIcon name="calendar-xmark" />
               <span>{tx('ยกเลิกการตั้งเวลา')}</span>
             </button>

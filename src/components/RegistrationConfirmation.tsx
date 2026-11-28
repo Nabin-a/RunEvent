@@ -4,6 +4,7 @@ import type { MerchOrderRecord, RaceCategory, RaceEvent, RegistrationRecord } fr
 import { getLang, tx, txf } from '../i18n';
 import { formatBasisDate } from '../utils/age';
 import { formatThb } from '../utils/pricing';
+import { useEffect, useState } from 'react';
 import { FaIcon } from './FaIcon';
 import { IconClose } from './Icons';
 import { RegSnapshotDetails } from './RegistrationHistoryParts';
@@ -91,123 +92,239 @@ export function confirmationQr(
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-/** Saves the confirmation as a PNG picture (drawn as SVG, then turned into pixels). */
-export function downloadConfirmationImage(params: {
+/** one person's confirmation, as drawn in the saved picture and the printed copy */
+export interface ConfirmationSheet {
   title: string;
   items: ConfirmationItem[];
   qr?: { value: string; caption: string; used?: string };
+  tone?: DoneTone;
+  /** a small line above the title, e.g. "คนที่ 2 จาก 3" in a group order */
+  label?: string;
+}
+
+type ImageParams = ConfirmationSheet & {
   fileName: string;
-}) {
+  /** a group order: every person's confirmation, one after another in the same picture */
+  sheets?: ConfirmationSheet[];
+};
+
+const qrPath = (value: string) => {
+  const qr = qrcode(0, 'M');
+  qr.addData(value);
+  qr.make();
+  const n = qr.getModuleCount();
+  let d = '';
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c + 4} ${r + 4}h1v1h-1z`;
+  }
+  return { d, box: n + 8 };
+};
+
+/** The confirmation as a picture: a PNG (drawn as SVG, then turned into pixels), or the SVG itself
+    when the browser cannot draw it. A group order draws every person's confirmation in the same
+    layout, one under another with a dashed cut line between them (28 Nov 2026, user request). */
+function confirmationImage(params: ImageParams): Promise<{ blob: Blob; ext: 'png' | 'svg' }> {
+  const sheets: ConfirmationSheet[] =
+    params.sheets && params.sheets.length > 0
+      ? params.sheets
+      : [{ title: params.title, items: params.items, qr: params.qr, label: params.label }];
   const W = 900;
   const font = "Anuphan, 'Leelawadee UI', Tahoma, sans-serif";
   const rowH = 56;
-  const top = 150;
-  const qrSize = params.qr ? 260 : 0;
-  const listH = params.items.length * rowH;
-  const H = top + listH + (params.qr ? qrSize + (params.qr.used ? 140 : 110) : 40) + 40;
+  const head = 96;
+  const qrSize = 260;
 
-  let qrSvg = '';
-  if (params.qr) {
-    const qr = qrcode(0, 'M');
-    qr.addData(params.qr.value);
-    qr.make();
-    const n = qr.getModuleCount();
-    const box = n + 8;
-    let d = '';
-    for (let r = 0; r < n; r++) {
-      for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c + 4} ${r + 4}h1v1h-1z`;
+  let y = head;
+  const parts: string[] = [];
+  sheets.forEach((sh, k) => {
+    if (k > 0) {
+      parts.push(
+        `<line x1="40" y1="${y + 20}" x2="${W - 40}" y2="${y + 20}" stroke="#94a3b8" stroke-width="2" stroke-dasharray="10 8"/>`
+      );
+      y += 40;
     }
-    const y = top + listH + 30;
-    qrSvg = `<svg x="${(W - qrSize) / 2}" y="${y}" width="${qrSize}" height="${qrSize}" viewBox="0 0 ${box} ${box}" shape-rendering="crispEdges"><rect width="${box}" height="${box}" fill="#ffffff"/><path d="${d}" fill="#000000"/></svg>
-  <text x="${W / 2}" y="${y + qrSize + 34}" text-anchor="middle" fill="#475569" font-family="${font}" font-size="20">${esc(params.qr.caption)}</text>
-  <text x="${W / 2}" y="${y + qrSize + 64}" text-anchor="middle" fill="#34495f" font-family="monospace" font-size="18">${esc(params.qr.value)}</text>${
-    params.qr.used
-      ? `
-  <text x="${W / 2}" y="${y + qrSize + 94}" text-anchor="middle" fill="#157347" font-family="${font}" font-size="20" font-weight="700">${esc(params.qr.used)}</text>`
-      : ''
-  }`;
-  }
-
-  const rows = params.items
-    .map((it, i) => {
-      const y = top + i * rowH + 36;
-      return `<text x="60" y="${y}" fill="#475569" font-family="${font}" font-size="20">${esc(it.label)}</text>
-  <text x="${W - 60}" y="${y}" text-anchor="end" fill="${it.accent ? '#c2410c' : '#1f2937'}" font-family="${it.mono ? 'monospace' : font}" font-size="${it.accent ? 26 : 21}" font-weight="700">${esc(it.value)}</text>
-  <line x1="60" y1="${y + 18}" x2="${W - 60}" y2="${y + 18}" stroke="#e2e8f0" stroke-width="1"/>`;
-    })
-    .join('\n  ');
+    let top = y + 54;
+    if (sh.label) {
+      parts.push(`<text x="60" y="${y + 44}" fill="#64748b" font-family="${font}" font-size="18" font-weight="700">${esc(sh.label)}</text>`);
+      top += 30;
+    }
+    parts.push(`<text x="60" y="${top - 14 + 30}" fill="#34495f" font-family="${font}" font-size="26" font-weight="700">${esc(sh.title)}</text>`);
+    const rowsTop = top + 30;
+    sh.items.forEach((it, i) => {
+      const ry = rowsTop + i * rowH + 36;
+      parts.push(`<text x="60" y="${ry}" fill="#475569" font-family="${font}" font-size="20">${esc(it.label)}</text>
+  <text x="${W - 60}" y="${ry}" text-anchor="end" fill="${it.accent ? '#c2410c' : '#1f2937'}" font-family="${it.mono ? 'monospace' : font}" font-size="${it.accent ? 26 : 21}" font-weight="700">${esc(it.value)}</text>
+  <line x1="60" y1="${ry + 18}" x2="${W - 60}" y2="${ry + 18}" stroke="#e2e8f0" stroke-width="1"/>`);
+    });
+    y = rowsTop + sh.items.length * rowH;
+    if (sh.qr) {
+      const { d, box } = qrPath(sh.qr.value);
+      const qy = y + 30;
+      parts.push(`<svg x="${(W - qrSize) / 2}" y="${qy}" width="${qrSize}" height="${qrSize}" viewBox="0 0 ${box} ${box}" shape-rendering="crispEdges"><rect width="${box}" height="${box}" fill="#ffffff"/><path d="${d}" fill="#000000"/></svg>
+  <text x="${W / 2}" y="${qy + qrSize + 34}" text-anchor="middle" fill="#475569" font-family="${font}" font-size="20">${esc(sh.qr.caption)}</text>
+  <text x="${W / 2}" y="${qy + qrSize + 64}" text-anchor="middle" fill="#34495f" font-family="monospace" font-size="18">${esc(sh.qr.value)}</text>`);
+      if (sh.qr.used) {
+        parts.push(`<text x="${W / 2}" y="${qy + qrSize + 94}" text-anchor="middle" fill="#157347" font-family="${font}" font-size="20" font-weight="700">${esc(sh.qr.used)}</text>`);
+      }
+      y = qy + qrSize + (sh.qr.used ? 110 : 80);
+    } else {
+      y += 20;
+    }
+  });
+  const H = y + 40;
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <rect width="${W}" height="${H}" fill="#ffffff"/>
-  <rect x="0" y="0" width="${W}" height="96" fill="#34495f"/>
+  <rect x="0" y="0" width="${W}" height="${head}" fill="#34495f"/>
   <text x="60" y="60" fill="#f8fafc" font-family="${font}" font-size="30" font-weight="700">${esc(tx('กระต่าย'))}</text>
   <text x="${W - 60}" y="60" text-anchor="end" fill="#cbd5e1" font-family="${font}" font-size="20">${esc(tx('ใบยืนยันการสมัคร'))}</text>
-  <text x="60" y="${top - 14}" fill="#34495f" font-family="${font}" font-size="26" font-weight="700">${esc(params.title)}</text>
-  ${rows}
-  ${qrSvg}
+  ${parts.join('\n  ')}
 </svg>`;
 
-  const save = (url: string, ext: string) => {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${params.fileName}.${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  };
-  const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
-  const img = new Image();
-  img.onload = () => {
-    const scale = 2;
-    const canvas = document.createElement('canvas');
-    canvas.width = W * scale;
-    canvas.height = H * scale;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      save(svgUrl, 'svg');
-      return;
-    }
-    ctx.scale(scale, scale);
-    ctx.drawImage(img, 0, 0);
-    canvas.toBlob((blob) => {
+  const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+  return new Promise((resolve) => {
+    const svgUrl = URL.createObjectURL(svgBlob);
+    const asSvg = () => {
       URL.revokeObjectURL(svgUrl);
-      if (!blob) return;
-      const pngUrl = URL.createObjectURL(blob);
-      save(pngUrl, 'png');
-      window.setTimeout(() => URL.revokeObjectURL(pngUrl), 1000);
-    }, 'image/png');
-  };
-  // the picture could not be drawn: hand over the SVG itself
-  img.onerror = () => save(svgUrl, 'svg');
-  img.src = svgUrl;
+      resolve({ blob: svgBlob, ext: 'svg' });
+    };
+    const img = new Image();
+    img.onload = () => {
+      // a long group picture is drawn at 1x so it stays inside the browser's canvas limits
+      const scale = H > 7000 ? 1 : 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = W * scale;
+      canvas.height = H * scale;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return asSvg();
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob((blob) => {
+        if (!blob) return asSvg();
+        URL.revokeObjectURL(svgUrl);
+        resolve({ blob, ext: 'png' });
+      }, 'image/png');
+    };
+    // the picture could not be drawn: hand over the SVG itself
+    img.onerror = asSvg;
+    img.src = svgUrl;
+  });
 }
 
-/** Print / download buttons shown under the card. */
+/** Saves the confirmation as a picture file. */
+export async function downloadConfirmationImage(params: ImageParams) {
+  const { blob, ext } = await confirmationImage(params);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${params.fileName}.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** true where the phone's share sheet takes picture files (LINE, chat apps and so on) */
+function useCanShareImage() {
+  const [can, setCan] = useState(false);
+  useEffect(() => {
+    try {
+      const probe = new File([new Blob(['x'], { type: 'image/png' })], 'x.png', { type: 'image/png' });
+      setCan(typeof navigator.share === 'function' && !!navigator.canShare?.({ files: [probe] }));
+    } catch {
+      setCan(false);
+    }
+  }, []);
+  return can;
+}
+
+/** Opens the share sheet with the confirmation picture; anything but a cancel saves it instead. */
+async function shareConfirmationImage(params: ImageParams) {
+  const { blob, ext } = await confirmationImage(params);
+  const file = new File([blob], `${params.fileName}.${ext}`, { type: blob.type });
+  try {
+    await navigator.share({ files: [file], title: params.title });
+  } catch (e) {
+    if ((e as DOMException)?.name !== 'AbortError') await downloadConfirmationImage(params);
+  }
+}
+
+/** a group order's confirmations: one sheet per person, in the order they were entered */
+export function orderConfirmationSheets(params: {
+  regs: RegistrationRecord[];
+  event?: RaceEvent;
+  addonOrders?: MerchOrderRecord[];
+}): ConfirmationSheet[] {
+  const n = params.regs.length;
+  return params.regs.map((r, i) => ({
+    title: confirmationTitle(r),
+    items: confirmationItems({
+      reg: r,
+      event: params.event,
+      category: params.event?.categories.find((c) => c.id === r.categoryId),
+      addonOrders: (params.addonOrders ?? []).filter((m) => m.linkedRegistrationCode === r.regCode),
+    }),
+    qr: confirmationQr(r),
+    tone: confirmationTone(r),
+    label: txf('คนที่ {0} จาก {1}', i + 1, n),
+  }));
+}
+
+/** The printed copy of a group order: every person's confirmation, one page each. Hidden on
+    screen; the print rules show only this (styles.css, "reg-print-set"). */
+function ConfirmationPrintSet({ sheets }: { sheets: ConfirmationSheet[] }) {
+  return createPortal(
+    <div className="reg-print-set" aria-hidden="true">
+      {sheets.map((sh, i) => (
+        <RegistrationDone
+          key={i}
+          title={sh.title}
+          subtitle={sh.label}
+          items={sh.items}
+          qr={sh.qr}
+          tone={sh.tone ?? 'success'}
+        />
+      ))}
+    </div>,
+    document.body
+  );
+}
+
+/** Print / download (and, on phones that can, share) buttons shown under the card. With `sheets`
+    (a group order) both the printout and the picture hold every person's confirmation. */
 export function ConfirmationFileActions({
   title,
   items,
   qr,
   fileName,
+  sheets,
 }: {
   title: string;
   items: ConfirmationItem[];
   qr?: { value: string; caption: string; used?: string };
   fileName: string;
+  sheets?: ConfirmationSheet[];
 }) {
+  const canShare = useCanShareImage();
+  const many = !!sheets && sheets.length > 1;
+  const file: ImageParams = { title, items, qr, fileName, sheets: many ? sheets : undefined };
   return (
     <>
       <button type="button" className="btn-secondary" onClick={() => window.print()}>
         <FaIcon name="print" />
         <span>{tx('พิมพ์')}</span>
       </button>
-      <button
-        type="button"
-        className="btn-secondary"
-        onClick={() => downloadConfirmationImage({ title, items, qr, fileName })}
-      >
+      <button type="button" className="btn-secondary" onClick={() => downloadConfirmationImage(file)}>
         <FaIcon name="download" />
         <span>{tx('ดาวน์โหลด')}</span>
       </button>
+      {canShare && (
+        <button type="button" className="btn-secondary" onClick={() => shareConfirmationImage(file)}>
+          <FaIcon name="share-nodes" />
+          <span>{tx('แชร์')}</span>
+        </button>
+      )}
+      {many && <ConfirmationPrintSet sheets={sheets} />}
     </>
   );
 }
@@ -218,12 +335,18 @@ export function ConfirmationModal({
   event,
   category,
   addonOrders,
+  orderRegs = [],
+  orderAddonOrders,
   onClose,
 }: {
   reg: RegistrationRecord;
   event?: RaceEvent;
   category?: RaceCategory;
   addonOrders?: MerchOrderRecord[];
+  /** every entry of the same order (a group order): printed and saved together, one sheet each */
+  orderRegs?: RegistrationRecord[];
+  /** the souvenirs of the whole order, matched to each person by their entry code */
+  orderAddonOrders?: MerchOrderRecord[];
   onClose: () => void;
 }) {
   useEscapeToClose(onClose);
@@ -256,7 +379,17 @@ export function ConfirmationModal({
           }
         >
           {confirmationIsPaid(reg) && (
-            <ConfirmationFileActions title={title} items={items} qr={qr} fileName={reg.regCode} />
+            <ConfirmationFileActions
+              title={title}
+              items={items}
+              qr={qr}
+              fileName={orderRegs.length > 1 ? reg.orderCode : reg.regCode}
+              sheets={
+                orderRegs.length > 1
+                  ? orderConfirmationSheets({ regs: orderRegs, event, addonOrders: orderAddonOrders })
+                  : undefined
+              }
+            />
           )}
           <button type="button" className="btn-primary" onClick={onClose}>
             {tx('ปิด')}

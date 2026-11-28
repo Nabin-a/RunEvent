@@ -11,7 +11,7 @@ import type {
 import { normalizeDetailPage } from '../src/data/eventDetailLayout';
 import { missingRequiredData } from '../src/data/eventPageConvert';
 import { answeredIndex, normalizeForm, type AnsweredIndex } from '../src/data/registrationForm';
-import { customStepsOf, defaultFlow, flowStepOf, flowWarnings, formFlowOf, normalizeFormFlow, stepWithBlock } from '../src/data/formFlow';
+import { FLOW_LIMITS, checkMaxEntries, customStepsOf, defaultFlow, flowStepOf, flowWarnings, formFlowOf, normalizeFormFlow, stepWithBlock, withoutRetiredBlocks } from '../src/data/formFlow';
 import { checkScheduleTime } from '../src/data/publishState';
 import { CORE_STEP } from '../src/data/registrationForm';
 
@@ -30,7 +30,7 @@ type Fail = { ok: false; status: number; error: string };
 type Step<T = RaceEvent> = Ok<T> | Fail;
 const fail = (error: string, status = 400): Fail => ({ ok: false, status, error });
 
-type FormSnapshot = { fields: CustomRegistrationField[]; flow: FormStepDef[] };
+type FormSnapshot = { fields: CustomRegistrationField[]; flow: FormStepDef[]; maxEntries: number };
 
 /* ------------------------------------------------------------------ */
 /* Page                                                                */
@@ -145,7 +145,10 @@ const pageOps = {
 
 /** questions and step order as the editor sends them, checked against what runners answered */
 function checkForm(ev: RaceEvent, raw: unknown, answered: AnsweredIndex): { ok: true; value: FormSnapshot; summary: string; warnings: string[] } | Fail {
-  const r = (raw ?? {}) as { fields?: unknown; flow?: unknown };
+  const r = (raw ?? {}) as { fields?: unknown; flow?: unknown; maxEntries?: unknown };
+  // "สมัครได้สูงสุดต่อครั้ง": a draft saved before 28 Nov 2026 has none and keeps the live value
+  const maxEntries = checkMaxEntries(r.maxEntries === undefined ? ev.maxEntriesPerOrder ?? FLOW_LIMITS.entriesDefault : r.maxEntries);
+  if (maxEntries === null) return fail(`สมัครได้สูงสุดต่อครั้งต้องเป็น 1–${FLOW_LIMITS.entriesMax} คน`);
   const liveFlow = formFlowOf(ev);
   const flow = normalizeFormFlow(r.flow, { flow: liveFlow, fields: ev.customFields ?? [] }, answered);
   if (!flow.ok) return fail(flow.error);
@@ -158,8 +161,8 @@ function checkForm(ev: RaceEvent, raw: unknown, answered: AnsweredIndex): { ok: 
   if (!form.ok) return fail(form.error);
   return {
     ok: true,
-    value: { fields: form.value.fields, flow: flow.value },
-    summary: `${form.summary} · ${flow.value.length} ขั้น + ชำระเงิน`,
+    value: { fields: form.value.fields, flow: flow.value, maxEntries },
+    summary: `${form.summary} · ${flow.value.length} ขั้น + ชำระเงิน · สมัครได้สูงสุด ${maxEntries} คนต่อครั้ง`,
     warnings: flowWarnings(flow.value),
   };
 }
@@ -172,6 +175,7 @@ function applyForm(ev: RaceEvent, form: FormSnapshot, summary: string, by: strin
     ...ev,
     customFields: form.fields,
     formFlow: form.flow,
+    maxEntriesPerOrder: form.maxEntries,
     // the runner's form reads this until it reads the flow (phase 3)
     formCustomSteps: customSteps,
     publishedFormVersion: label,
@@ -189,6 +193,7 @@ function applyForm(ev: RaceEvent, form: FormSnapshot, summary: string, by: strin
         fields: form.fields,
         customSteps,
         flow: form.flow,
+        maxEntries: form.maxEntries,
       },
     ].slice(-30),
   };
@@ -252,10 +257,10 @@ const formOps = {
     const label = String(body.version ?? '');
     const found = (ev.formVersionHistory ?? []).find((x) => x.versionLabel === label);
     if (!found) return fail('ไม่พบฉบับที่เลือก', 404);
-    const flow = found.flow ?? defaultFlow(found.customSteps ?? []);
+    const flow = found.flow ? withoutRetiredBlocks(found.flow, found.fields ?? []) : defaultFlow(found.customSteps ?? []);
     // questions keep their step; an old version's questions follow the old order's steps
     const fields = found.fields.map((f) => ({ ...f, stepKey: flowStepOf(f, flow) }));
-    const checked = checkForm(ev, { fields, flow }, answered);
+    const checked = checkForm(ev, { fields, flow, maxEntries: found.maxEntries }, answered);
     if (!checked.ok) return checked;
     return {
       ok: true,
@@ -387,7 +392,12 @@ export function runDuePublishes(deps: Pick<PublishingDeps, 'db' | 'audit' | 'sav
         if (checked.ok) {
           const applied = applyForm(base, checked.value, checked.summary, form.by, now);
           ev = applied.ev;
-          if (ev.formDraft && JSON.stringify({ fields: ev.formDraft.fields, flow: ev.formDraft.flow }) === JSON.stringify(form.snapshot)) delete ev.formDraft;
+          if (
+            ev.formDraft &&
+            JSON.stringify({ fields: ev.formDraft.fields, flow: ev.formDraft.flow, maxEntries: ev.formDraft.maxEntries }) ===
+              JSON.stringify({ fields: form.snapshot.fields, flow: form.snapshot.flow, maxEntries: form.snapshot.maxEntries })
+          )
+            delete ev.formDraft;
           notes.push([`เผยแพร่ฟอร์มสมัครงาน ${ev.code} ตามเวลาที่ตั้ง (${applied.label})`, `ตั้งเวลาโดย ${form.by} · ${checked.summary}`]);
         } else {
           ev = { ...base, formScheduleFailed: { at: now, scheduledFor: form.at, error: checked.error } };

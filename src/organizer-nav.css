@@ -40,9 +40,8 @@
   color: var(--ink-secondary);
 }
 
-.orgnav-org select {
-  font-weight: 600;
-  font-size: 0.875rem;
+/* the organization / event switchers are SelectMenu (28 Nov 2026: one dropdown look everywhere) */
+.orgnav-org .kr-select {
   max-width: 18rem;
 }
 
@@ -278,15 +277,9 @@
   color: var(--shell-text-muted);
 }
 
-.orgnav-event-switch select {
+.orgnav-event-switch .kr-select {
   flex: 1;
   min-width: 0;
-  background-color: var(--shell-navy);
-  background-image: var(--select-chevron-on-dark);
-  color: var(--on-accent);
-  border: 1px solid var(--shell-border);
-  font-size: 0.8125rem;
-  font-weight: 600;
 }
 
 .orgnav-groups {
@@ -747,13 +740,9 @@
     color: var(--shell-text-muted);
   }
 
-  .orgnav-sheet-picker select {
-    background-color: var(--shell-navy-elevated);
-    background-image: var(--select-chevron-on-dark);
-    color: var(--on-accent);
-    border: 1px solid var(--shell-border);
-    font-weight: 600;
-    min-height: 44px;
+  /* the shared dropdown look on the dark sheet too (user rule: one look everywhere); only taller for touch */
+  .orgnav-sheet-picker .kr-select-btn {
+    height: 44px;
   }
 
   .orgnav-sheet-group {
@@ -821,13 +810,13 @@
   border-left: 1px solid var(--line-light);
 }
 
-.orgnav-event-pick select {
+.orgnav-event-pick .kr-select {
   max-width: 20rem;
 }
 
 /* medium screens: the organization and event selects shrink instead of spilling over each other;
    their text labels become screen-reader only (the icons stay) */
-.orgnav-org select {
+.orgnav-org .kr-select {
   min-width: 0;
 }
 
@@ -841,11 +830,11 @@
     white-space: nowrap;
   }
 
-  .orgnav-org select {
+  .orgnav-org .kr-select {
     max-width: 13rem;
   }
 
-  .orgnav-event-pick select {
+  .orgnav-event-pick .kr-select {
     max-width: 15rem;
   }
 }

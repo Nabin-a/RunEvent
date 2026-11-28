@@ -4,13 +4,13 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { EventDetailPage, RaceEvent } from '../types';
-import { FLOW_LIMITS, coreBlockOf, flowProblem, flowStepOf, flowWarnings, formFlowOf } from '../data/formFlow';
+import { FLOW_LIMITS, coreBlockOf, flowProblem, flowStepOf, flowWarnings, formFlowOf, withoutRetiredBlocks } from '../data/formFlow';
 import { formStateOf, pageStateOf } from '../data/publishState';
 import { isContentField, kindOf } from '../data/registrationForm';
 import { tx, txf } from '../i18n';
 import { FaIcon } from './FaIcon';
 import { swalLook } from './RegistrationFormEditor';
-import { PublishBar, type PublishVersion } from './studio/PublishBar';
+import { PublishBar, fmtEventTime, type PublishVersion } from './studio/PublishBar';
 import { StudioFormEditor, newOwnStep, type FlowForm } from './studio/StudioFormEditor';
 import { StudioPageEditor, blockKeyOf, livePage, pageRows, pageStart, type PageSel } from './studio/StudioPageEditor';
 import '../studio.css';
@@ -32,7 +32,7 @@ export type PublishCall = (
   body?: Record<string, unknown>
 ) => Promise<{ ok: boolean; error?: string; warnings?: string[]; event?: RaceEvent }>;
 
-type Part = 'page' | 'form';
+export type Part = 'page' | 'form';
 type Status = { tone: 'idle' | 'err' | 'warn' | 'ok'; text: string };
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const HISTORY_MAX = 60;
@@ -40,8 +40,15 @@ const AUTOSAVE_MS = 1200;
 
 /** the form the editor starts from: the saved draft, else what runners use now */
 const formStart = (ev: RaceEvent): FlowForm =>
-  ev.formDraft ? { fields: ev.formDraft.fields, flow: ev.formDraft.flow } : { fields: ev.customFields ?? [], flow: formFlowOf(ev) };
-const formLive = (ev: RaceEvent): FlowForm => ({ fields: ev.customFields ?? [], flow: formFlowOf(ev) });
+  ev.formDraft
+    ? {
+        fields: ev.formDraft.fields,
+        flow: withoutRetiredBlocks(ev.formDraft.flow, ev.formDraft.fields),
+        maxEntries: ev.formDraft.maxEntries ?? liveMaxEntries(ev),
+      }
+    : formLive(ev);
+const liveMaxEntries = (ev: RaceEvent) => ev.maxEntriesPerOrder ?? FLOW_LIMITS.entriesDefault;
+const formLive = (ev: RaceEvent): FlowForm => ({ fields: ev.customFields ?? [], flow: formFlowOf(ev), maxEntries: liveMaxEntries(ev) });
 
 /**
  * One part's draft: what is on screen (with undo), what the server holds, and saving a moment after
@@ -109,15 +116,22 @@ export function EventStudio({
   onOpenSection,
   startPart = 'page',
   media,
+  onExit,
+  onPart,
 }: {
   event: RaceEvent;
   canEdit: boolean;
   answerCounts: Record<string, number>;
   call: PublishCall;
+  /** another organizer menu (the editor page closes first) */
   onOpenSection: (section: string) => void;
   startPart?: Part;
   /** the cover images manager, shown when "ภาพปกงาน" is picked in the page menu */
   media?: React.ReactNode;
+  /** back to the organizer dashboard */
+  onExit: () => void;
+  /** the part on screen changed (kept in the address) */
+  onPart?: (part: Part) => void;
 }) {
   const [part, setPart] = useState<Part>(startPart);
   const [status, setStatus] = useState<Status>({ tone: 'idle', text: '' });
@@ -127,24 +141,18 @@ export function EventStudio({
   const [groupOpen, setGroupOpen] = useState<Record<Part, boolean>>({ page: true, form: true });
   const [rowOpen, setRowOpen] = useState<Record<string, boolean>>({});
   const [layoutLocked, setLayoutLocked] = useState(false);
-  /** the preview and the panel over the whole window (27 Nov 2026, user request: a bigger preview) */
-  const [full, setFull] = useState(false);
+  // the menu on the left and the panel on the right can be folded away (WordPress-style editor page)
+  const [treeShown, setTreeShown] = useState(true);
+  const [panelShown, setPanelShown] = useState(true);
+  useEffect(() => onPart?.(part), [part, onPart]);
+  // the editor is its own page: the window does not scroll behind it
   useEffect(() => {
-    if (!full) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !document.querySelector('.swal2-container')) setFull(false);
-    };
-    window.addEventListener('keydown', onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    // the page's enter motion leaves a transform on the canvas, which would hold the fixed layer
-    document.body.classList.add('st-full-screen');
     return () => {
-      window.removeEventListener('keydown', onKey);
       document.body.style.overflow = prev;
-      document.body.classList.remove('st-full-screen');
     };
-  }, [full]);
+  }, []);
   const [pageSel, setPageSel] = useState<PageSel>(null);
   const [pagePanel, setPagePanel] = useState<'set' | 'add'>('set');
 
@@ -417,12 +425,25 @@ export function EventStudio({
                                 </span>
                               </li>
                             ))}
+                            {/* the runner card's groups: general details, the organizer's questions, souvenirs */}
+                            {parts.includes('participant') && (
+                              <li className="is-part is-sub">
+                                <FaIcon name="user" />
+                                <span>{tx('ข้อมูลทั่วไป')}</span>
+                              </li>
+                            )}
                             {qs.map((q) => (
-                              <li key={q.id}>
+                              <li key={q.id} className={parts.includes('participant') ? 'is-sub' : undefined}>
                                 <FaIcon name={kindOf(q.type)?.icon ?? 'circle-question'} />
                                 <span>{q.label || tx('คำถามใหม่')}</span>
                               </li>
                             ))}
+                            {parts.includes('participant') && (
+                              <li className="is-part is-sub">
+                                <FaIcon name="shirt" />
+                                <span>{tx('สินค้าที่ระลึก')}</span>
+                              </li>
+                            )}
                             {parts.length === 0 && qs.length === 0 && <li className="is-empty">{tx('ยังไม่มีคำถาม นักวิ่งจะข้ามขั้นนี้')}</li>}
                           </>
                         }
@@ -481,68 +502,131 @@ export function EventStudio({
         ? tx('ชำระเงิน')
         : tx(flow.find((s) => s.id === view)?.title ?? '');
 
+  const publishBar = (
+    <PublishBar
+      key={part}
+      part={part}
+      state={state}
+      dirty={active.dirty}
+      saving={active.saving || busy}
+      canEdit={canEdit}
+      versions={versions}
+      compact
+      hideLabel={part === 'page' ? 'ซ่อนหน้านี้ชั่วคราว' : 'ปิดรับสมัครทางเว็บชั่วคราว'}
+      showLabel={part === 'page' ? 'แสดงหน้านี้อีกครั้ง' : 'เปิดรับสมัครทางเว็บอีกครั้ง'}
+      onPublish={async () => {
+        const text =
+          part === 'page'
+            ? tx('นักวิ่งจะเห็นหน้าใหม่ทันที ฟอร์มสมัครไม่เปลี่ยน')
+            : tx('ใบสมัครใหม่จะใช้ฟอร์มนี้ทันที ใบสมัครเดิมยังผูกกับฉบับเดิม');
+        if (await confirm(txf('เผยแพร่{0}?', tx(partName)), text, tx('เผยแพร่'))) void run('publish', undefined, tx('เผยแพร่แล้ว'));
+      }}
+      onSchedule={(at) => void run('schedule', { at }, tx('ตั้งเวลาเผยแพร่แล้ว'))}
+      onCancelSchedule={() => void run('cancel-schedule', undefined, tx('ยกเลิกการตั้งเวลาแล้ว'))}
+      onHide={async () => {
+        const ok =
+          part === 'page'
+            ? await confirm(tx('ซ่อนหน้านี้ชั่วคราว?'), tx('หน้ารายละเอียดหายจากรายการงาน ลิงก์เดิมขึ้นข้อความว่าปิดไว้ชั่วคราว ใบสมัครที่มีอยู่ไม่เปลี่ยน'), tx('ซ่อนชั่วคราว'))
+            : await confirm(tx('ปิดรับสมัครทางเว็บชั่วคราว?'), tx('นักวิ่งใหม่สมัครทางเว็บไม่ได้จนกว่าจะเปิดอีกครั้ง สถานะงาน โควตา และใบสมัครที่มีอยู่ไม่เปลี่ยน คนที่กรอกค้างอยู่ส่งได้ภายใน 30 นาที'), tx('ปิดชั่วคราว'));
+        if (ok) void run('hide', undefined, tx(part === 'page' ? 'ซ่อนหน้าแล้ว' : 'ปิดรับสมัครทางเว็บชั่วคราวแล้ว'));
+      }}
+      onShow={() => void run('show', undefined, tx(part === 'page' ? 'แสดงหน้าอีกครั้งแล้ว' : 'เปิดรับสมัครทางเว็บอีกครั้งแล้ว'))}
+      onDiscard={async () => {
+        if (await confirm(tx('ยกเลิกการแก้ไขทั้งหมด?'), txf('ร่างจะถูกทิ้ง {0}กลับเป็นฉบับที่ใช้อยู่', tx(partName)), tx('ยกเลิกการแก้ไข'))) {
+          if (state.hasDraft) void run('discard', undefined, tx('ยกเลิกการแก้ไขแล้ว'));
+          else if (part === 'page') page.reset(livePage(event));
+          else form.reset(formLive(event));
+        }
+      }}
+      onRestore={(id) => void run('restore', { version: part === 'page' ? Number(id) : id }, tx('นำฉบับที่เลือกกลับมาเป็นร่างแล้ว'))}
+    />
+  );
+  /** leave the editor: what is on screen goes to the server first (a draft never blocks leaving) */
+  const exit = async () => {
+    if (anyDirty) {
+      await form.save();
+      await page.save();
+    }
+    onExit();
+  };
+
   return (
-    <div className={`canvas-stack st-page${full ? ' is-full-on' : ''}`}>
-      <div className="page-guide-header">
-        <h1>{tx('หน้างานและฟอร์มสมัคร')}</h1>
-        <p className="page-purpose-desc">
-          {tx('จัดหน้ารายละเอียดงานและขั้นตอนสมัครได้เอง การแก้ไขถูกบันทึกเป็นร่าง นักวิ่งเห็นเมื่อเผยแพร่ หน้าและฟอร์มเผยแพร่แยกกัน')}
-        </p>
-      </div>
-
-      <div className="st-parttabs" role="tablist" aria-label={tx('ส่วนที่แก้')}>
-        {(
-          [
-            ['page', 'file-lines', 'หน้ารายละเอียดงาน', pageStateOf(event).label],
-            ['form', 'list-check', 'ขั้นตอนสมัคร', formStateOf(event).label],
-          ] as const
-        ).map(([p, icon, label, st]) => (
-          <button key={p} type="button" role="tab" aria-selected={part === p} onClick={() => setPart(p)}>
-            <FaIcon name={icon} />
-            <span>{tx(label)}</span>
-            <small>{tx(p === 'form' && formStateOf(event).key === 'hidden' ? 'ปิดรับสมัครทางเว็บชั่วคราว' : st)}</small>
+    <div className="st-editor">
+      <header className="st-topbar">
+        <button type="button" className="st-back" onClick={() => void exit()} title={tx('กลับไปหน้าจัดการงาน')}>
+          <FaIcon name="arrow-left" />
+          <span className="st-back-text">{tx('กลับ')}</span>
+        </button>
+        <div className="st-titles">
+          <small>{tx('หน้างานและฟอร์มสมัคร')}</small>
+          <strong title={event.titleTh}>{tx(event.titleTh)}</strong>
+        </div>
+        <span className="st-partseg" role="tablist" aria-label={tx('ส่วนที่แก้')}>
+          {(
+            [
+              ['page', 'file-lines', 'หน้ารายละเอียดงาน', pageStateOf(event)],
+              ['form', 'list-check', 'ขั้นตอนสมัคร', formStateOf(event)],
+            ] as const
+          ).map(([p, icon, label, st]) => (
+            <button
+              key={p}
+              type="button"
+              role="tab"
+              aria-selected={part === p}
+              onClick={() => setPart(p)}
+              title={tx(p === 'form' && st.key === 'hidden' ? 'ปิดรับสมัครทางเว็บชั่วคราว' : st.label)}
+            >
+              <FaIcon name={icon} />
+              <span>{tx(label)}</span>
+              <i className={`st-dot is-${st.key}`} aria-hidden="true" />
+            </button>
+          ))}
+        </span>
+        <span className="st-tools">
+          <button
+            type="button"
+            className="pe-icon-btn"
+            aria-pressed={treeShown}
+            aria-label={tx(treeShown ? 'ซ่อนเมนูด้านซ้าย' : 'แสดงเมนูด้านซ้าย')}
+            title={tx(treeShown ? 'ซ่อนเมนูด้านซ้าย' : 'แสดงเมนูด้านซ้าย')}
+            onClick={() => setTreeShown(!treeShown)}
+          >
+            <FaIcon name="list" />
           </button>
-        ))}
-      </div>
+          <button type="button" className="pe-icon-btn" aria-label={tx('ย้อนกลับ')} title={tx('ย้อนกลับ (Ctrl+Z)')} disabled={!active.canUndo} onClick={active.undo}>
+            <FaIcon name="rotate-left" />
+          </button>
+          <button type="button" className="pe-icon-btn" aria-label={tx('ทำซ้ำ')} title={tx('ทำซ้ำ (Ctrl+Y)')} disabled={!active.canRedo} onClick={active.redo}>
+            <FaIcon name="rotate-right" />
+          </button>
+          {part === 'page' && (
+            <button
+              type="button"
+              className={`pe-icon-btn st-layout-lock${layoutLocked ? ' is-on' : ''}`}
+              aria-pressed={layoutLocked}
+              disabled={!canEdit}
+              aria-label={tx(layoutLocked ? 'ล็อกโครงหน้าอยู่' : 'ล็อกโครงหน้า')}
+              title={tx('ล็อกโครงหน้า: ย้าย เพิ่ม ลบไม่ได้ แต่ยังแก้ข้อความได้')}
+              onClick={() => setLayoutLocked(!layoutLocked)}
+            >
+              <FaIcon name={layoutLocked ? 'lock' : 'lock-open'} />
+            </button>
+          )}
+          <button
+            type="button"
+            className="pe-icon-btn"
+            aria-pressed={panelShown}
+            aria-label={tx(panelShown ? 'ซ่อนแผงตั้งค่า' : 'แสดงแผงตั้งค่า')}
+            title={tx(panelShown ? 'ซ่อนแผงตั้งค่า' : 'แสดงแผงตั้งค่า')}
+            onClick={() => setPanelShown(!panelShown)}
+          >
+            <FaIcon name="sliders" />
+          </button>
+        </span>
+        <div className="st-topbar-pub">{publishBar}</div>
+      </header>
 
-      <PublishBar
-        key={part}
-        part={part}
-        state={state}
-        dirty={active.dirty}
-        saving={active.saving || busy}
-        canEdit={canEdit}
-        versions={versions}
-        hideLabel={part === 'page' ? 'ซ่อนหน้านี้ชั่วคราว' : 'ปิดรับสมัครทางเว็บชั่วคราว'}
-        showLabel={part === 'page' ? 'แสดงหน้านี้อีกครั้ง' : 'เปิดรับสมัครทางเว็บอีกครั้ง'}
-        onPublish={async () => {
-          const text =
-            part === 'page'
-              ? tx('นักวิ่งจะเห็นหน้าใหม่ทันที ฟอร์มสมัครไม่เปลี่ยน')
-              : tx('ใบสมัครใหม่จะใช้ฟอร์มนี้ทันที ใบสมัครเดิมยังผูกกับฉบับเดิม');
-          if (await confirm(txf('เผยแพร่{0}?', tx(partName)), text, tx('เผยแพร่'))) void run('publish', undefined, tx('เผยแพร่แล้ว'));
-        }}
-        onSchedule={(at) => void run('schedule', { at }, tx('ตั้งเวลาเผยแพร่แล้ว'))}
-        onCancelSchedule={() => void run('cancel-schedule', undefined, tx('ยกเลิกการตั้งเวลาแล้ว'))}
-        onHide={async () => {
-          const ok =
-            part === 'page'
-              ? await confirm(tx('ซ่อนหน้านี้ชั่วคราว?'), tx('หน้ารายละเอียดหายจากรายการงาน ลิงก์เดิมขึ้นข้อความว่าปิดไว้ชั่วคราว ใบสมัครที่มีอยู่ไม่เปลี่ยน'), tx('ซ่อนชั่วคราว'))
-              : await confirm(tx('ปิดรับสมัครทางเว็บชั่วคราว?'), tx('นักวิ่งใหม่สมัครทางเว็บไม่ได้จนกว่าจะเปิดอีกครั้ง สถานะงาน โควตา และใบสมัครที่มีอยู่ไม่เปลี่ยน คนที่กรอกค้างอยู่ส่งได้ภายใน 30 นาที'), tx('ปิดชั่วคราว'));
-          if (ok) void run('hide', undefined, tx(part === 'page' ? 'ซ่อนหน้าแล้ว' : 'ปิดรับสมัครทางเว็บชั่วคราวแล้ว'));
-        }}
-        onShow={() => void run('show', undefined, tx(part === 'page' ? 'แสดงหน้าอีกครั้งแล้ว' : 'เปิดรับสมัครทางเว็บอีกครั้งแล้ว'))}
-        onDiscard={async () => {
-          if (await confirm(tx('ยกเลิกการแก้ไขทั้งหมด?'), txf('ร่างจะถูกทิ้ง {0}กลับเป็นฉบับที่ใช้อยู่', tx(partName)), tx('ยกเลิกการแก้ไข'))) {
-            if (state.hasDraft) void run('discard', undefined, tx('ยกเลิกการแก้ไขแล้ว'));
-            else if (part === 'page') page.reset(livePage(event));
-            else form.reset(formLive(event));
-          }
-        }}
-        onRestore={(id) => void run('restore', { version: part === 'page' ? Number(id) : id }, tx('นำฉบับที่เลือกกลับมาเป็นร่างแล้ว'))}
-      />
-
-      <div className="st-toolbar">
+      <div className="st-subbar">
         <button type="button" className="btn-secondary st-mobile-tree" aria-expanded={mobileTree} onClick={() => setMobileTree(!mobileTree)}>
           <FaIcon name="bars" />
           <span>
@@ -551,57 +635,18 @@ export function EventStudio({
           </span>
           <FaIcon name="chevron-down" />
         </button>
-        <span className="st-undo">
-          <button type="button" className="pe-icon-btn" aria-label={tx('ย้อนกลับ')} title={tx('ย้อนกลับ (Ctrl+Z)')} disabled={!active.canUndo} onClick={active.undo}>
-            <FaIcon name="rotate-left" />
-          </button>
-          <button type="button" className="pe-icon-btn" aria-label={tx('ทำซ้ำ')} title={tx('ทำซ้ำ (Ctrl+Y)')} disabled={!active.canRedo} onClick={active.redo}>
-            <FaIcon name="rotate-right" />
-          </button>
-        </span>
-        {part === 'page' && (
-          <button
-            type="button"
-            className={`btn-secondary st-layout-lock${layoutLocked ? ' is-on' : ''}`}
-            aria-pressed={layoutLocked}
-            disabled={!canEdit}
-            title={tx('ล็อกโครงหน้า: ย้าย เพิ่ม ลบไม่ได้ แต่ยังแก้ข้อความได้')}
-            onClick={() => setLayoutLocked(!layoutLocked)}
-          >
-            <FaIcon name={layoutLocked ? 'lock' : 'lock-open'} />
-            <span>{tx(layoutLocked ? 'ล็อกโครงหน้าอยู่' : 'ล็อกโครงหน้า')}</span>
-          </button>
-        )}
         <span className={`st-status is-${status.tone}`} role="status" aria-live="polite">
-          {status.text ? tx(status.text) : !canEdit ? tx('ดูอย่างเดียว — บทบาทนี้แก้หน้างานและฟอร์มสมัครไม่ได้') : ''}
+          {status.text
+            ? tx(status.text)
+            : !canEdit
+              ? tx('ดูอย่างเดียว — บทบาทนี้แก้หน้างานและฟอร์มสมัครไม่ได้')
+              : active.saving
+                ? tx('กำลังบันทึกร่าง…')
+                : ''}
         </span>
-        <button type="button" className="btn-secondary st-full-toggle" onClick={() => setFull(true)}>
-          <FaIcon name="expand" />
-          <span>{tx('ขยายเต็มจอ')}</span>
-        </button>
       </div>
 
-      <div className={`st-layout${mobileTree ? ' is-tree-open' : ''}${full ? ' is-full' : ''}`} {...(full ? { role: 'dialog', 'aria-modal': true, 'aria-label': tx('ตัวอย่างเต็มจอ') } : {})}>
-        {full && (
-          <div className="st-fullbar">
-            <strong>{tx(part === 'page' ? 'หน้ารายละเอียดงาน' : 'ขั้นตอนสมัคร')}</strong>
-            <span className="st-undo">
-              <button type="button" className="pe-icon-btn" aria-label={tx('ย้อนกลับ')} disabled={!active.canUndo} onClick={active.undo}>
-                <FaIcon name="rotate-left" />
-              </button>
-              <button type="button" className="pe-icon-btn" aria-label={tx('ทำซ้ำ')} disabled={!active.canRedo} onClick={active.redo}>
-                <FaIcon name="rotate-right" />
-              </button>
-            </span>
-            <span className={`st-status is-${status.tone}`} role="status" aria-live="polite">
-              {status.text ? tx(status.text) : active.saving ? tx('กำลังบันทึกร่าง…') : ''}
-            </span>
-            <button type="button" className="btn-secondary" autoFocus onClick={() => setFull(false)}>
-              <FaIcon name="compress" />
-              <span>{tx('ออกจากเต็มจอ (Esc)')}</span>
-            </button>
-          </div>
-        )}
+      <div className={`st-layout${mobileTree ? ' is-tree-open' : ''}${treeShown ? '' : ' is-tree-off'}${panelShown ? '' : ' is-panel-off'}`}>
         {tree}
         {part === 'page' && pageSel === 'media' ? (
           <div className="st-media">{media}</div>
@@ -730,5 +775,95 @@ function TreeRow({
       </div>
       {open && sub && <ul className="st-sub">{sub}</ul>}
     </li>
+  );
+}
+
+/**
+ * The dashboard menu "หน้างานและฟอร์มสมัคร" (27 Nov 2026): what is live and what waits, and a
+ * button into the full-window editor (WordPress-style, user request).
+ */
+export function EventStudioCard({
+  event,
+  canEdit,
+  onOpen,
+}: {
+  event: RaceEvent;
+  canEdit: boolean;
+  onOpen: (part: Part) => void;
+}) {
+  const rows: { part: Part; icon: string; title: string; sub: string; state: ReturnType<typeof pageStateOf>; live: string }[] = [
+    {
+      part: 'page',
+      icon: 'file-lines',
+      title: 'หน้ารายละเอียดงาน',
+      sub: 'หน้าที่นักวิ่งเห็นก่อนสมัคร',
+      state: pageStateOf(event),
+      live: event.detailPageVersions?.length
+        ? txf('ฉบับที่ {0} · {1}', event.detailPageVersions[event.detailPageVersions.length - 1].version, fmtEventTime(event.detailPageVersions[event.detailPageVersions.length - 1].publishedAt))
+        : tx('ใช้หน้าแม่แบบของระบบ'),
+    },
+    {
+      part: 'form',
+      icon: 'list-check',
+      title: 'ขั้นตอนสมัคร',
+      sub: 'ฟอร์มที่นักวิ่งกรอกทีละขั้น',
+      state: formStateOf(event),
+      live: txf('ฉบับ {0} · {1} ขั้น + ชำระเงิน', event.publishedFormVersion ?? '-', formFlowOf(event).length),
+    },
+  ];
+  return (
+    <div className="canvas-stack">
+      <div className="page-guide-header">
+        <h1>{tx('หน้างานและฟอร์มสมัคร')}</h1>
+        <p className="page-purpose-desc">
+          {tx('จัดหน้ารายละเอียดงานและขั้นตอนสมัครในตัวแก้ไขเต็มจอ การแก้ไขถูกบันทึกเป็นร่าง นักวิ่งเห็นเมื่อเผยแพร่ หน้าและฟอร์มเผยแพร่แยกกัน')}
+        </p>
+      </div>
+      <div className="st-cards">
+        {rows.map((r) => (
+          <section key={r.part} className="st-card">
+            <header>
+              <span className="st-group-ico">
+                <FaIcon name={r.icon} />
+              </span>
+              <span>
+                <strong>{tx(r.title)}</strong>
+                <small>{tx(r.sub)}</small>
+              </span>
+            </header>
+            <dl>
+              <div>
+                <dt>{tx('สถานะ')}</dt>
+                <dd>
+                  <span className={`st-state is-${r.state.key}`}>
+                    {tx(r.part === 'form' && r.state.key === 'hidden' ? 'ปิดรับสมัครทางเว็บชั่วคราว' : r.state.label)}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt>{tx('ที่นักวิ่งเห็นอยู่')}</dt>
+                <dd>{r.live}</dd>
+              </div>
+              {r.state.schedule && (
+                <div>
+                  <dt>{tx('ตั้งเวลาเผยแพร่')}</dt>
+                  <dd>{fmtEventTime(r.state.schedule.at)}</dd>
+                </div>
+              )}
+              {r.state.failed && (
+                <div className="is-fail">
+                  <dt>{tx('เผยแพร่ตามเวลาไม่สำเร็จ')}</dt>
+                  <dd>{tx(r.state.failed.error)}</dd>
+                </div>
+              )}
+            </dl>
+            <button type="button" className="btn-primary" onClick={() => onOpen(r.part)}>
+              <FaIcon name={canEdit ? 'pen-ruler' : 'eye'} />
+              <span>{tx(canEdit ? 'เปิดตัวแก้ไข' : 'เปิดดู')}</span>
+            </button>
+          </section>
+        ))}
+      </div>
+    </div>
   );
 }

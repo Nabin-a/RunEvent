@@ -166,6 +166,8 @@ export const EventRegistrantsView: React.FC<Props> = ({
         r.participantNameTh.toLowerCase().includes(q) ||
         (r.participantNameEn ?? '').toLowerCase().includes(q) ||
         r.regCode.toLowerCase().includes(q) ||
+        // a group order: its code finds everyone who came in together (28 Nov 2026)
+        r.orderCode.toLowerCase().includes(q) ||
         (r.bibNumber ?? '').toLowerCase().includes(q) ||
         r.buyerName.toLowerCase().includes(q)
       );
@@ -192,10 +194,13 @@ export const EventRegistrantsView: React.FC<Props> = ({
   const pageRows = rows.slice(page * PAGE, page * PAGE + PAGE);
 
   const exportCsv = () => {
-    const head = ['รหัสใบสมัคร', 'ชื่อผู้วิ่ง', 'ชื่อภาษาอังกฤษ', 'ระยะ', 'สถานะสิทธิ์', 'สถานะเงิน', 'เลข BIB', 'ไซซ์เสื้อ', 'วิธีรับของ', 'รับของแล้ว'];
+    const head = ['รหัสใบสมัคร', 'รหัสคำสั่งซื้อ', 'คนที่ในคำสั่งซื้อ', 'ชื่อผู้วิ่ง', 'ชื่อภาษาอังกฤษ', 'ระยะ', 'สถานะสิทธิ์', 'สถานะเงิน', 'เลข BIB', 'ไซซ์เสื้อ', 'วิธีรับของ', 'รับของแล้ว'];
     const lines = rows.map((r) =>
       [
         r.regCode,
+        // one row per person; people of one group order share the order code (28 Nov 2026)
+        r.orderCode,
+        (r.orderEntryCount ?? 1) > 1 ? `${r.orderEntryNo ?? 1}/${r.orderEntryCount}` : '1/1',
         r.participantNameTh,
         r.participantNameEn,
         catName(r.categoryId),
@@ -387,6 +392,7 @@ export const EventRegistrantsView: React.FC<Props> = ({
                         <span className="rg-sub">
                           {r.regCode}
                           {r.buyerName !== r.participantNameTh && ` · ${txf('สมัครโดย {0}', tx(r.buyerName))}`}
+                          {(r.orderEntryCount ?? 1) > 1 && ` · ${txf('กลุ่ม {0} คน', r.orderEntryCount ?? 1)}`}
                         </span>
                       </button>
                     </td>
@@ -476,6 +482,30 @@ export const EventRegistrantsView: React.FC<Props> = ({
               </dd>
               <dt>{tx('ผู้จ่ายเงิน')}</dt>
               <dd>{open.buyerName === open.participantNameTh ? tx('คนเดียวกับผู้วิ่ง') : tx(open.buyerName)}</dd>
+              {(open.orderEntryCount ?? 1) > 1 && (
+                <>
+                  <dt>{tx('สมัครมาด้วยกัน')}</dt>
+                  <dd>
+                    {registrations
+                      .filter((x) => x.orderCode === open.orderCode)
+                      .sort((a, b) => (a.orderEntryNo ?? 1) - (b.orderEntryNo ?? 1))
+                      .map((x) =>
+                        x.id === open.id ? (
+                          <span key={x.id} className="rg-sub rg-block">
+                            {txf('คนที่ {0}', x.orderEntryNo ?? 1)} · {tx(x.participantNameTh)} ({tx('คนนี้')})
+                          </span>
+                        ) : (
+                          <button key={x.id} type="button" className="rg-link rg-block" onClick={() => setOpenId(x.id)}>
+                            {txf('คนที่ {0}', x.orderEntryNo ?? 1)} · {tx(x.participantNameTh)} · {x.regCode}
+                          </button>
+                        )
+                      )}
+                    <span className="rg-sub rg-block">
+                      {txf('คำสั่งซื้อ {0} จ่ายครั้งเดียว แต่ละคนมีสิทธิ์ BIB และการคืนเงินของตัวเอง', open.orderCode)}
+                    </span>
+                  </dd>
+                </>
+              )}
               {canViewFinance && open.paymentStatus === 'succeeded' && (
                 <>
                   <dt>{tx('ยอดที่จ่าย')}</dt>

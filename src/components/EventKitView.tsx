@@ -19,6 +19,7 @@ import { resolveShirtSpec } from '../data/runnerProfileDefaults';
 import { formatThb } from '../utils/pricing';
 import { tx, txf } from '../i18n';
 import { FaIcon } from './FaIcon';
+import { SelectMenu } from './SelectMenu';
 import '../event-home.css';
 import '../event-setup.css';
 
@@ -346,13 +347,12 @@ const AddSize: React.FC<{
     >
       <label className="kt-field" htmlFor={`${uid}-s`}>
         {tx('เพิ่มไซซ์')}
-        <select id={`${uid}-s`} value={code} onChange={(e) => setPick(e.target.value)}>
-          {missing.map((m) => (
-            <option key={m.code} value={m.code}>
-              {m.code} ({m.chartByType.Unisex.chestInch})
-            </option>
-          ))}
-        </select>
+        <SelectMenu
+          id={`${uid}-s`}
+          value={code}
+          onChange={(v) => setPick(v)}
+          options={missing.map((m) => ({ value: m.code, label: `${m.code} (${m.chartByType.Unisex.chestInch})` }))}
+        />
       </label>
       <label className="kt-field" htmlFor={`${uid}-q`}>
         {tx('เปิดจอง (ตัว)')}

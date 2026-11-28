@@ -702,14 +702,12 @@
   font-size: 0.8125rem;
 }
 
-.kt-field input,
-.kt-field select {
+.kt-field input {
   min-height: 40px;
   width: 7rem;
 }
 
-.kt-field select {
-  width: auto;
+.kt-field .kr-select {
   min-width: 7rem;
 }
 

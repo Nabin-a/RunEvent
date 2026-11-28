@@ -7,6 +7,7 @@
 import React, { useState } from 'react';
 import type { OrgRole, RaceEvent, TeamInvitation } from '../types';
 import { FaIcon } from './FaIcon';
+import { SelectMenu } from './SelectMenu';
 import { tx, txf } from '../i18n';
 import '../event-home.css';
 import '../event-finance.css';
@@ -288,11 +289,16 @@ export const OrgTeamView: React.FC<Props> = ({
             }}
           >
             <label htmlFor="ot-role">{tx('บทบาท')}</label>
-            <select id="ot-role" value={inviteRole} onChange={(e) => setInviteRole(e.target.value as OrgRole)}>
-              <option value="staff">{tx(ROLE_LABEL.staff)}</option>
-              <option value="event_manager">{tx(ROLE_LABEL.event_manager)}</option>
-              <option value="finance">{tx(ROLE_LABEL.finance)}</option>
-            </select>
+            <SelectMenu
+              id="ot-role"
+              value={inviteRole}
+              onChange={(v) => setInviteRole(v as OrgRole)}
+              options={[
+                { value: 'staff', label: tx(ROLE_LABEL.staff) },
+                { value: 'event_manager', label: tx(ROLE_LABEL.event_manager) },
+                { value: 'finance', label: tx(ROLE_LABEL.finance) },
+              ]}
+            />
             <button type="submit" className="fin-btn is-primary">
               <FaIcon name="user-plus" />
               {tx('สร้างรหัสคำเชิญ')}

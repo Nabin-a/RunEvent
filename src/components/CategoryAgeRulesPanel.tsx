@@ -14,6 +14,7 @@ import {
 } from '../utils/age';
 import { IconAlert, IconClose, IconPlus } from './Icons';
 import { tx, txf } from '../i18n';
+import { SelectMenu } from './SelectMenu';
 
 interface Props {
   event: RaceEvent;
@@ -310,15 +311,16 @@ export const CategoryAgeRulesPanel: React.FC<Props> = ({ event, registrations, c
                             {draft.rows.map((r, i) => (
                               <tr key={r.key}>
                                 <td>
-                                  <select
-                                    aria-label={txf('เพศของรุ่นที่ {0}', i + 1)}
+                                  <SelectMenu
+                                    ariaLabel={txf('เพศของรุ่นที่ {0}', i + 1)}
                                     value={r.gender}
-                                    onChange={(e) => patchRow(r.key, { gender: e.target.value as AgeGroupGender })}
-                                  >
-                                    <option value="ชาย">{tx('ชาย')}</option>
-                                    <option value="หญิง">{tx('หญิง')}</option>
-                                    <option value="all">{tx('ทุกเพศ')}</option>
-                                  </select>
+                                    onChange={(v) => patchRow(r.key, { gender: v as AgeGroupGender })}
+                                    options={[
+                                      { value: 'ชาย', label: tx('ชาย') },
+                                      { value: 'หญิง', label: tx('หญิง') },
+                                      { value: 'all', label: tx('ทุกเพศ') },
+                                    ]}
+                                  />
                                 </td>
                                 <td>
                                   <input

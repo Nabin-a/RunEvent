@@ -14,6 +14,7 @@ import type { EventStatus } from '../types';
 import type { OrgSection } from './OrganizerDashboardView';
 import { EventStatusBadge } from './StatusBadges';
 import { FaIcon } from './FaIcon';
+import { SelectMenu } from './SelectMenu';
 import { tx, txf } from '../i18n';
 import '../organizer-nav.css';
 
@@ -331,17 +332,12 @@ export const OrganizerTopBar: React.FC<OrgNavProps> = (p) => {
             {tx('องค์กร')}
           </label>
           {p.orgOptions.length > 1 ? (
-            <select
+            <SelectMenu
               id={orgSelId}
               value={p.orgId}
-              onChange={(e) => p.onSelectOrg(e.target.value)}
-            >
-              {p.orgOptions.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {tx(o.name)}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => p.onSelectOrg(v)}
+              options={p.orgOptions.map((o) => ({ value: o.id, label: tx(o.name) }))}
+            />
           ) : (
             <strong id={orgSelId}>{tx(p.orgName)}</strong>
           )}
@@ -353,22 +349,17 @@ export const OrganizerTopBar: React.FC<OrgNavProps> = (p) => {
             <label htmlFor={eventSelId} className="orgnav-org-label">
               {tx('งาน')}
             </label>
-            <select
+            <SelectMenu
               id={eventSelId}
               value={p.selectedEvent?.id ?? ''}
-              onChange={(e) => {
-                if (e.target.value) {
-                  p.onNavigate(p.selectedEvent ? p.activeSection : p.isStaff ? 'evt_checkin_bib' : 'evt_overview', e.target.value);
+              placeholder={tx('เลือกงานที่จะจัดการ')}
+              onChange={(v) => {
+                if (v) {
+                  p.onNavigate(p.selectedEvent ? p.activeSection : p.isStaff ? 'evt_checkin_bib' : 'evt_overview', v);
                 }
               }}
-            >
-              {!p.selectedEvent && <option value="">{tx('เลือกงานที่จะจัดการ')}</option>}
-              {p.events.map((ev) => (
-                <option key={ev.id} value={ev.id}>
-                  {tx(ev.title)}
-                </option>
-              ))}
-            </select>
+              options={p.events.map((ev) => ({ value: ev.id, label: tx(ev.title) }))}
+            />
           </div>
         )}
 
@@ -828,18 +819,13 @@ export const OrganizerMobileNav: React.FC<
             {p.events.length > 0 && (
               <div className="orgnav-sheet-picker">
                 <label htmlFor={pickId}>{tx('งานที่กำลังจัดการ')}</label>
-                <select
+                <SelectMenu
                   id={pickId}
                   value={p.selectedEvent?.id ?? ''}
-                  onChange={(e) => go(p.selectedEvent ? p.activeSection : landing, e.target.value)}
-                >
-                  {!p.selectedEvent && <option value="">{tx('เลือกงาน')}</option>}
-                  {p.events.map((ev) => (
-                    <option key={ev.id} value={ev.id}>
-                      {tx(ev.title)}
-                    </option>
-                  ))}
-                </select>
+                  placeholder={tx('เลือกงาน')}
+                  onChange={(v) => go(p.selectedEvent ? p.activeSection : landing, v)}
+                  options={p.events.map((ev) => ({ value: ev.id, label: tx(ev.title) }))}
+                />
               </div>
             )}
 
@@ -884,20 +870,15 @@ export const OrganizerMobileNav: React.FC<
               {p.orgOptions.length > 1 && (
                 <div className="orgnav-sheet-picker">
                   <label htmlFor={`${pickId}-org`}>{tx('เปลี่ยนองค์กร')}</label>
-                  <select
+                  <SelectMenu
                     id={`${pickId}-org`}
                     value={p.orgId}
-                    onChange={(e) => {
-                      p.onSelectOrg(e.target.value);
+                    onChange={(v) => {
+                      p.onSelectOrg(v);
                       onMenuOpenChange(false);
                     }}
-                  >
-                    {p.orgOptions.map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {tx(o.name)}
-                      </option>
-                    ))}
-                  </select>
+                    options={p.orgOptions.map((o) => ({ value: o.id, label: tx(o.name) }))}
+                  />
                 </div>
               )}
             </div>

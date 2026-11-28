@@ -1,4 +1,4 @@
-import { EventStudio, type PublishCall } from './EventStudio';
+import { EventStudioCard, type PublishCall } from './EventStudio';
 import React, { useMemo, useState } from 'react';
 import {
   AuditLogEntry,
@@ -20,7 +20,7 @@ import {
 } from '../types';
 import { DEFAULT_PLATFORM_PROFILE_CONFIG } from '../data/runnerProfileDefaults';
 import { computeMetrics, formatThb } from '../utils/pricing';
-import { EventMediaManager, EventMediaPatch } from './EventMediaManager';
+import type { EventMediaPatch } from './EventMediaManager';
 import { CategoryAgeRulesPanel } from './CategoryAgeRulesPanel';
 import { type AgeConfigValid } from '../utils/age';
 import {
@@ -33,6 +33,7 @@ import {
 import { isTotalQuotaEnabled, validateQuotaUpdate } from '../utils/eventConfig';
 
 import { tx, txf } from '../i18n';
+import { SelectMenu } from './SelectMenu';
 import { EventHomeView } from './EventHomeView';
 import { EventCheckInView } from './EventCheckInView';
 import { EventRegistrantsView } from './EventRegistrantsView';
@@ -156,6 +157,8 @@ interface OrganizerDashboardViewProps {
   /** the combined page and form editor's publishing actions (27 Nov 2026; it replaced the page
    *  content and form editor saves) */
   onStudioCall?: (eventId: string, ...args: Parameters<PublishCall>) => ReturnType<PublishCall>;
+  /** opens the full-window editor page of the event page / registration form (27 Nov 2026) */
+  onOpenEditor?: (eventId: string, part: 'page' | 'form') => void;
   onUpdateEventMedia?: (eventId: string, patch: EventMediaPatch) => void;
   platformProfileConfig?: PlatformProfileConfig;
   onUpdateEventShirtConfig?: (
@@ -423,8 +426,7 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
   onUpdateEventKitShipping,
   onUpdateCategoryQuota,
   onUpdateCategoryAgeRules,
-  onStudioCall,
-  onUpdateEventMedia,
+  onOpenEditor,
   platformProfileConfig = DEFAULT_PLATFORM_PROFILE_CONFIG,
   onUpdateEventShirtConfig,
 }) => {
@@ -666,18 +668,17 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             <label htmlFor="tw-sel" className="sr-only">
               {tx("ช่วงเวลาคำนวณยอดเงิน")}
             </label>
-            <select
+            <SelectMenu
               id="tw-sel"
               value={timeWindow}
-              onChange={(e) =>
-                setTimeWindow(e.target.value as TimeWindowFilter)
-              }
-              aria-label={tx("ช่วงเวลาคำนวณยอดเงิน")}
-            >
-              <option value="all_time">{tx("ยอดเงิน: ตลอดอายุงาน")}</option>
-              <option value="last_30d">{tx("ยอดเงิน: 30 วันล่าสุด")}</option>
-              <option value="last_7d">{tx("ยอดเงิน: 7 วันล่าสุด")}</option>
-            </select>
+              onChange={(v) => setTimeWindow(v as TimeWindowFilter)}
+              ariaLabel={tx("ช่วงเวลาคำนวณยอดเงิน")}
+              options={[
+                { value: "all_time", label: tx("ยอดเงิน: ตลอดอายุงาน") },
+                { value: "last_30d", label: tx("ยอดเงิน: 30 วันล่าสุด") },
+                { value: "last_7d", label: tx("ยอดเงิน: 7 วันล่าสุด") },
+              ]}
+            />
 
             <button
               type="button"
@@ -1012,32 +1013,12 @@ export const OrganizerDashboardView: React.FC<OrganizerDashboardViewProps> = ({
             {/* ================= 7. EVENT PAGE AND REGISTRATION FORM ================= */}
             {/* one editor for both (27 Nov 2026, user request); the older menus "เนื้อหาหน้างาน" and
                 "ฟอร์มสมัคร" open it too (links and saved places from before) */}
-            {selectedEvent && (activeSection === 'evt_studio' || activeSection === 'evt_page_editor' || activeSection === 'evt_form_editor') && onStudioCall && (
-              <EventStudio
+            {selectedEvent && (activeSection === 'evt_studio' || activeSection === 'evt_page_editor' || activeSection === 'evt_form_editor') && (
+              <EventStudioCard
                 key={selectedEvent.id}
                 event={selectedEvent}
                 canEdit={canManageEventConfig}
-                startPart={activeSection === 'evt_form_editor' ? 'form' : 'page'}
-                answerCounts={(() => {
-                  const counts: Record<string, number> = {};
-                  for (const r of orgRegistrations) {
-                    if (r.eventId !== selectedEvent.id) continue;
-                    for (const [id, v] of Object.entries(r.customAnswers ?? {})) {
-                      if (v !== '' && v !== false && v !== undefined && v !== null) counts[id] = (counts[id] ?? 0) + 1;
-                    }
-                  }
-                  return counts;
-                })()}
-                call={(part, action, body) => onStudioCall(selectedEvent.id, part, action, body)}
-                onOpenSection={(section) => onSelectSection(section as OrgSection)}
-                // cover images moved here from the page content menu (27 Nov 2026)
-                media={
-                  <EventMediaManager
-                    event={selectedEvent}
-                    canEdit={canManageEventConfig}
-                    onSave={(patch) => onUpdateEventMedia?.(selectedEvent.id, patch)}
-                  />
-                }
+                onOpen={(part) => onOpenEditor?.(selectedEvent.id, part)}
               />
             )}
 

@@ -25,6 +25,8 @@ import {
   IconShield,
 } from './Icons';
 
+import { SelectMenu } from './SelectMenu';
+
 import { tx, txf } from '../i18n';
 export type BuilderSubmodule =
   | 'requests_permissions'
@@ -147,6 +149,8 @@ export const RegistrationFormBuilderAdmin: React.FC<
   const [newFieldOptions, setNewFieldOptions] = useState('');
   const [newFieldRequired, setNewFieldRequired] = useState(false);
   const [newFieldSensitive, setNewFieldSensitive] = useState(false);
+  /** the answer picked in the live field preview (starts at the field's default value) */
+  const [livePrevPick, setLivePrevPick] = useState<{ fieldId: string; value: string } | null>(null);
 
   // State for Conditional Logic Builder
   const [condSourceKey, setCondSourceKey] = useState('race_distance');
@@ -471,26 +475,21 @@ export const RegistrationFormBuilderAdmin: React.FC<
                                 minWidth: '15rem',
                               }}
                             >
-                              <select
-                                aria-label={txf("ระดับสิทธิ์ของ {0}", req.requestedLabelTh)}
+                              <SelectMenu
+                                ariaLabel={txf("ระดับสิทธิ์ของ {0}", req.requestedLabelTh)}
                                 value={pickedPolicy}
-                                onChange={(e) =>
+                                onChange={(v) =>
                                   setReqPolicyPick((prev) => ({
                                     ...prev,
-                                    [req.id]: e.target.value as FormFieldPolicy,
+                                    [req.id]: v as FormFieldPolicy,
                                   }))
                                 }
-                              >
-                                <option value="CONFIGURABLE">
-                                  {tx("สิทธิ์: CONFIGURABLE (แก้ป้าย/Required ได้)")}
-                                </option>
-                                <option value="CUSTOMIZABLE">
-                                  {tx("สิทธิ์: CUSTOMIZABLE (ปรับตัวเลือกได้)")}
-                                </option>
-                                <option value="LOCKED">
-                                  {tx("สิทธิ์: LOCKED (ห้ามผู้จัดแก้หลังอนุมัติ)")}
-                                </option>
-                              </select>
+                                options={[
+                                  { value: 'CONFIGURABLE', label: tx("สิทธิ์: CONFIGURABLE (แก้ป้าย/Required ได้)") },
+                                  { value: 'CUSTOMIZABLE', label: tx("สิทธิ์: CUSTOMIZABLE (ปรับตัวเลือกได้)") },
+                                  { value: 'LOCKED', label: tx("สิทธิ์: LOCKED (ห้ามผู้จัดแก้หลังอนุมัติ)") },
+                                ]}
+                              />
                               <input
                                 type="text"
                                 placeholder={tx("หมายเหตุแจ้งผู้จัด (ถ้ามี)")}
@@ -609,23 +608,24 @@ export const RegistrationFormBuilderAdmin: React.FC<
                             {tx("ล็อกถาวรตามกฎความปลอดภัย")}
                           </span>
                         ) : (
-                          <select
-                            aria-label={txf("เปลี่ยนสิทธิ์ของ {0}", gf.label)}
+                          <SelectMenu
+                            ariaLabel={txf("เปลี่ยนสิทธิ์ของ {0}", gf.label)}
                             value={gf.policy}
-                            onChange={(e) => {
+                            onChange={(v) => {
                               onUpsertGlobalField({
                                 ...gf,
-                                policy: e.target.value as FormFieldPolicy,
+                                policy: v as FormFieldPolicy,
                               });
                               setBannerMsg(
-                                txf("อัปเดตสิทธิ์ของฟิลด์ \"{0}\" เป็น {1} แล้ว", gf.label, e.target.value)
+                                txf("อัปเดตสิทธิ์ของฟิลด์ \"{0}\" เป็น {1} แล้ว", gf.label, v)
                               );
                             }}
-                          >
-                            <option value="LOCKED">LOCKED</option>
-                            <option value="CONFIGURABLE">CONFIGURABLE</option>
-                            <option value="CUSTOMIZABLE">CUSTOMIZABLE</option>
-                          </select>
+                            options={[
+                              { value: 'LOCKED', label: 'LOCKED' },
+                              { value: 'CONFIGURABLE', label: 'CONFIGURABLE' },
+                              { value: 'CUSTOMIZABLE', label: 'CUSTOMIZABLE' },
+                            ]}
+                          />
                         )}
                       </td>
                     </tr>
@@ -967,52 +967,49 @@ export const RegistrationFormBuilderAdmin: React.FC<
                 </div>
                 <div className="form-row">
                   <label htmlFor="lib-type">{tx("ชนิด Input (Input Type)")}</label>
-                  <select
+                  <SelectMenu
                     id="lib-type"
                     value={newFieldType}
-                    onChange={(e) =>
-                      setNewFieldType(e.target.value as CustomFieldType)
+                    onChange={(v) =>
+                      setNewFieldType(v as CustomFieldType)
                     }
-                  >
-                    {Object.entries(inputTypeLabels).map(([k, lbl]) => (
-                      <option key={k} value={k}>
-                        {tx(lbl)}
-                      </option>
-                    ))}
-                  </select>
+                    options={Object.entries(inputTypeLabels).map(([k, lbl]) => ({
+                      value: k,
+                      label: tx(lbl),
+                    }))}
+                  />
                 </div>
               </div>
 
               <div className="form-grid-3" style={{ marginTop: '0.6rem' }}>
                 <div className="form-row">
                   <label htmlFor="lib-step">{tx("แสดงในขั้นตอน (Step)")}</label>
-                  <select
+                  <SelectMenu
                     id="lib-step"
                     value={newFieldStepKey}
-                    onChange={(e) => setNewFieldStepKey(e.target.value)}
-                  >
-                    {sortedSteps
+                    onChange={(v) => setNewFieldStepKey(v)}
+                    options={sortedSteps
                       .filter((s) => s.key !== 'step_review_payment')
-                      .map((s) => (
-                        <option key={s.id} value={s.key}>
-                          Step {tx(s.order)}: {tx(s.titleTh)}
-                        </option>
-                      ))}
-                  </select>
+                      .map((s) => ({
+                        value: s.key,
+                        label: `Step ${tx(s.order)}: ${tx(s.titleTh)}`,
+                      }))}
+                  />
                 </div>
                 <div className="form-row">
                   <label htmlFor="lib-pol">{tx("สิทธิ์การแก้ไขของผู้จัดงาน")}</label>
-                  <select
+                  <SelectMenu
                     id="lib-pol"
                     value={newFieldPolicy}
-                    onChange={(e) =>
-                      setNewFieldPolicy(e.target.value as FormFieldPolicy)
+                    onChange={(v) =>
+                      setNewFieldPolicy(v as FormFieldPolicy)
                     }
-                  >
-                    <option value="CONFIGURABLE">CONFIGURABLE</option>
-                    <option value="CUSTOMIZABLE">CUSTOMIZABLE</option>
-                    <option value="LOCKED">LOCKED</option>
-                  </select>
+                    options={[
+                      { value: 'CONFIGURABLE', label: 'CONFIGURABLE' },
+                      { value: 'CUSTOMIZABLE', label: 'CUSTOMIZABLE' },
+                      { value: 'LOCKED', label: 'LOCKED' },
+                    ]}
+                  />
                 </div>
                 <div className="form-row">
                   <label htmlFor="lib-opts">
@@ -1068,17 +1065,15 @@ export const RegistrationFormBuilderAdmin: React.FC<
             <h2>{tx("Field Configuration Editor — ตั้งค่าคุณสมบัติและกฎตรวจสอบ (Validation)")}</h2>
             <div className="form-row">
               <label htmlFor="fc-pick">{tx("เลือกฟิลด์ที่ต้องการปรับแต่ง")}</label>
-              <select
+              <SelectMenu
                 id="fc-pick"
                 value={selectedField.id}
-                onChange={(e) => setSelectedFieldId(e.target.value)}
-              >
-                {globalFields.map((gf) => (
-                  <option key={gf.id} value={gf.id}>
-                    [{tx(gf.fieldKey)}] {tx(gf.label)} ({tx(gf.policy)})
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setSelectedFieldId(v)}
+                options={globalFields.map((gf) => ({
+                  value: gf.id,
+                  label: `[${tx(gf.fieldKey)}] ${tx(gf.label)} (${tx(gf.policy)})`,
+                }))}
+              />
             </div>
 
             <div className="form-grid-2" style={{ marginTop: '0.75rem' }}>
@@ -1241,19 +1236,21 @@ export const RegistrationFormBuilderAdmin: React.FC<
                 {selectedField.type === 'select' ||
                 selectedField.type === 'size_selector' ||
                 selectedField.type === 'distance_selector' ? (
-                  <select
+                  <SelectMenu
                     id="live-prev-input"
-                    defaultValue={selectedField.defaultValue ?? ''}
-                  >
-                    <option value="">{tx("-- เลือกคำตอบ --")}</option>
-                    {(selectedField.options ?? ['ตัวเลือกที่ 1', 'ตัวเลือกที่ 2']).map(
-                      (opt) => (
-                        <option key={opt} value={opt}>
-                          {tx(opt)}
-                        </option>
-                      )
-                    )}
-                  </select>
+                    value={
+                      livePrevPick?.fieldId === selectedField.id
+                        ? livePrevPick.value
+                        : selectedField.defaultValue ?? ''
+                    }
+                    onChange={(v) => setLivePrevPick({ fieldId: selectedField.id, value: v })}
+                    options={[
+                      { value: '', label: tx("-- เลือกคำตอบ --") },
+                      ...(selectedField.options ?? ['ตัวเลือกที่ 1', 'ตัวเลือกที่ 2']).map(
+                        (opt) => ({ value: opt, label: tx(opt) })
+                      ),
+                    ]}
+                  />
                 ) : selectedField.type === 'textarea' ? (
                   <textarea
                     id="live-prev-input"
@@ -1337,38 +1334,37 @@ export const RegistrationFormBuilderAdmin: React.FC<
               <div className="form-grid-3">
                 <div className="form-row">
                   <label htmlFor="cnd-src">{tx("IF ฟิลด์ต้นทาง (Source Field)")}</label>
-                  <select
+                  <SelectMenu
                     id="cnd-src"
                     value={condSourceKey}
-                    onChange={(e) => setCondSourceKey(e.target.value)}
-                  >
-                    <option value="race_distance">
-                      {tx("race_distance (ระยะทางแข่งขัน)")}
-                    </option>
-                    <option value="shirt_size">{tx("shirt_size (ไซส์เสื้อ)")}</option>
-                    {globalFields.map((gf) => (
-                      <option key={gf.id} value={gf.id}>
-                        {tx(gf.id)} ({tx(gf.label)})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setCondSourceKey(v)}
+                    options={[
+                      { value: 'race_distance', label: tx("race_distance (ระยะทางแข่งขัน)") },
+                      { value: 'shirt_size', label: tx("shirt_size (ไซส์เสื้อ)") },
+                      ...globalFields.map((gf) => ({
+                        value: gf.id,
+                        label: `${tx(gf.id)} (${tx(gf.label)})`,
+                      })),
+                    ]}
+                  />
                 </div>
 
                 <div className="form-row">
                   <label htmlFor="cnd-op">{tx("ตัวดำเนินการ (Operator)")}</label>
-                  <select
+                  <SelectMenu
                     id="cnd-op"
                     value={condOperator}
-                    onChange={(e) =>
+                    onChange={(v) =>
                       setCondOperator(
-                        e.target.value as 'equals' | 'not_equals' | 'contains'
+                        v as 'equals' | 'not_equals' | 'contains'
                       )
                     }
-                  >
-                    <option value="equals">{tx("เท่ากับ (=)")}</option>
-                    <option value="not_equals">{tx("ไม่เท่ากับ (!=)")}</option>
-                    <option value="contains">{tx("มีคำว่า (CONTAINS)")}</option>
-                  </select>
+                    options={[
+                      { value: 'equals', label: tx("เท่ากับ (=)") },
+                      { value: 'not_equals', label: tx("ไม่เท่ากับ (!=)") },
+                      { value: 'contains', label: tx("มีคำว่า (CONTAINS)") },
+                    ]}
+                  />
                 </div>
 
                 <div className="form-row">
@@ -1386,40 +1382,40 @@ export const RegistrationFormBuilderAdmin: React.FC<
               <div className="form-grid-2" style={{ marginTop: '0.6rem' }}>
                 <div className="form-row">
                   <label htmlFor="cnd-ttype">{tx("THEN SHOW ประเภทเป้าหมาย")}</label>
-                  <select
+                  <SelectMenu
                     id="cnd-ttype"
                     value={condTargetType}
-                    onChange={(e) =>
-                      setCondTargetType(e.target.value as 'field' | 'step')
+                    onChange={(v) =>
+                      setCondTargetType(v as 'field' | 'step')
                     }
-                  >
-                    <option value="field">{tx("แสดงฟิลด์ (Field)")}</option>
-                    <option value="step">{tx("แสดงขั้นตอน (Step)")}</option>
-                  </select>
+                    options={[
+                      { value: 'field', label: tx("แสดงฟิลด์ (Field)") },
+                      { value: 'step', label: tx("แสดงขั้นตอน (Step)") },
+                    ]}
+                  />
                 </div>
                 <div className="form-row">
                   <label htmlFor="cnd-tkey">{tx("ฟิลด์หรือขั้นตอนที่ต้องการให้แสดง")}</label>
-                  <select
+                  <SelectMenu
                     id="cnd-tkey"
                     value={condTargetKey}
-                    onChange={(e) => setCondTargetKey(e.target.value)}
-                  >
-                    {condTargetType === 'field'
-                      ? globalFields
-                          .filter((f) => f.categoryTag !== 'system')
-                          .map((f) => (
-                            <option key={f.id} value={f.id}>
-                              [{tx(f.id)}] {tx(f.label)}
-                            </option>
-                          ))
-                      : sortedSteps
-                          .filter((s) => !s.isSystemLocked)
-                          .map((s) => (
-                            <option key={s.id} value={s.key}>
-                              [{tx(s.key)}] {tx(s.titleTh)}
-                            </option>
-                          ))}
-                  </select>
+                    onChange={(v) => setCondTargetKey(v)}
+                    options={
+                      condTargetType === 'field'
+                        ? globalFields
+                            .filter((f) => f.categoryTag !== 'system')
+                            .map((f) => ({
+                              value: f.id,
+                              label: `[${tx(f.id)}] ${tx(f.label)}`,
+                            }))
+                        : sortedSteps
+                            .filter((s) => !s.isSystemLocked)
+                            .map((s) => ({
+                              value: s.key,
+                              label: `[${tx(s.key)}] ${tx(s.titleTh)}`,
+                            }))
+                    }
+                  />
                 </div>
               </div>
 

@@ -372,6 +372,22 @@ export function StudioPageEditor({
         <FaIcon name="hand-pointer" /> {tx('เลือกส่วนที่จะแก้')}
       </h3>
       <p className="fe-hint">{tx('คลิกบล็อกในตัวอย่างหรือในเมนูซ้าย ดับเบิลคลิกข้อความในตัวอย่างเพื่อแก้ในที่')}</p>
+      {/* page-wide switch (28 Nov 2026, user request): the countdown under the event title */}
+      <h3>
+        <FaIcon name="stopwatch" /> {tx('นับถอยหลังสู่วันแข่ง')}
+      </h3>
+      <label className="pe-check">
+        <input
+          type="checkbox"
+          checked={page.card?.showCountdown !== false}
+          disabled={!canEdit}
+          onChange={(e) => canEdit && onChange({ ...page, card: { ...page.card, showCountdown: e.target.checked } })}
+        />
+        <span>{tx('แสดงนับถอยหลังใต้ชื่องาน')}</span>
+      </label>
+      <p className="fe-hint">
+        {tx('นักวิ่งเห็นเฉพาะ 30 วันก่อนเวลาปล่อยตัวรอบแรก ตัวอย่างหน้าแสดงตลอดเพื่อให้ดูได้ ไม่แสดงเมื่องานยกเลิก ระงับ หรือจบแล้ว')}
+      </p>
     </div>
   );
   if (key === 'card') {

@@ -45,6 +45,11 @@ export interface ApiSnapshotResponse {
   organization?: Organization;
   event?: RaceEvent;
   reg?: RegistrationRecord;
+  /** everyone of a group registration order, first entry first (28 Nov 2026) */
+  regs?: RegistrationRecord[];
+  orderCode?: string;
+  /** a refused group order: which person (0-based) and what was full */
+  entryIndex?: number;
   /** a held (unpaid) registration whose 15 minutes ran out, or that was cancelled */
   expired?: boolean;
   addonOrder?: MerchOrderRecord;

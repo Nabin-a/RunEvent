@@ -4,6 +4,7 @@ import { formatAgeGroupLabel, formatBasisDate } from '../utils/age';
 import { isoToDdMmYyyy } from '../utils/dateFormat';
 import { runnerEventPhase } from '../utils/eventPhase';
 import { EventPhaseBanner, EventPhasePill, phaseDetail } from './EventPhaseParts';
+import { FaIcon } from './FaIcon';
 
 /* Parts of the old profile tab "ประวัติงานที่สมัคร", now shown on the single
    "ประวัติการสมัคร & การสั่งซื้อ" page (27 Nov 2026, user request: one place). */
@@ -251,9 +252,57 @@ export function regHeadline(reg: RegistrationRecord, isPast: boolean): { label: 
   }
 }
 
+/* status filter on the history page (27 Nov 2026, user request): the same buckets as the card
+   headline above, so what the filter says is what the card says */
+export type HistoryStatus = 'all' | 'pending' | 'confirmed' | 'finished' | 'refund' | 'stopped';
+
+export const HISTORY_STATUS_OPTIONS: [HistoryStatus, string][] = [
+  ['all', 'ทุกสถานะ'],
+  ['pending', 'รอชำระเงิน'],
+  ['confirmed', 'ยืนยันสิทธิ์แล้ว'],
+  ['finished', 'จบการแข่งขันแล้ว'],
+  ['refund', 'คืนเงิน'],
+  ['stopped', 'ยกเลิก / หมดเวลาชำระ'],
+];
+
+export function regStatusKey(reg: RegistrationRecord, isPast: boolean): Exclude<HistoryStatus, 'all'> {
+  switch (regHeadline(reg, isPast).label) {
+    case 'คืนเงินแล้ว':
+    case 'กำลังคืนเงิน':
+      return 'refund';
+    case 'รอชำระเงิน':
+      return 'pending';
+    case 'ยกเลิกแล้ว':
+    case 'หมดเวลาชำระเงิน':
+      return 'stopped';
+    case 'จบการแข่งขันแล้ว':
+      return 'finished';
+    default:
+      return 'confirmed';
+  }
+}
+
+/** an icon per headline, as in the approved mock-up (output/history-accordion-mockup, 27 Nov 2026),
+    so the tag reads by shape and words, not colour alone */
+const HEADLINE_ICON: Record<string, string> = {
+  'คืนเงินแล้ว': 'rotate-left',
+  'กำลังคืนเงิน': 'rotate-left',
+  'รอชำระเงิน': 'hourglass-half',
+  'ยกเลิกแล้ว': 'ban',
+  'หมดเวลาชำระเงิน': 'clock',
+  'จบการแข่งขันแล้ว': 'flag-checkered',
+  'รับอุปกรณ์แล้ว': 'box-open',
+  'ยืนยันสิทธิ์แล้ว': 'circle-check',
+};
+
 export function RegHeadline({ reg, isPast }: { reg: RegistrationRecord; isPast: boolean }) {
   const h = regHeadline(reg, isPast);
-  return <span className={`reg-headline is-${h.tone}`}>{tx(h.label)}</span>;
+  return (
+    <span className={`reg-headline is-${h.tone}`}>
+      <FaIcon name={HEADLINE_ICON[h.label] ?? 'circle-info'} />
+      {tx(h.label)}
+    </span>
+  );
 }
 
 type StepState = 'done' | 'now' | 'todo' | 'stop';

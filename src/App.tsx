@@ -77,8 +77,8 @@ import { EmailOtpVerifyView } from './components/EmailOtpVerifyView';
 import {
   CustomerPortalView,
   CustomerSubView,
+  type GroupEntryPayload,
 } from './components/CustomerPortalView';
-import type { SouvenirLayout } from './components/SouvenirPicker';
 import { useDismiss } from './utils/useDismiss';
 import {
   IconAlert,
@@ -108,6 +108,8 @@ import {
   OrganizerDashboardView,
   OrgSection,
 } from './components/OrganizerDashboardView';
+import { EventStudio } from './components/EventStudio';
+import { EventMediaManager } from './components/EventMediaManager';
 import {
   PlatformAdminView,
   PlatformSection,
@@ -210,6 +212,8 @@ interface ParsedUrlRoute {
   eventTab: 'register' | 'storefront' | 'info_results';
   authTab: 'signin' | 'signup' | 'forgot';
   verifyEmailParam?: string | null;
+  /** the full-window editor of an event's page and registration form (27 Nov 2026) */
+  editor?: { eventId: string; part: 'page' | 'form' } | null;
 }
 
 const PDPA_SESSION_KEY = 'kratai_pdpa_ack';
@@ -294,7 +298,10 @@ function parseUrlRoute(pathname: string, search: string): ParsedUrlRoute {
     };
   }
   if (cleanPath === '/organizer' || cleanPath.startsWith('/organizer/')) {
+    // /organizer/events/<id>/editor[?part=form]: the page and form editor on its own page
+    const m = cleanPath.match(/^\/organizer\/events\/([^/]+)\/editor$/);
     return {
+      editor: m ? { eventId: decodeURIComponent(m[1]), part: params.get('part') === 'form' ? 'form' : 'page' } : null,
       surface: 'organizer',
       customerSubView: 'directory',
       eventSlug: null,
@@ -364,7 +371,6 @@ function publicSiteOrigin(): string {
   const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
   return env?.VITE_PUBLIC_SITE_URL || `${window.location.protocol}//${window.location.hostname}:5173`;
 }
-const DEV_SOUVENIR_LAYOUT_KEY = 'kratai.dev.souvenirLayout';
 
 function findEventBySlug(events: RaceEvent[], slug: string | null): RaceEvent | null {
   if (!slug) return null;
@@ -461,7 +467,9 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
   const [pdpaGateOpen, setPdpaGateOpen] = useState(false);
 
   const [activeOrgId, setActiveOrgId] = useState<string>('org-lanna');
-  const [activeEventId, setActiveEventId] = useState<string | null>(null);
+  const [activeEventId, setActiveEventId] = useState<string | null>(initialParsed.editor?.eventId ?? null);
+  /** the full-window page and form editor that is open, if any (WordPress-style, 27 Nov 2026) */
+  const [editor, setEditor] = useState<{ eventId: string; part: 'page' | 'form' } | null>(initialParsed.editor ?? null);
   const [activeOrgSection, setActiveOrgSection] =
     useState<OrgSection>('org_overview');
   const [activePlatformSection, setActivePlatformSection] =
@@ -523,14 +531,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
   };
   // Dev / Demo: which souvenir step layout the registration form shows (27 Nov 2026, user
   // request "สร้าง template แบบเดิม แยกในเมนู dev / demo"); kept in this browser only
-  const [devSouvenirLayout, setDevSouvenirLayout] = useState<SouvenirLayout>(() => {
-    try {
-      const v = window.localStorage.getItem(DEV_SOUVENIR_LAYOUT_KEY);
-      return v === 'shelves' || v === 'classic' ? v : 'accordion';
-    } catch {
-      return 'accordion';
-    }
-  });
   // Dev / Demo: what each demo account is, by role (27 Nov 2026, user request)
   const devRoleOf = (u: UserAccount) => {
     if (u.isPlatformAdmin) {
@@ -573,15 +573,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     };
   };
 
-  const pickDevSouvenirLayout = (l: SouvenirLayout) => {
-    setDevSouvenirLayout(l);
-    try {
-      window.localStorage.setItem(DEV_SOUVENIR_LAYOUT_KEY, l);
-    } catch {
-      /* storage blocked: the choice lasts until reload */
-    }
-  };
-
   const pushUrl = (url: string, replace = false) => {
     // the console keeps its own address (it may live under a sub-path such as /admin/ next to the
     // public site's files); public-site URLs pushed here would reload into the public app
@@ -611,6 +602,8 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     if (parsed.verifyEmailParam !== undefined) {
       setPendingVerifyEmail(parsed.verifyEmailParam ?? '');
     }
+    setEditor(parsed.editor ?? null);
+    if (parsed.editor) setActiveEventId(parsed.editor.eventId);
   };
 
   useEffect(() => {
@@ -1874,40 +1867,82 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     customAnswers?: Record<string, string | boolean>;
     /** one id per checkout attempt; the same id on a retry so the server never books twice */
     requestId: string;
+    /** a group order (28 Nov 2026): the people filed before this one, each with its own id */
+    others?: GroupEntryPayload[];
   }): Promise<
-    | { ok: true; reg: RegistrationRecord; addonOrders?: MerchOrderRecord[] }
-    | { ok: false; error: string }
+    | { ok: true; reg: RegistrationRecord; addonOrders?: MerchOrderRecord[]; regs?: RegistrationRecord[] }
+    | { ok: false; error: string; entryIndex?: number }
   > => {
     // The seat, shirt and price are decided by the server inside one locked transaction, so
     // the page waits for its answer instead of showing a booking the server might refuse.
-    const { requestId, addonItems, ...rest } = payload;
-    const res = await syncApi('POST', '/api/registrations', {
-      ...rest,
-      id: requestId,
+    const { requestId, addonItems, others, ...rest } = payload;
+    const orderLevel = (r: typeof rest) => {
+      const {
+        categoryId: _c,
+        participantNameTh: _t,
+        participantNameEn: _e,
+        phone: _p,
+        forFriend: _f,
+        emergencyContact: _ec,
+        shirtSize: _s,
+        participantSnapshot: _ps,
+        customAnswers: _a,
+        ...order
+      } = r;
+      return order;
+    };
+    const addons = {
       addonItems: addonItems?.map((l) => ({ productId: l.productId, variantSize: l.size, quantity: l.qty })),
       addonOrderId: addonItems && addonItems.length > 0 ? `${requestId}-addon` : undefined,
-    });
+    };
+    const res =
+      others && others.length > 0
+        ? await syncApi('POST', '/api/registration-orders', {
+            // the order's own fields (terms, delivery, form version…); the people go in `entries`
+            ...orderLevel(rest),
+            ...addons,
+            // card order: the people filed first, then the card being sent
+            entries: [
+              ...others,
+              {
+                id: requestId,
+                categoryId: rest.categoryId,
+                participantNameTh: rest.participantNameTh,
+                participantNameEn: rest.participantNameEn,
+                phone: rest.phone,
+                forFriend: rest.forFriend,
+                emergencyContact: rest.emergencyContact,
+                shirtSize: rest.shirtSize,
+                participantSnapshot: rest.participantSnapshot,
+                customAnswers: rest.customAnswers,
+              },
+            ],
+          })
+        : await syncApi('POST', '/api/registrations', { ...rest, id: requestId, ...addons });
     if (!res.ok || !res.reg) {
       return {
         ok: false,
         error: res.error ?? tx('ระบบยืนยันคำสั่งซื้อไม่สำเร็จ กรุณาลองอีกครั้ง'),
+        // a group order: which person (0-based, card order) the server refused
+        entryIndex: typeof res.entryIndex === 'number' ? res.entryIndex : undefined,
       };
     }
-    return { ok: true, reg: res.reg, addonOrders: res.addonOrders ?? (res.addonOrder ? [res.addonOrder] : []) };
+    return { ok: true, reg: res.reg, regs: res.regs, addonOrders: res.addonOrders ?? (res.addonOrder ? [res.addonOrder] : []) };
   };
 
   // A registration held at the summary step (pending_payment): pay it, or give it back so the
   // runner can edit (26 Nov 2026). The server re-checks the 15-minute hold on both.
   const handlePayHeldRegistration = async (
     regId: string
-  ): Promise<{ ok: true; reg: RegistrationRecord } | { ok: false; error: string; expired: boolean }> => {
+  ): Promise<{ ok: true; reg: RegistrationRecord; regs?: RegistrationRecord[] } | { ok: false; error: string; expired: boolean }> => {
+    // a group order is paid as a whole: the server confirms everyone of the order
     const res = await syncApi('POST', `/api/registrations/${regId}/confirm-payment`);
     if (!res.ok || !res.reg) {
       // the hold may have run out: fetch the state that shows it released
       if (res.expired) await syncApi('GET', '/api/bootstrap');
       return { ok: false, error: res.error ?? tx('ชำระเงินไม่สำเร็จ กรุณาลองอีกครั้ง'), expired: Boolean(res.expired) };
     }
-    return { ok: true, reg: res.reg };
+    return { ok: true, reg: res.reg, regs: res.regs };
   };
   const handleCancelHeldRegistration = async (regId: string): Promise<{ ok: boolean; error?: string }> => {
     const res = await syncApi('POST', `/api/registrations/${regId}/cancel-hold`);
@@ -2019,6 +2054,18 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
     void syncApi('PATCH', `/api/events/${eventId}`, {
       categoryQuotaUpdate: { categoryId, newCategoryQuota },
     });
+  };
+
+  /** the page and form editor on its own page (WordPress-style, 27 Nov 2026, user request) */
+  const openEditor = (eventId: string, part: 'page' | 'form') => {
+    setActiveEventId(eventId);
+    setEditor({ eventId, part });
+    pushUrl(`/organizer/events/${encodeURIComponent(eventId)}/editor${part === 'form' ? '?part=form' : ''}`);
+  };
+  const closeEditor = (section: OrgSection = 'evt_studio') => {
+    setEditor(null);
+    setActiveOrgSection(section);
+    pushUrl('/organizer');
   };
 
   /** the combined editor (27 Nov 2026): draft / publish / schedule / hide / restore of the page or the form */
@@ -3215,6 +3262,23 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
   const hasOrganizerAccess = Boolean(
     currentUser && (currentUser.memberships.length > 0 || isPlatformOwner)
   );
+  // the editor page: an event of one of this account's organizations (or the Platform Owner console);
+  // editing needs the owner / event manager role for that event, the server checks it again
+  const editorEvent = editor ? sys.events.find((e) => e.id === editor.eventId) : undefined;
+  const editorMembership = editorEvent ? currentUser?.memberships.find((m) => m.organizationId === editorEvent.organizationId) : undefined;
+  const editorOpen = surface === 'organizer' && !!editor && !!editorEvent && hasOrganizerAccess && (!!editorMembership || isPlatformOwner);
+  const editorCanEdit =
+    !!editorMembership &&
+    (editorMembership.role === 'owner' || editorMembership.role === 'event_manager') &&
+    (!editorMembership.assignedEventIds?.length || editorMembership.assignedEventIds.includes(editorEvent!.id));
+  const editorPartToUrl = useCallback(
+    (part: 'page' | 'form') => {
+      if (!editor) return;
+      pushUrl(`/organizer/events/${encodeURIComponent(editor.eventId)}/editor${part === 'form' ? '?part=form' : ''}`, true);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editor?.eventId]
+  );
 
   useEffect(() => {
     if (isAdminApp && surface !== 'platform_admin' && surface !== 'organizer') {
@@ -3348,7 +3412,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
       )}
 
       {/* PRODUCTION ROLE-BASED TOP HEADER */}
-      {!isAdminApp && (
+      {!isAdminApp && !editorOpen && (
         <header
           className="global-topbar"
           onKeyDown={(e) => {
@@ -3825,7 +3889,6 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
           {/* ACTIVE SURFACE */}
           {surface === 'customer' && (
             <CustomerPortalView
-              souvenirLayout={sandboxTools ? devSouvenirLayout : 'accordion'}
               subView={customerSubView}
               selectedEventId={selectedPublicEventId}
               initialEventTab={initialEventTab}
@@ -3939,7 +4002,38 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
             />
           )}
 
+          {editorOpen && editorEvent && currentUser && (
+            <EventStudio
+              key={editorEvent.id}
+              event={editorEvent}
+              canEdit={editorCanEdit}
+              startPart={editor!.part}
+              answerCounts={(() => {
+                const counts: Record<string, number> = {};
+                for (const r of sys.registrations) {
+                  if (r.eventId !== editorEvent.id) continue;
+                  for (const [id, v] of Object.entries(r.customAnswers ?? {})) {
+                    if (v !== '' && v !== false && v !== undefined && v !== null) counts[id] = (counts[id] ?? 0) + 1;
+                  }
+                }
+                return counts;
+              })()}
+              call={(part, action, body) => handleStudioCall(editorEvent.id, part, action, body)}
+              onOpenSection={(section) => closeEditor(section as OrgSection)}
+              onExit={() => closeEditor()}
+              onPart={editorPartToUrl}
+              media={
+                <EventMediaManager
+                  event={editorEvent}
+                  canEdit={editorCanEdit}
+                  onSave={(patch) => handleUpdateEventMedia(editorEvent.id, patch)}
+                />
+              }
+            />
+          )}
+
           {surface === 'organizer' &&
+            !editorOpen &&
             currentUser &&
             (hasOrganizerAccess ? (
               <OrganizerDashboardView
@@ -4005,7 +4099,7 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                 }}
                 onUpdateCategoryQuota={handleUpdateCategoryQuota}
                 onUpdateCategoryAgeRules={handleUpdateCategoryAgeRules}
-                onStudioCall={handleStudioCall}
+                onOpenEditor={openEditor}
                 onUpdateEventMedia={handleUpdateEventMedia}
                 platformProfileConfig={
                   sys.platformProfileConfig ?? DEFAULT_PLATFORM_PROFILE_CONFIG
@@ -4239,39 +4333,9 @@ export const App: React.FC<{ mode?: 'public' | 'admin' }> = ({ mode = 'public' }
                   })}
               </section>
 
-              {/* Dev / Demo keeps three parts only (27 Nov 2026, user request): test users, the
-                  entry form's template, reset */}
-              <section className="dev-drawer-section" aria-labelledby="dev-sec-page">
-                <h3 id="dev-sec-page" className="dev-sec-title">
-                  <IconSliders size={15} /> {tx("หน้าตาฟอร์มสมัคร")}
-                </h3>
-                <p className="dev-sec-help">{tx("สลับแล้วหน้าเดิมยังอยู่ ข้อมูลที่กรอกไม่หาย")}</p>
-                {/* switching keeps the form on its step with everything picked (27 Nov 2026) */}
-                <div className="dev-field">
-                  <span id="dev-sv-layout" className="dev-field-label">{tx("ขั้นของที่ระลึก")}</span>
-                  <div className="dev-seg is-three" role="radiogroup" aria-labelledby="dev-sv-layout">
-                    {(
-                      [
-                        ['accordion', 'พับตามหมวด'],
-                        ['shelves', 'เปิดทุกหมวด'],
-                        ['classic', 'แบบแรก'],
-                      ] as const
-                    ).map(([l, label]) => (
-                      <button
-                        key={l}
-                        type="button"
-                        role="radio"
-                        aria-checked={devSouvenirLayout === l}
-                        className={devSouvenirLayout === l ? 'is-on' : ''}
-                        onClick={() => pickDevSouvenirLayout(l)}
-                      >
-                        {tx(label)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </section>
-
+              {/* Dev / Demo keeps two parts (27 Nov 2026, user request; the souvenir-step template
+                  switch went on 28 Nov 2026: the folding categories are the only layout): test
+                  users, reset */}
               <section className="dev-drawer-section is-danger" aria-labelledby="dev-sec-reset">
                 <h3 id="dev-sec-reset" className="dev-sec-title">
                   <IconAlert size={15} /> {tx("ล้างข้อมูล")}

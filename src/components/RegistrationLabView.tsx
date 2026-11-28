@@ -33,6 +33,7 @@ import { PhoneInput } from './PhoneInput';
 import { RunnerCustomFieldsInputs } from './PublicEventView';
 import { RequiredFieldText } from './RequiredFieldText';
 import { SelectMenu } from './SelectMenu';
+import { FaIcon } from './FaIcon';
 import { NoteTag, PriceTag } from './RegTags';
 import { RegistrationStepper } from './RegistrationStepper';
 import { ShirtGallery, type ShirtGalleryStyle } from './ProductGallery';
@@ -65,19 +66,20 @@ import {
   IconCheckCircle,
   IconClock,
   IconMapPin,
+  IconChevronDown,
+  IconLedger,
   IconShirt,
+  IconUsers,
 } from './Icons';
 import { PaymentMethodPicker } from './PaymentMethodPicker';
-import { SouvenirPicker, type SouvenirLayout } from './SouvenirPicker';
-import { SouvenirPickerClassic } from './SouvenirPickerClassic';
+import { SouvenirPicker } from './SouvenirPicker';
 import { RegistrationTerms } from './RegistrationTerms';
 import type { CartLine } from './StorefrontView';
-import { RegistrationSummary, type ReviewLedgerGroup, type ReviewSection } from './RegistrationReview';
+import { RegistrationOrderSheet, type SheetBlock, type SheetPerson } from './RegistrationReview';
 import { EventCoverMedia } from './Icons';
 import { displayPhone } from '../utils/phone';
 import { CORE_STEP, answerText, fieldShown, isContentField } from '../data/registrationForm';
 import { flowStepOf } from '../data/formFlow';
-import { DefaultAvatarImg } from './DefaultAvatar';
 import { firstFriendContactProblem, friendContactProblems } from '../utils/friendContact';
 
 /**
@@ -115,6 +117,9 @@ export interface LabLive {
   book?: () => void;
   /** the registration held for payment, while there is one */
   held?: LabHeld | null;
+  /** group registration (28 Nov 2026): the people already filled in on this order; the card
+   *  being filled is the form itself. Absent = one person only (not signed in / organizer preview). */
+  group?: LabGroup;
   /** why the form went back (e.g. the 15 minutes to pay ran out) */
   resumeNotice?: string | null;
   submitting: boolean;
@@ -137,9 +142,57 @@ export interface LabLive {
   saveEmergencyContacts?: (list: RunnerEmergencyContact[]) => Promise<{ ok: boolean; error?: string }>;
 }
 
+/** a person already filled in on a group order, as the form shows them */
+export interface LabGroupPerson {
+  key: string;
+  name: string;
+  isSelf: boolean;
+  savedId: string;
+  catName: string;
+  shirtSize: string;
+  /** what this person pays (fee + service fee) */
+  satang: number;
+  baseSatang: number;
+  tierLabel: string;
+  /** what this person still lacks, by part of the window ('ระยะ', 'ข้อมูลทั่วไป'…); empty = complete */
+  missing: string[];
+  /** the entry type picked (an option of the distance list) */
+  optionId: string;
+  /** label / value rows for the summary step */
+  details: { label: string; value: string }[];
+}
+
+/**
+ * Group registration (28 Nov 2026, user approved output/group-registration-modal-mockup): the
+ * "ผู้สมัครและระยะ" step lists the people of the order; each one is filled in a window (modal).
+ * The form's fields are the window's working copy while it is open.
+ */
+export interface LabGroup {
+  people: LabGroupPerson[];
+  /** the most people per order (the organizer's setting) */
+  max: number;
+  /** this account already holds a place in the event: "yourself" cannot be added again */
+  selfRegCode?: string;
+  /** the window: null = closed, -1 = a new person, i = person i */
+  editing: number | null;
+  /** the person whose window opened because "ถัดไป" found something missing */
+  errorsAt: number | null;
+  /** opens person i, or a new one for yourself / someone else */
+  open: (target: number | 'self' | 'friend', withErrors?: boolean) => void;
+  /** puts the window's copy into the list as it is (nothing is checked until "ถัดไป") */
+  save: () => void;
+  /** closes the window without keeping its edits */
+  cancel: () => void;
+  /** the window holds edits not in the list yet */
+  isDirty: () => boolean;
+  remove: (i: number) => void;
+}
+
 /** A registration booked at the summary step and held (15 minutes) until it is paid. */
 export interface LabHeld {
   reg: RegistrationRecord;
+  /** everyone of the order (one person = just reg) */
+  regs?: RegistrationRecord[];
   addonOrders: MerchOrderRecord[];
   /** this form booked it, so going back to edit still has everything typed */
   fromForm: boolean;
@@ -156,6 +209,9 @@ export interface LabHeld {
 export type Pair<T> = [T, (next: T) => void];
 
 export interface LabShared {
+  /** which person the form is filling (group registration): a new id = a different card, so the
+   *  answers and the shirt that came with it are kept, not cleared as for a change of person */
+  personId?: string;
   step: Pair<number>;
   optionId: Pair<string>;
   catId: string;
@@ -198,7 +254,196 @@ export interface LabShared {
 type Gender = 'ไม่ระบุ' | 'ชาย' | 'หญิง';
 /** areas of a step that get the red frame when their choice is missing */
 type Zone = 'cat' | 'who' | 'friend' | 'ec' | 'shirt' | 'kit' | 'addr' | 'terms' | 'pay';
+
+/**
+ * One group of the runner card (28 Nov 2026, user request): "ข้อมูลทั่วไป", "ข้อมูลเพิ่มเติม" and
+ * "สินค้าที่ระลึก", each folding open like a dropdown. Closed, the head says what was filled in and
+ * whether something is still missing (in words, not colour only). The fields stay in the page while
+ * folded, so the step's checks still see them; a failed check opens the group with the problem.
+ * A group starts open while it is incomplete; after that the runner's own clicks decide.
+ */
+function RegGroup({
+  gid,
+  icon,
+  title,
+  summary,
+  done,
+  todo,
+  children,
+}: {
+  gid: string;
+  icon: ReactNode;
+  title: string;
+  summary: string;
+  done: boolean;
+  todo: string;
+  children: ReactNode;
+}) {
+  const [startOpen] = useState(!done);
+  return (
+    <details className="reg-group" open={startOpen} data-group={gid}>
+      <summary className="reg-group-head">
+        <span className="reg-group-ico" aria-hidden="true">
+          {icon}
+        </span>
+        <span className="reg-group-title">
+          <strong>{tx(title)}</strong>
+          {summary && <small>{summary}</small>}
+        </span>
+        <span className={`reg-group-state ${done ? 'is-done' : 'is-todo'}`}>
+          {done ? `✓ ${tx('ครบ')}` : tx(todo)}
+        </span>
+        <IconChevronDown size={16} className="reg-group-chev" />
+      </summary>
+      <div className="reg-group-body">{children}</div>
+    </details>
+  );
+}
 type IdType = 'thai_id' | 'passport';
+
+/**
+ * The person window of a group order (28 Nov 2026). Without `open` it renders its content as is
+ * (one-person form). Esc / ✕ / "ยกเลิก" = cancel (the caller asks first when there are edits);
+ * A click outside the window does nothing (28 Nov 2026, user decision; it closed the window and kept
+ * what was typed before): it closes only by "บันทึก" or a cancel.
+ */
+function PersonWindow({
+  open,
+  title,
+  banner,
+  blocked,
+  onCancel,
+  onSave,
+  windowRef,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  banner: ReactNode;
+  /** another dialog sits on top: Esc belongs to it */
+  blocked: boolean;
+  onCancel: () => void;
+  onSave: () => void;
+  windowRef: React.MutableRefObject<HTMLDivElement | null>;
+  children: ReactNode;
+}) {
+  const backTo = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    backTo.current = document.activeElement as HTMLElement | null;
+    const body = document.body;
+    const was = body.style.overflow;
+    body.style.overflow = 'hidden';
+    // after the click that opened it has finished (else focus stays on that button)
+    const t = window.setTimeout(() => {
+      if (!windowRef.current?.contains(document.activeElement)) windowRef.current?.focus();
+    }, 30);
+    return () => {
+      window.clearTimeout(t);
+      body.style.overflow = was;
+      // back to what opened it, when that is still on the page (else the list's add button)
+      const back = backTo.current;
+      window.setTimeout(() => {
+        if (back && document.contains(back)) back.focus();
+        else document.querySelector<HTMLElement>('.reg-pw-add, .reg-pw-start button')?.focus();
+      }, 0);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  if (!open) return <>{children}</>;
+  return (
+    <div className="reg-pw-backdrop">
+      <div
+        className="reg-pw"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reg-pw-title"
+        tabIndex={-1}
+        ref={windowRef}
+        onKeyDown={(e) => {
+          if (e.key !== 'Escape' || blocked || e.defaultPrevented) return;
+          // an open dropdown closes first
+          if (document.querySelector('.kr-menu.is-floating')) return;
+          e.preventDefault();
+          onCancel();
+        }}
+      >
+        <header className="reg-pw-head">
+          <h2 id="reg-pw-title">{title}</h2>
+          <button type="button" className="reg-pw-close" aria-label={tx('ปิด')} onClick={onCancel}>
+            <FaIcon name="xmark" />
+          </button>
+        </header>
+        <div className="reg-pw-body">
+          {banner}
+          {children}
+        </div>
+        <footer className="reg-pw-foot">
+          <button type="button" className="btn-secondary" onClick={onCancel}>
+            {tx('ยกเลิก')}
+          </button>
+          <button type="button" className="btn-primary" onClick={onSave}>
+            {tx('บันทึก')}
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+/** a small yes / no box; focus starts on the safe choice and Esc means no */
+function ConfirmBox({
+  text,
+  yesLabel,
+  noLabel = 'ยกเลิก',
+  danger,
+  onYes,
+  onNo,
+}: {
+  text: string;
+  yesLabel: string;
+  noLabel?: string;
+  danger?: boolean;
+  onYes: () => void;
+  onNo: () => void;
+}) {
+  const noRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    noRef.current?.focus();
+  }, []);
+  return (
+    <div
+      className="reg-pw-backdrop is-confirm"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onNo();
+      }}
+    >
+      <div
+        className="reg-confirm"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="reg-confirm-text"
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            onNo();
+          }
+        }}
+      >
+        <p id="reg-confirm-text">{tx(text)}</p>
+        <div className="reg-confirm-actions">
+          <button type="button" className="btn-secondary" ref={noRef} onClick={onNo}>
+            {tx(noLabel)}
+          </button>
+          <button type="button" className={danger ? 'btn-primary reg-confirm-danger' : 'btn-primary'} onClick={onYes}>
+            {tx(yesLabel)}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function RegistrationLabView({
   event,
@@ -209,7 +454,6 @@ export function RegistrationLabView({
   onBack,
   shared,
   live,
-  souvenirLayout = 'accordion',
 }: {
   event: RaceEvent;
   organization?: Organization;
@@ -220,8 +464,6 @@ export function RegistrationLabView({
   /** form state owned by the live form (see LabShared) */
   shared: LabShared;
   live: LabLive;
-  /** souvenir step layout; the Dev / Demo dock can switch it (27 Nov 2026) */
-  souvenirLayout?: SouvenirLayout;
 }) {
   const profile = currentUser?.runnerProfile;
   // the souvenir step shows only when something is still on sale (sold-out items are hidden)
@@ -248,21 +490,53 @@ export function RegistrationLabView({
   const prevPage: LabStep | null = page && step > 1 ? step - 1 : null;
   const nextPage: LabStep | null = page && step < pages.length ? step + 1 : null;
   const [stepError, setStepError] = useState<string | null>(null);
+  /* group order (28 Nov 2026): the people of the order and the person window */
+  const group = live.group;
+  const people = group?.people ?? [];
+  const editing = group ? group.editing : null;
+  const windowOpen = editing !== null;
+  /** "yourself" is on another card of this order */
+  const selfAt = people.findIndex((x, k) => x.isSelf && k !== editing);
+  const selfBlocked = Boolean(group?.selfRegCode) || selfAt >= 0;
+  const selfListed = people.some((x) => x.isSelf);
+  const canAdd = !!group && people.length < group.max;
+  const windowRef = useRef<HTMLDivElement | null>(null);
+  const [confirmDrop, setConfirmDrop] = useState<number | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   /* the custom area (not a plain input) that holds the step's problem; outlined while the
      step error shows (27 Nov 2026, user request: every step highlights and jumps to the gap) */
   const [invalidZone, setInvalidZone] = useState<Zone | null>(null);
+  /* every choice still missing when "ถัดไป" was pressed, not only the first (28 Nov 2026, user
+     report: the souvenir shirt was not marked while the distance was also missing); each one
+     loses its mark as soon as it is picked */
+  const [markZones, setMarkZones] = useState<Zone[]>([]);
   const zoneMark = (zone: Zone) =>
-    stepError && invalidZone === zone ? { 'data-step-invalid': '' } : {};
+    (stepError && invalidZone === zone) || (markZones.includes(zone) && zoneMissing(zone))
+      ? { 'data-step-invalid': '' }
+      : {};
   /** after a failed step: scroll to and focus the first marked problem on the page */
   const jumpToProblem = () => {
     window.setTimeout(() => {
       const body = bodyRef.current;
       if (!body) return;
+      // a problem inside a folded group: open that group first
+      body.querySelectorAll<HTMLDetailsElement>('details.reg-group:not([open])').forEach((d) => {
+        if (d.querySelector('[aria-invalid="true"], [data-step-invalid], .field-error, :invalid')) d.open = true;
+      });
       const shown = (el: HTMLElement) => el.offsetParent !== null || el.getClientRects().length > 0;
       const marked = [
         ...body.querySelectorAll<HTMLElement>('[aria-invalid="true"], [data-step-invalid], .field-error'),
       ].filter(shown);
       marked.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+      // every gap blinks a few times (28 Nov 2026, user request), again on each press; the red
+      // mark stays until fixed. Reduced motion: the CSS keeps the mark still.
+      for (const el of marked) {
+        if (el.matches('.field-error')) continue;
+        el.classList.remove('reg-flash');
+        void el.offsetWidth;
+        el.classList.add('reg-flash');
+        el.addEventListener('animationend', () => el.classList.remove('reg-flash'), { once: true });
+      }
       const first = marked[0];
       if (!first) return;
       // what to focus inside the marked area: the picked friend's "แก้ไข", the first shirt size,
@@ -337,7 +611,6 @@ export function RegistrationLabView({
   /* ---------- step 2: participant ---------- */
   const [forSelf, setForSelf] = shared.forSelf;
   const [savedId, setSavedId] = shared.savedId;
-  const [buyerName, setBuyerName] = shared.buyerName;
   const [firstTh, setFirstTh] = shared.firstTh;
   const [lastTh, setLastTh] = shared.lastTh;
   const [firstEn, setFirstEn] = shared.firstEn;
@@ -422,6 +695,9 @@ export function RegistrationLabView({
 
   /* participant: "เลือกจากรายชื่อที่บันทึกไว้" or "กรอกผู้สมัครใหม่" ('new') */
   const partMode: 'saved' | 'manual' = saved.length > 0 && savedId !== 'new' ? 'saved' : 'manual';
+  /* the card's form shows once we know who it is for (28 Nov 2026, user request): yourself at once;
+     someone else after a friend (or "+ เพิ่มคนใหม่") is picked from the list */
+  const formShown = forSelf === true || (forSelf === false && (saved.length === 0 || savedId !== ''));
 
   // The organizer's questions belong to the person being registered: changing who that is
   // (yourself / a friend / another friend / a new one) clears the answers, so one person's
@@ -429,7 +705,16 @@ export function RegistrationLabView({
   const answersOwner = forSelf === null ? '' : forSelf ? 'self' : savedId || 'new';
   const lastAnswersOwner = useRef(answersOwner);
   const keepAnswersOnce = useRef(false);
+  // group registration: another card brings its own answers and shirt, so a new card is not a
+  // change of person on this card
+  const personId = shared.personId ?? '';
+  const lastPersonId = useRef(personId);
   useEffect(() => {
+    if (lastPersonId.current !== personId) {
+      lastPersonId.current = personId;
+      lastAnswersOwner.current = answersOwner;
+      return;
+    }
     if (lastAnswersOwner.current === answersOwner) return;
     const was = lastAnswersOwner.current;
     lastAnswersOwner.current = answersOwner;
@@ -438,9 +723,14 @@ export function RegistrationLabView({
       keepAnswersOnce.current = false;
       return;
     }
-    if (was !== '') setAnswers({});
+    if (was !== '') {
+      setAnswers({});
+      // the souvenir shirt is the person's too (it sits in their card since 28 Nov 2026)
+      setShirtSize('' as ShirtSizeCode);
+      setFinisherSize('');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [answersOwner]);
+  }, [answersOwner, personId]);
   const lastSavedId = useRef<string>('');
   /* registering someone else: the emergency contact starts as the account owner (27 Nov 2026,
      user request) unless the friend's saved data has one; the runner can change it. The
@@ -697,10 +987,6 @@ export function RegistrationLabView({
     ]
       .filter(Boolean)
       .join(' · ');
-  const ptSearch = (pt: SavedParticipant) =>
-    [pt.firstName, pt.lastName, pt.nickname, pt.firstNameEn, pt.lastNameEn, pt.nicknameEn, pt.phone, pt.relationshipToOwner]
-      .filter(Boolean)
-      .join(' ');
   // most recently registered first; never used ones keep their saved order at the end
   const byLastUsed = (a: SavedParticipant, b: SavedParticipant) =>
     (b.lastUsedAt ?? '').localeCompare(a.lastUsedAt ?? '');
@@ -841,13 +1127,13 @@ export function RegistrationLabView({
   const addonSatang = addonLines.reduce((n, l) => n + l.prd.priceSatang * l.qty, 0);
   const shipQuote = quoteRegistrationShipping(event, delivery === 'postal' ? 'postal_shipping' : 'pickup_at_expo', addonLines);
   const kitFee = kitShippingFee(event);
-  const totalSatang = (quote?.runnerNetPaySatang ?? 0) + addonSatang + shipQuote.totalSatang;
   // Thai name is optional; fall back to the (required) English name
   const participantName = `${firstTh} ${lastTh}`.trim() || `${firstEn} ${lastEn}`.trim();
 
   const go = (next: LabStep) => {
     setStepError(null);
     setInvalidZone(null);
+    setMarkZones([]);
     // leaving the payment step backwards gives the held seat back first (it returns to edit)
     if (step === PAY_STEP && live.held && next < PAY_STEP) {
       live.held.cancel();
@@ -899,47 +1185,37 @@ export function RegistrationLabView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invalidZone, picked, forSelf, savedId, pickedEc, delivery, bookId]);
 
-  const goNext = (next: LabStep) => {
+  const goNext = (next: LabStep, onOk?: () => void) => {
     if (!page) return go(next);
+    // group order: every person of the list must be complete; the first one that is not opens
+    // its window with the gaps marked (nothing is checked before "ถัดไป", 28 Nov 2026)
+    if (group && has('participant') && editing === null) {
+      if (people.length === 0) {
+        setStepError('กรุณาเพิ่มผู้สมัครอย่างน้อย 1 คน');
+        setInvalidZone(null);
+        return;
+      }
+      const bad = people.findIndex((pp) => pp.missing.length > 0);
+      if (bad >= 0) {
+        setStepError(null);
+        setInvalidZone(null);
+        group.open(bad, true);
+        return;
+      }
+      setStepError(null);
+      setInvalidZone(null);
+      if (next === PAY_STEP) return bookAndPay();
+      return go(next);
+    }
     const onDetails = has('participant');
     // show the friend's email / phone problems next to the fields along with any other gaps
     if (onDetails && forSelf === false) setFriendContactCheck(true);
     let problem = live.check(page, bodyRef.current);
-    if (!problem && onDetails && forSelf === false && partMode === 'saved' && (!emergencyName.trim() || !emergencyPhone.trim())) {
-      problem = 'เพื่อนคนนี้ยังไม่มีผู้ติดต่อฉุกเฉิน กด แก้ไข ที่การ์ดเพื่อเพิ่ม';
-    }
     if (!problem && onDetails && forSelf === false) {
       const contactProblem = firstFriendContactProblem(friendProblems);
       if (contactProblem) {
         setFriendContactCheck(true);
-        problem =
-          partMode === 'saved'
-            ? friendProblems.email && !email.trim()
-              ? 'เพื่อนคนนี้ยังไม่มีอีเมล กด แก้ไข ที่การ์ดเพื่อเพิ่ม'
-              : friendProblems.phone && !phone.trim()
-                ? 'เพื่อนคนนี้ยังไม่มีเบอร์โทร กด แก้ไข ที่การ์ดเพื่อเพิ่ม'
-                : `${contactProblem} กด แก้ไข ที่การ์ดเพื่อแก้`
-            : contactProblem;
-      }
-    }
-    // a picked friend whose saved data does not cover this entry: open the friend's editor
-    // with the missing fields marked, instead of only a message (27 Nov 2026, user request)
-    if (onDetails && forSelf === false && partMode === 'saved' && savedId && savedId !== 'new') {
-      const friendGap =
-        !firstEn.trim() ||
-        !lastEn.trim() ||
-        (dobRequired && !dob) ||
-        !emergencyName.trim() ||
-        !emergencyRelation.trim() ||
-        !emergencyPhone.trim() ||
-        Boolean(firstFriendContactProblem(friendProblems));
-      if (friendGap) {
-        setFriendContactCheck(true);
-        setStepError('ข้อมูลเพื่อนคนนี้ยังไม่ครบ กรอกช่องที่มี * ในหน้าต่างแก้ไขแล้วกดบันทึก');
-        setInvalidZone('friend');
-        setPartEditCheck(true);
-        setPartEditId(savedId);
-        return;
+        problem = contactProblem;
       }
     }
     let zone: Zone | null = null;
@@ -948,8 +1224,8 @@ export function RegistrationLabView({
     const pickProblem: [string, Zone] | null =
       has('category') && !picked
         ? ['กรุณาเลือกประเภทการสมัคร', 'cat']
-        : onDetails && forSelf === false && partMode === 'saved' && !savedId
-          ? ['กรุณาเลือกเพื่อนจากรายชื่อ หรือกด กรอกผู้สมัครใหม่', 'friend']
+        : onDetails && forSelf === false && saved.length > 0 && !savedId
+          ? ['กรุณาเลือกเพื่อนจากรายชื่อ หรือเลือก เพิ่มคนใหม่', 'friend']
           : onDetails && ecFromProfile && !pickedEc
             ? ['กรุณาเลือกผู้ติดต่อฉุกเฉิน', 'ec']
             : has('delivery') && !delivery
@@ -958,22 +1234,210 @@ export function RegistrationLabView({
                 ? ['กรุณาเลือกที่อยู่จัดส่ง', 'addr']
                 : null;
     if (pickProblem) [problem, zone] = pickProblem;
-    // a saved friend missing data is fixed on the friend's card
-    if (problem && onDetails && forSelf === false && partMode === 'saved' && /แก้ไข ที่การ์ด/.test(problem)) zone = 'friend';
-    if (!problem && has('shirt') && !shirtSize) {
+    // the souvenir shirt is part of the runner details since 28 Nov 2026
+    if (!problem && onDetails && !shirtSize) {
       problem = 'กรุณาเลือกไซส์เสื้อตามสิทธิ์สมัคร';
       zone = 'shirt';
     }
     if (problem) {
       setStepError(problem);
       setInvalidZone(zone);
+      setMarkZones(
+        [
+          ...(has('category') ? (['cat'] as Zone[]) : []),
+          ...(onDetails ? (['who', 'friend', 'ec', 'shirt'] as Zone[]) : []),
+          ...(has('delivery') ? (['kit', 'addr'] as Zone[]) : []),
+        ].filter(zoneMissing)
+      );
       jumpToProblem();
+      return;
+    }
+    setMarkZones([]);
+    // a group card checked: file it (or open another one) instead of moving on
+    if (onOk) {
+      setStepError(null);
+      setInvalidZone(null);
+      setFriendContactCheck(false);
+      onOk();
       return;
     }
     // the last step before payment books the place (the summary's own button does it on its step)
     if (next === PAY_STEP) return bookAndPay();
     go(next);
   };
+
+  /** a choice area that is still empty (its red mark goes once it is picked) */
+  const zoneMissing = (z: Zone): boolean => {
+    switch (z) {
+      case 'who':
+        return forSelf === null;
+      case 'friend':
+        return forSelf === false && saved.length > 0 && !savedId;
+      case 'cat':
+        return !picked;
+      case 'ec':
+        return ecFromProfile && !pickedEc;
+      case 'shirt':
+        return !shirtSize;
+      case 'kit':
+        return !delivery;
+      case 'addr':
+        return delivery === 'postal' && addrMode === 'saved' && book.length > 0 && !bookId;
+      default:
+        return false;
+    }
+  };
+
+  /* the window opened by "ถัดไป": mark what the person still lacks, like a step check */
+  const checkPerson = () => {
+    const scope = windowRef.current;
+    if (forSelf === false) setFriendContactCheck(true);
+    let problem = page ? live.check(page, scope) : null;
+    if (!problem && forSelf === false) problem = firstFriendContactProblem(friendProblems) ?? null;
+    let zone: Zone | null = null;
+    const pickProblem: [string, Zone] | null =
+      forSelf === true && group?.selfRegCode
+        ? [txf('คุณสมัครงานนี้แล้ว ({0}) เลือกผู้สมัครคนอื่น หรือลบการ์ดนี้', group.selfRegCode), 'who']
+        : forSelf === null
+        ? ['กรุณาเลือกผู้สมัคร', 'who']
+        : forSelf === false && saved.length > 0 && !savedId
+          ? ['กรุณาเลือกเพื่อนจากรายชื่อ หรือเลือก เพิ่มคนใหม่', 'friend']
+          : !picked
+            ? ['กรุณาเลือกระยะ', 'cat']
+            : ecFromProfile && !pickedEc
+              ? ['กรุณาเลือกผู้ติดต่อฉุกเฉิน', 'ec']
+              : null;
+    if (pickProblem) [problem, zone] = pickProblem;
+    if (!problem && !shirtSize) {
+      problem = 'กรุณาเลือกไซส์เสื้อตามสิทธิ์สมัคร';
+      zone = 'shirt';
+    }
+    if (!problem) return;
+    setStepError(problem);
+    setInvalidZone(zone);
+    setMarkZones((['who', 'friend', 'cat', 'ec', 'shirt'] as Zone[]).filter(zoneMissing));
+    jumpToProblem();
+  };
+  const errorsShownFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (!group || editing === null || editing !== group.errorsAt) {
+      errorsShownFor.current = null;
+      return;
+    }
+    if (errorsShownFor.current === editing) return;
+    errorsShownFor.current = editing;
+    window.setTimeout(checkPerson, 80);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, group?.errorsAt]);
+  const resetChecks = () => {
+    setStepError(null);
+    setInvalidZone(null);
+    setMarkZones([]);
+    setFriendContactCheck(false);
+  };
+  const openPerson = (target: number | 'self' | 'friend') => {
+    if (!group) return;
+    resetChecks();
+    group.open(target);
+  };
+  const savePerson = () => {
+    if (!group) return;
+    resetChecks();
+    group.save();
+  };
+  const closePerson = () => {
+    if (!group) return;
+    resetChecks();
+    setConfirmDiscard(false);
+    group.cancel();
+  };
+  /** ✕ / ยกเลิก / Esc: edits are thrown away only after asking */
+  const cancelPerson = () => {
+    if (!group) return;
+    if (group.isDirty()) setConfirmDiscard(true);
+    else closePerson();
+  };
+  /** "yourself" in the who list / the radio: fill from the profile */
+  const pickSelf = () => {
+    if (live.fillSelf) {
+      live.fillSelf();
+      return;
+    }
+    setForSelf(true);
+    fillFrom(profile ?? null);
+    const primary = contacts.find((c) => c.isPrimary) ?? contacts[0];
+    if (primary) setEmergency(primary.contactName, primary.relationship, primary.phone);
+  };
+  const selfName =
+    `${profile?.firstNameEn ?? ''} ${profile?.lastNameEn ?? ''}`.trim() ||
+    `${profile?.firstName ?? ''} ${profile?.lastName ?? ''}`.trim() ||
+    currentUser?.fullNameTh ||
+    '';
+  const whoValue = forSelf === true ? 'self' : forSelf === false ? savedId : '';
+  const pickWho = (v: string) => {
+    setStep2Notice(null);
+    if (v === 'self') return pickSelf();
+    if (v === 'new') {
+      if (forSelf === false && savedId && savedId !== 'new') lastSavedId.current = savedId;
+      setForSelf(false);
+      setSavedId('new');
+      fillFriend(null);
+      return;
+    }
+    setForSelf(false);
+    pickParticipant(v);
+  };
+  /* who this window is for (28 Nov 2026, user decision): people already on another card of this
+     order are left out of the list (their card is right behind the window), and so is "yourself"
+     when this account already holds a place in the event (the list page names that entry).
+     The person this window holds stays in the list. An empty group loses its heading too. */
+  const showSelf = forSelf === true || !selfBlocked;
+  const whoOptions = [
+    ...(showSelf
+      ? [
+          {
+            value: 'self',
+            label: selfName ? txf('ตัวฉัน · {0}', selfName) : tx('ตัวฉัน'),
+            hint: tx('ข้อมูลจากโปรไฟล์'),
+            group: tx('บัญชีของฉัน'),
+          },
+        ]
+      : []),
+    ...[...saved]
+      .sort(byLastUsed)
+      .filter((pt) => (forSelf === false && savedId === pt.id) || !people.some((x, k) => k !== editing && !x.isSelf && x.savedId === pt.id))
+      .map((pt) => ({
+        value: pt.id,
+        label: ptName(pt),
+        hint: ptMeta(pt) || undefined,
+        group: tx('เพื่อนที่บันทึกไว้'),
+      })),
+    { value: 'new', label: tx('+ เพิ่มคนใหม่'), hint: tx('กรอกข้อมูลเอง') },
+  ];
+
+  /* the group heads of the runner card (28 Nov 2026) */
+  const extraFields = placedFields.filter((f) => page && f.stepKey === page.id && !isContentField(f));
+  const isAnswered = (v: unknown) => v !== undefined && v !== null && v !== '' && v !== false;
+  const extraAnswered = extraFields.filter((f) => isAnswered(answers[f.id])).length;
+  const extraDone = extraFields.every((f) => !f.required || isAnswered(answers[f.id]));
+  const generalDone = Boolean(
+    firstEn.trim() &&
+      lastEn.trim() &&
+      emergencyName.trim() &&
+      emergencyRelation.trim() &&
+      emergencyPhone.trim() &&
+      (!dobRequired || dob) &&
+      (!ageCheck || ageCheck.eligible) &&
+      (forSelf !== false || (phone.trim() && email.trim()))
+  );
+  const generalSummary = [
+    `${firstEn} ${lastEn}`.trim(),
+    ageCheck?.group ? txf('รุ่น {0}', formatAgeGroupLabel(ageCheck.group)) : '',
+    phone ? displayPhone(phone) : '',
+    emergencyName.trim() ? txf('ฉุกเฉิน: {0}', emergencyName.trim()) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   /* shirt cut: ชาย / หญิง / เด็ก (26 Nov 2026, user request). Kept on this page only for now:
      the registration stores the size; storing the cut and the finisher size is a backend task. */
@@ -997,6 +1461,10 @@ export function RegistrationLabView({
   const cutLabel = (c: ShirtCut) => SHIRT_CUTS.find((x) => x.id === c)?.label ?? c;
   // "ทรง · แบบ" for the summary; a unisex shirt has no cut to name
   const withCut = (text: string, c: ShirtCut) => (c === 'Unisex' ? text : `${text} · ${tx(cutLabel(c))}`);
+
+  const souvenirSummary = shirtSize
+    ? `${withCut(tx(shirtStyleName(shirtStyle)), shirtCut)} · ${txf('ไซส์ {0}', shirtSize)}${finisherMedal ? ` · ${tx('เหรียญ Finisher')}` : ''}`
+    : tx('เสื้อแข่งรวมในค่าสมัคร เลือกทรงและไซส์');
 
   const shirtSpec = (size: ShirtSizeCode, cut: ShirtCut = shirtCut) => {
     const spec = resolveShirtSpec(
@@ -1047,7 +1515,7 @@ export function RegistrationLabView({
 
   const footer = (back: LabStep | null, next: LabStep | null, nextLabel = next === PAY_STEP ? (live.submitting ? 'กำลังกันที่นั่ง…' : 'ไปชำระเงิน') : 'ถัดไป') => (
     <>
-    {stepError && (
+    {stepError && !windowOpen && (
       <div className="error-callout" role="alert">
         <IconAlert size={16} />
         <span>{tx(stepError)}</span>
@@ -1097,7 +1565,7 @@ export function RegistrationLabView({
             </span>
           </p>
         </div>
-        {picked && category && quote && (
+        {!group && picked && category && quote && (
           <div className="reg-lab-head-price">
             <span className="muted-inline">{tx(category.name)}</span>
             <strong className="mono-num">{formatThb(quote.runnerNetPaySatang, true)}</strong>
@@ -1121,12 +1589,8 @@ export function RegistrationLabView({
         )}
 
         <div ref={bodyRef} className={`reg-lab-body ${has('review') ? 'is-review' : ''}`}>
-          {live.resumeNotice && step !== DONE_STEP && (
-            <div className="reg-lab-resume-notice" role="status">
-              <IconClock size={17} />
-              <span>{tx(live.resumeNotice)}</span>
-            </div>
-          )}
+          {/* no notice bar over the form (28 Nov 2026, user request); a refused person still
+              sees the reason inside their window */}
           {/* a step of the organizer's own (no system part): its title and description */}
           {page && !page.blocks?.length && (
             <div className="reg-lab-title">
@@ -1176,15 +1640,198 @@ export function RegistrationLabView({
             </>
           )}
 
-          {/* ---------- PART: runner details ---------- */}
-          {has('participant') && category && (
+          {/* ---------- PART: the people of a group order (28 Nov 2026) ---------- */}
+          {has('participant') && group && (
             <>
+              <div className="reg-lab-title">
+                <h2>{tx('ผู้สมัครและระยะ')}</h2>
+                <p>{tx('เพิ่มผู้สมัครได้หลายคนในคำสั่งซื้อเดียว แต่ละคนเลือกระยะของตัวเอง แล้วชำระเงินครั้งเดียว')}</p>
+              </div>
+              {people.length === 0 ? (
+                <div className="reg-pw-start">
+                  <button type="button" disabled={selfBlocked} onClick={() => openPerson('self')}>
+                    <span className="reg-pw-start-ico" aria-hidden="true">
+                      <FaIcon name="user" />
+                    </span>
+                    <strong>{tx('สมัครให้ตนเอง')}</strong>
+                    <small>
+                      {group.selfRegCode
+                        ? txf('คุณสมัครงานนี้แล้ว ({0}) ดูได้ที่ประวัติการสมัคร', group.selfRegCode)
+                        : tx('ใช้ข้อมูลจากโปรไฟล์ กรอกเพิ่มเฉพาะที่ขาด')}
+                    </small>
+                  </button>
+                  <button type="button" onClick={() => openPerson('friend')}>
+                    <span className="reg-pw-start-ico" aria-hidden="true">
+                      <FaIcon name="user-group" />
+                    </span>
+                    <strong>{tx('สมัครให้ผู้อื่น')}</strong>
+                    <small>{tx('เลือกจากรายชื่อเพื่อนที่บันทึกไว้ หรือเพิ่มคนใหม่')}</small>
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <ol className="reg-pw-list" aria-label={txf('ผู้สมัครในคำสั่งซื้อนี้ {0} คน', people.length)}>
+                    {people.map((pp, i) => (
+                      <li key={pp.key} className={`reg-pw-card ${pp.missing.length > 0 ? 'is-todo' : ''}`}>
+                        <span className="reg-person-no" aria-hidden="true">
+                          {i + 1}
+                        </span>
+                        <span className="reg-pw-card-main">
+                          <strong>
+                            {pp.name}
+                            {pp.isSelf ? ` (${tx('ตัวฉัน')})` : ''}
+                          </strong>
+                          <small>
+                            {[pp.catName || tx('ยังไม่เลือกระยะ'), pp.shirtSize ? txf('ไซส์ {0}', pp.shirtSize) : '']
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </small>
+                          <span className={`reg-pw-chip ${pp.missing.length > 0 ? 'is-todo' : 'is-done'}`}>
+                            <FaIcon name={pp.missing.length > 0 ? 'triangle-exclamation' : 'check'} />
+                            <span>
+                              {pp.missing.length > 0
+                                ? txf('ยังขาด: {0}', pp.missing.map((m) => tx(m)).join(', '))
+                                : tx('ครบ')}
+                            </span>
+                          </span>
+                        </span>
+                        <span className="reg-pw-card-actions">
+                          <button
+                            type="button"
+                            className="btn-ghost-sm"
+                            aria-label={txf('แก้ไข {0}', pp.name)}
+                            onClick={() => openPerson(i)}
+                          >
+                            <FaIcon name="pen" />
+                            <span>{tx('แก้ไข')}</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-ghost-sm reg-person-remove"
+                            aria-label={txf('ลบ {0}', pp.name)}
+                            onClick={() => setConfirmDrop(i)}
+                          >
+                            <FaIcon name="trash-can" />
+                            <span>{tx('ลบ')}</span>
+                          </button>
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                  <div className={`reg-pw-adds ${selfListed ? 'is-single' : ''}`}>
+                    {!selfListed && (
+                      <button type="button" className="reg-pw-add" disabled={selfBlocked || !canAdd} onClick={() => openPerson('self')}>
+                        <span>
+                          <FaIcon name="user" /> {tx('+ สมัครให้ตนเอง')}
+                        </span>
+                        {group.selfRegCode && <small>{txf('คุณสมัครงานนี้แล้ว ({0})', group.selfRegCode)}</small>}
+                      </button>
+                    )}
+                    <button type="button" className="reg-pw-add" disabled={!canAdd} onClick={() => openPerson('friend')}>
+                      <span>
+                        <FaIcon name="user-group" /> {tx('+ สมัครให้ผู้อื่น')}
+                      </span>
+                    </button>
+                  </div>
+                  <p className="reg-pw-count">
+                    {canAdd
+                      ? txf('{0}/{1} คนต่อครั้ง', people.length, group.max)
+                      : txf('ครบ {0} คนต่อครั้งแล้ว', group.max)}
+                  </p>
+                </>
+              )}
+              {confirmDrop !== null && (
+                <ConfirmBox
+                  text="ต้องการลบผู้สมัครรายนี้หรือไม่"
+                  yesLabel="ลบผู้สมัคร"
+                  danger
+                  onNo={() => setConfirmDrop(null)}
+                  onYes={() => {
+                    group.remove(confirmDrop);
+                    setConfirmDrop(null);
+                    resetChecks();
+                  }}
+                />
+              )}
+            </>
+          )}
+
+          {/* ---------- PART: runner details (a group order: inside the person window) ---------- */}
+          {has('participant') && category && (!group || windowOpen) && (
+            <PersonWindow
+              open={!!group}
+              title={txf('ผู้สมัครคนที่ {0}', editing !== null && editing >= 0 ? editing + 1 : people.length + 1)}
+              banner={
+                stepError ? (
+                  <div className="error-callout" role="alert">
+                    <IconAlert size={16} />
+                    <span>{tx(stepError)}</span>
+                  </div>
+                ) : group && editing !== null && editing === group.errorsAt && live.resumeNotice ? (
+                  // the booking was refused for this person (e.g. already registered): say why
+                  // inside their window, not only on the page behind it (28 Nov 2026)
+                  <div className="error-callout" role="alert">
+                    <IconAlert size={16} />
+                    <span>{tx(live.resumeNotice)}</span>
+                  </div>
+                ) : null
+              }
+              blocked={Boolean(partEditId || ecEditId || confirmDiscard)}
+              onCancel={cancelPerson}
+              onSave={savePerson}
+              windowRef={windowRef}
+            >
+            <>
+              {!group && (
               <div className="reg-lab-title">
                 {/* the distance is named only once picked (the organizer may ask the runner first, 27 Nov 2026) */}
                 <h2>{picked ? txf('ข้อมูลผู้เข้าแข่งขัน · {0}', tx(category.name)) : tx('ข้อมูลผู้เข้าแข่งขัน')}</h2>
                 <p>{tx('ช่องที่มี * จำเป็นต้องกรอก ข้อมูลอื่นช่วยให้ผู้จัดติดต่อและจัดรุ่นอายุได้ถูกต้อง')}</p>
               </div>
+              )}
 
+              {group ? (
+                <section className="reg-lab-section reg-pw-who" aria-label={tx('ผู้สมัครและระยะ')}>
+                  <div className="form-row reg-lab-friend-pick reg-lab-zone" {...zoneMark(forSelf === false ? 'friend' : 'who')}>
+                    <label htmlFor="lab-who-pick">
+                      <RequiredFieldText text={tx('สมัครให้ใคร *')} />
+                    </label>
+                    <SelectMenu
+                      id="lab-who-pick"
+                      value={whoValue}
+                      placeholder={tx(showSelf ? 'เลือกตัวฉัน เพื่อน หรือเพิ่มคนใหม่' : 'เลือกเพื่อนที่บันทึกไว้ หรือเพิ่มคนใหม่')}
+                      onChange={pickWho}
+                      options={whoOptions}
+                    />
+                    {step2NoticeEl}
+                  </div>
+                  <div className="form-row reg-lab-friend-pick reg-lab-zone" {...zoneMark('cat')}>
+                    <label htmlFor="lab-card-dist">
+                      <RequiredFieldText text={tx('ระยะ *')} />
+                    </label>
+                    <SelectMenu
+                      id="lab-card-dist"
+                      value={optionId}
+                      placeholder={tx('เลือกระยะ')}
+                      onChange={(v) => setOptionId(v)}
+                      options={options.map((o) => {
+                        const c = event.categories.find((x) => x.id === o.catId);
+                        const t = c ? getCurrentTier(c) : null;
+                        const q = t ? calculateFeeQuote(t.priceSatang, event.feeBearerPolicy) : null;
+                        const left = c ? openSeatsFor(c) : 0;
+                        return {
+                          value: o.optionId,
+                          label: tx(o.label),
+                          hint: [tx(o.subLabel), q ? formatThb(q.runnerNetPaySatang, true) : '', left <= 0 ? tx('เต็มแล้ว') : '']
+                            .filter(Boolean)
+                            .join(' · '),
+                          disabled: left <= 0,
+                        };
+                      })}
+                    />
+                  </div>
+                </section>
+              ) : (
               <section className="reg-lab-section" aria-labelledby="lab-who" {...zoneMark('who')}>
                 <h3 id="lab-who">{tx('ใครเป็นผู้เข้าแข่งขัน')}</h3>
                 <div className="reg-lab-pair-cards" role="radiogroup" aria-labelledby="lab-who">
@@ -1193,16 +1840,7 @@ export function RegistrationLabView({
                       type="radio"
                       name="lab-mode"
                       checked={forSelf === true}
-                      onChange={() => {
-                        if (live.fillSelf) {
-                          live.fillSelf();
-                          return;
-                        }
-                        setForSelf(true);
-                        fillFrom(profile ?? null);
-                        const primary = contacts.find((c) => c.isPrimary) ?? contacts[0];
-                        if (primary) setEmergency(primary.contactName, primary.relationship, primary.phone);
-                      }}
+                      onChange={pickSelf}
                     />
                     <span className="custom-radio-circle" aria-hidden="true" />
                     <div className="reg-radio-card-copy">
@@ -1232,138 +1870,54 @@ export function RegistrationLabView({
                   </label>
                 </div>
 
+                {/* someone else: pick the friend from one list before the form shows (28 Nov 2026, user
+                    request); "+ เพิ่มคนใหม่" opens an empty form. With no saved friends the form opens at once. */}
                 {forSelf === false && saved.length > 0 && (
-                  <>
-                    {modeTabs(
-                      'lab-part-mode',
-                      'วิธีระบุผู้เข้าแข่งขัน',
-                      partMode,
-                      ['เลือกจากรายชื่อเพื่อนที่สมัครให้', 'กรอกผู้สมัครใหม่'],
-                      (mode) => {
-                        if (mode === 'manual') {
+                  <div className="form-row reg-lab-friend-pick reg-lab-zone" {...zoneMark('friend')}>
+                    <label htmlFor="lab-friend">
+                      <RequiredFieldText text={tx('สมัครให้ใคร *')} />
+                    </label>
+                    <SelectMenu
+                      id="lab-friend"
+                      value={savedId}
+                      placeholder={tx('เลือกเพื่อนที่บันทึกไว้ หรือเพิ่มคนใหม่')}
+                      onChange={(v) => {
+                        setStep2Notice(null);
+                        if (v === 'new') {
                           if (savedId !== 'new') lastSavedId.current = savedId;
                           setSavedId('new');
                           fillFriend(null);
-                        } else {
-                          // back to the list: the friend picked before, if any
-                          const back = saved.find((x) => x.id === lastSavedId.current);
-                          if (back) pickParticipant(back.id);
-                          else {
-                            setSavedId('');
-                            fillFriend(null);
-                          }
-                        }
-                      }
-                    )}
+                        } else pickParticipant(v);
+                      }}
+                      options={[
+                        ...[...saved].sort(byLastUsed).map((pt) => ({
+                          value: pt.id,
+                          label: ptName(pt),
+                          hint: ptMeta(pt) || undefined,
+                          group: tx('เพื่อนที่บันทึกไว้'),
+                        })),
+                        { value: 'new', label: tx('+ เพิ่มคนใหม่'), hint: tx('กรอกข้อมูลเอง') },
+                      ]}
+                    />
                     {step2NoticeEl}
-                    {partMode === 'saved' && (
-                      <div className="reg-lab-zone" {...zoneMark('friend')}>
-                      <SavedCardPicker
-                        items={saved}
-                        selectedId={savedId}
-                        getId={(pt) => pt.id}
-                        searchText={ptSearch}
-                        title={ptName}
-                        meta={ptMeta}
-                        compare={byLastUsed}
-                        orderLabel="ใช้ล่าสุด"
-                        onPick={pickParticipant}
-                        groupLabel="เลือกจากรายชื่อเพื่อนที่สมัครให้"
-                        searchPlaceholder="ค้นหาชื่อ ชื่อเล่น หรือเบอร์โทร"
-                        allTitle="รายชื่อเพื่อนที่สมัครให้ทั้งหมด"
-                        idPrefix="lab-saved"
-                        renderCard={(pt) => {
-                          const nameTh = `${pt.firstName} ${pt.lastName}`.trim();
-                          const nameEn = `${pt.firstNameEn ?? ''} ${pt.lastNameEn ?? ''}`.trim();
-                          const missingEn = !(pt.firstNameEn ?? '').trim() || !(pt.lastNameEn ?? '').trim();
-                          return (
-                            <label key={pt.id} className={`reg-category-radio-card ${savedId === pt.id ? 'selected' : ''}`}>
-                              <input
-                                type="radio"
-                                name="lab-saved"
-                                checked={savedId === pt.id}
-                                onChange={() => pickParticipant(pt.id)}
-                              />
-                              <span className="custom-radio-circle" aria-hidden="true" />
-                              <div className="reg-radio-card-copy">
-                                <span className="reg-card-head">
-                                  <span className="runner-avatar-frame sm" aria-hidden="true">
-                                    {pt.avatarDataUrl ? (
-                                      <img src={pt.avatarDataUrl} alt="" className="runner-avatar-img" />
-                                    ) : (
-                                      <DefaultAvatarImg />
-                                    )}
-                                  </span>
-                                  <strong>
-                                    {ptNick(pt) ? `(${ptNick(pt)}) ` : ''}
-                                    {nameEn || nameTh}
-                                  </strong>
-                                </span>
-                                {nameTh && nameEn && <span className="muted-inline">{nameTh}</span>}
-                                <span className="muted-inline">
-                                  {[
-                                    pt.relationshipToOwner ? tx(pt.relationshipToOwner) : '',
-                                    pt.dateOfBirth ? txf('เกิด {0}', formatBasisDate(pt.dateOfBirth)) : '',
-                                    pt.phone ? displayPhone(pt.phone) : '',
-                                  ]
-                                    .filter(Boolean)
-                                    .join(' · ')}
-                                </span>
-                                {missingEn && (
-                                  <span className="reg-tag-row">
-                                    <NoteTag>{tx('ยังไม่มีชื่อภาษาอังกฤษ กด แก้ไข เพื่อเพิ่ม')}</NoteTag>
-                                  </span>
-                                )}
-                                {(!pt.email || !pt.phone) && (
-                                  <span className="reg-tag-row">
-                                    <NoteTag>
-                                      {!pt.email && !pt.phone
-                                        ? tx('ยังไม่มีอีเมลและเบอร์โทร กด แก้ไข เพื่อเพิ่ม')
-                                        : !pt.email
-                                          ? tx('ยังไม่มีอีเมล กด แก้ไข เพื่อเพิ่ม')
-                                          : tx('ยังไม่มีเบอร์โทร กด แก้ไข เพื่อเพิ่ม')}
-                                    </NoteTag>
-                                  </span>
-                                )}
-                                {(!pt.emergencyContactName || !pt.emergencyContactPhone) && (
-                                  <span className="reg-tag-row">
-                                    <NoteTag>{tx('ยังไม่มีผู้ติดต่อฉุกเฉิน กด แก้ไข เพื่อเพิ่ม')}</NoteTag>
-                                  </span>
-                                )}
-                                {dobRequired && !pt.dateOfBirth && (
-                                  <span className="reg-tag-row">
-                                    <NoteTag>{tx('ระยะนี้ต้องใช้วันเกิด กด แก้ไข เพื่อเพิ่ม')}</NoteTag>
-                                  </span>
-                                )}
-                              </div>
-                              {editButton(nameTh || nameEn, () => setPartEditId(pt.id))}
-                            </label>
-                          );
-                        }}
-                      />
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {forSelf === false && (
-                  <div className="reg-lab-fields">
-                    <div className="form-row reg-lab-full">
-                      <label htmlFor="lab-buyer">
-                        <RequiredFieldText text={tx('ชื่อ-นามสกุลผู้ซื้อคำสั่งซื้อ (ผู้ชำระเงิน) *')} />
-                      </label>
-                      <input id="lab-buyer" type="text" required value={buyerName} onChange={(e) => setBuyerName(e.target.value)} />
-                    </div>
                   </div>
                 )}
+
               </section>
 
-              {forSelf === false && partMode === 'saved' && ageHint}
+              )}
 
-              {forSelf !== null && (
+              {formShown && (
                 <>
-                  {!(forSelf === false && partMode === 'saved') && (
-                  <>
+                  <RegGroup
+                    key={`general-${personId}-${answersOwner}`}
+                    gid="general"
+                    icon={<IconUsers size={18} />}
+                    title="ข้อมูลทั่วไป"
+                    summary={generalSummary}
+                    done={generalDone}
+                    todo="ยังไม่ครบ"
+                  >
                   <section className="reg-lab-section" aria-labelledby="lab-names">
                     <h3 id="lab-names">{tx('ชื่อผู้เข้าแข่งขัน')}</h3>
                     <p className="reg-lab-hint">{tx('ชื่ออังกฤษใช้พิมพ์บนป้าย BIB')}</p>
@@ -1508,34 +2062,6 @@ export function RegistrationLabView({
                     </div>
                   </section>
 
-                  </>
-                  )}
-
-                  {/* the organizer's questions come before the emergency contact (26 Nov 2026, user request) */}
-                  {(event.customFields?.length ?? 0) > 0 && (
-                    // the field list brings its own heading ("ข้อมูลเพิ่มเติม (n ข้อ)")
-                    <section className="reg-lab-section reg-lab-custom">
-                      <RunnerCustomFieldsInputs
-                        fields={placedFields}
-                        answers={answers}
-                        onAnswerChange={(id, v) => {
-                          live.clearError(id);
-                          setStepError(null);
-                          setAnswers({ ...answers, [id]: v });
-                        }}
-                        raceDistanceCode={category.code}
-                        shirtSize={shirtSize}
-                        publishedFormVersion={event.publishedFormVersion}
-                        steps={live.flow}
-                        stepId={page?.id ?? CORE_STEP}
-                        errors={live.errors}
-                      />
-                    </section>
-                  )}
-
-                  {/* a saved friend's emergency contact comes from the friend's record and is edited in
-                      the friend's dialog, so the fields are not shown here (26 Nov 2026, user request) */}
-                  {!(forSelf === false && partMode === 'saved') && (
                   <section className="reg-lab-section" aria-labelledby="lab-emergency">
                     <h3 id="lab-emergency">{tx('ผู้ติดต่อฉุกเฉิน')}</h3>
                     <p className="reg-lab-hint">
@@ -1656,58 +2182,53 @@ export function RegistrationLabView({
                       </div>
                     )}
                   </section>
-                  )}
-                </>
-              )}
-              {partEditId && (
-                <SavedParticipantModal
-                  key={partEditId}
-                  owner={{ email: currentUser?.contactEmail, phone: currentUser?.runnerProfile?.phone }}
-                  idPrefix="lab-sp-edit"
-                  participant={saved.find((x) => x.id === partEditId) ?? null}
-                  entryRules={{ dob: dobRequired }}
-                  ownerEmergency={ownerEmergency}
-                  checkOnOpen={partEditCheck}
-                  shirtSizes={(platformProfileConfig?.shirtSizes ?? [])
-                    .filter((sz) => sz.enabled)
-                    .sort((x, y) => x.sortOrder - y.sortOrder)
-                    .map((sz) => sz.code)}
-                  onCancel={() => {
-                    setPartEditId(null);
-                    setPartEditCheck(false);
-                  }}
-                  onSave={async (item) => {
-                    await saveEditedParticipant(item);
-                    setPartEditCheck(false);
-                    if (invalidZone === 'friend') {
-                      setStepError(null);
-                      setInvalidZone(null);
-                    }
-                  }}
-                />
-              )}
-              {ecEditId && (
-                <EmergencyContactModal
-                  key={ecEditId}
-                  idPrefix="lab-ec-edit"
-                  contact={contacts.find((c) => c.id === ecEditId) ?? null}
-                  onCancel={() => setEcEditId(null)}
-                  onSave={saveEditedContact}
-                />
-              )}
-            </>
-          )}
+                  </RegGroup>
 
-          {/* ---------- PART: shirt ---------- */}
-          {has('shirt') && (
-            <>
-              <div className="reg-lab-title">
-                <h2>{tx('เลือกไซส์เสื้อตามสิทธิ์สมัคร')}</h2>
-                <p>
-                  {tx('เสื้อรวมในค่าสมัครแล้ว แก้ไขไซส์ได้ถึงวันที่')}{' '}
-                  <span className="mono-num">{tx(event.editDeadlineDate)}</span>
-                </p>
-              </div>
+                  {extraFields.length > 0 && (
+                    <RegGroup
+                      key={`extra-${personId}-${answersOwner}`}
+                      gid="extra"
+                      icon={<IconLedger size={18} />}
+                      title="ข้อมูลเพิ่มเติม"
+                      summary={txf('ตอบแล้ว {0} จาก {1} ข้อ', extraAnswered, extraFields.length)}
+                      done={extraDone}
+                      todo="ยังไม่ครบ"
+                    >
+                    <section className="reg-lab-section reg-lab-custom">
+                      <RunnerCustomFieldsInputs
+                        fields={placedFields}
+                        answers={answers}
+                        onAnswerChange={(id, v) => {
+                          live.clearError(id);
+                          setStepError(null);
+                          setAnswers({ ...answers, [id]: v });
+                        }}
+                        raceDistanceCode={category.code}
+                        shirtSize={shirtSize}
+                        publishedFormVersion={event.publishedFormVersion}
+                        steps={live.flow}
+                        stepId={page?.id ?? CORE_STEP}
+                        errors={live.errors}
+                        heading={null}
+                      />
+                    </section>
+
+                    </RegGroup>
+                  )}
+
+                  <RegGroup
+                    key={`souvenir-${personId}-${answersOwner}`}
+                    gid="souvenir"
+                    icon={<IconShirt size={18} />}
+                    title="สินค้าที่ระลึก"
+                    summary={souvenirSummary}
+                    done={Boolean(shirtSize)}
+                    todo="ยังไม่เลือกไซส์เสื้อ"
+                  >
+                    <p className="reg-lab-hint">
+                      {tx('เสื้อรวมในค่าสมัครแล้ว แก้ไขไซส์ได้ถึงวันที่')}{' '}
+                      <span className="mono-num">{tx(event.editDeadlineDate)}</span>
+                    </p>
               <h3 className="reg-lab-shirt-h" id="lab-race-shirt-h">
                 <RequiredFieldText text={tx('เสื้อแข่ง *')} />
               </h3>
@@ -1770,7 +2291,6 @@ export function RegistrationLabView({
                       setFinisherSize(z);
                       setStepError(null);
                     }}
-                    caption="ได้รับเมื่อวิ่งเข้าเส้นชัย"
                     cuts={unisex ? undefined : SHIRT_CUTS}
                     cut={finisherCut}
                     onCutChange={(c) => {
@@ -1781,7 +2301,58 @@ export function RegistrationLabView({
                   />
                 </section>
               )}
+                  </RegGroup>
+
+                </>
+              )}
+              {partEditId && (
+                <SavedParticipantModal
+                  key={partEditId}
+                  owner={{ email: currentUser?.contactEmail, phone: currentUser?.runnerProfile?.phone }}
+                  idPrefix="lab-sp-edit"
+                  participant={saved.find((x) => x.id === partEditId) ?? null}
+                  entryRules={{ dob: dobRequired }}
+                  ownerEmergency={ownerEmergency}
+                  checkOnOpen={partEditCheck}
+                  shirtSizes={(platformProfileConfig?.shirtSizes ?? [])
+                    .filter((sz) => sz.enabled)
+                    .sort((x, y) => x.sortOrder - y.sortOrder)
+                    .map((sz) => sz.code)}
+                  onCancel={() => {
+                    setPartEditId(null);
+                    setPartEditCheck(false);
+                  }}
+                  onSave={async (item) => {
+                    await saveEditedParticipant(item);
+                    setPartEditCheck(false);
+                    if (invalidZone === 'friend') {
+                      setStepError(null);
+                      setInvalidZone(null);
+                    }
+                  }}
+                />
+              )}
+              {ecEditId && (
+                <EmergencyContactModal
+                  key={ecEditId}
+                  idPrefix="lab-ec-edit"
+                  contact={contacts.find((c) => c.id === ecEditId) ?? null}
+                  onCancel={() => setEcEditId(null)}
+                  onSave={saveEditedContact}
+                />
+              )}
+              {confirmDiscard && (
+                <ConfirmBox
+                  text="ทิ้งการแก้ไขของผู้สมัครคนนี้หรือไม่"
+                  yesLabel="ทิ้งการแก้ไข"
+                  noLabel="กลับไปแก้ไข"
+                  danger
+                  onNo={() => setConfirmDiscard(false)}
+                  onYes={closePerson}
+                />
+              )}
             </>
+            </PersonWindow>
           )}
 
           {/* ---------- PART: souvenirs ---------- */}
@@ -1791,16 +2362,7 @@ export function RegistrationLabView({
                 <h2>{tx('ของที่ระลึก (ไม่บังคับ)')}</h2>
                 <p>{tx('สั่งเสื้อหรือเหรียญที่ระลึกเพิ่มพร้อมใบสมัคร ชำระรวมกับค่าสมัคร')}</p>
               </div>
-              {souvenirLayout === 'classic' ? (
-                <SouvenirPickerClassic products={event.products} value={addonItems} onChange={setAddonItems} />
-              ) : (
-                <SouvenirPicker
-                  products={event.products}
-                  value={addonItems}
-                  onChange={setAddonItems}
-                  layout={souvenirLayout}
-                />
-              )}
+              <SouvenirPicker products={event.products} value={addonItems} onChange={setAddonItems} />
             </>
           )}
 
@@ -2024,126 +2586,124 @@ export function RegistrationLabView({
                   value: typeof val === 'boolean' ? (val ? tx('ใช่') : tx('ไม่ใช่')) : tx(answerText(f, val).trim()),
                 };
               });
-            const sections: ReviewSection[] = [
-              {
-                key: 'entry',
-                title: tx('การสมัคร'),
-                editStep: pageNoOf('category') || undefined,
-                rows: [
-                  { label: tx('ประเภท'), value: picked ? tx(picked.label) : '' },
+            /* the order sheet (28 Nov 2026, user pick "B"): people, souvenirs, kit, totals, pay */
+            const detailsStep = pageNoOf('participant') || undefined;
+            const optionLabel = (id: string) => {
+              const o = options.find((x) => x.optionId === id);
+              return o ? tx(o.label) : '';
+            };
+            const sheetPeople: SheetPerson[] = group
+              ? people.map((pp, i) => ({
+                  key: pp.key,
+                  name: pp.name,
+                  isSelf: pp.isSelf,
+                  line: [pp.catName, pp.tierLabel, pp.shirtSize ? txf('ไซส์ {0}', pp.shirtSize) : ''].filter(Boolean).join(' · '),
+                  satang: pp.satang,
+                  rows: [{ label: tx('ประเภท'), value: optionLabel(pp.optionId) }, ...pp.details],
+                  onEdit: detailsStep
+                    ? () => {
+                        go(detailsStep as LabStep);
+                        group.open(i);
+                      }
+                    : undefined,
+                }))
+              : [
                   {
-                    label: tx('ระยะ'),
-                    value: `${tx(category.name)} · ${tx('ปล่อยตัว')} ${category.startTimeLocal} ${tx('น.')}`,
+                    key: 'one',
+                    name: `${firstEn} ${lastEn}`.trim() || participantName,
+                    isSelf: forSelf === true && !!currentUser,
+                    line: [tx(category.name), tx(tier.label), shirtSize ? txf('ไซส์ {0}', shirtSize) : ''].filter(Boolean).join(' · '),
+                    satang: quote.runnerNetPaySatang,
+                    rows: [
+                      { label: tx('ประเภท'), value: picked ? tx(picked.label) : '' },
+                      {
+                        label: tx('ระยะ'),
+                        value: `${tx(category.name)} · ${tx('ปล่อยตัว')} ${category.startTimeLocal} ${tx('น.')}`,
+                      },
+                      {
+                        label: tx('ชื่อ-นามสกุล'),
+                        value: nickTh.trim() ? `${participantName} (${nickTh.trim()})` : participantName,
+                      },
+                      { label: tx('วันเกิด · เพศ'), value: [dob, tx(gender)].filter(Boolean).join(' · ') },
+                      { label: tx('เบอร์โทร'), value: displayPhone(phone) },
+                      {
+                        label: idType === 'passport' ? tx('หนังสือเดินทาง') : tx('เลขบัตรประชาชน'),
+                        value: idDigits ? `•••• ${idDigits.slice(-4)}` : '',
+                      },
+                      { label: tx('ผู้ติดต่อฉุกเฉิน'), value: tx(emergency.trim()) },
+                      { label: tx('เสื้อตามสิทธิ์'), value: `${withCut(tx(shirtStyleName(shirtStyle)), shirtCut)} · ${shirtSize}` },
+                      ...(finisherMedal
+                        ? [{ label: tx('เหรียญ Finisher'), value: tx('ได้รับเมื่อวิ่งเข้าเส้นชัยภายในเวลาที่กำหนด') }]
+                        : []),
+                      ...(hasFinisher
+                        ? [
+                            {
+                              label: tx('เสื้อ Finisher'),
+                              value: finisherSize ? (unisex ? finisherSize : `${tx(cutLabel(finisherCut))} · ${finisherSize}`) : tx('ไม่ระบุ'),
+                            },
+                          ]
+                        : []),
+                      ...answerRows,
+                    ],
+                    onEdit: detailsStep ? () => go(detailsStep as LabStep) : undefined,
                   },
-                  { label: tx('อัตราค่าสมัคร'), value: tx(tier.label) },
-                  {
-                    label: tx('เสื้อตามสิทธิ์'),
-                    value: `${withCut(tx(shirtStyleName(shirtStyle)), shirtCut)} · ${shirtSize}`,
-                    editStep: pageNoOf('shirt') || undefined,
-                  },
-                  ...(finisherMedal
-                    ? [
-                        {
-                          label: tx('เหรียญ Finisher'),
-                          value: tx('ได้รับเมื่อวิ่งเข้าเส้นชัยภายในเวลาที่กำหนด'),
-                        },
-                      ]
-                    : []),
-                  ...(hasFinisher
-                    ? [
-                        {
-                          label: tx('เสื้อ Finisher'),
-                          value: finisherSize ? (unisex ? finisherSize : `${tx(cutLabel(finisherCut))} · ${finisherSize}`) : tx('ไม่ระบุ'),
-                          editStep: pageNoOf('shirt') || undefined,
-                        },
-                      ]
-                    : []),
-                ],
-              },
-              {
-                key: 'runner',
-                title: tx('ผู้เข้าแข่งขัน'),
-                editStep: pageNoOf('participant') || undefined,
-                rows: [
-                  {
-                    label: tx('ชื่อ-นามสกุล'),
-                    value: nickTh.trim() ? `${participantName} (${nickTh.trim()})` : participantName,
-                  },
-                  { label: tx('ชื่อภาษาอังกฤษ'), value: `${firstEn} ${lastEn}`.trim() },
-                  { label: tx('วันเกิด · เพศ'), value: [dob, tx(gender)].filter(Boolean).join(' · ') },
-                  { label: tx('เบอร์โทร'), value: displayPhone(phone) },
-                  {
-                    label: idType === 'passport' ? tx('หนังสือเดินทาง') : tx('เลขบัตรประชาชน'),
-                    value: idDigits ? `•••• ${idDigits.slice(-4)}` : '',
-                  },
-                  { label: tx('ผู้ติดต่อฉุกเฉิน'), value: tx(emergency.trim()) },
-                  ...answerRows,
-                ],
-              },
-              {
-                key: 'kit',
-                title: tx('การรับอุปกรณ์'),
-                editStep: pageNoOf('delivery') || undefined,
-                rows: [
-                  {
-                    label: tx('วิธีรับ'),
-                    value: delivery === 'postal' ? tx('จัดส่งทางไปรษณีย์') : tx('รับเองที่หน้างาน (QR Check-in)'),
-                  },
-                  ...(delivery === 'postal' ? [{ label: tx('ส่งถึง'), value: tx(shipText.trim()) }] : []),
-                ],
-              },
-            ];
-            const ledger: ReviewLedgerGroup[] = [
-              {
-                key: 'entry',
-                lines: [
-                  {
-                    label: txf('ค่าสมัคร {0} ({1})', tx(category.name), tx(tier.label)),
-                    sub: txf('{0} · ไซส์ {1}', withCut(tx(shirtStyleName(shirtStyle)), shirtCut), shirtSize),
-                    satang: quote.baseSatang,
-                  },
-                  {
-                    label: txf('ค่าบริการระบบ ({0})', feePolicyLabel(event.feeBearerPolicy)),
-                    satang: quote.runnerFeeSatang,
-                  },
-                ],
-              },
+                ];
+            const addonCount = addonLines.reduce((n, l) => n + l.qty, 0);
+            const sheetBlocks: SheetBlock[] = [
               {
                 key: 'souvenir',
-                title: txf('ของที่ระลึก {0} ชิ้น', addonLines.reduce((n, l) => n + l.qty, 0)),
+                title: tx('ของที่ระลึก'),
+                count: txf('{0} ชิ้น', addonCount),
                 editStep: pageNoOf('souvenir') || undefined,
-                lines: addonLines.map((l) => ({
+                lines: addonLines.map((l, k) => ({
+                  key: `${l.prd.id}-${l.size}-${k}`,
                   label: `${tx(l.prd.nameTh)}${l.size !== '-' && l.prd.availableSizes.length > 1 ? ` · ${l.size}` : ''} ×${l.qty}`,
                   satang: l.prd.priceSatang * l.qty,
                 })),
               },
               {
-                key: 'ship',
-                lines:
-                  shipQuote.kitSatang > 0
-                    ? [
-                        {
-                          label: tx('ค่าจัดส่งชุดแข่ง (ของที่ระลึกจากผู้จัดส่งรวมกล่องนี้)'),
-                          satang: shipQuote.kitSatang,
-                        },
-                        ...shipQuote.sellers.map((x) => ({
-                          label: txf('ค่าจัดส่งของที่ระลึก ({0})', tx(x.seller)),
-                          satang: x.satang,
-                        })),
-                      ]
-                    : [],
+                key: 'kit',
+                title: tx('การรับอุปกรณ์'),
+                editStep: pageNoOf('delivery') || undefined,
+                lines: [
+                  {
+                    key: 'how',
+                    label: delivery === 'postal' ? tx('จัดส่งทางไปรษณีย์') : tx('รับเองที่หน้างาน (QR Check-in)'),
+                    sub: delivery === 'postal' ? tx(shipText.trim()) : undefined,
+                    ...(shipQuote.kitSatang > 0 ? { satang: shipQuote.kitSatang } : { freeText: tx('ไม่มีค่าจัดส่ง') }),
+                  },
+                  ...shipQuote.sellers.map((x) => ({
+                    key: `seller-${x.seller}`,
+                    label: txf('ค่าจัดส่งของที่ระลึก ({0})', tx(x.seller)),
+                    satang: x.satang,
+                  })),
+                ],
               },
             ];
+            const peopleSatang = group ? people.reduce((n, pp) => n + pp.satang, 0) : quote.runnerNetPaySatang;
+            const sheetTotals = [
+              group
+                ? { label: txf('ค่าสมัคร {0} คน', people.length), sub: tx('รวมค่าบริการระบบแล้ว'), satang: peopleSatang }
+                : { label: txf('ค่าสมัคร ({0})', tx(tier.label)), satang: quote.baseSatang },
+              ...(group
+                ? []
+                : [{ label: txf('ค่าบริการระบบ ({0})', feePolicyLabel(event.feeBearerPolicy)), satang: quote.runnerFeeSatang }]),
+              ...(addonCount > 0 ? [{ label: tx('ของที่ระลึก'), satang: addonSatang }] : []),
+              ...(shipQuote.totalSatang > 0 ? [{ label: tx('ค่าจัดส่ง'), satang: shipQuote.totalSatang }] : []),
+            ];
+            const reviewTotal = peopleSatang + addonSatang + shipQuote.totalSatang;
             return (
               <>
                 <div className="reg-lab-title">
                   <h2>{tx('ตรวจข้อมูลก่อนชำระเงิน')}</h2>
                   <p>{tx('ตรวจทุกส่วนให้ถูกต้อง ถ้าต้องการเปลี่ยน กด "แก้ไข" เพื่อกลับไปขั้นนั้น')}</p>
                 </div>
-                <RegistrationSummary
-                  sections={sections}
-                  ledger={ledger}
-                  totalSatang={totalSatang}
+                <RegistrationOrderSheet
+                  people={sheetPeople}
+                  peopleEditStep={detailsStep}
+                  blocks={sheetBlocks}
+                  totals={sheetTotals}
+                  totalSatang={reviewTotal}
                   onEdit={(st) => go(st as LabStep)}
                   // the summary books the place only when nothing comes after it; otherwise
                   // the next steps follow and the last one goes to payment
@@ -2214,9 +2774,15 @@ export function RegistrationLabView({
           {step === PAY_STEP && live.held && (() => {
             const held = live.held;
             const reg = held.reg;
+            const regs = held.regs && held.regs.length > 0 ? held.regs : [reg];
             const regCat = event.categories.find((c) => c.id === reg.categoryId);
             const addonSatang = held.addonOrders.reduce((sum, o) => sum + o.totalPaidSatang, 0);
-            const total = reg.snapshotTotalChargedSatang + addonSatang;
+            const total = regs.reduce((sum, r) => sum + r.snapshotTotalChargedSatang, 0) + addonSatang;
+            // the kit postage is charged once, on the first entry: shown on its own line, not inside
+            // that person's fee (28 Nov 2026, the payment step showed 695 for a 645 entry)
+            const kitShip = (r: RegistrationRecord) => r.snapshotKitShippingSatang ?? 0;
+            const feeOf = (r: RegistrationRecord) => r.snapshotTotalChargedSatang - kitShip(r);
+            const shipSatang = regs.reduce((sum, r) => sum + kitShip(r), 0);
             return (
               <>
                 <div className="reg-lab-title">
@@ -2227,22 +2793,65 @@ export function RegistrationLabView({
                 <HoldCountdown expiresAt={reg.reservationExpiresAt} />
 
                 <section className="reg-lab-section" aria-labelledby="lab-held">
-                  <h3 id="lab-held">{tx('ใบสมัครที่รอชำระ')}</h3>
+                  {/* the code labels the card: same row as the heading, on the right; on a narrow
+                      screen it drops under the heading (28 Nov 2026, user request) */}
+                  <div className="reg-lab-held-head">
+                    <h3 id="lab-held">{tx('ใบสมัครที่รอชำระ')}</h3>
+                    <p className="reg-lab-hint">
+                      {regs.length > 1 ? (
+                        <>
+                          {tx('รหัสคำสั่งซื้อ')} <span className="mono-code">{reg.orderCode}</span> ·{' '}
+                          {txf('ใบสมัคร {0} ใบ', regs.length)}
+                        </>
+                      ) : (
+                        // the code alone, no word before it (28 Nov 2026, user request); a screen
+                        // reader still hears what it is
+                        <>
+                          <span className="sr-only">{tx('รหัสใบสมัคร')} </span>
+                          <span className="mono-code">{reg.regCode}</span>
+                        </>
+                      )}
+                    </p>
+                  </div>
                   <dl className="reg-lab-ledger">
-                    <div>
-                      <dt>{tx('ผู้เข้าแข่งขัน')}</dt>
-                      <dd>{reg.participantNameEn || reg.participantNameTh}</dd>
-                    </div>
-                    {regCat && (
+                    {regs.length > 1 ? (
+                      // a group order: one line per person (28 Nov 2026)
+                      regs.map((r, i) => {
+                        const rc = event.categories.find((c) => c.id === r.categoryId);
+                        return (
+                          <div key={r.id}>
+                            <dt>
+                              {txf('คนที่ {0}', i + 1)} · {r.participantNameEn || r.participantNameTh}
+                              {rc ? ` · ${tx(rc.name)}` : ''}
+                            </dt>
+                            <dd className="mono-num">{formatThb(feeOf(r), true)}</dd>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <>
+                        <div>
+                          <dt>{tx('ผู้เข้าแข่งขัน')}</dt>
+                          <dd>{reg.participantNameEn || reg.participantNameTh}</dd>
+                        </div>
+                        {regCat && (
+                          <div>
+                            <dt>{tx('ระยะ')}</dt>
+                            <dd>{tx(regCat.name)}</dd>
+                          </div>
+                        )}
+                        <div>
+                          <dt>{tx('ค่าสมัคร')}</dt>
+                          <dd className="mono-num">{formatThb(feeOf(reg), true)}</dd>
+                        </div>
+                      </>
+                    )}
+                    {shipSatang > 0 && (
                       <div>
-                        <dt>{tx('ระยะ')}</dt>
-                        <dd>{tx(regCat.name)}</dd>
+                        <dt>{tx('ค่าจัดส่งชุดแข่ง')}</dt>
+                        <dd className="mono-num">{formatThb(shipSatang, true)}</dd>
                       </div>
                     )}
-                    <div>
-                      <dt>{tx('ค่าสมัคร')}</dt>
-                      <dd className="mono-num">{formatThb(reg.snapshotTotalChargedSatang, true)}</dd>
-                    </div>
                     {held.addonOrders.map((o) => (
                       <div key={o.id}>
                         <dt>
@@ -2257,9 +2866,6 @@ export function RegistrationLabView({
                       <dd className="mono-num text-vermilion">{formatThb(total, true)}</dd>
                     </div>
                   </dl>
-                  <p className="reg-lab-hint">
-                    {tx('รหัสใบสมัคร')} <span className="mono-code">{reg.regCode}</span>
-                  </p>
                 </section>
 
                 <section className="reg-lab-section" {...zoneMark('pay')}>

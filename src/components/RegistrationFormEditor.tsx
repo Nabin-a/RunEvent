@@ -36,6 +36,7 @@ import {
 } from '../data/registrationForm';
 import { tx, txf } from '../i18n';
 import { FaIcon } from './FaIcon';
+import { SelectMenu } from './SelectMenu';
 import { TextList } from './PageItemEditors';
 import { RunnerCustomFieldsInputs, RunnerQuestion } from './PublicEventView';
 import { calculateFeeQuote, formatThb, getCurrentTier } from '../utils/pricing';
@@ -502,13 +503,12 @@ export function RegistrationFormEditor({
               <div className="fe-try-bar">
                 <label>
                   <span className="fe-label">{tx('ลองในฐานะผู้สมัครระยะ')}</span>
-                  <select value={tryCode} onChange={(e) => setTryCode(e.target.value)}>
-                    {event.categories.map((c) => (
-                      <option key={c.id} value={c.code}>
-                        {tx(c.name)}
-                      </option>
-                    ))}
-                  </select>
+                  <SelectMenu
+                    ariaLabel={tx('ลองในฐานะผู้สมัครระยะ')}
+                    value={tryCode}
+                    onChange={(v) => setTryCode(v)}
+                    options={event.categories.map((c) => ({ value: c.code, label: tx(c.name) }))}
+                  />
                 </label>
                 <button type="button" className="btn-secondary" onClick={() => { setTryAnswers({}); setTryErrors({}); }}>
                   <FaIcon name="eraser" />
@@ -1108,13 +1108,13 @@ export function QuestionCard({
             {!content && (
               <label>
                 <span className="fe-label">{tx('ประเภท')}</span>
-                <select value={f.type} disabled={!editable || types.length < 2} onChange={(e) => onChange({ type: e.target.value as CustomFieldType })}>
-                  {types.map((t) => (
-                    <option key={t} value={t}>
-                      {tx(kindOf(t)?.label ?? t)}
-                    </option>
-                  ))}
-                </select>
+                <SelectMenu
+                  ariaLabel={tx('ประเภท')}
+                  value={f.type}
+                  disabled={!editable || types.length < 2}
+                  onChange={(v) => onChange({ type: v as CustomFieldType })}
+                  options={types.map((t) => ({ value: t, label: tx(kindOf(t)?.label ?? t) }))}
+                />
               </label>
             )}
           </div>

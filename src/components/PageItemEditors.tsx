@@ -13,6 +13,7 @@ import { CORE_TEXT_LIMITS, DATA_SOURCES, dataPieceHasContent, dataSourceDef, def
 import { CARD_ICONS, CARD_LIMITS, PAGE_LIMITS, coreBlockDef, isCoreBlock, isSafeLink, newPageId } from '../data/eventDetailLayout';
 import { tx, txf } from '../i18n';
 import { FaIcon } from './FaIcon';
+import { SelectMenu } from './SelectMenu';
 import { ALLOWED_MIME, MAX_UPLOAD_BYTES, downscaleImage, readFileAsDataUrl } from './EventMediaManager';
 
 /**
@@ -884,15 +885,25 @@ function DataFields({
       {item.source === 'quota' && (
         <>
           <label className="pe-label" htmlFor={`${fid}-mode`}>{tx('แสดง')}</label>
-          <select id={`${fid}-mode`} value={o.quotaMode ?? 'per-category'} onChange={(e) => set({ quotaMode: e.target.value as 'per-category' | 'total' })}>
-            <option value="per-category">{tx('รายระยะ')}</option>
-            <option value="total">{tx('รวมทั้งงาน')}</option>
-          </select>
+          <SelectMenu
+            id={`${fid}-mode`}
+            value={o.quotaMode ?? 'per-category'}
+            onChange={(v) => set({ quotaMode: v as 'per-category' | 'total' })}
+            options={[
+              { value: 'per-category', label: tx('รายระยะ') },
+              { value: 'total', label: tx('รวมทั้งงาน') },
+            ]}
+          />
           <label className="pe-label" htmlFor={`${fid}-style`}>{tx('รูปแบบ')}</label>
-          <select id={`${fid}-style`} value={o.quotaStyle ?? 'number'} onChange={(e) => set({ quotaStyle: e.target.value as 'number' | 'label' })}>
-            <option value="number">{tx('ตัวเลข (เหลือ x / y)')}</option>
-            <option value="label">{tx('ข้อความ (ยังว่าง / ใกล้เต็ม / เต็มแล้ว)')}</option>
-          </select>
+          <SelectMenu
+            id={`${fid}-style`}
+            value={o.quotaStyle ?? 'number'}
+            onChange={(v) => set({ quotaStyle: v as 'number' | 'label' })}
+            options={[
+              { value: 'number', label: tx('ตัวเลข (เหลือ x / y)') },
+              { value: 'label', label: tx('ข้อความ (ยังว่าง / ใกล้เต็ม / เต็มแล้ว)') },
+            ]}
+          />
         </>
       )}
       {pickCats && (
@@ -918,10 +929,15 @@ function DataFields({
       {item.source === 'categories' && (
         <>
           <label className="pe-label" htmlFor={`${fid}-layout`}>{tx('รูปแบบ')}</label>
-          <select id={`${fid}-layout`} value={o.layout ?? 'cards'} onChange={(e) => set({ layout: e.target.value as 'cards' | 'table' })}>
-            <option value="cards">{tx('การ์ด')}</option>
-            <option value="table">{tx('ตาราง')}</option>
-          </select>
+          <SelectMenu
+            id={`${fid}-layout`}
+            value={o.layout ?? 'cards'}
+            onChange={(v) => set({ layout: v as 'cards' | 'table' })}
+            options={[
+              { value: 'cards', label: tx('การ์ด') },
+              { value: 'table', label: tx('ตาราง') },
+            ]}
+          />
           <label className="pe-check">
             <input type="checkbox" checked={o.showAllTiers !== false} onChange={(e) => set({ showAllTiers: e.target.checked })} />
             <span>{tx('แสดงทุกช่วงราคา')}</span>
@@ -964,14 +980,12 @@ function DataFields({
           {productCats.length > 1 && (
             <>
               <label className="pe-label" htmlFor={`${fid}-cat`}>{tx('หมวดสินค้า')}</label>
-              <select id={`${fid}-cat`} value={o.productCategory ?? ''} onChange={(e) => set({ productCategory: e.target.value || undefined })}>
-                <option value="">{tx('ทุกหมวด')}</option>
-                {productCats.map((c) => (
-                  <option key={c} value={c}>
-                    {tx(c)}
-                  </option>
-                ))}
-              </select>
+              <SelectMenu
+                id={`${fid}-cat`}
+                value={o.productCategory ?? ''}
+                onChange={(v) => set({ productCategory: v || undefined })}
+                options={[{ value: '', label: tx('ทุกหมวด') }, ...productCats.map((c) => ({ value: c, label: tx(c) }))]}
+              />
             </>
           )}
         </>

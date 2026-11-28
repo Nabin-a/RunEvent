@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { tx, txf } from '../i18n';
 import { formatThb } from '../utils/pricing';
 import type { EventProduct } from '../types';
-import { ProductArt, souvenirArt, type ProductArtKind } from './ProductArt';
+import { ProductArt, ProductPhoto, souvenirArt, type ProductArtKind } from './ProductArt';
+import { IconArrowLeft, IconArrowRight } from './Icons';
 
 /**
  * Picture-led product pickers for registration layout B.
@@ -28,6 +29,100 @@ export interface ShirtCutOption {
   label: string;
 }
 
+/**
+ * The shirt styles as one row of picture tiles that scrolls sideways, with arrow buttons and dots
+ * when there are more than fit (28 Nov 2026, user pick "C" from output/shirt-style-many-mockup:
+ * the browser-style tabs hid every style past the third).
+ */
+function StyleRail({
+  styles,
+  currentId,
+  name,
+  onPick,
+}: {
+  styles: ShirtGalleryStyle[];
+  currentId: string;
+  name: string;
+  onPick: (id: string) => void;
+}) {
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const [edge, setEdge] = useState({ prev: false, next: false, pages: 1, page: 0 });
+  const measure = () => {
+    const t = trackRef.current;
+    if (!t) return;
+    const max = t.scrollWidth - t.clientWidth;
+    setEdge({
+      prev: t.scrollLeft > 4,
+      next: t.scrollLeft < max - 4,
+      pages: max > 4 ? Math.ceil(t.scrollWidth / t.clientWidth - 0.05) : 1,
+      page: max > 4 ? Math.round((t.scrollLeft / max) * (Math.ceil(t.scrollWidth / t.clientWidth - 0.05) - 1)) : 0,
+    });
+  };
+  useEffect(() => {
+    measure();
+    const t = trackRef.current;
+    if (!t) return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(t);
+    return () => ro.disconnect();
+  }, [styles.length]);
+  // the picked style stays in view (a style picked from elsewhere, or on the way back)
+  useEffect(() => {
+    const t = trackRef.current;
+    const tile = t?.querySelector<HTMLElement>('.pg-tile.is-selected');
+    if (!t || !tile) return;
+    if (tile.offsetLeft < t.scrollLeft || tile.offsetLeft + tile.offsetWidth > t.scrollLeft + t.clientWidth) {
+      t.scrollLeft = tile.offsetLeft - (t.clientWidth - tile.offsetWidth) / 2;
+    }
+  }, [currentId]);
+  const go = (dir: 1 | -1) => {
+    const t = trackRef.current;
+    if (!t) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    t.scrollBy({ left: dir * t.clientWidth * 0.8, behavior: reduce ? 'auto' : 'smooth' });
+  };
+  const overflow = edge.prev || edge.next;
+  return (
+    <fieldset className="pg-rail">
+      <legend className="pg-rail-label">
+        {tx('ทรงเสื้อ')} <small>{txf('{0} ทรง', styles.length)}</small>
+      </legend>
+      <div className={`pg-rail-box${overflow ? ' has-arrows' : ''}`}>
+        {overflow && (
+          <button type="button" className="pg-rail-arrow is-prev" disabled={!edge.prev} aria-label={tx('ทรงก่อนหน้า')} onClick={() => go(-1)}>
+            <IconArrowLeft size={16} />
+          </button>
+        )}
+        <div className="pg-rail-track" ref={trackRef} onScroll={measure}>
+          {styles.map((s) => (
+            <label key={s.id} className={`pg-tile ${s.id === currentId ? 'is-selected' : ''}`}>
+              <input type="radio" name={name} checked={s.id === currentId} onChange={() => onPick(s.id)} />
+              {s.photo ? (
+                <img src={s.photo} alt="" className="pg-tile-photo" />
+              ) : (
+                <ProductArt kind={s.art} className="pg-tile-art" />
+              )}
+              <span>{tx(s.name)}</span>
+            </label>
+          ))}
+        </div>
+        {overflow && (
+          <button type="button" className="pg-rail-arrow is-next" disabled={!edge.next} aria-label={tx('ทรงถัดไป')} onClick={() => go(1)}>
+            <IconArrowRight size={16} />
+          </button>
+        )}
+      </div>
+      {edge.pages > 1 && (
+        <div className="pg-rail-dots" aria-hidden="true">
+          {Array.from({ length: edge.pages }, (_, i) => (
+            <i key={i} className={i === edge.page ? 'is-on' : ''} />
+          ))}
+        </div>
+      )}
+    </fieldset>
+  );
+}
+
 export function ShirtGallery({
   styles,
   styleId,
@@ -35,7 +130,6 @@ export function ShirtGallery({
   size,
   onSizeChange,
   idPrefix = 'pg',
-  caption = 'รวมในค่าสมัครแล้ว',
   cuts,
   cut,
   onCutChange,
@@ -48,7 +142,6 @@ export function ShirtGallery({
   onSizeChange: (size: string) => void;
   /** keeps radio names / ids apart when two galleries share a page (race shirt + finisher shirt) */
   idPrefix?: string;
-  caption?: string;
   /** shirt cut choice above the size chart (ชาย / หญิง / เด็ก) */
   cuts?: ShirtCutOption[];
   cut?: string;
@@ -58,7 +151,6 @@ export function ShirtGallery({
 }) {
   const current = styles.find((s) => s.id === styleId) ?? styles[0];
   const tabbed = styles.length > 1;
-  const stripRef = useRef<HTMLFieldSetElement | null>(null);
   const [follow, setFollow] = useState(false);
   const [barH, setBarH] = useState(0);
   const galleryRef = useRef<HTMLDivElement | null>(null);
@@ -107,7 +199,9 @@ export function ShirtGallery({
 
   const art = (cls: string, alt = '') =>
     current.photo ? (
-      <img src={current.photo} alt={alt} className={`${cls}-photo`} />
+      // the big preview turns to the back on hover, with no "ดูด้านหลัง" button in the form
+      // (28 Nov 2026, user request); the floating copy stays front
+      <ProductPhoto src={current.photo} alt={alt} className={`${cls}-photo`} flip={cls === 'pg-hero' ? 'hover' : 'none'} />
     ) : (
       <ProductArt kind={current.art} className={`${cls}-art`} />
     );
@@ -170,9 +264,10 @@ export function ShirtGallery({
     <div className="pg" ref={galleryRef}>
       <figure className="pg-hero" ref={heroRef} style={{ top: barH + 12 }}>
         {art('pg-hero', tx(current.name))}
+        {/* the shirt's name only; the line under it ("รวมในค่าสมัครแล้ว" / "ได้รับเมื่อวิ่งเข้าเส้นชัย")
+            was taken off (28 Nov 2026, user request) */}
         <figcaption>
           <strong>{tx(current.name)}</strong>
-          <span>{tx(caption)}</span>
         </figcaption>
       </figure>
 
@@ -184,42 +279,25 @@ export function ShirtGallery({
         </div>
       </div>
 
-      {/* the styles are tabs on top of the size chart, like browser tabs; the chosen tab joins the panel */}
-      <div className={`pg-tabbed ${tabbed ? '' : 'is-single'}`}>
+      {/* the styles: a row of picture tiles over the size chart (28 Nov 2026, user pick "C") */}
+      <div className={`pg-tabbed ${tabbed ? 'is-rail' : 'is-single'}`}>
         {tabbed && (
-          <fieldset className="pg-stabs" ref={stripRef}>
-            <legend className="sr-only">{tx('ทรงเสื้อ')}</legend>
-            <div className="pg-stab-strip">
-              {styles.map((s) => (
-                <label key={s.id} className={`pg-stab ${s.id === current.id ? 'is-selected' : ''}`}>
-                  <input
-                    type="radio"
-                    name={`${idPrefix}-style`}
-                    checked={s.id === current.id}
-                    onChange={() => onStyleChange(s.id)}
-                  />
-                  {s.photo ? (
-                    <img src={s.photo} alt="" className="pg-stab-art pg-stab-photo" />
-                  ) : (
-                    <ProductArt kind={s.art} className="pg-stab-art" />
-                  )}
-                  <span>{tx(s.name)}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          <StyleRail styles={styles} currentId={current.id} name={`${idPrefix}-style`} onPick={onStyleChange} />
         )}
 
         <div className="pg-stab-panel">
           {hasCuts ? (
             /* ชาย / หญิง / เด็ก are tabs on top of the size chart too, inside the style panel
-               (27 Nov 2026, user request "ตอนเลือก gender ให้ทำเป็น tab panel เหมือนกัน") */
+               (27 Nov 2026, user request "ตอนเลือก gender ให้ทำเป็น tab panel เหมือนกัน").
+               Styled as coloured file dividers (28 Nov 2026, user request, after codepen
+               _massimo/oYWbqL): each tab has its own tint by position, and the panel under it
+               takes the tint of the picked one; tabs stay on top. */
             <div className="pg-tabbed pg-cut-tabbed">
               <fieldset className="pg-stabs pg-cuts">
                 <legend className="sr-only">{tx('แบบเสื้อ')}</legend>
                 <div className="pg-stab-strip">
-                  {cuts.map((c) => (
-                    <label key={c.id} className={`pg-stab pg-cut-tab ${c.id === cut ? 'is-selected' : ''}`}>
+                  {cuts.map((c, i) => (
+                    <label key={c.id} className={`pg-stab pg-cut-tab tone-${i % 3} ${c.id === cut ? 'is-selected' : ''}`}>
                       <input
                         type="radio"
                         name={`${idPrefix}-cut`}
@@ -231,7 +309,13 @@ export function ShirtGallery({
                   ))}
                 </div>
               </fieldset>
-              <div className="pg-stab-panel pg-cut-panel">{sizeBlock}</div>
+              {/* keyed by the cut so the chart slides in again on each change */}
+              <div
+                key={cut}
+                className={`pg-stab-panel pg-cut-panel tone-${Math.max(0, cuts.findIndex((c) => c.id === cut)) % 3}`}
+              >
+                {sizeBlock}
+              </div>
             </div>
           ) : (
             sizeBlock
@@ -297,7 +381,7 @@ export function SouvenirCards({
             return (
               <article key={p.id} className={`pg-card ${isPicked ? 'is-selected' : ''}`}>
                 <div className="pg-card-art">
-                  <ProductArt categoryLabel={p.categoryLabel} name={p.nameTh} kind={souvenirArt(p.categoryLabel, p.nameTh)} className="pg-card-svg" />
+                  <ProductArt categoryLabel={p.categoryLabel} name={p.nameTh} kind={souvenirArt(p.categoryLabel, p.nameTh)} className="pg-card-svg" flip="button" />
                 </div>
                 <div className="pg-card-copy">
                   <strong>{tx(p.nameTh)}</strong>

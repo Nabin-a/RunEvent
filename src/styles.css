@@ -1701,6 +1701,27 @@ textarea::placeholder {
   align-items: center;
 }
 
+/* a souvenir order in the history shows the product's picture first (28 Nov 2026) */
+.runner-pass-item.has-art {
+  grid-template-columns: 6rem minmax(0, 1fr) minmax(0, 240px);
+}
+
+.pass-art {
+  display: grid;
+  place-items: center;
+  width: 6rem;
+  aspect-ratio: 1;
+  border-radius: var(--radius-md);
+  background: var(--mint-soft);
+  color: var(--brand);
+  overflow: hidden;
+}
+
+.pass-art .sf-art-svg {
+  width: 84%;
+  height: 84%;
+}
+
 .pass-badges-row {
   display: flex;
   flex-wrap: wrap;
@@ -2660,6 +2681,7 @@ textarea::placeholder {
 
 .form-row > input:not([type='checkbox']):not([type='radio']):not([type='file']),
 .form-row > select,
+.form-row > .kr-select,
 .form-row > textarea {
   width: 100%;
 }
@@ -5174,6 +5196,20 @@ textarea::placeholder {
   .quota-cards-row,
   .lifecycle-stepper {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* phones: the picture stays beside the name; the pickup code goes under both */
+  .runner-pass-item.has-art {
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .runner-pass-item.has-art .pass-art {
+    width: 4.5rem;
+  }
+
+  .runner-pass-item.has-art .pass-qr-card {
+    grid-column: 1 / -1;
   }
 
   .filter-field {
@@ -8128,11 +8164,19 @@ body.swal2-iosfix {
   max-width: 36rem;
 }
 
-.age-group-edit-table select,
 .age-group-edit-table input {
   width: 100%;
   min-width: 5.5rem;
   min-height: 2.25rem;
+}
+
+/* the gender dropdown in each row: same height as the inputs beside it */
+.age-group-edit-table .kr-select {
+  min-width: 5.5rem;
+}
+
+.age-group-edit-table .kr-select-btn {
+  height: 2.25rem;
 }
 
 .age-row-remove {
@@ -8193,13 +8237,17 @@ body.swal2-iosfix {
     padding-inline: 0.25rem;
   }
 
-  .age-group-edit-table select,
   .age-group-edit-table input {
     min-width: 0;
     padding-inline: 0.4rem;
   }
 
-  .age-group-edit-table select {
+  .age-group-edit-table .kr-select {
+    min-width: 0;
+  }
+
+  .age-group-edit-table .kr-select-btn {
+    padding-left: 0.4rem;
     padding-right: 1.6rem;
     background-position: right 0.45rem center;
   }
@@ -10693,6 +10741,648 @@ button.mstep-list-btn:hover {
   border-top: 1px solid var(--line-light);
 }
 
+/* the runner card's three folding groups (28 Nov 2026, user request): ข้อมูลทั่วไป / ข้อมูลเพิ่มเติม /
+   สินค้าที่ระลึก. Closed, the head sums up what was filled in and says, in words, what is missing. */
+.reg-group {
+  margin-top: 0.9rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.reg-group[open] {
+  border-color: var(--line-medium);
+}
+
+.reg-group-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3.5rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  list-style: none;
+}
+
+.reg-group-head::-webkit-details-marker {
+  display: none;
+}
+
+.reg-group-head:hover {
+  background: var(--bg-subtle);
+}
+
+.reg-group-head:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.reg-group-ico {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-selected);
+  color: var(--ink-primary);
+}
+
+.reg-group-title {
+  display: grid;
+  min-width: 0;
+}
+
+.reg-group-title strong {
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.reg-group-title small {
+  overflow: hidden;
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reg-group-state {
+  padding: 0.15rem 0.6rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.reg-group-state.is-done {
+  background: var(--forest-soft);
+  color: var(--forest-ink);
+}
+
+.reg-group-state.is-todo {
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+}
+
+.reg-group-chev {
+  color: var(--ink-secondary);
+  transition: transform 160ms ease;
+}
+
+.reg-group[open] > .reg-group-head .reg-group-chev {
+  transform: rotate(180deg);
+}
+
+.reg-group-body {
+  padding: 0 0.9rem 1.1rem;
+  border-top: 1px solid var(--line-light);
+}
+
+/* opening and closing a group slides like a dropdown (28 Nov 2026, user request): browsers that
+   can size a <details> to "auto" animate both ways; the others ease the content in on open */
+@supports selector(::details-content) {
+  .reg-group {
+    interpolate-size: allow-keywords;
+  }
+
+  .reg-group::details-content {
+    block-size: 0;
+    overflow: clip;
+    transition:
+      block-size 0.28s var(--ease-clean),
+      content-visibility 0.28s allow-discrete;
+  }
+
+  .reg-group[open]::details-content {
+    block-size: auto;
+  }
+}
+
+@supports not selector(::details-content) {
+  .reg-group[open] > .reg-group-body {
+    animation: dropdown-in 0.24s var(--ease-clean);
+  }
+}
+
+@keyframes dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reg-group::details-content {
+    transition: none;
+  }
+
+  .reg-group[open] > .reg-group-body {
+    animation: none;
+  }
+}
+
+/* inside a group the sections sit closer: the group already frames them */
+.reg-group-body > .reg-lab-section {
+  margin-top: 1.1rem;
+  padding-top: 1.1rem;
+}
+
+.reg-group-body > .reg-lab-section:first-child,
+.reg-group-body > .reg-lab-hint:first-child {
+  margin-top: 0.9rem;
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* group registration (28 Nov 2026, user approved output/group-registration-modal-mockup):
+   the "ผู้สมัครและระยะ" step lists the people; each one is filled in a window */
+.reg-pw-start {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.reg-pw-start button {
+  display: grid;
+  justify-items: start;
+  gap: 0.3rem;
+  min-height: 7.5rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.reg-pw-start button:hover:not(:disabled) {
+  border-color: var(--line-medium);
+  background: var(--bg-subtle);
+}
+
+.reg-pw-start button:focus-visible,
+.reg-pw-add:focus-visible,
+.reg-pw-close:focus-visible {
+  outline: 2px solid var(--ink-primary);
+  outline-offset: 2px;
+}
+
+.reg-pw-start button:disabled,
+.reg-pw-add:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.reg-pw-start-ico {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: var(--bg-selected);
+  font-size: 1.05rem;
+}
+
+.reg-pw-start strong {
+  font-size: 1rem;
+}
+
+.reg-pw-start small,
+.reg-pw-add small {
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.reg-pw-list {
+  display: grid;
+  gap: 0.6rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reg-pw-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.reg-pw-card.is-todo {
+  border-color: var(--amber-border);
+}
+
+.reg-person-no {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--bg-selected);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.reg-pw-card-main {
+  display: grid;
+  justify-items: start;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.reg-pw-card-main strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reg-pw-card-main small {
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+}
+
+.reg-pw-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.reg-pw-chip.is-done {
+  background: var(--forest-soft);
+  color: var(--forest-ink);
+}
+
+.reg-pw-chip.is-todo {
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+}
+
+.reg-pw-card-actions {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.reg-pw-card-actions .btn-ghost-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.75rem;
+}
+
+.reg-person-remove {
+  color: var(--danger-ink);
+}
+
+.reg-pw-adds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.reg-pw-adds.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.reg-pw-add {
+  display: grid;
+  justify-items: center;
+  gap: 0.1rem;
+  min-height: 3rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px dashed var(--line-medium);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink-secondary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.reg-pw-add:hover:not(:disabled) {
+  border-color: var(--ink-secondary);
+  color: var(--ink-primary);
+}
+
+.reg-pw-add:disabled {
+  border-style: solid;
+}
+
+.reg-pw-count {
+  margin: 0.5rem 0 0;
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+/* the person window */
+.reg-pw-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem 1rem;
+  background: rgba(30, 41, 59, 0.45);
+  animation: reg-pw-fade 0.15s ease-out;
+}
+
+.reg-pw-backdrop.is-confirm {
+  z-index: 950;
+}
+
+@keyframes reg-pw-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.reg-pw {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(46rem, 100%);
+  max-height: min(52rem, calc(100dvh - 3rem));
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-popover);
+  outline: none;
+}
+
+.reg-pw-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--line-light);
+}
+
+.reg-pw-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.reg-pw-close {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-secondary);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.reg-pw-close:hover {
+  background: var(--bg-subtle);
+  color: var(--ink-primary);
+}
+
+.reg-pw-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.25rem 1.25rem 1.25rem;
+}
+
+.reg-pw-body > .error-callout {
+  margin-top: 1rem;
+}
+
+.reg-pw-body > .reg-pw-who {
+  margin-top: 0;
+  padding-top: 0.25rem;
+  border-top: 0;
+}
+
+.reg-pw-who {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 1rem;
+}
+
+.reg-pw-who .reg-lab-friend-pick {
+  max-width: none;
+}
+
+.reg-pw-who .reg-lab-friend-pick > .kr-select,
+.reg-pw-who .reg-lab-friend-pick .kr-select-btn {
+  width: 100%;
+}
+
+.reg-pw-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding: 0.8rem 1.25rem;
+  border-top: 1px solid var(--line-light);
+}
+
+.reg-pw-foot .btn-secondary,
+.reg-pw-foot .btn-primary {
+  min-height: 2.75rem;
+  min-width: 7rem;
+}
+
+/* yes / no box (delete a person, throw edits away) */
+.reg-confirm {
+  width: min(24rem, 100%);
+  padding: 1.25rem;
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-popover);
+}
+
+.reg-confirm p {
+  margin: 0 0 1.1rem;
+  font-weight: 600;
+}
+
+.reg-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.reg-confirm-actions button {
+  min-height: 2.75rem;
+}
+
+.reg-confirm-danger.btn-primary {
+  border-color: var(--danger-ink);
+  background: var(--danger-ink);
+}
+
+@media (max-width: 40rem) {
+  .reg-pw-start,
+  .reg-pw-adds,
+  .reg-pw-who {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reg-pw-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .reg-pw-card-actions {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  /* phone: the window is a full-screen sheet */
+  .reg-pw-backdrop:not(.is-confirm) {
+    padding: 0;
+    place-items: stretch;
+  }
+
+  .reg-pw-backdrop:not(.is-confirm) .reg-pw {
+    width: 100%;
+    max-height: none;
+    height: 100dvh;
+    border-radius: 0;
+  }
+
+  .reg-pw-foot .btn-secondary,
+  .reg-pw-foot .btn-primary {
+    flex: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reg-pw-backdrop {
+    animation: none;
+  }
+}
+
+/* history: an entry that came in with a group order (28 Nov 2026) */
+.reg-order-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+}
+
+/* the success screen of a group order: a QR card per person */
+.reg-done-people {
+  width: 100%;
+  margin: 0.5rem 0 0.25rem;
+  text-align: left;
+}
+
+.reg-done-people h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.reg-done-people ul {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reg-done-people li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+
+.reg-done-people li span {
+  display: grid;
+  min-width: 0;
+}
+
+.reg-done-people li small {
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+}
+
+/* a group order's printed copy (28 Nov 2026, user request): every person's confirmation in the
+   same layout, one page each; never shown on screen */
+.reg-print-set {
+  display: none;
+}
+
+@media print {
+  body:has(.reg-print-set) > :not(.reg-print-set) {
+    display: none !important;
+  }
+
+  body:has(.reg-print-set) .reg-print-set {
+    display: block;
+  }
+
+  body:has(.reg-print-set) .reg-print-set .reg-done {
+    position: static;
+    visibility: visible;
+    margin: 0 auto;
+    box-shadow: none;
+    border: 0;
+    break-after: page;
+  }
+
+  body:has(.reg-print-set) .reg-print-set .reg-done:last-child {
+    break-after: auto;
+  }
+
+  body:has(.reg-print-set) .reg-print-set .reg-done * {
+    visibility: visible;
+  }
+}
+
+.reg-lab-friend-pick {
+  margin-top: 1rem;
+  max-width: 32rem;
+}
+
+@media (max-width: 30rem) {
+  .reg-group-head {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.25rem 0.6rem;
+  }
+
+  .reg-group-state {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+  }
+
+  .reg-group-chev {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reg-group-chev {
+    transition: none;
+  }
+}
+
 .reg-lab-title + .reg-lab-section {
   padding-top: 0;
   border-top: 0;
@@ -10789,6 +11479,21 @@ button.mstep-list-btn:hover {
   margin: 0;
 }
 
+/* payment step: the heading with the order / entry code on the right (28 Nov 2026, user request);
+   with no room the code wraps under the heading */
+.reg-lab-held-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.15rem 1rem;
+  margin-bottom: 0.35rem;
+}
+
+.reg-lab-held-head .reg-lab-hint {
+  margin: 0;
+}
+
 .reg-lab-ledger > div {
   display: flex;
   align-items: baseline;
@@ -10825,8 +11530,7 @@ button.mstep-list-btn:hover {
 }
 
 /* held registration (26 Nov 2026): the seat is kept 15 minutes while the runner pays */
-.reg-hold-timer,
-.reg-lab-resume-notice {
+.reg-hold-timer {
   display: flex;
   align-items: flex-start;
   gap: 0.6rem;
@@ -10839,8 +11543,7 @@ button.mstep-list-btn:hover {
   font-size: 0.9375rem;
 }
 
-.reg-hold-timer > svg,
-.reg-lab-resume-notice > svg {
+.reg-hold-timer > svg {
   flex-shrink: 0;
   margin-top: 0.15rem;
 }
@@ -10885,6 +11588,35 @@ button.mstep-list-btn:hover {
   top: -8px;
 }
 
+/* a gap found by "ถัดไป" blinks three times, then keeps its red mark (28 Nov 2026, user request) */
+.reg-lab-body .reg-flash:not([data-step-invalid]) {
+  animation: reg-flash-ring 0.45s ease-in-out 3;
+}
+
+.reg-lab-body .reg-flash[data-step-invalid]::after {
+  animation: reg-flash-frame 0.45s ease-in-out 3;
+}
+
+@keyframes reg-flash-ring {
+  50% {
+    box-shadow: 0 0 0 4px var(--danger);
+  }
+}
+
+@keyframes reg-flash-frame {
+  50% {
+    opacity: 0.15;
+    box-shadow: 0 0 0 3px var(--danger);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reg-lab-body .reg-flash:not([data-step-invalid]),
+  .reg-lab-body .reg-flash[data-step-invalid]::after {
+    animation: none;
+  }
+}
+
 /* whatever follows a framed area (the warning box, the next fields) starts clear of the frame */
 .reg-lab-body [data-step-invalid] + :not(.reg-lab-section) {
   margin-top: 1.1rem;
@@ -10918,13 +11650,6 @@ button.mstep-list-btn:hover {
   font-weight: 700;
 }
 
-.reg-headline::before {
-  content: '';
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: currentColor;
-}
 
 .reg-headline.is-ok { background: var(--forest-soft); color: var(--forest-ink); }
 .reg-headline.is-wait { background: var(--amber-soft); color: var(--amber-ink); }
@@ -11348,6 +12073,7 @@ button.mstep-list-btn:hover {
 }
 
 .pg-hero {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -11555,19 +12281,256 @@ button.mstep-list-btn:hover {
 /* ชาย / หญิง / เด็ก: a second, lighter tab row inside the style panel, on top of the size chart
    (27 Nov 2026, user request). The navy outline belongs to the style tabs; the cut tabs use the
    medium grey line so the two levels read apart. */
+/* the divider tints, by position (the same soft tints as the rest of the site) */
+.pg-cut-tab.tone-0,
+.pg-cut-panel.tone-0 {
+  --cut-tint: var(--navy-soft);
+  --cut-edge: #c9d9ec;
+}
+
+.pg-cut-tab.tone-1,
+.pg-cut-panel.tone-1 {
+  --cut-tint: var(--forest-soft);
+  --cut-edge: #c6e6d4;
+}
+
+.pg-cut-tab.tone-2,
+.pg-cut-panel.tone-2 {
+  --cut-tint: var(--amber-soft);
+  --cut-edge: #f2dcb4;
+}
+
+.pg-cut-tabbed > .pg-cuts .pg-stab-strip {
+  justify-content: flex-start;
+  gap: 0.3rem;
+  padding-inline: 0.5rem;
+}
+
+/* a tab sits a little lower and darker until picked, like a divider behind the page */
+.pg-stab.pg-cut-tab {
+  min-height: 2.5rem;
+  margin-top: 0.35rem;
+  padding: 0.35rem 1.1rem;
+  border: 1.5px solid var(--cut-edge);
+  border-bottom: 0;
+  background: var(--cut-tint);
+  color: var(--ink-secondary);
+  box-shadow: inset 0 -6px 8px -6px rgba(52, 73, 95, 0.18);
+  transition: margin-top 0.35s cubic-bezier(0.11, 0.65, 0.04, 1), color 0.2s ease, box-shadow 0.35s ease;
+}
+
+.pg-stab.pg-cut-tab:hover {
+  background: var(--cut-tint);
+  color: var(--ink-primary);
+}
+
+/* the picked tab rises and joins the page of its colour */
+.pg-stab.pg-cut-tab.is-selected {
+  margin-top: 0;
+  padding-bottom: calc(0.35rem + 1.5px);
+  border-color: var(--cut-edge);
+  background: var(--cut-tint);
+  color: var(--ink-primary);
+  box-shadow: 0 -4px 10px -6px rgba(52, 73, 95, 0.35);
+}
+
 .pg-cut-panel {
   padding: 0.75rem;
+  border-color: var(--cut-edge);
+  background: var(--cut-tint);
+  box-shadow: 0 8px 18px -14px rgba(52, 73, 95, 0.45);
+  animation: pg-cut-in 0.4s cubic-bezier(0.11, 0.65, 0.04, 1);
+}
+
+/* the chart sits on its own white card on the tinted page */
+.pg-cut-panel > .pg-group {
+  padding: 0.25rem 0.6rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+
+/* the chart slides up a little when the cut changes; no fade, so it never shows half see-through */
+@keyframes pg-cut-in {
+  from {
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pg-stab.pg-cut-tab {
+    transition: none;
+  }
+
+  .pg-cut-panel {
+    animation: none;
+  }
+}
+
+/* shirt styles as a sideways row of picture tiles (28 Nov 2026, user pick "C"); the size panel
+   under it keeps a plain outline */
+.pg-tabbed.is-rail > .pg-stab-panel {
+  border-color: var(--line);
+}
+
+.pg-rail {
+  min-width: 0;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  border: 0;
+}
+
+.pg-rail-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  width: 100%;
+  margin-bottom: 0.45rem;
+  padding: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.pg-rail-label small {
+  color: var(--ink-secondary);
+  font-weight: 400;
+}
+
+.pg-rail-box {
+  position: relative;
+}
+
+.pg-rail-track {
+  display: flex;
+  gap: 0.45rem;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  padding: 0.15rem;
+}
+
+.pg-rail-track::-webkit-scrollbar {
+  display: none;
+}
+
+/* room for the arrows over the ends of the row */
+.pg-rail-box.has-arrows .pg-rail-track {
+  padding-inline: 2.6rem;
+  scroll-padding-inline: 2.6rem;
+}
+
+.pg-tile {
+  position: relative;
+  display: grid;
+  flex: none;
+  justify-items: center;
+  align-content: start;
+  gap: 0.15rem;
+  width: 6.5rem;
+  padding: 0.4rem 0.35rem 0.45rem;
+  border: 1.5px solid var(--line-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  scroll-snap-align: start;
+  cursor: pointer;
+  transition: border-color 0.16s var(--ease-clean), background-color 0.16s var(--ease-clean);
+}
+
+.pg-tile input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.pg-tile-photo,
+.pg-tile-art {
+  width: 100%;
+  height: 3.5rem;
+  object-fit: contain;
+}
+
+.pg-tile:hover {
   border-color: var(--line-medium);
 }
 
-.pg-cut-tab {
-  min-height: 2.5rem;
-  padding: 0.35rem 1.1rem;
+.pg-tile.is-selected {
+  border-color: var(--navy-ink);
+  background: var(--bg-selected);
+  color: var(--ink-primary);
+  font-weight: 700;
 }
 
-.pg-cut-tab.is-selected {
-  padding-bottom: calc(0.35rem + 1.5px);
-  border-color: var(--line-medium);
+.pg-tile:has(input:focus-visible) {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.pg-rail-arrow {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--line-medium);
+  border-radius: 50%;
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  box-shadow: var(--shadow-popover);
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.pg-rail-arrow.is-prev {
+  left: 0;
+}
+
+.pg-rail-arrow.is-next {
+  right: 0;
+}
+
+.pg-rail-arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+  box-shadow: none;
+}
+
+.pg-rail-arrow:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.pg-rail-dots {
+  display: flex;
+  justify-content: center;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+
+.pg-rail-dots i {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--line-medium);
+}
+
+.pg-rail-dots i.is-on {
+  background: var(--ink-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pg-tile {
+    transition: none;
+  }
 }
 
 /* one style only (finisher shirt): no tabs, a plain panel */
@@ -11811,6 +12774,7 @@ button.mstep-list-btn:hover {
 }
 
 .pg-card-art {
+  position: relative;
   display: grid;
   place-items: center;
   height: 7rem;
@@ -12170,34 +13134,81 @@ body:has(.app-root.is-public) {
   white-space: nowrap;
 }
 
+/* numbered pages ‹ 1 2 3 … 8 › (28 Nov 2026, user choice; no item-range line) */
 .list-pager {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-top: 0.75rem;
-}
-
-.list-pager .btn-secondary {
-  min-width: 2.75rem;
-  min-height: 2.75rem;
   justify-content: center;
+  margin-top: 1rem;
 }
 
-.list-pager-text {
-  text-align: center;
+.list-pager-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.list-pager-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  height: 2.75rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font: inherit;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease;
 }
 
-/* phones: the item range drops to its own line under "หน้า x / y" */
+.list-pager-btn:hover:not(:disabled):not(.is-current) {
+  border-color: var(--ink-secondary);
+}
+
+.list-pager-btn.is-current {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #fff;
+  cursor: default;
+}
+
+.list-pager-btn.is-step {
+  color: var(--ink-secondary);
+}
+
+.list-pager-btn:disabled {
+  color: var(--ink-placeholder);
+  background: transparent;
+  cursor: not-allowed;
+}
+
+.list-pager-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.list-pager-gap {
+  min-width: 1.25rem;
+  text-align: center;
+  color: var(--ink-secondary);
+}
+
+/* phones: smaller squares so 7 numbers and both arrows fit one row at 320px */
 @media (max-width: 480px) {
-  .list-pager-sep {
-    display: none;
+  .list-pager-buttons {
+    gap: 0.25rem;
   }
 
-  .list-pager-range {
-    display: block;
-    font-size: 0.75rem;
+  .list-pager-btn {
+    min-width: 2.25rem;
+    height: 2.5rem;
+    padding: 0 0.4rem;
   }
 }
 
@@ -12438,6 +13449,217 @@ body:has(.app-root.is-public) {
 .reg-review-consent .checkbox-row {
   font-size: 0.8125rem;
   line-height: 1.5;
+}
+
+/* review step as one order sheet (28 Nov 2026, user pick "B" of output/review-summary-mockup) */
+.reg-sheet-wrap {
+  max-width: 48rem;
+  margin-inline: auto;
+  width: 100%;
+}
+
+.reg-sheet {
+  overflow: hidden;
+}
+
+.reg-sheet-sec {
+  padding: 0.6rem 1.15rem 0.85rem;
+}
+
+.reg-sheet-sec + .reg-sheet-sec {
+  border-top: 1px solid var(--line-light);
+}
+
+.reg-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.35rem;
+}
+
+.reg-sheet-head h3 {
+  margin: 0;
+  color: var(--ink-primary);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.reg-sheet-count {
+  margin-left: 0.4rem;
+  color: var(--ink-secondary);
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
+.reg-sheet-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2.75rem;
+  padding: 0 0.25rem;
+}
+
+.reg-sheet-person {
+  border-bottom: 1px solid var(--line-light);
+}
+
+.reg-sheet-person:last-child {
+  border-bottom: 0;
+}
+
+.reg-sheet-person > summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.15rem 0.75rem;
+  min-height: 3.5rem;
+  padding: 0.6rem 0;
+  list-style: none;
+  cursor: pointer;
+}
+
+.reg-sheet-person > summary::-webkit-details-marker {
+  display: none;
+}
+
+.reg-sheet-person > summary:focus-visible {
+  outline: 2px solid var(--ink-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.reg-sheet-who {
+  display: grid;
+  min-width: 0;
+}
+
+.reg-sheet-who strong {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 1rem;
+}
+
+.reg-sheet-who small {
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+}
+
+.reg-sheet-me {
+  padding: 0.05rem 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.reg-sheet-price {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.reg-sheet-chev {
+  color: var(--ink-secondary);
+  transition: transform 0.15s ease;
+}
+
+.reg-sheet-person[open] > summary .reg-sheet-chev {
+  transform: rotate(180deg);
+}
+
+.reg-sheet-detail {
+  padding: 0 0 0.75rem 2.75rem;
+}
+
+.reg-sheet-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.45rem 0 0;
+  font-size: 0.875rem;
+}
+
+.reg-sheet-line > span:first-child {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.reg-sheet-line small {
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+}
+
+.reg-sheet-line > span:last-child {
+  white-space: nowrap;
+}
+
+.reg-sheet-total {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.15rem 1.15rem;
+  border-top: 1px solid var(--line-light);
+  background: var(--bg-subtle);
+}
+
+.reg-sheet-net {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line-medium);
+}
+
+.reg-sheet-net span {
+  font-weight: 700;
+}
+
+.reg-sheet-net strong {
+  color: var(--vermilion);
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+.reg-sheet-total .reg-review-consent {
+  padding-bottom: 0;
+}
+
+.reg-sheet-total .reg-review-pay {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 3rem;
+}
+
+@container (max-width: 30rem) {
+  .reg-sheet-sec,
+  .reg-sheet-total {
+    padding-inline: 0.85rem;
+  }
+
+  .reg-sheet-person > summary {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .reg-sheet-chev {
+    display: none;
+  }
+
+  .reg-sheet-detail {
+    padding-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reg-sheet-chev {
+    transition: none;
+  }
 }
 
 /* narrow column: total and pay button stay at the bottom edge */
@@ -12812,6 +14034,53 @@ body:has(.app-root.is-public) {
 .sf-art-svg.product-preview-image {
   width: 88%;
   height: 88%;
+}
+
+/* a shirt photo's back view (28 Nov 2026, user request): a mouse over the photo shows the back;
+   this small button does the same on touch screens and from the keyboard. Its box must be
+   positioned (.pg-hero, .pg-card-art, .sv-card-art, .sf-dialog-art). */
+.photo-flip-btn {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.9rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--line-medium);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+/* a 44px touch area around the small pill */
+.photo-flip-btn::after {
+  content: '';
+  position: absolute;
+  inset: -0.45rem -0.2rem;
+}
+
+.photo-flip-btn:hover {
+  border-color: var(--ink-secondary);
+}
+
+/* the shirt preview has its name along the bottom: the button sits top right there */
+.pg-hero > .photo-flip-btn {
+  top: 0.5rem;
+  bottom: auto;
+}
+
+.photo-flip-btn:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--ink-primary));
+  outline-offset: 2px;
 }
 
 .sf-badge {
@@ -13439,8 +14708,19 @@ body:has(.app-root.is-public) {
   transform: rotate(180deg);
 }
 
-.sv-shelf > .sv-grid {
+.sv-shelf > .sv-shelf-body {
   padding: 0.25rem 0.85rem 0.85rem;
+}
+
+/* a category opening slides its cards in like a dropdown (28 Nov 2026) */
+.sv-shelf > .sv-shelf-body {
+  animation: dropdown-in 0.24s var(--ease-clean);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sv-shelf > .sv-shelf-body {
+    animation: none;
+  }
 }
 
 @media (max-width: 34rem) {
@@ -13459,7 +14739,7 @@ body:has(.app-root.is-public) {
     padding: 0.55rem 0.7rem;
   }
 
-  .sv-shelf > .sv-grid {
+  .sv-shelf > .sv-shelf-body {
     padding: 0.25rem 0.6rem 0.7rem;
   }
 }
@@ -13474,6 +14754,65 @@ body:has(.app-root.is-public) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
+}
+
+/* a category's cards come a page at a time (28 Nov 2026, user request "pagination") */
+.sv-pager {
+  margin-top: 0.75rem;
+}
+
+.sv-type:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* type chips over the shirts: shown only when the category holds more than one cut */
+.sv-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 0.75rem;
+}
+
+.sv-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.5rem;
+  padding: 0 0.5rem 0 0.9rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  color: var(--ink-secondary);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sv-type:hover {
+  border-color: var(--ink-secondary);
+}
+
+.sv-type[aria-pressed='true'] {
+  border-color: var(--navy-ink);
+  background: var(--bg-selected);
+  color: var(--ink-primary);
+}
+
+.sv-type-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.4rem;
+  height: 1.35rem;
+  padding: 0 0.35rem;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  font-size: 0.75rem;
+}
+
+.sv-type[aria-pressed='true'] .sv-type-count {
+  background: var(--bg-surface);
 }
 
 @container (min-width: 36rem) {
@@ -13509,6 +14848,19 @@ body:has(.app-root.is-public) {
   background: var(--mint-soft);
   color: var(--brand);
   overflow: hidden;
+}
+
+/* a size picked but not in the cart yet: how many + "ใส่ตะกร้า" (28 Nov 2026) */
+.sv-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sv-add-cart {
+  flex: 1 1 6rem;
+  min-height: 2.75rem;
 }
 
 .sv-card-art .sf-art-svg {
@@ -15957,7 +17309,7 @@ body:has(.app-root.is-public) {
   gap: 0.5rem;
 }
 
-.pe-data-fields select,
+.pe-data-fields .kr-select,
 .pe-data-fields input[type='number'] {
   width: 100%;
 }
@@ -16704,6 +18056,7 @@ body:has(.app-root.is-public) {
   color: var(--ink-primary);
   font: inherit;
   font-size: 0.9375rem;
+  font-weight: 400;
   text-align: left;
   cursor: pointer;
 }
@@ -16711,6 +18064,37 @@ body:has(.app-root.is-public) {
 .kr-select-btn:hover:not(:disabled),
 .phone-input .phone-input-code:hover:not(:disabled) {
   border-color: var(--ink-secondary);
+}
+
+.kr-select-btn:focus-visible {
+  border-color: var(--shell-navy);
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+/* the value and the invisible copies of every choice share one cell: the box takes the
+   longest choice's width, and still shrinks with an ellipsis in a narrow column */
+.kr-select-btn {
+  display: grid;
+  grid-template-columns: minmax(0, max-content);
+  align-content: center;
+}
+
+.kr-select-value,
+.kr-select-sizer {
+  grid-area: 1 / 1;
+}
+
+.kr-select-sizer {
+  display: grid;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+.kr-select-sizer > span {
+  grid-area: 1 / 1;
+  white-space: nowrap;
 }
 
 .kr-select-btn:disabled {
@@ -16784,6 +18168,59 @@ body:has(.app-root.is-public) {
   align-items: center;
 }
 
+.kr-menu-item.has-hint {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.05rem;
+  padding-block: 0.4rem;
+}
+
+.kr-menu-hint {
+  color: var(--ink-secondary);
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
+/* a heading above a group of choices (not a choice); later groups and a lone option after a
+   group are set apart by a line (28 Nov 2026, user request) */
+.kr-menu-group {
+  margin: 0 0 0.2rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: var(--bg-subtle);
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  list-style: none;
+}
+
+.kr-menu-group.has-rule {
+  position: relative;
+  margin-top: 0.75rem;
+}
+
+.kr-menu-group.has-rule::before,
+.kr-menu-rule {
+  content: '';
+  display: block;
+  height: 1px;
+  background: var(--line-light);
+}
+
+.kr-menu-group.has-rule::before {
+  position: absolute;
+  top: -0.4rem;
+  right: 0;
+  left: 0;
+}
+
+.kr-menu-rule {
+  margin: 0.4rem 0;
+  list-style: none;
+}
+
 .kr-menu-item[aria-disabled='true'] {
   color: var(--ink-placeholder);
   cursor: default;
@@ -16805,6 +18242,51 @@ body:has(.app-root.is-public) {
   background: var(--bg-selected);
   color: var(--ink-primary);
   font-weight: 700;
+}
+
+/* SelectMenu's list floats at the page root, fixed to its button (28 Nov 2026): no panel,
+   table or editor can cut it off; it is at least as wide as the button and grows for long labels */
+.kr-menu.is-floating {
+  position: fixed;
+  top: auto;
+  right: auto;
+  z-index: 1000;
+  width: max-content;
+  max-width: min(28rem, calc(100vw - 1rem));
+  transform-origin: top center;
+  animation: kr-menu-in 0.16s var(--ease-clean);
+}
+
+/* a list that opens upward unfolds from its bottom edge */
+.kr-menu.is-floating.is-up {
+  transform-origin: bottom center;
+  animation-name: kr-menu-in-up;
+}
+
+@keyframes kr-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scaleY(0.96);
+  }
+}
+
+@keyframes kr-menu-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scaleY(0.96);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kr-menu.is-floating {
+    animation: none;
+  }
+}
+
+/* compact: the box for filter bars and toolbars */
+.kr-select.is-compact .kr-select-btn {
+  height: 2.25rem;
+  font-size: 0.875rem;
 }
 
 /* lists never scroll sideways (a horizontal scrollbar covered the last row of the phone list)
@@ -17204,6 +18686,35 @@ body:has(.app-root.is-public) {
   body:has(.reg-done) .reg-done-more {
     display: none;
   }
+
+  /* the confirmation opened from the history is a popup on <body> (28 Nov 2026 fix: it printed a
+     blank page). The popup box scrolls and had no height of its own once the card was lifted out,
+     so the card was cut away. Print only the popup, laid out as a plain page. */
+  body:has(.reg-confirm-backdrop) > :not(.reg-confirm-backdrop):not(.reg-print-set) {
+    display: none !important;
+  }
+
+  body:has(.reg-confirm-backdrop) .reg-confirm-backdrop {
+    position: static;
+    display: block;
+    padding: 0;
+    background: none;
+  }
+
+  body:has(.reg-confirm-backdrop) .reg-confirm-dialog {
+    width: auto;
+    max-height: none;
+    overflow: visible;
+    box-shadow: none;
+  }
+
+  body:has(.reg-confirm-backdrop) .reg-confirm-dialog .reg-done {
+    position: static;
+  }
+
+  body:has(.reg-confirm-backdrop) .reg-confirm-close {
+    display: none;
+  }
 }
 
 /* race result on the history card (27 Nov 2026, user request): distance, chip time, pace and rank
@@ -17472,4 +18983,370 @@ body:has(.app-root.is-public) {
   font-size: 0.75rem;
   font-weight: 700;
   white-space: nowrap;
+}
+
+/* history page filters, new look (28 Nov 2026, user request "reg-history-filters เปลี่ยน style
+   ใหม่"): a segmented time switch on a mint track, the status dropdown is the shared SelectMenu */
+.reg-history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+}
+
+.reg-time-seg {
+  display: inline-flex;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border: 1px solid var(--kr-mint-line, var(--line-medium));
+  border-radius: 12px;
+  background: var(--bg-surface);
+}
+
+.reg-time-seg-btn {
+  min-height: 2.25rem;
+  padding: 0 0.9rem;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-secondary);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.reg-time-seg-btn:hover:not(.is-on) {
+  background: var(--kr-mint-3, var(--bg-subtle));
+  color: var(--ink-primary);
+}
+
+.reg-time-seg-btn.is-on {
+  background: var(--kr-mint, var(--bg-selected));
+  color: var(--ink-primary);
+}
+
+.reg-time-seg-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.reg-status-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+.reg-status-filter .kr-select {
+  min-width: 12rem;
+}
+
+.reg-history-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+@media (max-width: 30rem) {
+  .reg-time-seg {
+    display: flex;
+    width: 100%;
+  }
+
+  .reg-time-seg-btn {
+    flex: 1;
+    padding: 0 0.4rem;
+  }
+
+  .reg-status-filter {
+    flex: 1 1 100%;
+  }
+
+  .reg-status-filter .kr-select {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+/* history page: fold-open rows (27 Nov 2026, user chose output/history-accordion-mockup).
+   The row head says which event and what to do; the body holds the details. */
+.reg-acc-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0.5rem;
+  color: var(--ink-secondary);
+  font-size: 0.875rem;
+}
+
+.reg-acc-all {
+  padding: 0.25rem 0;
+  border: 0;
+  background: none;
+  color: var(--brand);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.reg-acc {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reg-acc-item {
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.reg-acc-item.is-open {
+  border-color: var(--line-medium);
+  box-shadow: var(--shadow-card);
+}
+
+.reg-acc-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.5rem 0.5rem 0.625rem;
+}
+
+.reg-acc-toggle {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.125rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.reg-acc-thumb {
+  width: 4rem;
+  height: 4rem;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.reg-acc-thumb .kr-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.reg-acc-title {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.reg-acc-title strong {
+  overflow: hidden;
+  font-size: 1rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reg-acc-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem 0.75rem;
+  color: var(--ink-secondary);
+  font-size: 0.875rem;
+}
+
+.reg-acc-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.reg-acc-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.375rem;
+}
+
+.reg-acc-chev {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  color: var(--ink-secondary);
+  transition: transform 0.2s ease;
+}
+
+.reg-acc-item.is-open .reg-acc-chev {
+  transform: rotate(180deg);
+  background: var(--bg-subtle);
+}
+
+.reg-acc-quick {
+  flex: none;
+}
+
+.reg-acc-quick .reg-card-pay {
+  min-height: 2.25rem;
+  padding: 0.35rem 1rem;
+}
+
+.reg-acc-body {
+  display: grid;
+  gap: 0.875rem;
+  padding: 0.875rem 1rem 1rem;
+  border-top: 1px solid var(--line-light);
+}
+
+.reg-acc-body[hidden] {
+  display: none;
+}
+
+.reg-acc-body > * {
+  margin: 0;
+}
+
+.reg-acc-body .reg-card-facts {
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+}
+
+@media (max-width: 40rem) {
+  .reg-acc-head {
+    flex-wrap: wrap;
+  }
+
+  .reg-acc-toggle {
+    grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+    gap: 0.625rem;
+  }
+
+  .reg-acc-thumb {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .reg-acc-title strong {
+    white-space: normal;
+  }
+
+  .reg-acc-quick {
+    width: 100%;
+  }
+
+  .reg-acc-quick .reg-card-pay {
+    width: 100%;
+    min-height: 2.5rem;
+  }
+
+  .reg-acc-body {
+    padding: 0.75rem;
+  }
+
+  .reg-acc-body .reg-card-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reg-acc-chev {
+    transition: none;
+  }
+}
+
+/* event page: countdown to the first start (28 Nov 2026, user request) */
+.event-countdown {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.25rem 0 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+
+.event-countdown-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+}
+
+.event-countdown-head h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.event-countdown-head p {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: 0.875rem;
+}
+
+.event-countdown-units {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.event-countdown-unit {
+  display: grid;
+  justify-items: center;
+  gap: 0.125rem;
+  padding: 0.625rem 0.25rem 0.5rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+
+.event-countdown-num {
+  color: var(--brand);
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.event-countdown-label {
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+}
+
+@media (max-width: 40rem) {
+  .event-countdown {
+    padding: 0.75rem;
+  }
+
+  .event-countdown-units {
+    gap: 0.375rem;
+  }
+
+  .event-countdown-num {
+    font-size: 1.5rem;
+  }
 }

@@ -7,6 +7,7 @@ import { FORM_LIMITS, QUESTION_KINDS, isContentField, kindOf, validateAnswers } 
 import { CORE_BLOCKS, FLOW_LIMITS, coreBlockOf, customStepsOf, flowProblem, flowStepOf, flowWarnings, runnerFlow, stepWithBlock } from '../../data/formFlow';
 import { tx, txf } from '../../i18n';
 import { FaIcon } from '../FaIcon';
+import { SelectMenu } from '../SelectMenu';
 import { RunnerCustomFieldsInputs } from '../PublicEventView';
 import {
   CategoryPicker,
@@ -34,14 +35,13 @@ import '../../form-editor.css';
  * change through `onChange`. A change that breaks the step rules is refused with a message.
  */
 
-export type FlowForm = { fields: CustomRegistrationField[]; flow: FormStepDef[] };
+export type FlowForm = { fields: CustomRegistrationField[]; flow: FormStepDef[]; maxEntries: number };
 
 const newId = (p: string) => `${p}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 /** the old editor's key for each system part (their locked look is reused) */
 const BLOCK_VIEW: Record<FormCoreBlock, string> = {
   category: 'start',
   participant: 'core',
-  shirt: 'shop',
   souvenir: 'souvenir',
   delivery: 'address',
   review: 'review',
@@ -99,8 +99,8 @@ export function StudioFormEditor({
     onStatus({ tone: notes.length ? 'warn' : 'idle', text: notes[0] ?? done ?? '' });
     return true;
   };
-  const setFields = (fn: (f: CustomRegistrationField[]) => CustomRegistrationField[]) => commit({ fields: fn(fields), flow });
-  const setFlow = (fn: (s: FormStepDef[]) => FormStepDef[], done?: string) => commit({ fields, flow: fn(flow) }, done);
+  const setFields = (fn: (f: CustomRegistrationField[]) => CustomRegistrationField[]) => commit({ ...value, fields: fn(fields), flow });
+  const setFlow = (fn: (s: FormStepDef[]) => FormStepDef[], done?: string) => commit({ ...value, fields, flow: fn(flow) }, done);
   const patchStep = (id: string, patch: Partial<FormStepDef>) => setFlow((ss) => ss.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   const patchField = (id: string, patch: Partial<CustomRegistrationField>) => setFields((fs) => fs.map((f) => (f.id === id ? { ...f, ...patch } : f)));
 
@@ -220,7 +220,7 @@ export function StudioFormEditor({
       s.id === target ? { ...s, blocks: [...(s.blocks ?? []), ...parts].sort((a, b) => order.indexOf(a) - order.indexOf(b)), categoryCodes: undefined, hidden: undefined } : s
     );
     const ok = commit(
-      { flow: nextFlow, fields: parts.length ? fields.map((f) => (flowStepOf(f, flow) === st.id ? { ...f, stepKey: target } : f)) : fields.filter((f) => flowStepOf(f, flow) !== st.id) },
+      { ...value, flow: nextFlow, fields: parts.length ? fields.map((f) => (flowStepOf(f, flow) === st.id ? { ...f, stepKey: target } : f)) : fields.filter((f) => flowStepOf(f, flow) !== st.id) },
       txf('ลบขั้น "{0}" แล้ว', tx(st.title))
     );
     if (ok) onView(target || others[0].id);
@@ -395,13 +395,13 @@ export function StudioFormEditor({
             {mode === 'try' && (
               <label className="st-try">
                 <span>{tx('ลองในฐานะผู้สมัครระยะ')}</span>
-                <select value={tryCode} onChange={(e) => setTryCode(e.target.value)}>
-                  {event.categories.map((c) => (
-                    <option key={c.id} value={c.code}>
-                      {tx(c.name)}
-                    </option>
-                  ))}
-                </select>
+                <SelectMenu
+                  compact
+                  ariaLabel={tx('ลองในฐานะผู้สมัครระยะ')}
+                  value={tryCode}
+                  onChange={(v) => setTryCode(v)}
+                  options={event.categories.map((c) => ({ value: c.code, label: tx(c.name) }))}
+                />
                 <button type="button" className="btn-secondary" onClick={() => { setTryAnswers({}); setTryErrors({}); }}>
                   {tx('ล้างคำตอบ')}
                 </button>
@@ -459,7 +459,10 @@ export function StudioFormEditor({
                     {step.description && <p className="muted-block">{tx(step.description)}</p>}
                     {(step.blocks ?? []).map((b) =>
                       b === 'participant' ? (
+                        // the runner card's groups (28 Nov 2026): general details here, the
+                        // organizer's questions below, the souvenirs after them
                         <div key={b} className="st-part">
+                          <h3 className="st-part-group">{tx('ข้อมูลทั่วไป')}</h3>
                           <SystemFields />
                         </div>
                       ) : (
@@ -471,7 +474,13 @@ export function StudioFormEditor({
                     {mode === 'edit' ? (
                       <StepColumn
                         stepId={step.id}
-                        title={step.blocks?.length ? tx('คำถามของผู้จัดในขั้นนี้') : undefined}
+                        title={
+                          step.blocks?.includes('participant')
+                            ? tx('ข้อมูลเพิ่มเติม (คำถามของผู้จัด)')
+                            : step.blocks?.length
+                              ? tx('คำถามของผู้จัดในขั้นนี้')
+                              : undefined
+                        }
                         fields={fieldsOf(step.id)}
                         renderCard={card}
                       />
@@ -493,6 +502,12 @@ export function StudioFormEditor({
                           </div>
                         )}
                       </>
+                    )}
+                    {step.blocks?.includes('participant') && (
+                      <div className="st-part">
+                        <h3 className="st-part-group">{tx('สินค้าที่ระลึก')}</h3>
+                        <LockedBody stepKey="shop" event={event} />
+                      </div>
                     )}
                   </>
                 )}
@@ -517,6 +532,8 @@ export function StudioFormEditor({
               cats={cats}
               canEdit={canEdit}
               hasAnswers={stepHasAnswers(step.id)}
+              maxEntries={value.maxEntries}
+              onMaxEntries={(n) => commit({ ...value, maxEntries: n })}
               onChange={(patch) => patchStep(step.id, patch)}
               onMoveBlock={moveBlock}
               onRemove={() => void removeStep(step)}
@@ -568,6 +585,8 @@ function StepSettings({
   cats,
   canEdit,
   hasAnswers,
+  maxEntries,
+  onMaxEntries,
   onChange,
   onMoveBlock,
   onRemove,
@@ -577,6 +596,8 @@ function StepSettings({
   cats: { code: string; name: string }[];
   canEdit: boolean;
   hasAnswers: boolean;
+  maxEntries: number;
+  onMaxEntries: (n: number) => void;
   onChange: (patch: Partial<FormStepDef>) => void;
   onMoveBlock: (block: FormCoreBlock, toStepId: string) => void;
   onRemove: () => void;
@@ -633,22 +654,53 @@ function StepSettings({
               <li key={b}>
                 <FaIcon name={coreBlockOf(b).icon} />
                 <span>{tx(coreBlockOf(b).label)}</span>
-                <select
-                  aria-label={txf('ย้าย {0} ไปขั้น', tx(coreBlockOf(b).label))}
+                <SelectMenu
+                  ariaLabel={txf('ย้าย {0} ไปขั้น', tx(coreBlockOf(b).label))}
                   value={step.id}
                   disabled={!editable || !!step.lock}
-                  onChange={(e) => onMoveBlock(b, e.target.value)}
-                >
-                  {flow.map((s, i) => (
-                    <option key={s.id} value={s.id}>
-                      {txf('ขั้นที่ {0}: {1}', i + 1, tx(s.title))}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => onMoveBlock(b, v)}
+                  options={flow.map((s, i) => ({
+                    value: s.id,
+                    label: txf('ขั้นที่ {0}: {1}', i + 1, tx(s.title)),
+                  }))}
+                />
               </li>
             ))}
           </ul>
-          <small className="fe-hint">{tx('ลบไม่ได้ ย้ายไปขั้นอื่นได้ เสื้อ ของที่ระลึก และสรุปต้องอยู่หลังเลือกระยะ')}</small>
+          <small className="fe-hint">{tx('ลบไม่ได้ ย้ายไปขั้นอื่นได้ ข้อมูลผู้สมัคร (มีไซส์เสื้อ) ของที่ระลึก และสรุปต้องอยู่หลังเลือกระยะ')}</small>
+        </div>
+      )}
+
+      {/* group registration (28 Nov 2026): set where the runner cards are */}
+      {parts.includes('participant') && (
+        <div className="st-field">
+          <span id="st-max-entries">{tx('สมัครได้สูงสุดต่อครั้ง')}</span>
+          <span className="st-stepper" role="group" aria-labelledby="st-max-entries">
+            <button
+              type="button"
+              className="pe-icon-btn"
+              aria-label={tx('ลดจำนวน')}
+              disabled={!canEdit || maxEntries <= 1}
+              onClick={() => onMaxEntries(maxEntries - 1)}
+            >
+              <FaIcon name="minus" />
+            </button>
+            <output className="mono-num" aria-live="polite">
+              {txf('{0} คน', maxEntries)}
+            </output>
+            <button
+              type="button"
+              className="pe-icon-btn"
+              aria-label={tx('เพิ่มจำนวน')}
+              disabled={!canEdit || maxEntries >= FLOW_LIMITS.entriesMax}
+              onClick={() => onMaxEntries(maxEntries + 1)}
+            >
+              <FaIcon name="plus" />
+            </button>
+          </span>
+          <small className="fe-hint">
+            {txf('นักวิ่งสมัครให้ตัวเองและเพื่อนในคำสั่งซื้อเดียวได้ไม่เกินจำนวนนี้ (1–{0} คน) จ่ายครั้งเดียว แต่ละคนได้ใบสมัคร BIB และ QR ของตัวเอง', FLOW_LIMITS.entriesMax)}
+          </small>
         </div>
       )}
 
